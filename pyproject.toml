@@ -1,0 +1,34 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "langgraph-system-generator"
+version = "0.1.0"
+description = "Generates entire multiagent systems based on user constraints in a simple text prompt"
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = [
+    "langgraph>=0.0.1",
+    "langchain>=0.1.0",
+    "nbformat>=5.9.0",
+    "nbconvert>=7.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+    "black>=23.0.0",
+    "flake8>=6.0.0",
+]
+
+[tool.setuptools]
+packages = ["langgraph_system_generator"]
+
+[tool.black]
+line-length = 88
+target-version = ['py39']
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
