@@ -1,10 +1,10 @@
 """Utility functions for working with notebooks."""
 
 import nbformat
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Tuple
 
 
-def validate_notebook(notebook: nbformat.NotebookNode) -> tuple[bool, str]:
+def validate_notebook(notebook: nbformat.NotebookNode) -> Tuple[bool, str]:
     """
     Validate a notebook structure.
     

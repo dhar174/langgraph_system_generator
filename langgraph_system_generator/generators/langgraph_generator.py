@@ -163,7 +163,8 @@ class AgentState(TypedDict):
     
     def _generate_agent_node(self, agent_name: str) -> str:
         """Generate code for an agent node."""
-        return f'''
+        # Use explicit string concatenation to avoid f-string escaping confusion
+        code = f'''
 def {agent_name}_node(state: AgentState) -> AgentState:
     """
     {agent_name.capitalize()} agent node.
@@ -175,23 +176,25 @@ def {agent_name}_node(state: AgentState) -> AgentState:
     
     # Define the prompt for this agent
     prompt = ChatPromptTemplate.from_messages([
-        ("system", "You are a {agent_name} agent. {{context}}"),
-        ("human", "{{{{input}}}}")
+        ("system", "You are a {agent_name} agent. '''
+        code += '{context}"),\n'
+        code += '''        ("human", "{input}")
     ])
     
     # Process the messages
     # Note: You'll need to configure with your LLM
     # llm = ChatOpenAI()  # or your preferred LLM
     # chain = prompt | llm | StrOutputParser()
-    # result = chain.invoke({{"input": messages[-1].content if messages else ""}})
+    # result = chain.invoke({"input": messages[-1].content if messages else ""})
     
     result = f"{agent_name.capitalize()} processed the input"
     
-    return {{
+    return {
         "messages": [HumanMessage(content=result)],
         "context": context
-    }}
+    }
 '''
+        return code
     
     def _generate_graph_construction(self, agents: List[str], workflow: str) -> str:
         """Generate the graph construction code."""

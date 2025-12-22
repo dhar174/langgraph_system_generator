@@ -1,10 +1,10 @@
 """Utility functions for code formatting and validation."""
 
 import ast
-from typing import Optional
+from typing import Optional, Tuple, List
 
 
-def validate_python_code(code: str) -> tuple[bool, Optional[str]]:
+def validate_python_code(code: str) -> Tuple[bool, Optional[str]]:
     """
     Validate that a string contains valid Python code.
     
@@ -46,7 +46,7 @@ def format_code(code: str, indent: int = 4) -> str:
     return '\n'.join(formatted_lines)
 
 
-def extract_imports(code: str) -> list[str]:
+def extract_imports(code: str) -> List[str]:
     """
     Extract import statements from Python code.
     
