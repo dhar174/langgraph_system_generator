@@ -1,4 +1,3 @@
-# .github/agents/lnf-cli.agent.md
 ---
 name: lnf-cli
 description: Implements the CLI and packaging for LNF: build-index and generate commands, output folder conventions, and release-ready packaging.
