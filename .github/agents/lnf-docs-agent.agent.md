@@ -1,6 +1,7 @@
 ---
 name: lnf-docs agent
-description: > Writes and maintains docs, READMEs, examples, and contributor guidance for LNF without touching production code unless requested.
+description: > 
+  Writes and maintains docs, READMEs, examples, and contributor guidance for LNF without touching production code unless requested.
 target: github-copilot
 infer: false
 tools: ["read", "search", "edit"]
