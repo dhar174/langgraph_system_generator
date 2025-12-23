@@ -1,6 +1,7 @@
 ---
 name: lnf-cli
 description: Implements the CLI and packaging for LNF build-index and generate commands, output folder conventions, and release-ready packaging.
+target: github-copilot
 infer: false
 tools: ["read", "search", "edit", "execute", "github/*"]
 metadata:
@@ -12,7 +13,7 @@ metadata:
 You implement **Phase 6: CLI & Packaging**.
 
 Scope:
-- Create CLI entrypoints consistent with the plan’s example usage (e.g., `lnf build-index`, `lnf generate "..."`).
+- Create CLI entrypoints consistent with the plan's example usage (e.g., `lnf build-index`, `lnf generate "..."`).
 - Define output conventions: `./output/` artifacts, zips, manifests.
 - Wire together: RAG index build -> generator -> notebook composer -> exporters.
 
