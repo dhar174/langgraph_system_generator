@@ -1,4 +1,3 @@
-# .github/agents/lnf-docs.agent.md
 ---
 name: lnf-docs
 description: Writes and maintains docs, READMEs, examples, and contributor guidance for LNF without touching production code unless requested.
