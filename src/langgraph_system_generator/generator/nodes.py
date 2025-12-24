@@ -99,8 +99,16 @@ async def architecture_selection_node(state: GeneratorState) -> Dict[str, Any]:
         state["constraints"], state["docs_context"]
     )
 
+    selected_patterns = architecture.get("patterns", {}) or {}
+    architecture_type = (
+        architecture.get("architecture_type")
+        or selected_patterns.get("primary")
+        or "router"
+    )
+    selected_patterns = {**selected_patterns, "architecture_type": architecture_type}
+
     return {
-        "selected_patterns": architecture.get("patterns", {}),
+        "selected_patterns": selected_patterns,
         "architecture_justification": architecture.get("justification", ""),
     }
 
@@ -116,8 +124,12 @@ async def graph_design_node(state: GeneratorState) -> Dict[str, Any]:
     """
     designer = GraphDesigner()
 
+    selected_patterns = state.get("selected_patterns", {}) or {}
+    architecture_type = selected_patterns.get("architecture_type") or selected_patterns.get(
+        "primary", "router"
+    )
     architecture = {
-        "architecture_type": state["selected_patterns"].get("primary", "router"),
+        "architecture_type": architecture_type,
         "justification": state["architecture_justification"],
     }
 
@@ -223,7 +235,8 @@ async def runtime_qa_node(state: GeneratorState) -> Dict[str, Any]:
         message="Runtime checks placeholder (not yet implemented)",
     )
 
-    return {"qa_reports": [report]}
+    existing_reports = state.get("qa_reports", [])
+    return {"qa_reports": [*existing_reports, report]}
 
 
 async def repair_node(state: GeneratorState) -> Dict[str, Any]:
@@ -269,6 +282,9 @@ async def package_outputs_node(state: GeneratorState) -> Dict[str, Any]:
         "notebook_plan": str(state.get("notebook_plan")),
         "cell_count": str(len(state.get("generated_cells", []))),
         "architecture": state["selected_patterns"].get("primary", "router"),
+        "architecture_type": state.get("selected_patterns", {}).get(
+            "architecture_type", state["selected_patterns"].get("primary", "router")
+        ),
         "constraints_count": str(len(state.get("constraints", []))),
     }
 

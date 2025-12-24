@@ -47,16 +47,35 @@ class ArchitectureSelector:
                 self.docs_retriever.retrieve_for_pattern("supervisor") or []
             )
 
+        def _normalize_doc(doc: Any) -> Dict[str, Any]:
+            if isinstance(doc, DocSnippet):
+                return doc.model_dump()
+            if hasattr(doc, "model_dump"):
+                try:
+                    return doc.model_dump()
+                except Exception:
+                    pass
+            if isinstance(doc, dict):
+                return doc
+            return {
+                "content": str(doc),
+                "source": "",
+                "heading": None,
+                "relevance_score": 0.0,
+            }
+
         # Format constraints for LLM
         constraints_text = "\n".join(
             [f"- [{c.type}] {c.value} (priority: {c.priority})" for c in constraints]
         )
 
         # Format documentation snippets
+        docs_list = pattern_docs or docs_context
+        normalized_docs = [_normalize_doc(doc) for doc in docs_list]
         docs_text = "\n\n".join(
             [
-                f"[{doc.get('heading', 'Section')}]\n{doc['content'][:500]}"
-                for doc in (pattern_docs or docs_context)[:5]
+                f"[{doc.get('heading') or 'Section'}]\n{str(doc.get('content', ''))[:500]}"
+                for doc in normalized_docs[:5]
             ]
         )
 

@@ -92,7 +92,7 @@ class GeneratorState(TypedDict):
     generated_cells: Annotated[List[CellSpec], operator.add]
 
     # QA & Repair
-    qa_reports: Annotated[List[QAReport], operator.add]
+    qa_reports: List[QAReport]
     repair_attempts: int
 
     # Output
