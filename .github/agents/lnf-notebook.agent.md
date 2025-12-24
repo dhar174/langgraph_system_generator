@@ -1,6 +1,6 @@
 ---
 name: lnf-notebook
-description: Implements notebook composition and artifact exporting: nbformat generation, templates, exporters (PDF/DOCX), and packaging outputs for download.
+description: Implements notebook composition and artifact exporting nbformat generation, templates, exporters (PDF/DOCX), and packaging outputs for download.
 target: github-copilot
 infer: false
 tools: ["read", "search", "edit", "execute"]
