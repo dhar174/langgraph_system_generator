@@ -23,8 +23,9 @@ def installation_and_imports(
         import sys
 
         def _ensure(package: str) -> None:
+            module_name = package.replace("-", "_")
             try:
-                importlib.import_module(package)
+                importlib.import_module(module_name)
             except ImportError:
                 subprocess.check_call([sys.executable, "-m", "pip", "install", "-q", package])
 
@@ -82,7 +83,7 @@ def build_graph_cells() -> List[CellSpec]:
         from typing import Annotated, Sequence, TypedDict
         import operator
         from langchain_core.messages import BaseMessage, HumanMessage
-        from langgraph.graph import StateGraph
+        from langgraph.graph import END, StateGraph
 
         class WorkflowState(TypedDict):
             messages: Annotated[Sequence[BaseMessage], operator.add]
@@ -95,6 +96,7 @@ def build_graph_cells() -> List[CellSpec]:
 
         graph.add_node("start", start)
         graph.set_entry_point("start")
+        graph.add_edge("start", END)
         compiled_graph = graph.compile()
         """
     ).strip()
@@ -114,6 +116,15 @@ def run_graph_cells() -> List[CellSpec]:
     run_code = dedent(
         """
         sample_state = {"messages": [], "route": None}
+
+        try:
+            graph  # type: ignore[name-defined]  # noqa: F821
+        except NameError as exc:
+            raise NameError(
+                "`graph` is not defined. Please run the 'Build Graph' cell before this one."
+            ) from exc
+
+        compiled_graph = graph.compile()
         result = compiled_graph.invoke(sample_state)
         print("Graph output:")
         print(result)
@@ -137,9 +148,13 @@ def export_results_cells() -> List[CellSpec]:
         import json
         from pathlib import Path
 
+        if "result" not in globals():
+            raise NameError("`result` is not defined. Run the 'Run Graph' cell before exporting results.")
+
+        output_data = result
         output_path = Path("graph_results.json")
         with output_path.open("w", encoding="utf-8") as handle:
-            json.dump(result, handle, indent=2, default=str)
+            json.dump(output_data, handle, indent=2, default=str)
 
         print(f"Saved results to {output_path.resolve()}")
         """
