@@ -19,6 +19,7 @@ from langgraph_system_generator.rag.embeddings import VectorStoreManager
 class DocsIndexer:
     """Scrapes and chunks LangGraph documentation content."""
 
+    # Include both Python and JavaScript docs for shared LangGraph concepts.
     PYTHON_DOCS_URLS = [
         "https://docs.langchain.com/oss/python/langgraph/use-graph-api",
         "https://docs.langchain.com/oss/python/langchain/multi-agent/subagents",
