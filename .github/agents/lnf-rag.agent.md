@@ -1,4 +1,3 @@
-# .github/agents/lnf-rag.agent.md
 ---
 name: lnf-rag
 description: Implements the RAG system for LangGraph/LangChain docs: scraping, chunking, embeddings, vector store, and retrieval APIs.
