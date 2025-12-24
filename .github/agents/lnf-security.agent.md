@@ -1,4 +1,3 @@
-# .github/agents/lnf-security.agent.md
 ---
 name: lnf-security
 description: Reviews LNF for security, privacy, and secret-handling issues; hardens scraping, env usage, and output sanitization.

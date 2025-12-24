@@ -1,4 +1,3 @@
-# .github/agents/lnf-foundation.agent.md
 ---
 name: lnf-foundation
 description: Builds Phase 1 infrastructure: project scaffolding, settings/config, dependencies, packaging skeleton, and repo hygiene.

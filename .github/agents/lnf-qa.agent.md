@@ -1,4 +1,3 @@
-# .github/agents/lnf-qa.agent.md
 ---
 name: lnf-qa
 description: Implements QA validation + repair loops: notebook validation, execution checks, unit/integration tests, and automated repair prompts.

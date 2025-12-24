@@ -1,4 +1,3 @@
-# .github/agents/lnf-patterns.agent.md
 ---
 name: lnf-patterns
 description: Maintains the inner LangGraph pattern library (router/subagents/critique loops/etc) as reusable templates and code snippets.
