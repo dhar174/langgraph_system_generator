@@ -1,4 +1,3 @@
-# .github/agents/lnf-lead.agent.md
 ---
 name: lnf-lead
 description: Leads implementation of LangGraph Notebook Foundry (LNF); coordinates phases, delegates to specialist agents, and enforces repo standards.

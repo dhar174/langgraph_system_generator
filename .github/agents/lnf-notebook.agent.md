@@ -1,4 +1,3 @@
-# .github/agents/lnf-notebook.agent.md
 ---
 name: lnf-notebook
 description: Implements notebook composition and artifact exporting: nbformat generation, templates, exporters (PDF/DOCX), and packaging outputs for download.
