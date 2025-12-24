@@ -17,9 +17,9 @@ async def test_generator_integration_structure():
     # Check that graph is compiled
     assert graph is not None
 
-    # The graph should have nodes defined
+    # The graph should be executable via the async LangGraph API
     # Note: This tests the structure without actually invoking with real LLM calls
-    assert hasattr(graph, "nodes")
+    assert hasattr(graph, "ainvoke")
 
 
 @pytest.mark.asyncio
@@ -106,9 +106,6 @@ async def test_graph_repair_loop_structure():
     # The graph should be compiled and ready to execute
     assert graph is not None
 
-    # Note: Full execution would require API keys, but we can verify structure
-    # In a real test with API keys, we would:
-    # 1. Initialize state with user_prompt
-    # 2. Run graph.ainvoke(initial_state)
-    # 3. Verify that repair_attempts is incremented if QA fails
-    # 4. Verify that generation stops after max_repair_attempts
+    # Note: This test only performs lightweight structural checks on the graph.
+    # More exhaustive behavior (e.g., executing the graph and exercising the
+    # repair loop with real LLM/API calls) should be covered in separate tests.

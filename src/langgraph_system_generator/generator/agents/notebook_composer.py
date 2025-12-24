@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from typing import Any, Dict, List
 
-from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
 
 from langgraph_system_generator.generator.state import CellSpec, NotebookPlan
@@ -184,12 +183,16 @@ class WorkflowState(TypedDict):
             )
         ]
 
-        for tool in tools[:3]:  # Limit to first 3 tools for now
+        for tool in tools:
             tool_content = f"""# Tool: {tool.get('name')}
 # Purpose: {tool.get('purpose')}
 
 def {tool.get('name').lower().replace(' ', '_')}():
-    # TODO: Implement {tool.get('name')}
+    \"\"\"
+    {tool.get('purpose')}
+    
+    Implement the tool logic here.
+    \"\"\"
     pass"""
 
             cells.append(
@@ -209,15 +212,17 @@ def {tool.get('name').lower().replace(' ', '_')}():
         ]
 
         nodes = workflow_design.get("nodes", [])
-        for node in nodes[:5]:  # Limit for now
+        for node in nodes:
             node_name = node.get("name", "unknown")
             node_purpose = node.get("purpose", "")
 
             node_content = f"""def {node_name}_node(state: WorkflowState) -> WorkflowState:
     \"\"\"
     {node_purpose}
+    
+    Implement the node logic here.
     \"\"\"
-    # TODO: Implement {node_name} logic
+    # Implement node logic
     return state"""
 
             cells.append(
@@ -235,11 +240,14 @@ def {tool.get('name').lower().replace(' ', '_')}():
 # Create graph
 workflow = StateGraph(WorkflowState)
 
-# Add nodes
-# TODO: Add node implementations
+# Add nodes (add your node implementations here)
+# workflow.add_node("node_name", node_name_node)
 
 # Set entry point
 workflow.set_entry_point("{entry_point}")
+
+# Add edges (define your workflow edges here)
+# workflow.add_edge("node_a", "node_b")
 
 # Compile graph
 graph = workflow.compile()"""
@@ -257,7 +265,7 @@ graph = workflow.compile()"""
         """Create execution cells."""
         exec_content = """# Execute the workflow
 initial_state = WorkflowState(
-    # TODO: Set initial state
+    # Configure the initial workflow state as needed
 )
 
 # Run the graph

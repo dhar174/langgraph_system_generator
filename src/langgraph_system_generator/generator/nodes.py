@@ -13,9 +13,10 @@ from langgraph_system_generator.generator.agents import (
     ToolchainEngineer,
 )
 from langgraph_system_generator.generator.state import (
-    CellSpec,
+    DocSnippet,
     GeneratorState,
     NotebookPlan,
+    QAReport,
 )
 from langgraph_system_generator.rag.embeddings import VectorStoreManager
 from langgraph_system_generator.rag.retriever import DocsRetriever
@@ -54,8 +55,6 @@ async def rag_retrieval_node(state: GeneratorState) -> Dict[str, Any]:
         snippets = retriever.retrieve(state["user_prompt"], k=10)
 
         # Convert to DocSnippet format
-        from langgraph_system_generator.generator.state import DocSnippet
-
         docs = [
             DocSnippet(
                 content=s["content"],
@@ -67,7 +66,11 @@ async def rag_retrieval_node(state: GeneratorState) -> Dict[str, Any]:
         ]
 
         return {"docs_context": docs}
-    except Exception:
+    except Exception as e:
+        # Log the error for debugging
+        import logging
+
+        logging.warning(f"RAG retrieval failed: {e}")
         # If RAG fails, continue without docs
         return {"docs_context": []}
 
@@ -84,7 +87,10 @@ async def architecture_selection_node(state: GeneratorState) -> Dict[str, Any]:
     try:
         vector_store_manager = VectorStoreManager(settings.vector_store_path)
         retriever = DocsRetriever(vector_store_manager)
-    except Exception:
+    except Exception as e:
+        import logging
+
+        logging.warning(f"Failed to load vector store for architecture selection: {e}")
         retriever = None
 
     selector = ArchitectureSelector(docs_retriever=retriever)
@@ -211,8 +217,6 @@ async def runtime_qa_node(state: GeneratorState) -> Dict[str, Any]:
     """
     # Placeholder: In a full implementation, this would execute the notebook
     # and check for runtime errors
-    from langgraph_system_generator.generator.state import QAReport
-
     report = QAReport(
         check_name="Runtime Check",
         passed=True,
@@ -229,17 +233,24 @@ async def repair_node(state: GeneratorState) -> Dict[str, Any]:
         state: Current generator state
 
     Returns:
-        Updated state with repaired cells and incremented repair attempts
+        Updated state with incremented repair attempts
+
+    Note:
+        Currently, this is a placeholder that increments repair_attempts.
+        Full repair implementation would parse LLM suggestions and apply fixes.
+        Due to operator.add on generated_cells, we only return repair_attempts.
     """
     qa_agent = QARepairAgent()
 
     cells = state.get("generated_cells", [])
     qa_reports = state.get("qa_reports", [])
 
-    repaired_cells = await qa_agent.repair(cells, qa_reports)
+    # Attempt repair (currently returns original cells as placeholder)
+    await qa_agent.repair(cells, qa_reports)
 
+    # Only increment repair attempts; don't return generated_cells to avoid
+    # unwanted accumulation due to operator.add in state definition
     return {
-        "generated_cells": repaired_cells,
         "repair_attempts": state["repair_attempts"] + 1,
     }
 

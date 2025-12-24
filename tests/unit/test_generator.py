@@ -37,7 +37,7 @@ def test_cellspec_model():
 
 @pytest.mark.asyncio
 async def test_generator_minimal_run():
-    """Test minimal generator run produces a NotebookPlan and CellSpecs."""
+    """Test that the graph compiles and can be initialized with valid state."""
     graph = create_generator_graph()
 
     initial_state = {
@@ -58,7 +58,6 @@ async def test_generator_minimal_run():
         "error_message": None,
     }
 
-    # Note: This test requires OpenAI API key to run fully
-    # For now, we just verify the graph structure
+    # Verify the graph structure and state initialization
     assert graph is not None
     assert initial_state["user_prompt"] is not None

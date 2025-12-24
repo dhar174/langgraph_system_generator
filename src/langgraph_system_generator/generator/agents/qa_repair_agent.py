@@ -163,7 +163,8 @@ Cells:
 Suggest specific repairs."""
         )
 
-        response = await self.llm.ainvoke([repair_prompt, user_message])
+        # Get repair suggestions from LLM (currently unused as repair is not fully implemented)
+        await self.llm.ainvoke([repair_prompt, user_message])
 
         # For now, return original cells as we need more context for repairs
         # In a full implementation, we'd parse the LLM response and apply fixes

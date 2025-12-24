@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-import json
 from typing import Any, Dict, List
 
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
 
 from langgraph_system_generator.generator.state import Constraint
+from langgraph_system_generator.generator.utils import extract_json_from_llm_response
 from langgraph_system_generator.utils.config import settings
 
 
@@ -81,18 +81,8 @@ Identify needed tools."""
         response = await self.llm.ainvoke([tools_prompt, user_message])
 
         try:
-            content = response.content
-            if isinstance(content, str):
-                # Try to extract JSON from markdown code blocks
-                if "```json" in content:
-                    content = content.split("```json")[1].split("```")[0].strip()
-                elif "```" in content:
-                    content = content.split("```")[1].split("```")[0].strip()
-
-                tools = json.loads(content)
-                return tools
-        except (json.JSONDecodeError, KeyError, TypeError):
+            tools = extract_json_from_llm_response(response.content)
+            return tools
+        except (ValueError, KeyError, TypeError):
             # Fallback: no tools needed
             return []
-
-        return []

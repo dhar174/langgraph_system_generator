@@ -13,7 +13,7 @@ class Constraint(BaseModel):
     """User constraint specification."""
 
     type: str = Field(
-        description="Constraint type: 'tone', 'length', 'structure', 'runtime', 'environment'"
+        description="Constraint type: 'goal', 'tone', 'length', 'structure', 'runtime', 'environment'"
     )
     value: str = Field(description="Constraint value or description")
     priority: int = Field(default=1, description="Priority level (1=low, 5=high)")

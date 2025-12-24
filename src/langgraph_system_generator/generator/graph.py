@@ -48,10 +48,10 @@ def should_repair(
     return "repair"
 
 
-def check_repair_success(
+def should_retry_after_repair(
     state: GeneratorState,
 ) -> Literal["retry_qa", "fail", "success"]:
-    """Check if repair was successful and decide next action.
+    """Decide whether to retry QA after repair attempt.
 
     Args:
         state: Current generator state
@@ -59,11 +59,11 @@ def check_repair_success(
     Returns:
         Decision: "retry_qa", "fail", or "success"
     """
-    # After repair, retry QA
+    # After repair, retry QA if we haven't exhausted attempts
     if state["repair_attempts"] < settings.max_repair_attempts:
         return "retry_qa"
 
-    # If we've exhausted attempts, check if we have any cells
+    # If we've exhausted attempts, proceed with best effort if we have cells
     if len(state.get("generated_cells", [])) > 0:
         return "success"
 
@@ -114,7 +114,7 @@ def create_generator_graph() -> StateGraph:
     # Conditional edge after repair
     workflow.add_conditional_edges(
         "repair",
-        check_repair_success,
+        should_retry_after_repair,
         {
             "retry_qa": "static_qa",
             "success": "package_outputs",

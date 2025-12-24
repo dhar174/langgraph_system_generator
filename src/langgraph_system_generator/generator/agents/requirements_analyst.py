@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-import json
 from typing import List
 
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
 
 from langgraph_system_generator.generator.state import Constraint
+from langgraph_system_generator.generator.utils import extract_json_from_llm_response
 from langgraph_system_generator.utils.config import settings
 
 
@@ -53,18 +53,13 @@ Priority: 1 (low) to 5 (high). Goals are typically priority 5."""
         response = await self.llm.ainvoke([analysis_prompt, user_message])
 
         try:
-            content = response.content
-            if isinstance(content, str):
-                # Try to extract JSON from markdown code blocks
-                if "```json" in content:
-                    content = content.split("```json")[1].split("```")[0].strip()
-                elif "```" in content:
-                    content = content.split("```")[1].split("```")[0].strip()
+            constraints_data = extract_json_from_llm_response(response.content)
+            constraints = [Constraint(**c) for c in constraints_data]
+            return constraints
+        except (ValueError, KeyError, TypeError) as e:
+            import logging
 
-                constraints_data = json.loads(content)
-                constraints = [Constraint(**c) for c in constraints_data]
-                return constraints
-        except (json.JSONDecodeError, KeyError, TypeError) as e:
+            logging.warning(f"Failed to parse LLM response for constraints: {e}")
             # Fallback: create a basic goal constraint from the prompt
             return [
                 Constraint(
@@ -73,5 +68,3 @@ Priority: 1 (low) to 5 (high). Goals are typically priority 5."""
                     priority=5,
                 )
             ]
-
-        return []
