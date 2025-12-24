@@ -125,4 +125,3 @@ def create_generator_graph() -> StateGraph:
     workflow.add_edge("package_outputs", END)
 
     return workflow.compile()
-

@@ -35,9 +35,7 @@ class ToolchainEngineer:
             [f"- {node.get('name')}: {node.get('purpose')}" for node in nodes]
         )
 
-        constraints_text = "\n".join(
-            [f"- [{c.type}] {c.value}" for c in constraints]
-        )
+        constraints_text = "\n".join([f"- [{c.type}] {c.value}" for c in constraints])
 
         tools_prompt = SystemMessage(
             content="""You are a toolchain engineer for LangGraph workflows.

@@ -104,9 +104,7 @@ class QARepairAgent:
                 check_name="Required Imports",
                 passed=False,
                 message=f"Missing imports: {', '.join(missing_imports)}",
-                suggestions=[
-                    f"Add import for {imp}" for imp in missing_imports[:2]
-                ],
+                suggestions=[f"Add import for {imp}" for imp in missing_imports[:2]],
             )
 
         return QAReport(
@@ -133,9 +131,7 @@ class QARepairAgent:
             return cells
 
         # Create repair prompt
-        issues = "\n".join(
-            [f"- {r.check_name}: {r.message}" for r in failed_reports]
-        )
+        issues = "\n".join([f"- {r.check_name}: {r.message}" for r in failed_reports])
 
         repair_prompt = SystemMessage(
             content="""You are a notebook repair specialist.

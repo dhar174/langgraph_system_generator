@@ -57,7 +57,10 @@ async def mock_minimal_run():
                             # Override LLM responses for different stages
                             async def mock_invoke_side_effect(messages):
                                 # Check context to determine which stage we're in
-                                if any("requirements analyst" in str(m).lower() for m in messages):
+                                if any(
+                                    "requirements analyst" in str(m).lower()
+                                    for m in messages
+                                ):
                                     mock_response = MagicMock()
                                     mock_response.content = """```json
 [
@@ -66,7 +69,9 @@ async def mock_minimal_run():
 ]
 ```"""
                                     return mock_response
-                                elif any("architecture" in str(m).lower() for m in messages):
+                                elif any(
+                                    "architecture" in str(m).lower() for m in messages
+                                ):
                                     mock_response = MagicMock()
                                     mock_response.content = """```json
 {
@@ -76,7 +81,10 @@ async def mock_minimal_run():
 }
 ```"""
                                     return mock_response
-                                elif any("workflow designer" in str(m).lower() for m in messages):
+                                elif any(
+                                    "workflow designer" in str(m).lower()
+                                    for m in messages
+                                ):
                                     mock_response = MagicMock()
                                     mock_response.content = """```json
 {
@@ -137,7 +145,9 @@ async def mock_minimal_run():
 
                             # Display constraints
                             if result.get("constraints"):
-                                print(f"✓ Extracted {len(result['constraints'])} constraints:")
+                                print(
+                                    f"✓ Extracted {len(result['constraints'])} constraints:"
+                                )
                                 for c in result["constraints"][:3]:
                                     print(f"  - [{c.type}] {c.value}")
                                 print()
@@ -169,7 +179,9 @@ async def mock_minimal_run():
                                 markdown_count = sum(
                                     1 for c in cells if c.cell_type == "markdown"
                                 )
-                                code_count = sum(1 for c in cells if c.cell_type == "code")
+                                code_count = sum(
+                                    1 for c in cells if c.cell_type == "code"
+                                )
                                 print(f"  - {markdown_count} markdown cells")
                                 print(f"  - {code_count} code cells")
                                 print()
@@ -177,7 +189,9 @@ async def mock_minimal_run():
                                 # Show first few cells
                                 print("  Sample cells:")
                                 for i, cell in enumerate(cells[:3]):
-                                    content_preview = cell.content[:60].replace("\n", " ")
+                                    content_preview = cell.content[:60].replace(
+                                        "\n", " "
+                                    )
                                     print(
                                         f"    {i+1}. [{cell.cell_type}] {content_preview}..."
                                     )
@@ -187,10 +201,14 @@ async def mock_minimal_run():
                             if result.get("qa_reports"):
                                 reports = result["qa_reports"]
                                 passed = sum(1 for r in reports if r.passed)
-                                print(f"✓ QA Reports: {passed}/{len(reports)} checks passed")
+                                print(
+                                    f"✓ QA Reports: {passed}/{len(reports)} checks passed"
+                                )
                                 for report in reports:
                                     status = "✓" if report.passed else "✗"
-                                    print(f"  {status} {report.check_name}: {report.message}")
+                                    print(
+                                        f"  {status} {report.check_name}: {report.message}"
+                                    )
                                 print()
 
                             # Display completion status
@@ -199,7 +217,9 @@ async def mock_minimal_run():
                                 print()
                                 if result.get("artifacts_manifest"):
                                     print("Artifacts manifest:")
-                                    for key, value in result["artifacts_manifest"].items():
+                                    for key, value in result[
+                                        "artifacts_manifest"
+                                    ].items():
                                         print(f"  - {key}: {value}")
                             else:
                                 print("✗ Generation incomplete")

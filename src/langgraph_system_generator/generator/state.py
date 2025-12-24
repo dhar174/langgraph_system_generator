@@ -27,7 +27,9 @@ class DocSnippet(BaseModel):
     relevance_score: float = Field(
         default=0.0, description="Relevance score from retrieval"
     )
-    heading: Optional[str] = Field(default=None, description="Section heading if available")
+    heading: Optional[str] = Field(
+        default=None, description="Section heading if available"
+    )
 
 
 class NotebookPlan(BaseModel):
@@ -35,9 +37,7 @@ class NotebookPlan(BaseModel):
 
     title: str = Field(description="Notebook title")
     sections: List[str] = Field(default_factory=list, description="Major section names")
-    cell_count_estimate: int = Field(
-        default=0, description="Estimated number of cells"
-    )
+    cell_count_estimate: int = Field(default=0, description="Estimated number of cells")
     patterns_used: List[str] = Field(
         default_factory=list, description="LangGraph patterns to be used"
     )
@@ -51,9 +51,7 @@ class CellSpec(BaseModel):
 
     cell_type: str = Field(description="Cell type: 'markdown' or 'code'")
     content: str = Field(description="Cell content")
-    metadata: Dict[str, Any] = Field(
-        default_factory=dict, description="Cell metadata"
-    )
+    metadata: Dict[str, Any] = Field(default_factory=dict, description="Cell metadata")
     section: Optional[str] = Field(
         default=None, description="Section this cell belongs to"
     )
@@ -65,9 +63,7 @@ class QAReport(BaseModel):
     check_name: str = Field(description="Name of the QA check")
     passed: bool = Field(description="Whether the check passed")
     message: str = Field(description="Report message or error details")
-    suggestions: List[str] = Field(
-        default_factory=list, description="Suggested fixes"
-    )
+    suggestions: List[str] = Field(default_factory=list, description="Suggested fixes")
 
 
 class GeneratorState(TypedDict):
@@ -103,4 +99,3 @@ class GeneratorState(TypedDict):
     artifacts_manifest: Dict[str, str]
     generation_complete: bool
     error_message: Optional[str]
-

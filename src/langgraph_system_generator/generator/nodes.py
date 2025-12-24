@@ -266,4 +266,3 @@ async def package_outputs_node(state: GeneratorState) -> Dict[str, Any]:
         "generation_complete": True,
         "error_message": None,
     }
-
