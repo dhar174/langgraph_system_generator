@@ -54,8 +54,14 @@ class ArchitectureSelector:
             if hasattr(doc, "model_dump"):
                 try:
                     return doc.model_dump()
-                except Exception as exc:  # noqa: BLE001
-                    logging.debug("Failed model_dump on doc snippet: %s", exc)
+                except AttributeError as exc:
+                    logging.debug(
+                        "Failed model_dump on doc snippet (AttributeError): %s", exc
+                    )
+                except TypeError as exc:
+                    logging.debug(
+                        "Failed model_dump on doc snippet (TypeError): %s", exc
+                    )
             if isinstance(doc, dict):
                 return doc
             return {
