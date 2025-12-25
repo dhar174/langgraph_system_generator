@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Any, Dict, List
 
 from langchain_core.messages import HumanMessage, SystemMessage
@@ -53,8 +54,8 @@ class ArchitectureSelector:
             if hasattr(doc, "model_dump"):
                 try:
                     return doc.model_dump()
-                except Exception:
-                    pass
+                except Exception as exc:  # noqa: BLE001
+                    logging.debug("Failed model_dump on doc snippet: %s", exc)
             if isinstance(doc, dict):
                 return doc
             return {

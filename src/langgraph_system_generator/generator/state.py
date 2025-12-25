@@ -83,6 +83,7 @@ class GeneratorState(TypedDict):
     # Planning
     notebook_plan: Optional[NotebookPlan]
     architecture_justification: str
+    architecture_type: Optional[str]
 
     # Workflow design (added for graph designer)
     workflow_design: Optional[Dict[str, Any]]

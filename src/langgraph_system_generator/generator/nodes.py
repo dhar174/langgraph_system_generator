@@ -100,15 +100,11 @@ async def architecture_selection_node(state: GeneratorState) -> Dict[str, Any]:
     )
 
     selected_patterns = architecture.get("patterns", {}) or {}
-    architecture_type = (
-        architecture.get("architecture_type")
-        or selected_patterns.get("primary")
-        or "router"
-    )
-    selected_patterns = {**selected_patterns, "architecture_type": architecture_type}
+    architecture_type = architecture.get("architecture_type") or "router"
 
     return {
         "selected_patterns": selected_patterns,
+        "architecture_type": architecture_type,
         "architecture_justification": architecture.get("justification", ""),
     }
 
@@ -125,7 +121,7 @@ async def graph_design_node(state: GeneratorState) -> Dict[str, Any]:
     designer = GraphDesigner()
 
     selected_patterns = state.get("selected_patterns", {}) or {}
-    architecture_type = selected_patterns.get("architecture_type") or selected_patterns.get(
+    architecture_type = state.get("architecture_type") or selected_patterns.get(
         "primary", "router"
     )
     architecture = {
@@ -235,7 +231,7 @@ async def runtime_qa_node(state: GeneratorState) -> Dict[str, Any]:
         message="Runtime checks placeholder (not yet implemented)",
     )
 
-    existing_reports = state.get("qa_reports", [])
+    existing_reports = state.get("qa_reports") or []
     return {"qa_reports": [*existing_reports, report]}
 
 
@@ -281,10 +277,10 @@ async def package_outputs_node(state: GeneratorState) -> Dict[str, Any]:
     manifest = {
         "notebook_plan": str(state.get("notebook_plan")),
         "cell_count": str(len(state.get("generated_cells", []))),
-        "architecture": state["selected_patterns"].get("primary", "router"),
-        "architecture_type": state.get("selected_patterns", {}).get(
-            "architecture_type", state["selected_patterns"].get("primary", "router")
-        ),
+        "architecture": state.get("architecture_type")
+        or state.get("selected_patterns", {}).get("primary", "router"),
+        "architecture_type": state.get("architecture_type")
+        or state.get("selected_patterns", {}).get("primary", "router"),
         "constraints_count": str(len(state.get("constraints", []))),
     }
 
