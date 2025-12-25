@@ -104,8 +104,6 @@ This notebook implements a LangGraph workflow using the **{plan.architecture_typ
         """Create installation cells."""
         packages = [
             "langgraph",
-            "langgraph-prebuilt",
-            "langgraph-checkpoint",
             "langchain-core",
             "langchain-community",
             "langchain-openai",
@@ -163,14 +161,11 @@ if not os.environ.get("ANTHROPIC_API_KEY"):
             [f"{name}: str  # {desc}" for name, desc in state_schema.items()]
         )
 
-        state_content = f"""import operator
-from typing import Annotated, Sequence
-from langchain_core.messages import BaseMessage
-from langgraph.graph import MessagesState
+        state_content = f"""from langgraph.graph import MessagesState
 
 
 class WorkflowState(MessagesState):
-    {fields if fields else "messages: Annotated[Sequence[BaseMessage], operator.add]"}"""
+    {fields if fields else "pass"}"""
 
         return [
             CellSpec(
@@ -277,7 +272,8 @@ graph = workflow.compile(checkpointer=memory)"""
         exec_content = """# Execute the workflow with a durable thread
 config = {"configurable": {"thread_id": "lnf-demo-thread"}}
 initial_state = WorkflowState(
-    # Configure the initial workflow state as needed
+    messages=[],
+    # Configure additional workflow state fields as needed
 )
 
 print("Streaming state updates:")

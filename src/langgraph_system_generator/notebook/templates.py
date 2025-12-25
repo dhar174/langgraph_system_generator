@@ -9,8 +9,6 @@ from langgraph_system_generator.generator.state import CellSpec
 
 _DEFAULT_PACKAGES = (
     "langgraph",
-    "langgraph-checkpoint",
-    "langgraph-prebuilt",
     "langchain-core",
     "langchain-community",
     "langchain-openai",
@@ -107,7 +105,7 @@ def build_graph_cells() -> List[CellSpec]:
 
         # Define state using the built-in message reducer
         class WorkflowState(MessagesState):
-            messages: Annotated[Sequence[AnyMessage], operator.add]
+            pass
 
         # Configure a simple ReAct-style agent
         llm = ChatOpenAI(model=MODEL, temperature=0)
@@ -120,10 +118,10 @@ def build_graph_cells() -> List[CellSpec]:
         def router_node(state: WorkflowState) -> Command:
             result = router.invoke({"messages": state["messages"]})
             last_ai = result["messages"][-1]
-            stop = not last_ai.get("tool_calls")
+            has_tool_calls = bool(getattr(last_ai, "tool_calls", []))
             return Command(
                 update={"messages": result["messages"]},
-                goto=END if stop else "router_node",
+                goto=END if not has_tool_calls else "router_node",
             )
 
         graph = StateGraph(WorkflowState)
