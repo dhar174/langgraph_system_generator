@@ -1,0 +1,2 @@
+# This directory stores pre-fetched documentation cache
+# Run scripts/precache_docs.py to populate this directory
