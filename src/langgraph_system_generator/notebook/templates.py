@@ -127,7 +127,6 @@ def build_graph_cells() -> List[CellSpec]:
         graph = StateGraph(WorkflowState)
         graph.add_node("router_node", router_node)
         graph.add_edge(START, "router_node")
-        graph.add_edge("router_node", END)
 
         memory = MemorySaver()
         app = graph.compile(checkpointer=memory)
