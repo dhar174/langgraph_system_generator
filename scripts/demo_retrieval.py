@@ -6,6 +6,7 @@ documentation using fake embeddings (for demo/testing purposes).
 """
 
 import asyncio
+import shutil
 from pathlib import Path
 
 from langchain_community.embeddings import FakeEmbeddings
@@ -15,7 +16,7 @@ from langgraph_system_generator.rag.indexer import build_index_from_cache
 from langgraph_system_generator.rag.retriever import DocsRetriever
 
 
-async def main():
+async def main() -> None:
     """Demo retrieval from cached docs."""
     print("=" * 70)
     print("Cached Documentation Retrieval Demo")
@@ -75,7 +76,6 @@ async def main():
     print("=" * 70)
     
     # Cleanup demo index
-    import shutil
     shutil.rmtree(temp_index_path, ignore_errors=True)
 
 

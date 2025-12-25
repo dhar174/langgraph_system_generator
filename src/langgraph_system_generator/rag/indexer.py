@@ -131,8 +131,14 @@ class DocsIndexer:
                 logging.warning("Failed to fetch %s: %s", url, result)
                 continue
             doc = self._html_to_document(result, url)
-            if doc.page_content.strip():
+            # Filter out redirect pages and minimal content
+            content = doc.page_content.strip()
+            if content and len(content) >= 100 and not self._is_redirect_page(content):
                 documents.append(doc)
+            elif content and len(content) < 100:
+                logging.warning("Skipping %s: content too short (%d chars)", url, len(content))
+            elif self._is_redirect_page(content):
+                logging.warning("Skipping %s: redirect page detected", url)
 
         return documents
 
@@ -179,6 +185,19 @@ class DocsIndexer:
             metadata["heading"] = heading
 
         return Document(page_content=content, metadata=metadata)
+
+    def _is_redirect_page(self, content: str) -> bool:
+        """Check if the content appears to be a redirect page."""
+        # Common redirect patterns
+        redirect_indicators = [
+            "Redirecting...",
+            "Documentation has moved",
+            "Redirecting you now",
+        ]
+        # Check if content is very short and contains redirect keywords
+        if len(content) < 200:
+            return any(indicator in content for indicator in redirect_indicators)
+        return False
 
 
 async def build_docs_index(

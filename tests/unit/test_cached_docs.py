@@ -15,12 +15,15 @@ def test_cached_docs_exist():
     
     docs = cache.load_documents()
     assert len(docs) > 0, "Should have at least some cached documents"
-    assert len(docs) >= 20, f"Expected at least 20 cached docs, got {len(docs)}"
+    assert len(docs) >= 15, f"Expected at least 15 cached docs, got {len(docs)}"
     
     # Check that documents have proper structure
     for doc in docs[:5]:
         assert doc.page_content, "Document should have content"
         assert "source" in doc.metadata, "Document should have source metadata"
+        # Verify no redirect pages
+        assert len(doc.page_content) >= 100, "Document content should be substantial"
+        assert "Redirecting..." not in doc.page_content[:50], "Should not contain redirect pages"
 
 
 @pytest.mark.asyncio

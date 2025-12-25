@@ -8,7 +8,7 @@ without needing to scrape or have an OpenAI API key (for demo purposes).
 from langgraph_system_generator.rag.cache import DocumentCache
 
 
-def main():
+def main() -> None:
     """Demonstrate loading and using cached documentation."""
     print("=" * 70)
     print("Precached Documentation Demo")
