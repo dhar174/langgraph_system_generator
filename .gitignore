@@ -13,3 +13,6 @@ htmlcov/
 venv/
 .env
 .DS_Store
+
+# Cached documentation files (uncomment to prevent committing cached docs)
+# data/docs_cache/*.txt
