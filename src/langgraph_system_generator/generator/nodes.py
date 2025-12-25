@@ -121,9 +121,9 @@ async def graph_design_node(state: GeneratorState) -> Dict[str, Any]:
     designer = GraphDesigner()
 
     selected_patterns = state.get("selected_patterns", {}) or {}
-    architecture_type = state.get("architecture_type") or selected_patterns.get(
-        "primary", "router"
-    )
+    architecture_type = state.get("architecture_type")
+    if not architecture_type:
+        architecture_type = selected_patterns.get("primary", "router")
     architecture = {
         "architecture_type": architecture_type,
         "justification": state["architecture_justification"],
