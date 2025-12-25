@@ -244,3 +244,56 @@ async def build_docs_index(
 
     manager.create_index(chunks)
     return manager
+
+
+async def build_index_from_cache(
+    cache_path: str = "./data/cached_docs",
+    store_path: Optional[str] = None,
+    embeddings: Optional[Embeddings] = None,
+    chunk_size: int = 1000,
+    chunk_overlap: int = 200,
+) -> VectorStoreManager:
+    """Build vector index from cached documents.
+    
+    This is useful when you want to rebuild the index without re-scraping
+    the documentation (e.g., with a different embedding model).
+    
+    Parameters
+    ----------
+    cache_path
+        Path to the cached documents directory.
+    store_path
+        Filesystem path to persist the vector store. Defaults to the
+        configured ``vector_store_path``.
+    embeddings
+        Optional LangChain-compatible embeddings implementation to use.
+    chunk_size
+        Maximum characters per chunk when splitting documents.
+    chunk_overlap
+        Overlap size (in characters) between adjacent chunks.
+        
+    Returns
+    -------
+    VectorStoreManager
+        Manager with the newly created vector store.
+    """
+    from langgraph_system_generator.rag.cache import DocumentCache
+    
+    settings = get_settings()
+    destination = store_path or settings.vector_store_path
+    
+    # Load documents from cache
+    cache = DocumentCache(cache_path)
+    if not cache.exists():
+        raise FileNotFoundError(f"No cached documents found at {cache_path}")
+    
+    documents = cache.load_documents()
+    
+    # Chunk documents
+    indexer = DocsIndexer(chunk_size=chunk_size, chunk_overlap=chunk_overlap)
+    chunks = indexer.chunk_documents(documents)
+    
+    # Create index
+    manager = VectorStoreManager(destination, embeddings=embeddings)
+    manager.create_index(chunks)
+    return manager
