@@ -1,4 +1,11 @@
-"""Test for the precache_docs script utility functions."""
+"""Test for the precache_docs script utility functions.
+
+Note: These functions are duplicated from the main script rather than imported
+to avoid dependency issues. The main script imports DocsIndexer which requires
+heavy dependencies (langchain-openai, faiss-cpu, etc.). By duplicating the
+utility functions here, we can test the core logic independently without
+requiring all those dependencies to be installed.
+"""
 
 import re
 from pathlib import Path
