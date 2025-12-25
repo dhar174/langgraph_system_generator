@@ -1,0 +1,26 @@
+================================================================================
+METADATA
+================================================================================
+source: https://docs.langchain.com/oss/python/langgraph/use-graph-api
+title: LangGraph - Using the Graph API | Python Documentation
+heading: Building Multi-Agent Systems with LangGraph
+================================================================================
+
+[This is an example of what a cached documentation file would look like]
+
+The actual content extracted from the webpage would appear here, containing:
+- Headers and section titles
+- Body text with paragraphs
+- Code examples (as plain text)
+- All text content from the page
+
+The script removes:
+- HTML tags
+- JavaScript
+- CSS styles
+- Navigation elements
+
+Each line from the original page is preserved, making the cached version:
+1. Easy to read
+2. Searchable with standard text tools
+3. Ready for further processing or vector indexing
