@@ -19,17 +19,86 @@ from langgraph_system_generator.rag.embeddings import VectorStoreManager
 class DocsIndexer:
     """Scrapes and chunks LangGraph documentation content."""
 
-    # Include both Python and JavaScript docs for shared LangGraph concepts.
-    PYTHON_DOCS_URLS = [
-        "https://docs.langchain.com/oss/python/langgraph/use-graph-api",
-        "https://docs.langchain.com/oss/python/langchain/multi-agent/subagents",
-        "https://docs.langchain.com/oss/python/langchain/agents",
+    # Comprehensive curated list of LangGraph and LangChain documentation
+    # Core LangGraph concepts and API
+    LANGGRAPH_CORE_URLS = [
+        "https://langchain-ai.github.io/langgraph/",
+        "https://langchain-ai.github.io/langgraph/concepts/",
+        "https://langchain-ai.github.io/langgraph/concepts/low_level/",
+        "https://langchain-ai.github.io/langgraph/concepts/high_level/",
+        "https://langchain-ai.github.io/langgraph/how-tos/",
+        "https://langchain-ai.github.io/langgraph/tutorials/",
     ]
-    JAVASCRIPT_DOCS_URLS = [
-        "https://docs.langchain.com/oss/javascript/langchain/multi-agent/router",
-        "https://docs.langchain.com/oss/javascript/langgraph/persistence",
+    
+    # LangGraph patterns and multi-agent architectures
+    LANGGRAPH_PATTERNS_URLS = [
+        "https://langchain-ai.github.io/langgraph/tutorials/multi_agent/agent_supervisor/",
+        "https://langchain-ai.github.io/langgraph/tutorials/multi_agent/hierarchical_agent_teams/",
+        "https://langchain-ai.github.io/langgraph/tutorials/multi_agent/multi-agent-collaboration/",
+        "https://langchain-ai.github.io/langgraph/how-tos/subgraph/",
+        "https://langchain-ai.github.io/langgraph/how-tos/branching/",
+        "https://langchain-ai.github.io/langgraph/how-tos/create-react-agent/",
     ]
-    DOCS_URLS = PYTHON_DOCS_URLS + JAVASCRIPT_DOCS_URLS
+    
+    # LangGraph state management and persistence
+    LANGGRAPH_STATE_URLS = [
+        "https://langchain-ai.github.io/langgraph/how-tos/persistence/",
+        "https://langchain-ai.github.io/langgraph/how-tos/state-model/",
+        "https://langchain-ai.github.io/langgraph/how-tos/state-context-key/",
+        "https://langchain-ai.github.io/langgraph/concepts/persistence/",
+    ]
+    
+    # LangChain core concepts
+    LANGCHAIN_CORE_URLS = [
+        "https://python.langchain.com/docs/introduction/",
+        "https://python.langchain.com/docs/concepts/",
+        "https://python.langchain.com/docs/tutorials/",
+        "https://python.langchain.com/docs/how_to/",
+    ]
+    
+    # LangChain agents and tools
+    LANGCHAIN_AGENTS_URLS = [
+        "https://python.langchain.com/docs/concepts/agents/",
+        "https://python.langchain.com/docs/tutorials/agents/",
+        "https://python.langchain.com/docs/how_to/agent_executor/",
+        "https://python.langchain.com/docs/how_to/custom_tools/",
+        "https://python.langchain.com/docs/integrations/tools/",
+    ]
+    
+    # LangChain RAG and retrieval
+    LANGCHAIN_RAG_URLS = [
+        "https://python.langchain.com/docs/tutorials/rag/",
+        "https://python.langchain.com/docs/how_to/vectorstores/",
+        "https://python.langchain.com/docs/how_to/embed_text/",
+        "https://python.langchain.com/docs/integrations/vectorstores/faiss/",
+    ]
+    
+    # LangChain chains and prompts
+    LANGCHAIN_CHAINS_URLS = [
+        "https://python.langchain.com/docs/concepts/chains/",
+        "https://python.langchain.com/docs/concepts/prompts/",
+        "https://python.langchain.com/docs/how_to/prompts/",
+        "https://python.langchain.com/docs/how_to/sequence/",
+    ]
+    
+    # LangGraph streaming and async
+    LANGGRAPH_ADVANCED_URLS = [
+        "https://langchain-ai.github.io/langgraph/how-tos/streaming-tokens/",
+        "https://langchain-ai.github.io/langgraph/how-tos/streaming-from-final-node/",
+        "https://langchain-ai.github.io/langgraph/how-tos/async/",
+    ]
+    
+    # Combine all URLs
+    DOCS_URLS = (
+        LANGGRAPH_CORE_URLS +
+        LANGGRAPH_PATTERNS_URLS +
+        LANGGRAPH_STATE_URLS +
+        LANGCHAIN_CORE_URLS +
+        LANGCHAIN_AGENTS_URLS +
+        LANGCHAIN_RAG_URLS +
+        LANGCHAIN_CHAINS_URLS +
+        LANGGRAPH_ADVANCED_URLS
+    )
 
     def __init__(
         self,
@@ -62,8 +131,14 @@ class DocsIndexer:
                 logging.warning("Failed to fetch %s: %s", url, result)
                 continue
             doc = self._html_to_document(result, url)
-            if doc.page_content.strip():
+            # Filter out redirect pages and minimal content
+            content = doc.page_content.strip()
+            if content and len(content) >= 100 and not self._is_redirect_page(content):
                 documents.append(doc)
+            elif content and len(content) < 100:
+                logging.warning("Skipping %s: content too short (%d chars)", url, len(content))
+            elif self._is_redirect_page(content):
+                logging.warning("Skipping %s: redirect page detected", url)
 
         return documents
 
@@ -110,6 +185,19 @@ class DocsIndexer:
             metadata["heading"] = heading
 
         return Document(page_content=content, metadata=metadata)
+
+    def _is_redirect_page(self, content: str) -> bool:
+        """Check if the content appears to be a redirect page."""
+        # Common redirect patterns
+        redirect_indicators = [
+            "Redirecting...",
+            "Documentation has moved",
+            "Redirecting you now",
+        ]
+        # Check if content is very short and contains redirect keywords
+        if len(content) < 200:
+            return any(indicator in content for indicator in redirect_indicators)
+        return False
 
 
 async def build_docs_index(
@@ -173,5 +261,58 @@ async def build_docs_index(
         manager.load_index()
         return manager
 
+    manager.create_index(chunks)
+    return manager
+
+
+async def build_index_from_cache(
+    cache_path: str = "./data/cached_docs",
+    store_path: Optional[str] = None,
+    embeddings: Optional[Embeddings] = None,
+    chunk_size: int = 1000,
+    chunk_overlap: int = 200,
+) -> VectorStoreManager:
+    """Build vector index from cached documents.
+    
+    This is useful when you want to rebuild the index without re-scraping
+    the documentation (e.g., with a different embedding model).
+    
+    Parameters
+    ----------
+    cache_path
+        Path to the cached documents directory.
+    store_path
+        Filesystem path to persist the vector store. Defaults to the
+        configured ``vector_store_path``.
+    embeddings
+        Optional LangChain-compatible embeddings implementation to use.
+    chunk_size
+        Maximum characters per chunk when splitting documents.
+    chunk_overlap
+        Overlap size (in characters) between adjacent chunks.
+        
+    Returns
+    -------
+    VectorStoreManager
+        Manager with the newly created vector store.
+    """
+    from langgraph_system_generator.rag.cache import DocumentCache
+    
+    settings = get_settings()
+    destination = store_path or settings.vector_store_path
+    
+    # Load documents from cache
+    cache = DocumentCache(cache_path)
+    if not cache.exists():
+        raise FileNotFoundError(f"No cached documents found at {cache_path}")
+    
+    documents = cache.load_documents()
+    
+    # Chunk documents
+    indexer = DocsIndexer(chunk_size=chunk_size, chunk_overlap=chunk_overlap)
+    chunks = indexer.chunk_documents(documents)
+    
+    # Create index
+    manager = VectorStoreManager(destination, embeddings=embeddings)
     manager.create_index(chunks)
     return manager
