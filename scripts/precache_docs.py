@@ -6,7 +6,9 @@ local cache directory. This allows keeping documentation in the repository
 for offline access or faster loading.
 
 Usage:
-    python scripts/precache_docs.py [--output-dir PATH]
+    python scripts/precache_docs.py
+    python scripts/precache_docs.py --output-dir PATH
+    python scripts/precache_docs.py --urls URL1 URL2 ...
 """
 
 import argparse
