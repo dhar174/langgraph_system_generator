@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from langgraph.graph import END, StateGraph
+from langgraph.graph import END, START, StateGraph
 
 from langgraph_system_generator.generator.nodes import (
     architecture_selection_node,
@@ -91,7 +91,7 @@ def create_generator_graph() -> StateGraph:
     workflow.add_node("package_outputs", package_outputs_node)
 
     # Define the linear workflow with conditional repair loop
-    workflow.set_entry_point("intake")
+    workflow.add_edge(START, "intake")
     workflow.add_edge("intake", "rag_retrieval")
     workflow.add_edge("rag_retrieval", "architecture_selection")
     workflow.add_edge("architecture_selection", "graph_design")
