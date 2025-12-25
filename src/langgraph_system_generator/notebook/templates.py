@@ -93,14 +93,11 @@ def build_graph_cells() -> List[CellSpec]:
     """Return Build Graph cells."""
     graph_code = dedent(
         """
-        import operator
-        from typing import Annotated, Sequence
-
         from langgraph.types import Command
         from langgraph.graph import END, START, MessagesState, StateGraph
         from langgraph.checkpoint.memory import MemorySaver
         from langgraph.prebuilt import create_react_agent
-        from langchain_core.messages import AnyMessage, HumanMessage
+        from langchain_core.messages import HumanMessage
         from langchain_openai import ChatOpenAI
 
         # Define state using the built-in message reducer
@@ -117,11 +114,9 @@ def build_graph_cells() -> List[CellSpec]:
 
         def router_node(state: WorkflowState) -> Command:
             result = router.invoke({"messages": state["messages"]})
-            last_ai = result["messages"][-1]
-            has_tool_calls = bool(getattr(last_ai, "tool_calls", []))
             return Command(
                 update={"messages": result["messages"]},
-                goto=END if not has_tool_calls else "router_node",
+                goto=END,
             )
 
         graph = StateGraph(WorkflowState)

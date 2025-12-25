@@ -271,10 +271,10 @@ graph = workflow.compile(checkpointer=memory)"""
         """Create execution cells."""
         exec_content = """# Execute the workflow with a durable thread
 config = {"configurable": {"thread_id": "lnf-demo-thread"}}
-initial_state = WorkflowState(
-    messages=[],
+initial_state: WorkflowState = {
+    "messages": [],
     # Configure additional workflow state fields as needed
-)
+}
 
 print("Streaming state updates:")
 for step in graph.stream(initial_state, config, stream_mode="updates"):
