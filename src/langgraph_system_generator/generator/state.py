@@ -83,6 +83,7 @@ class GeneratorState(TypedDict):
     # Planning
     notebook_plan: Optional[NotebookPlan]
     architecture_justification: str
+    architecture_type: Optional[str]
 
     # Workflow design (added for graph designer)
     workflow_design: Optional[Dict[str, Any]]
@@ -92,7 +93,7 @@ class GeneratorState(TypedDict):
     generated_cells: Annotated[List[CellSpec], operator.add]
 
     # QA & Repair
-    qa_reports: Annotated[List[QAReport], operator.add]
+    qa_reports: List[QAReport]
     repair_attempts: int
 
     # Output
