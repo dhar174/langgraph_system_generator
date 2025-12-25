@@ -23,7 +23,13 @@ python scripts/precache_docs.py
 
 ### Requirements
 
-The script requires the project dependencies to be installed. Install them with:
+The script requires minimal dependencies to run:
+
+```bash
+pip install aiohttp beautifulsoup4 langchain-core
+```
+
+Alternatively, you can install the full project dependencies:
 
 ```bash
 pip install -r requirements.txt
@@ -38,7 +44,7 @@ pip install -e .
 ### Output
 
 The script will:
-1. Fetch documentation from URLs configured in `DocsIndexer.DOCS_URLS`
+1. Fetch documentation from URLs configured in the script's `DOCS_URLS` constant
 2. Save each document as a text file in `data/docs_cache/`
 3. Include metadata (source URL, title, heading) at the top of each file
 4. Print progress and summary information
@@ -62,4 +68,4 @@ data/docs_cache/
 
 ### Customization
 
-To fetch different URLs, modify the `DOCS_URLS` in `src/langgraph_system_generator/rag/indexer.py` or create a custom instance of `DocsIndexer` with your desired URLs.
+To fetch different URLs, modify the `DOCS_URLS` constant at the top of `scripts/precache_docs.py`. The script is self-contained and doesn't depend on the `DocsIndexer` class, making it easy to customize for your needs.

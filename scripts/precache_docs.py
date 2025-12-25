@@ -35,6 +35,7 @@ except ImportError as e:
 repo_root = Path(__file__).parent.parent
 
 # Documentation URLs to fetch (same as DocsIndexer.DOCS_URLS)
+# To customize which documentation to cache, modify these URL lists below:
 PYTHON_DOCS_URLS = [
     "https://docs.langchain.com/oss/python/langgraph/use-graph-api",
     "https://docs.langchain.com/oss/python/langchain/multi-agent/subagents",
