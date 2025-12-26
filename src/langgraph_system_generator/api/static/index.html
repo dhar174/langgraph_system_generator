@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LangGraph System Generator</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🚀 LangGraph System Generator</h1>
+            <p class="subtitle">Generate complete multi-agent systems from natural language prompts</p>
+            <div class="health-status" id="healthStatus">
+                <span class="status-dot" id="statusDot"></span>
+                <span id="statusText">Checking status...</span>
+            </div>
+        </header>
+
+        <main>
+            <div class="card">
+                <h2>Generate Your System</h2>
+                <form id="generateForm">
+                    <div class="form-group">
+                        <label for="prompt">Describe your multi-agent system:</label>
+                        <textarea 
+                            id="prompt" 
+                            name="prompt" 
+                            rows="6" 
+                            placeholder="Example: Create a router-based chatbot that can handle customer support, technical questions, and general inquiries. Use tools for web search and database lookups."
+                            required
+                        ></textarea>
+                        <div class="char-count">
+                            <span id="charCount">0</span> / 5000 characters
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="mode">Generation Mode:</label>
+                        <select id="mode" name="mode">
+                            <option value="stub">Stub Mode (Fast, No API Key Required)</option>
+                            <option value="live">Live Mode (Requires OpenAI API Key)</option>
+                        </select>
+                        <small class="help-text">
+                            Stub mode generates a basic scaffold without external API calls. 
+                            Live mode creates a fully customized system using LLM.
+                        </small>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="outputDir">Output Directory:</label>
+                        <input 
+                            type="text" 
+                            id="outputDir" 
+                            name="outputDir" 
+                            value="./output/web_generated"
+                            placeholder="./output/web_generated"
+                        >
+                    </div>
+
+                    <button type="submit" class="btn btn-primary" id="generateBtn">
+                        <span class="btn-text">Generate System</span>
+                        <span class="spinner" style="display: none;"></span>
+                    </button>
+                </form>
+            </div>
+
+            <div class="card result-card" id="resultCard" style="display: none;">
+                <h2>Generation Results</h2>
+                <div id="resultContent"></div>
+            </div>
+
+            <div class="card error-card" id="errorCard" style="display: none;">
+                <h2>⚠️ Error</h2>
+                <div id="errorContent"></div>
+            </div>
+        </main>
+
+        <footer>
+            <div class="features">
+                <div class="feature">
+                    <h3>📚 RAG-Powered</h3>
+                    <p>Uses precached LangGraph documentation</p>
+                </div>
+                <div class="feature">
+                    <h3>🎨 Pattern Library</h3>
+                    <p>Built-in multi-agent patterns</p>
+                </div>
+                <div class="feature">
+                    <h3>📓 Production-Ready</h3>
+                    <p>Generates runnable Jupyter notebooks</p>
+                </div>
+            </div>
+            <p class="copyright">
+                Powered by LangGraph Notebook Foundry | 
+                <a href="https://github.com/dhar174/langgraph_system_generator" target="_blank">GitHub</a>
+            </p>
+        </footer>
+    </div>
+
+    <script src="/static/app.js"></script>
+</body>
+</html>

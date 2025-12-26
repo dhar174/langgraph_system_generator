@@ -8,12 +8,19 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 
 from fastapi import FastAPI, HTTPException
+from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from langgraph_system_generator.cli import GenerationArtifacts, GenerationMode, generate_artifacts
 
 app = FastAPI(title="LangGraph Notebook Foundry API", version="0.1.0")
 _BASE_OUTPUT = Path(os.environ.get("LNF_OUTPUT_BASE", ".")).resolve()
+
+# Mount static files
+_STATIC_DIR = Path(__file__).parent / "static"
+if _STATIC_DIR.exists():
+    app.mount("/static", StaticFiles(directory=str(_STATIC_DIR)), name="static")
 
 
 class GenerationRequest(BaseModel):
@@ -34,9 +41,21 @@ class GenerationRequest(BaseModel):
 
 class GenerationResponse(BaseModel):
     success: bool
+    mode: Optional[str] = None
+    prompt: Optional[str] = None
     manifest: Optional[Dict[str, Any]] = None
     manifest_path: Optional[str] = None
+    output_dir: Optional[str] = None
     error: Optional[str] = None
+
+
+@app.get("/", response_class=HTMLResponse)
+async def root():
+    """Serve the web interface."""
+    index_path = _STATIC_DIR / "index.html"
+    if index_path.exists():
+        return FileResponse(index_path)
+    return HTMLResponse(content="<h1>LangGraph System Generator API</h1><p>Web interface not found. Use POST /generate to create systems.</p>")
 
 
 @app.get("/health")
@@ -62,8 +81,11 @@ async def generate_notebook(request: GenerationRequest) -> GenerationResponse:
         )
         return GenerationResponse(
             success=True,
+            mode=artifacts["mode"],
+            prompt=artifacts["prompt"],
             manifest=artifacts["manifest"],
             manifest_path=artifacts["manifest_path"],
+            output_dir=artifacts["output_dir"],
         )
     except (RuntimeError, ValueError) as exc:  # pragma: no cover - surfaced via HTTPException
         logging.exception("Generation request failed")
