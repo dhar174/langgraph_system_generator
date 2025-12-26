@@ -13,3 +13,6 @@ htmlcov/
 venv/
 .env
 .DS_Store
+
+# Generated output files
+output/
