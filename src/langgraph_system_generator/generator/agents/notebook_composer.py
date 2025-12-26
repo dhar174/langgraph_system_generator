@@ -104,7 +104,8 @@ This notebook implements a LangGraph workflow using the **{plan.architecture_typ
         """Create installation cells."""
         packages = [
             "langgraph",
-            "langchain",
+            "langchain-core",
+            "langchain-community",
             "langchain-openai",
         ]
 
@@ -134,12 +135,15 @@ This notebook implements a LangGraph workflow using the **{plan.architecture_typ
 from getpass import getpass
 
 # Configuration
-MODEL = "gpt-4-turbo-preview"
+MODEL = "gpt-4o-mini"
 MAX_ITERATIONS = 10
 
 # API Keys
 if not os.environ.get("OPENAI_API_KEY"):
-    os.environ["OPENAI_API_KEY"] = getpass("Enter OpenAI API Key: ")"""
+    os.environ["OPENAI_API_KEY"] = getpass("Enter OpenAI API Key: ")
+
+if not os.environ.get("ANTHROPIC_API_KEY"):
+    os.environ["ANTHROPIC_API_KEY"] = getpass("Enter Anthropic API Key (optional): ")"""
 
         return [
             CellSpec(
@@ -157,12 +161,11 @@ if not os.environ.get("OPENAI_API_KEY"):
             [f"{name}: str  # {desc}" for name, desc in state_schema.items()]
         )
 
-        state_content = f"""from typing import TypedDict, Annotated, Sequence
-from langchain_core.messages import BaseMessage
-import operator
+        state_content = f"""from langgraph.graph import MessagesState
 
-class WorkflowState(TypedDict):
-    {fields if fields else "messages: Annotated[Sequence[BaseMessage], operator.add]"}"""
+
+class WorkflowState(MessagesState):
+    {fields if fields else "pass"}"""
 
         return [
             CellSpec(
@@ -235,22 +238,25 @@ def {tool.get('name').lower().replace(' ', '_')}():
         """Create graph construction cells."""
         entry_point = workflow_design.get("entry_point", "start")
 
-        graph_content = f"""from langgraph.graph import StateGraph, END
+        graph_content = f"""from langgraph.graph import END, START, StateGraph
+from langgraph.checkpoint.memory import MemorySaver
+from langgraph.types import Command
 
 # Create graph
 workflow = StateGraph(WorkflowState)
+memory = MemorySaver()
 
 # Add nodes (add your node implementations here)
 # workflow.add_node("node_name", node_name_node)
 
-# Set entry point
-workflow.set_entry_point("{entry_point}")
+# Connect start to entry point
+workflow.add_edge(START, "{entry_point}")
 
 # Add edges (define your workflow edges here)
 # workflow.add_edge("node_a", "node_b")
 
 # Compile graph
-graph = workflow.compile()"""
+graph = workflow.compile(checkpointer=memory)"""
 
         return [
             CellSpec(
@@ -263,16 +269,19 @@ graph = workflow.compile()"""
 
     def _create_execution_cells(self) -> List[CellSpec]:
         """Create execution cells."""
-        exec_content = """# Execute the workflow
-initial_state = WorkflowState(
-    # Configure the initial workflow state as needed
-)
+        exec_content = """# Execute the workflow with a durable thread
+config = {"configurable": {"thread_id": "lnf-demo-thread"}}
+initial_state: WorkflowState = {
+    "messages": [],
+    # Configure additional workflow state fields as needed
+}
 
-# Run the graph
-result = graph.invoke(initial_state)
+print("Streaming state updates:")
+for step in graph.stream(initial_state, config, stream_mode="updates"):
+    print(step)
 
-# Display results
-print(result)"""
+final_state = graph.invoke(initial_state, config)
+print(final_state)"""
 
         return [
             CellSpec(

@@ -7,7 +7,12 @@ from typing import Iterable, List, Sequence
 
 from langgraph_system_generator.generator.state import CellSpec
 
-_DEFAULT_PACKAGES = ("langgraph", "langchain", "langchain-openai")
+_DEFAULT_PACKAGES = (
+    "langgraph",
+    "langchain-core",
+    "langchain-community",
+    "langchain-openai",
+)
 
 
 def installation_and_imports(
@@ -32,7 +37,12 @@ def installation_and_imports(
         for _pkg in {pkgs!r}:
             _ensure(_pkg)
 
-        from langgraph.graph import END, StateGraph
+        from langgraph.graph import END, START, MessagesState, StateGraph
+        from langgraph.types import Command
+        from langgraph.checkpoint.memory import MemorySaver
+        from langgraph.prebuilt import create_react_agent
+        from langchain_openai import ChatOpenAI
+        from langchain_core.messages import HumanMessage
         """
     ).strip()
 
@@ -61,6 +71,9 @@ def configuration_cell(model: str = "gpt-4o-mini") -> List[CellSpec]:
         if not os.environ.get("OPENAI_API_KEY"):
             os.environ["OPENAI_API_KEY"] = getpass("Enter OPENAI_API_KEY (kept local): ")
 
+        if not os.environ.get("ANTHROPIC_API_KEY"):
+            os.environ["ANTHROPIC_API_KEY"] = getpass("Enter ANTHROPIC_API_KEY (optional): ")
+
         print(f"Using model: {{MODEL}}")
         print(f"Working directory: {{WORKDIR}}")
         """
@@ -80,24 +93,38 @@ def build_graph_cells() -> List[CellSpec]:
     """Return Build Graph cells."""
     graph_code = dedent(
         """
-        from typing import Annotated, Sequence, TypedDict
-        import operator
-        from langchain_core.messages import BaseMessage, HumanMessage
-        from langgraph.graph import END, StateGraph
+        from langgraph.types import Command
+        from langgraph.graph import END, START, MessagesState, StateGraph
+        from langgraph.checkpoint.memory import MemorySaver
+        from langgraph.prebuilt import create_react_agent
+        from langchain_core.messages import HumanMessage
+        from langchain_openai import ChatOpenAI
 
-        class WorkflowState(TypedDict):
-            messages: Annotated[Sequence[BaseMessage], operator.add]
-            route: str | None
+        # Define state using the built-in message reducer
+        class WorkflowState(MessagesState):
+            pass
+
+        # Configure a simple ReAct-style agent
+        llm = ChatOpenAI(model=MODEL, temperature=0)
+        router = create_react_agent(
+            llm,
+            tools=[],
+            prompt="You are a router that decides whether to hand off or answer directly.",
+        )
+
+        def router_node(state: WorkflowState) -> Command:
+            result = router.invoke({"messages": state["messages"]})
+            return Command(
+                update={"messages": result["messages"]},
+                goto=END,
+            )
 
         graph = StateGraph(WorkflowState)
+        graph.add_node("router_node", router_node)
+        graph.add_edge(START, "router_node")
 
-        def start(state: WorkflowState):
-            return {"messages": [HumanMessage(content="Hello from the workflow!")]}
-
-        graph.add_node("start", start)
-        graph.set_entry_point("start")
-        graph.add_edge("start", END)
-        compiled_graph = graph.compile()
+        memory = MemorySaver()
+        app = graph.compile(checkpointer=memory)
         """
     ).strip()
 
@@ -115,19 +142,24 @@ def run_graph_cells() -> List[CellSpec]:
     """Return Run Graph cells."""
     run_code = dedent(
         """
-        sample_state = {"messages": [], "route": None}
-
         try:
-            graph  # type: ignore[name-defined]  # noqa: F821
+            app  # type: ignore[name-defined]  # noqa: F821
         except NameError as exc:
             raise NameError(
-                "`graph` is not defined. Please run the 'Build Graph' cell before this one."
+                "`app` is not defined. Please run the 'Build Graph' cell before this one."
             ) from exc
 
-        compiled_graph = graph.compile()
-        result = compiled_graph.invoke(sample_state)
-        print("Graph output:")
-        print(result)
+        config = {"configurable": {"thread_id": "lnf-demo-thread"}}
+        initial_messages = [HumanMessage(content="Hi! Show me the LangGraph demo.")]
+
+        print("Streaming updates (per step):")
+        for update in app.stream(
+            {"messages": initial_messages}, config, stream_mode="updates"
+        ):
+            print(update)
+
+        final_state = app.get_state(config).values
+        print("Final message:", final_state["messages"][-1])
         """
     ).strip()
 
@@ -148,10 +180,11 @@ def export_results_cells() -> List[CellSpec]:
         import json
         from pathlib import Path
 
-        if "result" not in globals():
-            raise NameError("`result` is not defined. Run the 'Run Graph' cell before exporting results.")
+        if "app" not in globals():
+            raise NameError("`app` is not defined. Run the 'Run Graph' cell before exporting results.")
 
-        output_data = result
+        config = {"configurable": {"thread_id": "lnf-demo-thread"}}
+        output_data = app.get_state(config).values
         output_path = Path("graph_results.json")
         with output_path.open("w", encoding="utf-8") as handle:
             json.dump(output_data, handle, indent=2, default=str)
