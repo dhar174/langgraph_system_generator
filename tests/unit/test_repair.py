@@ -150,7 +150,7 @@ def test_repair_sections(tmp_notebook_path: Path, repair_agent):
         )
     ]
     
-    success, new_reports = repair_agent.repair_notebook(tmp_notebook_path, qa_reports)
+    _success, _new_reports = repair_agent.repair_notebook(tmp_notebook_path, qa_reports)
     
     with tmp_notebook_path.open("r") as f:
         repaired_nb = nbformat.read(f, as_version=4)
@@ -179,7 +179,7 @@ def test_repair_compilation_missing_stategraph(tmp_notebook_path: Path, repair_a
         )
     ]
     
-    success, new_reports = repair_agent.repair_notebook(tmp_notebook_path, qa_reports)
+    _success, _new_reports = repair_agent.repair_notebook(tmp_notebook_path, qa_reports)
     
     with tmp_notebook_path.open("r") as f:
         repaired_nb = nbformat.read(f, as_version=4)
@@ -219,7 +219,7 @@ def test_repair_compilation_missing_compile(tmp_notebook_path: Path, repair_agen
         )
     ]
     
-    success, new_reports = repair_agent.repair_notebook(tmp_notebook_path, qa_reports)
+    _success, _new_reports = repair_agent.repair_notebook(tmp_notebook_path, qa_reports)
     
     with tmp_notebook_path.open("r") as f:
         repaired_nb = nbformat.read(f, as_version=4)
