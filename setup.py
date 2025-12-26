@@ -21,6 +21,10 @@ setup(
         "python-dotenv>=1.0.0",
     ],
     extras_require={
+        "api": [
+            "fastapi>=0.115.0",
+            "uvicorn>=0.30.0",
+        ],
         "full": [
             "langgraph>=0.2.0,<1.0.0",
             "langchain>=0.3.0,<1.0.0",
@@ -35,6 +39,8 @@ setup(
             "sentence-transformers>=2.2.0",
             "aiohttp>=3.9.0",
             "beautifulsoup4>=4.12.0",
+            "fastapi>=0.115.0",
+            "uvicorn>=0.30.0",
         ],
         "dev": [
             "black>=23.0.0",
@@ -43,6 +49,11 @@ setup(
             "pytest>=7.4.0",
             "pytest-asyncio>=0.21.0",
             "pytest-cov>=4.1.0",
+        ],
+    },
+    entry_points={
+        "console_scripts": [
+            "lnf=langgraph_system_generator.cli:main",
         ],
     },
     python_requires=">=3.9",
