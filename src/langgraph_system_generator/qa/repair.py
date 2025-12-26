@@ -4,12 +4,12 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Any, Dict, List
 
 import nbformat
 from nbformat import NotebookNode
 
-from langgraph_system_generator.generator.state import CellSpec, QAReport
+from langgraph_system_generator.generator.state import QAReport
 from langgraph_system_generator.qa.validators import NotebookValidator
 
 
@@ -167,23 +167,68 @@ class NotebookRepairAgent:
 
         # Add missing imports to the first code cell
         cell = nb.cells[import_cell_idx]
-        additions = []
+        source = cell.source or ""
+        
+        # Determine which symbols are actually needed and not already present
+        needs_stategraph = any("langgraph" in imp.lower() for imp in missing_imports) and "StateGraph" not in source
+        needs_end = any("END" in imp for imp in missing_imports) and "END" not in source
 
-        for imp in missing_imports:
-            imp = imp.strip()
-            if "langgraph" in imp.lower():
-                if "StateGraph" not in cell.source:
-                    additions.append("from langgraph.graph import StateGraph, END")
-            elif "END" in imp and "END" not in cell.source:
-                if "from langgraph.graph import" not in cell.source:
-                    additions.append("from langgraph.graph import END")
+        if not (needs_stategraph or needs_end):
+            return False
 
+        lines = source.splitlines()
+        updated = False
+
+        # Try to consolidate into existing 'from langgraph.graph import ...' imports
+        for i, line in enumerate(lines):
+            match_import = re.match(r"^(\s*from\s+langgraph\.graph\s+import\s+)(.+)$", line)
+            if not match_import:
+                continue
+
+            prefix, names_str = match_import.groups()
+            names = [n.strip() for n in names_str.split(",") if n.strip()]
+
+            if needs_stategraph and "StateGraph" not in names:
+                names.append("StateGraph")
+                needs_stategraph = False
+                updated = True
+
+            if needs_end and "END" not in names:
+                names.append("END")
+                needs_end = False
+                updated = True
+
+            # Reconstruct the import line with updated names
+            lines[i] = prefix + ", ".join(names)
+
+            # If we've satisfied all needs, no need to keep scanning
+            if not (needs_stategraph or needs_end):
+                break
+
+        additions: List[str] = []
+        # If still missing any symbols, add a new consolidated import line
+        missing_names: List[str] = []
+        if needs_stategraph:
+            missing_names.append("StateGraph")
+        if needs_end:
+            missing_names.append("END")
+        if missing_names:
+            additions.append(f"from langgraph.graph import {', '.join(missing_names)}")
+            updated = True
+
+        if not updated:
+            return False
+
+        # Update the cell source, appending any new consolidated import
+        new_source = "\n".join(lines)
         if additions:
-            # Add imports at the end of the cell
-            cell.source = cell.source.rstrip() + "\n" + "\n".join(additions)
-            return True
+            if new_source:
+                new_source = new_source.rstrip() + "\n" + "\n".join(additions)
+            else:
+                new_source = "\n".join(additions)
 
-        return False
+        cell.source = new_source
+        return True
 
     def _repair_sections(self, nb: NotebookNode, report: QAReport) -> bool:
         """Add missing required sections to the notebook.
@@ -265,7 +310,13 @@ graph.add_node("start", placeholder_node)
 graph.set_entry_point("start")
 graph.add_edge("start", END)
 """
-                    cell.source = graph_template.strip()
+                    existing_source = cell.source or ""
+                    if existing_source.strip():
+                        # Preserve existing content and append the graph template
+                        cell.source = existing_source.rstrip() + "\n\n" + graph_template.strip()
+                    else:
+                        # Cell is effectively empty; safe to replace entirely
+                        cell.source = graph_template.strip()
                     repaired = True
 
         # Check for missing .compile() call
@@ -297,7 +348,7 @@ graph.add_edge("start", END)
         failed_reports = [r for r in qa_reports if not r.passed]
         return len(failed_reports) > 0
 
-    def get_repair_summary(self, qa_reports: List[QAReport]) -> Dict[str, any]:
+    def get_repair_summary(self, qa_reports: List[QAReport]) -> Dict[str, Any]:
         """Generate a summary of repair results.
 
         Args:

@@ -8,7 +8,6 @@ from pathlib import Path
 from typing import List, Optional
 
 import nbformat
-from nbformat import NotebookNode
 
 from langgraph_system_generator.generator.state import QAReport
 
@@ -112,10 +111,18 @@ class NotebookValidator:
 
             found_placeholders = []
             for pattern in self.PLACEHOLDER_PATTERNS:
-                if pattern in content:
-                    # Count occurrences
-                    count = content.count(pattern)
-                    found_placeholders.append(f"{pattern} ({count}x)")
+                # Special-case "..." to only match standalone ellipsis lines,
+                # to avoid false positives in string literals or comments.
+                if pattern == "...":
+                    matches = re.findall(r"(?m)^\s*\.\.\.\s*$", content)
+                    count = len(matches)
+                    if count > 0:
+                        found_placeholders.append(f"{pattern} ({count}x)")
+                else:
+                    if pattern in content:
+                        # Count occurrences
+                        count = content.count(pattern)
+                        found_placeholders.append(f"{pattern} ({count}x)")
 
             if found_placeholders:
                 return QAReport(

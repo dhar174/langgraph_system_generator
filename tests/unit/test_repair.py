@@ -6,7 +6,7 @@ from pathlib import Path
 
 import nbformat
 import pytest
-from nbformat.v4 import new_code_cell, new_markdown_cell, new_notebook
+from nbformat.v4 import new_code_cell, new_notebook
 
 from langgraph_system_generator.generator.state import QAReport
 from langgraph_system_generator.qa.repair import NotebookRepairAgent
@@ -58,6 +58,9 @@ def test_repair_placeholders(tmp_notebook_path: Path, repair_agent):
     
     success, new_reports = repair_agent.repair_notebook(tmp_notebook_path, qa_reports)
     
+    # Verify repair was attempted
+    assert success or len(new_reports) > 0
+    
     # Read the repaired notebook
     with tmp_notebook_path.open("r") as f:
         repaired_nb = nbformat.read(f, as_version=4)
@@ -88,6 +91,9 @@ def test_repair_placeholders_ellipsis(tmp_notebook_path: Path, repair_agent):
     
     success, new_reports = repair_agent.repair_notebook(tmp_notebook_path, qa_reports)
     
+    # Verify repair was attempted
+    assert success or len(new_reports) > 0
+    
     with tmp_notebook_path.open("r") as f:
         repaired_nb = nbformat.read(f, as_version=4)
     
@@ -114,6 +120,9 @@ def test_repair_imports(tmp_notebook_path: Path, repair_agent):
     ]
     
     success, new_reports = repair_agent.repair_notebook(tmp_notebook_path, qa_reports)
+    
+    # Verify repair was attempted
+    assert success or len(new_reports) > 0
     
     with tmp_notebook_path.open("r") as f:
         repaired_nb = nbformat.read(f, as_version=4)
@@ -183,7 +192,9 @@ def test_repair_compilation_missing_stategraph(tmp_notebook_path: Path, repair_a
             break
     
     assert graph_cell is not None
+    # Verify StateGraph was added and existing code was preserved
     assert "StateGraph" in graph_cell.source
+    assert "x = 1" in graph_cell.source  # Original code should be preserved
 
 
 def test_repair_compilation_missing_compile(tmp_notebook_path: Path, repair_agent):
