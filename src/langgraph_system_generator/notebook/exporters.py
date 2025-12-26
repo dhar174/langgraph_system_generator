@@ -129,7 +129,7 @@ class NotebookExporter:
         else:
             # Use webpdf method (more reliable, uses Chromium)
             try:
-                result = subprocess.run(
+                _ = subprocess.run(
                     [
                         "jupyter",
                         "nbconvert",

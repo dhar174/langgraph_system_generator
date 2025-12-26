@@ -98,6 +98,33 @@ def test_export_to_html(tmp_path: Path):
     assert "hello" in content
 
 
+def test_export_to_pdf(tmp_path: Path):
+    """Test PDF export functionality."""
+    composer = NotebookComposer()
+    exporter = NotebookExporter()
+
+    nb = composer.build_notebook(
+        [
+            CellSpec(cell_type="markdown", content="# Test PDF Export", section="intro"),
+            CellSpec(cell_type="code", content="x = 1 + 1", section="code"),
+        ],
+        ensure_minimum_sections=False,
+    )
+
+    # First write the notebook to a file
+    ipynb_path = tmp_path / "test.ipynb"
+    exporter.export_ipynb(nb, ipynb_path)
+
+    # Try to export to PDF - this may fail if dependencies are missing
+    pdf_path = tmp_path / "test.pdf"
+    try:
+        result = exporter.export_to_pdf(ipynb_path, pdf_path, method="webpdf")
+        assert Path(result).exists()
+    except (RuntimeError, FileNotFoundError) as e:
+        # Skip if Jupyter or required dependencies are not available
+        pytest.skip(f"PDF export dependencies not available: {e}")
+
+
 def test_export_notebook_to_docx(tmp_path: Path):
     """Test basic DOCX export functionality."""
     composer = NotebookComposer()

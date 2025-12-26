@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Dict, List, Sequence
+from typing import Any, Dict, Sequence
 
 from docx import Document
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.shared import Inches, Pt, RGBColor
+
+from langgraph_system_generator.notebook.utils import parse_markdown_heading
 
 
 class ManuscriptDOCXGenerator:
@@ -214,12 +216,12 @@ class ManuscriptDOCXGenerator:
                     line = line.strip()
                     if not line:
                         continue
-                    if line.startswith("### "):
-                        doc.add_heading(line[4:], level=3)
-                    elif line.startswith("## "):
-                        doc.add_heading(line[3:], level=2)
-                    elif line.startswith("# "):
-                        doc.add_heading(line[2:], level=1)
+
+                    # Parse markdown heading
+                    heading_info = parse_markdown_heading(line)
+                    if heading_info:
+                        level, heading_text = heading_info
+                        doc.add_heading(heading_text, level=level)
                     else:
                         doc.add_paragraph(line)
 

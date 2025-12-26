@@ -15,6 +15,16 @@ from reportlab.platypus import (
     Spacer,
 )
 
+from langgraph_system_generator.notebook.utils import escape_xml_chars, parse_markdown_heading
+
+
+# Mapping of common font names to their bold variants
+FONT_BOLD_MAPPING = {
+    "Times-Roman": "Times-Bold",
+    "Helvetica": "Helvetica-Bold",
+    "Courier": "Courier-Bold",
+}
+
 
 class ManuscriptPDFGenerator:
     """Generates formatted PDF manuscripts with professional styling."""
@@ -40,11 +50,14 @@ class ManuscriptPDFGenerator:
 
     def _setup_custom_styles(self) -> None:
         """Set up custom paragraph styles for the document."""
+        # Get bold font variant
+        bold_font = FONT_BOLD_MAPPING.get(self.font_name, self.font_name)
+
         # Chapter title style
         self.chapter_style = ParagraphStyle(
             "ChapterTitle",
             parent=self.styles["Heading1"],
-            fontName=self.font_name.replace("-Roman", "-Bold"),
+            fontName=bold_font,
             fontSize=16,
             spaceAfter=30,
             spaceBefore=20,
@@ -55,10 +68,19 @@ class ManuscriptPDFGenerator:
         self.section_style = ParagraphStyle(
             "SectionHeading",
             parent=self.styles["Heading2"],
-            fontName=self.font_name.replace("-Roman", "-Bold"),
+            fontName=bold_font,
             fontSize=14,
             spaceAfter=20,
             spaceBefore=15,
+        )
+
+        # Subsection heading style
+        self.subsection_style = ParagraphStyle(
+            "SubsectionHeading",
+            parent=self.styles["Heading3"],
+            fontSize=12,
+            spaceAfter=10,
+            spaceBefore=10,
         )
 
         # Body text style
@@ -142,11 +164,14 @@ class ManuscriptPDFGenerator:
             title: The manuscript title.
             author: Optional author name.
         """
+        # Get bold font variant
+        bold_font = FONT_BOLD_MAPPING.get(self.font_name, self.font_name)
+
         # Title page style
         title_style = ParagraphStyle(
             "TitlePage",
             parent=self.styles["Title"],
-            fontName=self.font_name.replace("-Roman", "-Bold"),
+            fontName=bold_font,
             fontSize=24,
             alignment=1,  # Center aligned
             spaceAfter=30,
@@ -163,15 +188,15 @@ class ManuscriptPDFGenerator:
         # Add vertical spacing
         story.append(Spacer(1, 2 * inch))
 
-        # Add title
-        story.append(Paragraph(title, title_style))
+        # Add title (escape special characters)
+        story.append(Paragraph(escape_xml_chars(title), title_style))
 
         # Add spacing
         story.append(Spacer(1, 0.5 * inch))
 
-        # Add author if provided
+        # Add author if provided (escape special characters)
         if author:
-            story.append(Paragraph(f"by {author}", author_style))
+            story.append(Paragraph(escape_xml_chars(f"by {author}"), author_style))
 
         # Page break after title page
         story.append(PageBreak())
@@ -186,8 +211,8 @@ class ManuscriptPDFGenerator:
         chapter_title = chapter.get("title", "Untitled Chapter")
         chapter_content = chapter.get("content", [])
 
-        # Add chapter title
-        story.append(Paragraph(chapter_title, self.chapter_style))
+        # Add chapter title (escape special characters)
+        story.append(Paragraph(escape_xml_chars(chapter_title), self.chapter_style))
         story.append(Spacer(1, 0.2 * inch))
 
         # Add chapter content
@@ -195,7 +220,7 @@ class ManuscriptPDFGenerator:
             # Single string content - split by paragraphs
             for paragraph in chapter_content.split("\n\n"):
                 if paragraph.strip():
-                    story.append(Paragraph(paragraph.strip(), self.body_style))
+                    story.append(Paragraph(escape_xml_chars(paragraph.strip()), self.body_style))
                     story.append(Spacer(1, 0.1 * inch))
         elif isinstance(chapter_content, (list, tuple)):
             # List of paragraphs or structured content
@@ -206,16 +231,16 @@ class ManuscriptPDFGenerator:
                     section_text = item.get("text", "")
 
                     if section_title:
-                        story.append(Paragraph(section_title, self.section_style))
+                        story.append(Paragraph(escape_xml_chars(section_title), self.section_style))
                         story.append(Spacer(1, 0.1 * inch))
 
                     if section_text:
-                        story.append(Paragraph(section_text, self.body_style))
+                        story.append(Paragraph(escape_xml_chars(section_text), self.body_style))
                         story.append(Spacer(1, 0.1 * inch))
                 else:
                     # Plain paragraph text
                     if item and str(item).strip():
-                        story.append(Paragraph(str(item).strip(), self.body_style))
+                        story.append(Paragraph(escape_xml_chars(str(item).strip()), self.body_style))
                         story.append(Spacer(1, 0.1 * inch))
 
         # Page break after chapter
@@ -267,7 +292,7 @@ class ManuscriptPDFGenerator:
             # Add section heading if changed
             if section and section != current_section:
                 section_title = section.replace("_", " ").title()
-                story.append(Paragraph(section_title, self.chapter_style))
+                story.append(Paragraph(escape_xml_chars(section_title), self.chapter_style))
                 story.append(Spacer(1, 0.2 * inch))
                 current_section = section
 
@@ -280,27 +305,23 @@ class ManuscriptPDFGenerator:
                         story.append(Spacer(1, 0.1 * inch))
                         continue
 
-                    # Handle headings
-                    if line.startswith("### "):
-                        subsection_style = ParagraphStyle(
-                            "SubsectionHeading",
-                            parent=self.styles["Heading3"],
-                            fontSize=12,
-                            spaceAfter=10,
-                            spaceBefore=10,
-                        )
-                        story.append(Paragraph(line[4:], subsection_style))
-                    elif line.startswith("## "):
-                        story.append(Paragraph(line[3:], self.section_style))
-                    elif line.startswith("# "):
-                        story.append(Paragraph(line[2:], self.chapter_style))
+                    # Parse markdown heading
+                    heading_info = parse_markdown_heading(line)
+                    if heading_info:
+                        level, heading_text = heading_info
+                        if level == 1:
+                            story.append(Paragraph(escape_xml_chars(heading_text), self.chapter_style))
+                        elif level == 2:
+                            story.append(Paragraph(escape_xml_chars(heading_text), self.section_style))
+                        else:  # level == 3
+                            story.append(Paragraph(escape_xml_chars(heading_text), self.subsection_style))
                     else:
-                        story.append(Paragraph(line, self.body_style))
+                        story.append(Paragraph(escape_xml_chars(line), self.body_style))
 
             elif cell_type == "code" and content.strip():
                 # Add code as preformatted block
                 # Escape special characters for reportlab
-                safe_content = content.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+                safe_content = escape_xml_chars(content)
                 code_para = Paragraph(
                     f"<pre><font face='Courier' size='9'>{safe_content}</font></pre>",
                     self.code_style,
