@@ -64,9 +64,9 @@ You can also containerize the API:
 
 ```bash
 docker build -t lnf .
-docker run -p 8000:8000 \\
-  -e OPENAI_API_KEY=sk-... \\
-  -v $(pwd)/output:/app/output \\
+docker run -p 8000:8000 \
+  -e OPENAI_API_KEY=sk-... \
+  -v $(pwd)/output:/app/output \
   lnf
 ```
 
