@@ -33,6 +33,43 @@ Prompt -> Full Agentic System. Generates entire multiagent systems based on user
    python -m pytest
    ```
 
+## CLI
+
+Use the bundled CLI (stub mode by default) to generate scaffold artifacts or rebuild the vector index:
+
+```bash
+# Generate offline-friendly artifacts from a prompt
+lnf generate "Create a router-based chatbot" --output ./output/demo --mode stub
+
+# Build the FAISS index from cached docs with fake embeddings (no API key needed)
+lnf build-index --cache ./data/cached_docs --store ./data/vector_store
+```
+
+Pass `--mode live` to `lnf generate` when you have `OPENAI_API_KEY` configured and want to invoke the full generator graph.
+
+## API
+
+A lightweight FastAPI server is available:
+
+```bash
+uvicorn langgraph_system_generator.api.server:app --reload
+```
+
+Endpoints:
+
+- `GET /health` – health check
+- `POST /generate` – generate artifacts (supports `stub`/`live` modes; defaults to `stub`)
+
+You can also containerize the API:
+
+```bash
+docker build -t lnf .
+docker run -p 8000:8000 \
+  -e OPENAI_API_KEY=sk-... \
+  -v $(pwd)/output:/app/output \
+  lnf
+```
+
 ## Precached Documentation
 
 This repository includes precached LangGraph and LangChain documentation (19+ pages, ~300KB) 
