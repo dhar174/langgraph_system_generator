@@ -4,6 +4,7 @@ Prompt -> Full Agentic System. Generates entire multiagent systems based on user
 
 ## Features
 
+- **Web Interface**: Modern, user-friendly web UI for generating systems without code
 - **RAG-Powered Documentation**: Includes precached LangGraph and LangChain documentation for offline use
 - **Pattern Library**: Built-in support for common multi-agent patterns
 - **Production-Ready**: Generates complete, runnable Jupyter notebooks
@@ -47,20 +48,51 @@ lnf build-index --cache ./data/cached_docs --store ./data/vector_store
 
 Pass `--mode live` to `lnf generate` when you have `OPENAI_API_KEY` configured and want to invoke the full generator graph.
 
-## API
+## Web Interface
 
-A lightweight FastAPI server is available:
+A modern web interface is available for easy system generation:
 
 ```bash
-uvicorn langgraph_system_generator.api.server:app --reload
+uvicorn langgraph_system_generator.api.server:app --host 0.0.0.0 --port 8000
 ```
+
+Then open your browser to `http://localhost:8000` to access the web UI.
+
+### Features
+
+- **Interactive Form**: Enter your system requirements in natural language
+- **Mode Selection**: Choose between stub mode (fast, no API key) or live mode (full LLM generation)
+- **Real-time Status**: See server health and generation progress
+- **Results Display**: View generated artifacts with download links
+- **Responsive Design**: Works on desktop and mobile devices
+
+![Web Interface](https://github.com/user-attachments/assets/29cdc1ce-d458-4296-8f50-dde4c3ff1717)
+
+![Generation Results](https://github.com/user-attachments/assets/4b1fc082-5fa6-46ca-9b48-161c90e1987d)
+
+## API
+
+The FastAPI server also exposes REST endpoints:
 
 Endpoints:
 
+- `GET /` – web interface
 - `GET /health` – health check
 - `POST /generate` – generate artifacts (supports `stub`/`live` modes; defaults to `stub`)
 
-You can also containerize the API:
+Example API usage:
+
+```bash
+curl -X POST http://localhost:8000/generate \
+  -H "Content-Type: application/json" \
+  -d '{
+    "prompt": "Create a customer support chatbot with routing",
+    "mode": "stub",
+    "output_dir": "./output/my_system"
+  }'
+```
+
+You can also containerize the application:
 
 ```bash
 docker build -t lnf .

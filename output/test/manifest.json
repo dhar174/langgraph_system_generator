@@ -1,0 +1,9 @@
+{
+  "prompt": "Create a simple customer support chatbot",
+  "mode": "stub",
+  "architecture_type": "router",
+  "cell_count": 3,
+  "plan_title": "LangGraph Workflow: Create a simple customer support chatbot",
+  "plan_path": "/home/runner/work/langgraph_system_generator/langgraph_system_generator/output/test/notebook_plan.json",
+  "cells_path": "/home/runner/work/langgraph_system_generator/langgraph_system_generator/output/test/generated_cells.json"
+}
