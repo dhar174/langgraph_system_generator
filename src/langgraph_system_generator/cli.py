@@ -11,7 +11,7 @@ import asyncio
 import json
 import os
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Literal, TypedDict
+from typing import Any, Dict, List, Literal, TypedDict
 
 from langchain_community.embeddings import FakeEmbeddings
 
@@ -19,6 +19,9 @@ from langgraph_system_generator.generator.graph import create_generator_graph
 from langgraph_system_generator.generator.state import CellSpec, Constraint, NotebookPlan
 from langgraph_system_generator.rag.indexer import build_index_from_cache
 from langgraph_system_generator.utils.config import settings
+
+BASE_DIR = Path(__file__).resolve().parents[2]
+DEFAULT_CACHE_PATH = (BASE_DIR / "data" / "cached_docs").resolve()
 
 GenerationMode = Literal["stub", "live"]
 
@@ -45,6 +48,7 @@ def _default_state(prompt: str) -> Dict[str, Any]:
         "docs_context": [],
         "notebook_plan": None,
         "architecture_justification": "",
+        "architecture_type": None,
         "workflow_design": None,
         "tools_plan": None,
         "generated_cells": [],
@@ -72,8 +76,32 @@ def _write_json(path: Path, payload: Any) -> None:
     path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
 
+def _infer_stub_architecture(prompt: str) -> tuple[str, str]:
+    """Lightweight heuristic to pick an architecture in stub mode."""
+
+    text = prompt.lower()
+    if any(keyword in text for keyword in ["delegate", "supervisor", "team", "subagent"]):
+        return (
+            "subagents",
+            "Subagents pattern selected based on collaborative/delegation cues in the prompt.",
+        )
+    if any(keyword in text for keyword in ["hybrid", "combined", "mix", "multi-stage"]):
+        return (
+            "hybrid",
+            "Hybrid pattern selected for mixed or multi-stage requirements detected in the prompt.",
+        )
+    if any(keyword in text for keyword in ["router", "route", "triage", "dispatch", "classification"]):
+        return (
+            "router",
+            "Router pattern selected for routing/triage style requests in the prompt.",
+        )
+    return ("router", "Router pattern selected as a sensible default for general workflows.")
+
+
 def _build_stub_result(prompt: str) -> Dict[str, Any]:
     """Create a deterministic, offline-friendly generation result."""
+
+    architecture_type, justification = _infer_stub_architecture(prompt)
 
     constraints = [
         Constraint(type="goal", value=f"Deliver a notebook for: {prompt}", priority=5),
@@ -95,8 +123,8 @@ def _build_stub_result(prompt: str) -> Dict[str, Any]:
             "Execution",
         ],
         cell_count_estimate=12,
-        patterns_used=["router"],
-        architecture_type="router",
+        patterns_used=[architecture_type],
+        architecture_type=architecture_type,
     )
 
     cells: List[CellSpec] = [
@@ -119,14 +147,19 @@ def _build_stub_result(prompt: str) -> Dict[str, Any]:
 
     return {
         "constraints": constraints,
-        "selected_patterns": {"primary": "router"},
+        "selected_patterns": {"primary": architecture_type},
         "docs_context": [],
         "notebook_plan": plan,
         "architecture_type": plan.architecture_type,
-        "architecture_justification": "Router pattern selected for fast routing.",
+        "architecture_justification": justification,
         "workflow_design": {
-            "entry_point": "router",
-            "nodes": [{"name": "router", "purpose": "Dispatch to specialists"}],
+            "entry_point": architecture_type,
+            "nodes": [
+                {
+                    "name": architecture_type,
+                    "purpose": "Dispatch to specialists" if architecture_type == "router" else "Coordinate sub-agents",
+                }
+            ],
         },
         "tools_plan": [],
         "generated_cells": cells,
@@ -155,18 +188,22 @@ async def generate_artifacts(
 
     if mode == "live":
         if not os.environ.get("OPENAI_API_KEY"):
-            raise RuntimeError("OPENAI_API_KEY is required for live generation mode.")
+            raise RuntimeError("LLM API credentials are required for live generation mode.")
         graph = create_generator_graph()
         result = await graph.ainvoke(_default_state(prompt))
     else:
         result = _build_stub_result(prompt)
 
     serialized = _serialize(result)
+    if "architecture_type" in serialized and serialized.get("architecture_type"):
+        architecture_type = serialized.get("architecture_type")
+    else:
+        selected_patterns = serialized.get("selected_patterns") or {}
+        architecture_type = selected_patterns.get("primary") or "router"
     manifest: Dict[str, Any] = {
         "prompt": prompt,
         "mode": mode,
-        "architecture_type": serialized.get("architecture_type")
-        or serialized.get("selected_patterns", {}).get("primary", "router"),
+        "architecture_type": architecture_type,
         "cell_count": len(serialized.get("generated_cells", []) or []),
         "plan_title": serialized.get("notebook_plan", {}).get("title"),
     }
@@ -179,7 +216,7 @@ async def generate_artifacts(
         manifest["plan_path"] = str(plan_path)
 
     cells = serialized.get("generated_cells")
-    if isinstance(cells, Iterable):
+    if isinstance(cells, list):
         cells_path = target / "generated_cells.json"
         _write_json(cells_path, cells)
         manifest["cells_path"] = str(cells_path)
@@ -202,10 +239,12 @@ async def _handle_build_index(
 ) -> str:
     """Build a documentation index from cached docs."""
 
+    cache = str(Path(cache_path).resolve())
+    store = str(Path(store_path).resolve())
     embeddings = None if use_openai else FakeEmbeddings(size=32)
     manager = await build_index_from_cache(
-        cache_path=cache_path,
-        store_path=store_path,
+        cache_path=cache,
+        store_path=store,
         embeddings=embeddings,
         chunk_size=chunk_size,
         chunk_overlap=chunk_overlap,
@@ -244,7 +283,7 @@ def _run_build_index(args: argparse.Namespace) -> int:
         )
         print(f"✓ Vector index written to {path}")
         return 0
-    except Exception as exc:  # pragma: no cover - defensive
+    except (FileNotFoundError, RuntimeError, ValueError) as exc:  # pragma: no cover - defensive
         print(f"✗ Failed to build index: {exc}")
         return 1
 
@@ -258,8 +297,8 @@ def build_parser() -> argparse.ArgumentParser:
     gen.add_argument(
         "-o",
         "--output",
-        default="./output",
-        help="Directory to write artifacts (default: ./output)",
+        default=str((BASE_DIR / "output").resolve()),
+        help="Directory to write artifacts (default: <project>/output)",
     )
     gen.add_argument(
         "--mode",
@@ -270,8 +309,16 @@ def build_parser() -> argparse.ArgumentParser:
     gen.set_defaults(func=_run_generate)
 
     idx = subparsers.add_parser("build-index", help="Build vector index from cached docs")
-    idx.add_argument("--cache", default="./data/cached_docs", help="Path to cached docs directory")
-    idx.add_argument("--store", default=settings.vector_store_path, help="Path to save the vector index")
+    idx.add_argument(
+        "--cache",
+        default=str(DEFAULT_CACHE_PATH),
+        help="Path to cached docs directory (defaults to package data/cached_docs)",
+    )
+    idx.add_argument(
+        "--store",
+        default=str(Path(settings.vector_store_path).resolve()),
+        help="Path to save the vector index",
+    )
     idx.add_argument(
         "--use-openai",
         action="store_true",
