@@ -29,6 +29,7 @@
                             rows="6" 
                             placeholder="Example: Create a router-based chatbot that can handle customer support, technical questions, and general inquiries. Use tools for web search and database lookups."
                             required
+                            aria-describedby="charCount"
                         ></textarea>
                         <div class="char-count">
                             <span id="charCount">0</span> / 5000 characters
@@ -37,11 +38,11 @@
 
                     <div class="form-group">
                         <label for="mode">Generation Mode:</label>
-                        <select id="mode" name="mode">
+                        <select id="mode" name="mode" aria-describedby="modeHelpText">
                             <option value="stub">Stub Mode (Fast, No API Key Required)</option>
                             <option value="live">Live Mode (Requires OpenAI API Key)</option>
                         </select>
-                        <small class="help-text">
+                        <small class="help-text" id="modeHelpText">
                             Stub mode generates a basic scaffold without external API calls. 
                             Live mode creates a fully customized system using LLM.
                         </small>

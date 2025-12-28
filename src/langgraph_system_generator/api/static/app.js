@@ -13,9 +13,14 @@ const healthStatus = document.getElementById('healthStatus');
 const statusDot = document.getElementById('statusDot');
 const statusText = document.getElementById('statusText');
 
+// Helper to count Unicode characters (code points) for accurate counting
+function getCharacterCount(text) {
+    return Array.from(text || '').length;
+}
+
 // Update character count
 promptTextarea.addEventListener('input', () => {
-    const count = promptTextarea.value.length;
+    const count = getCharacterCount(promptTextarea.value);
     charCount.textContent = count;
     
     if (count > 5000) {
@@ -70,7 +75,7 @@ function showResult(data) {
     const mode = data.mode || 'unknown';
     
     // Clear any previous content
-    resultContent.innerHTML = '';
+    resultContent.replaceChildren();
     
     // Create result content wrapper
     const resultWrapper = document.createElement('div');
@@ -249,7 +254,7 @@ function showError(message) {
     hideResults();
     
     // Clear any previous error content
-    errorContent.innerHTML = '';
+    errorContent.replaceChildren();
 
     // Build error block safely using DOM APIs
     const wrapper = document.createElement('div');
@@ -286,8 +291,8 @@ form.addEventListener('submit', async (e) => {
         output_dir: formData.get('outputDir')
     };
     
-    // Validate prompt length
-    if (data.prompt.length > 5000) {
+    // Validate prompt length (using Unicode code points)
+    if (getCharacterCount(data.prompt) > 5000) {
         showError('Prompt exceeds maximum length of 5000 characters.');
         return;
     }
@@ -334,4 +339,9 @@ form.addEventListener('submit', async (e) => {
 checkHealth();
 
 // Periodically check health
-setInterval(checkHealth, 30000); // Check every 30 seconds
+const healthCheckInterval = setInterval(checkHealth, 30000); // Check every 30 seconds
+
+// Cleanup function (can be called when page unloads or component unmounts)
+window.addEventListener('beforeunload', () => {
+    clearInterval(healthCheckInterval);
+});

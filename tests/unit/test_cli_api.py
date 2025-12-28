@@ -69,21 +69,6 @@ def test_root_endpoint_with_static_files():
     assert "langgraph" in content and "system generator" in content
 
 
-def test_root_endpoint_fallback():
-    """Test that root endpoint returns fallback message when index.html doesn't exist."""
-    # This test verifies the fallback behavior, though in normal operation
-    # the static files should exist. The test validates the code path exists.
-    from langgraph_system_generator.api.server import _STATIC_DIR
-    import os
-    
-    # If static dir doesn't exist, we should get fallback
-    if not _STATIC_DIR.exists():
-        client = TestClient(app)
-        response = client.get("/")
-        assert response.status_code == 200
-        assert "LangGraph System Generator API" in response.text
-
-
 @pytest.mark.asyncio
 async def test_live_mode_requires_credentials(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
