@@ -42,7 +42,7 @@ class GenerationRequest(BaseModel):
 class GenerationResponse(BaseModel):
     success: bool
     mode: Optional[str] = None
-    prompt: Optional[str] = None
+    prompt: Optional[str] = None  # Note: User prompt echoed back for confirmation; may contain sensitive data if logged
     manifest: Optional[Dict[str, Any]] = None
     manifest_path: Optional[str] = None
     output_dir: Optional[str] = None

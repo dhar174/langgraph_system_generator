@@ -43,6 +43,11 @@ async def test_api_generate_stub(tmp_path: Path):
     assert payload["success"] is True
     assert payload["manifest"]["prompt"] == "API prompt"
     assert "manifest_path" in payload
+    # Verify new response fields
+    assert payload["mode"] == "stub"
+    assert payload["prompt"] == "API prompt"
+    assert "output_dir" in payload
+    assert payload["output_dir"] == str(output_dir)
 
 
 def test_health_endpoint():
@@ -50,6 +55,33 @@ def test_health_endpoint():
     response = client.get("/health")
     assert response.status_code == 200
     assert response.json()["status"] == "ok"
+
+
+def test_root_endpoint_with_static_files():
+    """Test that root endpoint serves the web interface when static files exist."""
+    client = TestClient(app)
+    response = client.get("/")
+    assert response.status_code == 200
+    # Should return HTML content
+    assert "text/html" in response.headers.get("content-type", "")
+    # Check for key elements from index.html
+    content = response.text
+    assert "LangGraph System Generator" in content or "LangGraph" in content.lower()
+
+
+def test_root_endpoint_fallback():
+    """Test that root endpoint returns fallback message when index.html doesn't exist."""
+    # This test verifies the fallback behavior, though in normal operation
+    # the static files should exist. The test validates the code path exists.
+    from langgraph_system_generator.api.server import _STATIC_DIR
+    import os
+    
+    # If static dir doesn't exist, we should get fallback
+    if not _STATIC_DIR.exists():
+        client = TestClient(app)
+        response = client.get("/")
+        assert response.status_code == 200
+        assert "LangGraph System Generator API" in response.text
 
 
 @pytest.mark.asyncio

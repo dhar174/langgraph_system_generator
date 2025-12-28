@@ -76,73 +76,171 @@ function showResult(data) {
     const manifest = data.manifest || {};
     const mode = escapeHtml(data.mode || 'unknown');
     
-    let html = '<div class="result-content">';
+    // Clear any previous content
+    resultContent.innerHTML = '';
+    
+    // Create result content wrapper
+    const resultWrapper = document.createElement('div');
+    resultWrapper.className = 'result-content';
     
     // Success message
-    html += '<div class="result-item">';
-    html += '<h3 style="color: var(--success-color); margin-bottom: 0.5rem;">✅ Generation Successful!</h3>';
-    html += `<p>Your system was generated in <strong>${mode}</strong> mode.</p>`;
-    html += '</div>';
+    const successItem = document.createElement('div');
+    successItem.className = 'result-item';
     
-    // Manifest details
+    const successHeading = document.createElement('h3');
+    successHeading.style.color = 'var(--success-color)';
+    successHeading.style.marginBottom = '0.5rem';
+    successHeading.textContent = '✅ Generation Successful!';
+    
+    const successParagraph = document.createElement('p');
+    successParagraph.innerHTML = `Your system was generated in <strong>${mode}</strong> mode.`;
+    
+    successItem.appendChild(successHeading);
+    successItem.appendChild(successParagraph);
+    resultWrapper.appendChild(successItem);
+    
+    // Architecture type
     if (manifest.architecture_type) {
-        html += '<div class="result-item">';
-        html += '<strong>Architecture:</strong> ';
-        html += `<span style="color: var(--primary-color)">${escapeHtml(manifest.architecture_type)}</span>`;
-        html += '</div>';
+        const archItem = document.createElement('div');
+        archItem.className = 'result-item';
+        
+        const archLabel = document.createElement('strong');
+        archLabel.textContent = 'Architecture: ';
+        
+        const archValue = document.createElement('span');
+        archValue.style.color = 'var(--primary-color)';
+        archValue.textContent = manifest.architecture_type;
+        
+        archItem.appendChild(archLabel);
+        archItem.appendChild(archValue);
+        resultWrapper.appendChild(archItem);
     }
     
+    // Plan title
     if (manifest.plan_title) {
-        html += '<div class="result-item">';
-        html += '<strong>Plan Title:</strong> ';
-        html += escapeHtml(manifest.plan_title);
-        html += '</div>';
+        const planItem = document.createElement('div');
+        planItem.className = 'result-item';
+        
+        const planLabel = document.createElement('strong');
+        planLabel.textContent = 'Plan Title: ';
+        
+        const planValue = document.createTextNode(manifest.plan_title);
+        
+        planItem.appendChild(planLabel);
+        planItem.appendChild(planValue);
+        resultWrapper.appendChild(planItem);
     }
     
+    // Cell count
     if (manifest.cell_count) {
-        html += '<div class="result-item">';
-        html += '<strong>Generated Cells:</strong> ';
-        html += escapeHtml(String(manifest.cell_count));
-        html += '</div>';
+        const cellItem = document.createElement('div');
+        cellItem.className = 'result-item';
+        
+        const cellLabel = document.createElement('strong');
+        cellLabel.textContent = 'Generated Cells: ';
+        
+        const cellValue = document.createTextNode(String(manifest.cell_count));
+        
+        cellItem.appendChild(cellLabel);
+        cellItem.appendChild(cellValue);
+        resultWrapper.appendChild(cellItem);
     }
     
-    // Output location
+    // Output directory
     if (data.manifest_path) {
-        html += '<div class="result-item">';
-        html += '<strong>Output Directory:</strong> ';
-        html += `<code style="background: var(--bg-tertiary); padding: 0.25rem 0.5rem; border-radius: 0.25rem;">${escapeHtml(data.output_dir || 'output/')}</code>`;
-        html += '</div>';
+        const outputItem = document.createElement('div');
+        outputItem.className = 'result-item';
+        
+        const outputLabel = document.createElement('strong');
+        outputLabel.textContent = 'Output Directory: ';
+        
+        const outputCode = document.createElement('code');
+        outputCode.style.background = 'var(--bg-tertiary)';
+        outputCode.style.padding = '0.25rem 0.5rem';
+        outputCode.style.borderRadius = '0.25rem';
+        outputCode.textContent = data.output_dir || 'output/';
+        
+        outputItem.appendChild(outputLabel);
+        outputItem.appendChild(outputCode);
+        resultWrapper.appendChild(outputItem);
     }
     
-    // File paths
+    // Notebook plan path
     if (manifest.plan_path) {
-        html += '<div class="result-item">';
-        html += '<strong>Notebook Plan:</strong> ';
-        html += `<code style="background: var(--bg-tertiary); padding: 0.25rem 0.5rem; border-radius: 0.25rem; font-size: 0.875rem;">${escapeHtml(manifest.plan_path)}</code>`;
-        html += '</div>';
+        const planPathItem = document.createElement('div');
+        planPathItem.className = 'result-item';
+        
+        const planPathLabel = document.createElement('strong');
+        planPathLabel.textContent = 'Notebook Plan: ';
+        
+        const planPathCode = document.createElement('code');
+        planPathCode.style.background = 'var(--bg-tertiary)';
+        planPathCode.style.padding = '0.25rem 0.5rem';
+        planPathCode.style.borderRadius = '0.25rem';
+        planPathCode.style.fontSize = '0.875rem';
+        planPathCode.textContent = manifest.plan_path;
+        
+        planPathItem.appendChild(planPathLabel);
+        planPathItem.appendChild(planPathCode);
+        resultWrapper.appendChild(planPathItem);
     }
     
+    // Generated cells path
     if (manifest.cells_path) {
-        html += '<div class="result-item">';
-        html += '<strong>Generated Cells:</strong> ';
-        html += `<code style="background: var(--bg-tertiary); padding: 0.25rem 0.5rem; border-radius: 0.25rem; font-size: 0.875rem;">${escapeHtml(manifest.cells_path)}</code>`;
-        html += '</div>';
+        const cellsPathItem = document.createElement('div');
+        cellsPathItem.className = 'result-item';
+        
+        const cellsPathLabel = document.createElement('strong');
+        cellsPathLabel.textContent = 'Generated Cells: ';
+        
+        const cellsPathCode = document.createElement('code');
+        cellsPathCode.style.background = 'var(--bg-tertiary)';
+        cellsPathCode.style.padding = '0.25rem 0.5rem';
+        cellsPathCode.style.borderRadius = '0.25rem';
+        cellsPathCode.style.fontSize = '0.875rem';
+        cellsPathCode.textContent = manifest.cells_path;
+        
+        cellsPathItem.appendChild(cellsPathLabel);
+        cellsPathItem.appendChild(cellsPathCode);
+        resultWrapper.appendChild(cellsPathItem);
     }
     
-    // Instructions
-    html += '<div class="result-item" style="margin-top: 1.5rem; padding: 1rem; background: var(--bg-primary); border-radius: 0.5rem;">';
-    html += '<h4 style="margin-bottom: 0.5rem; color: var(--text-primary);">📝 Next Steps:</h4>';
-    html += '<ol style="margin-left: 1.5rem; color: var(--text-secondary);">';
-    html += '<li>Check the output directory for generated artifacts</li>';
-    html += '<li>Review the notebook plan and generated cells</li>';
-    html += '<li>Import the cells into a Jupyter notebook</li>';
-    html += '<li>Customize and run your multi-agent system</li>';
-    html += '</ol>';
-    html += '</div>';
+    // Next steps section
+    const stepsItem = document.createElement('div');
+    stepsItem.className = 'result-item';
+    stepsItem.style.marginTop = '1.5rem';
+    stepsItem.style.padding = '1rem';
+    stepsItem.style.background = 'var(--bg-primary)';
+    stepsItem.style.borderRadius = '0.5rem';
     
-    html += '</div>';
+    const stepsHeading = document.createElement('h4');
+    stepsHeading.style.marginBottom = '0.5rem';
+    stepsHeading.style.color = 'var(--text-primary)';
+    stepsHeading.textContent = '📝 Next Steps:';
     
-    resultContent.innerHTML = html;
+    const stepsList = document.createElement('ol');
+    stepsList.style.marginLeft = '1.5rem';
+    stepsList.style.color = 'var(--text-secondary)';
+    
+    const steps = [
+        'Check the output directory for generated artifacts',
+        'Review the notebook plan and generated cells',
+        'Import the cells into a Jupyter notebook',
+        'Customize and run your multi-agent system'
+    ];
+    
+    steps.forEach(stepText => {
+        const li = document.createElement('li');
+        li.textContent = stepText;
+        stepsList.appendChild(li);
+    });
+    
+    stepsItem.appendChild(stepsHeading);
+    stepsItem.appendChild(stepsList);
+    resultWrapper.appendChild(stepsItem);
+    
+    // Add to DOM
+    resultContent.appendChild(resultWrapper);
     resultCard.style.display = 'block';
     resultCard.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 }
@@ -217,12 +315,17 @@ form.addEventListener('submit', async (e) => {
         if (response.ok && result.success) {
             showResult(result);
         } else {
-            const errorMsg = result.error || result.detail || 'Generation failed. Please try again.';
+            // Log detailed error for debugging but show generic message to user
+            const serverErrorDetail = (result && (result.error || result.detail)) || '';
+            if (serverErrorDetail) {
+                console.error('Server error during generation:', serverErrorDetail);
+            }
+            const errorMsg = 'Generation failed. Please try again or contact support if the problem persists.';
             showError(errorMsg);
         }
     } catch (error) {
         console.error('Generation error:', error);
-        showError(`Network error: ${error.message}. Please ensure the server is running.`);
+        showError('Network error: Unable to reach the server. Please ensure the server is running and try again.');
     } finally {
         setLoading(false);
     }
