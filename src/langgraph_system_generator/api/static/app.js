@@ -93,7 +93,13 @@ function showResult(data) {
     successHeading.textContent = '✅ Generation Successful!';
     
     const successParagraph = document.createElement('p');
-    successParagraph.innerHTML = `Your system was generated in <strong>${mode}</strong> mode.`;
+    successParagraph.textContent = 'Your system was generated in ';
+    
+    const modeStrong = document.createElement('strong');
+    modeStrong.textContent = mode;
+    
+    successParagraph.appendChild(modeStrong);
+    successParagraph.appendChild(document.createTextNode(' mode.'));
     
     successItem.appendChild(successHeading);
     successItem.appendChild(successParagraph);
