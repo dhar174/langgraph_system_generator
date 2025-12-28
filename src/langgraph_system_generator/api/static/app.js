@@ -13,6 +13,13 @@ const healthStatus = document.getElementById('healthStatus');
 const statusDot = document.getElementById('statusDot');
 const statusText = document.getElementById('statusText');
 
+// Helper function to escape HTML and prevent XSS
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
 // Update character count
 promptTextarea.addEventListener('input', () => {
     const count = promptTextarea.value.length;
@@ -67,8 +74,7 @@ function showResult(data) {
     hideResults();
     
     const manifest = data.manifest || {};
-    const mode = data.mode || 'unknown';
-    const prompt = data.prompt || '';
+    const mode = escapeHtml(data.mode || 'unknown');
     
     let html = '<div class="result-content">';
     
@@ -82,21 +88,21 @@ function showResult(data) {
     if (manifest.architecture_type) {
         html += '<div class="result-item">';
         html += '<strong>Architecture:</strong> ';
-        html += `<span style="color: var(--primary-color)">${manifest.architecture_type}</span>`;
+        html += `<span style="color: var(--primary-color)">${escapeHtml(manifest.architecture_type)}</span>`;
         html += '</div>';
     }
     
     if (manifest.plan_title) {
         html += '<div class="result-item">';
         html += '<strong>Plan Title:</strong> ';
-        html += manifest.plan_title;
+        html += escapeHtml(manifest.plan_title);
         html += '</div>';
     }
     
     if (manifest.cell_count) {
         html += '<div class="result-item">';
         html += '<strong>Generated Cells:</strong> ';
-        html += manifest.cell_count;
+        html += escapeHtml(String(manifest.cell_count));
         html += '</div>';
     }
     
@@ -104,7 +110,7 @@ function showResult(data) {
     if (data.manifest_path) {
         html += '<div class="result-item">';
         html += '<strong>Output Directory:</strong> ';
-        html += `<code style="background: var(--bg-tertiary); padding: 0.25rem 0.5rem; border-radius: 0.25rem;">${data.output_dir || 'output/'}</code>`;
+        html += `<code style="background: var(--bg-tertiary); padding: 0.25rem 0.5rem; border-radius: 0.25rem;">${escapeHtml(data.output_dir || 'output/')}</code>`;
         html += '</div>';
     }
     
@@ -112,14 +118,14 @@ function showResult(data) {
     if (manifest.plan_path) {
         html += '<div class="result-item">';
         html += '<strong>Notebook Plan:</strong> ';
-        html += `<code style="background: var(--bg-tertiary); padding: 0.25rem 0.5rem; border-radius: 0.25rem; font-size: 0.875rem;">${manifest.plan_path}</code>`;
+        html += `<code style="background: var(--bg-tertiary); padding: 0.25rem 0.5rem; border-radius: 0.25rem; font-size: 0.875rem;">${escapeHtml(manifest.plan_path)}</code>`;
         html += '</div>';
     }
     
     if (manifest.cells_path) {
         html += '<div class="result-item">';
         html += '<strong>Generated Cells:</strong> ';
-        html += `<code style="background: var(--bg-tertiary); padding: 0.25rem 0.5rem; border-radius: 0.25rem; font-size: 0.875rem;">${manifest.cells_path}</code>`;
+        html += `<code style="background: var(--bg-tertiary); padding: 0.25rem 0.5rem; border-radius: 0.25rem; font-size: 0.875rem;">${escapeHtml(manifest.cells_path)}</code>`;
         html += '</div>';
     }
     
@@ -145,12 +151,28 @@ function showResult(data) {
 function showError(message) {
     hideResults();
     
-    errorContent.innerHTML = `
-        <div style="background: var(--bg-tertiary); padding: 1rem; border-radius: 0.5rem; margin-top: 1rem;">
-            <p style="color: var(--text-primary); margin-bottom: 0.5rem;">${message}</p>
-            <small style="color: var(--text-muted);">Please check your inputs and try again.</small>
-        </div>
-    `;
+    // Clear any previous error content
+    errorContent.innerHTML = '';
+
+    // Build error block safely using DOM APIs
+    const wrapper = document.createElement('div');
+    wrapper.style.background = 'var(--bg-tertiary)';
+    wrapper.style.padding = '1rem';
+    wrapper.style.borderRadius = '0.5rem';
+    wrapper.style.marginTop = '1rem';
+
+    const messageParagraph = document.createElement('p');
+    messageParagraph.style.color = 'var(--text-primary)';
+    messageParagraph.style.marginBottom = '0.5rem';
+    messageParagraph.textContent = message;
+
+    const helperText = document.createElement('small');
+    helperText.style.color = 'var(--text-muted)';
+    helperText.textContent = 'Please check your inputs and try again.';
+
+    wrapper.appendChild(messageParagraph);
+    wrapper.appendChild(helperText);
+    errorContent.appendChild(wrapper);
     
     errorCard.style.display = 'block';
     errorCard.scrollIntoView({ behavior: 'smooth', block: 'nearest' });

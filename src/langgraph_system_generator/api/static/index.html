@@ -60,17 +60,17 @@
 
                     <button type="submit" class="btn btn-primary" id="generateBtn">
                         <span class="btn-text">Generate System</span>
-                        <span class="spinner" style="display: none;"></span>
+                        <span class="spinner" style="display: none;" aria-label="Generating system" role="status"></span>
                     </button>
                 </form>
             </div>
 
-            <div class="card result-card" id="resultCard" style="display: none;">
+            <div class="card result-card" id="resultCard" style="display: none;" aria-live="polite" aria-atomic="true">
                 <h2>Generation Results</h2>
                 <div id="resultContent"></div>
             </div>
 
-            <div class="card error-card" id="errorCard" style="display: none;">
+            <div class="card error-card" id="errorCard" style="display: none;" aria-live="polite" aria-atomic="true">
                 <h2>⚠️ Error</h2>
                 <div id="errorContent"></div>
             </div>
@@ -93,7 +93,7 @@
             </div>
             <p class="copyright">
                 Powered by LangGraph Notebook Foundry | 
-                <a href="https://github.com/dhar174/langgraph_system_generator" target="_blank">GitHub</a>
+                <a href="https://github.com/dhar174/langgraph_system_generator" target="_blank" rel="noopener">GitHub</a>
             </p>
         </footer>
     </div>
