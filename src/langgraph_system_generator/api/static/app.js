@@ -13,13 +13,6 @@ const healthStatus = document.getElementById('healthStatus');
 const statusDot = document.getElementById('statusDot');
 const statusText = document.getElementById('statusText');
 
-// Helper function to escape HTML and prevent XSS
-function escapeHtml(text) {
-    const div = document.createElement('div');
-    div.textContent = text;
-    return div.innerHTML;
-}
-
 // Update character count
 promptTextarea.addEventListener('input', () => {
     const count = promptTextarea.value.length;
@@ -74,7 +67,7 @@ function showResult(data) {
     hideResults();
     
     const manifest = data.manifest || {};
-    const mode = escapeHtml(data.mode || 'unknown');
+    const mode = data.mode || 'unknown';
     
     // Clear any previous content
     resultContent.innerHTML = '';
