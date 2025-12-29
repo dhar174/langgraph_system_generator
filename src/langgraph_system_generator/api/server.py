@@ -52,9 +52,10 @@ class GenerationResponse(BaseModel):
 @app.get("/", response_class=HTMLResponse)
 async def root():
     """Serve the web interface."""
-    index_path = _STATIC_DIR / "index.html"
-    if index_path.exists():
-        return FileResponse(index_path)
+    if _STATIC_DIR.exists():
+        index_path = _STATIC_DIR / "index.html"
+        if index_path.exists():
+            return FileResponse(index_path)
     return HTMLResponse(content="<h1>LangGraph System Generator API</h1><p>Web interface not found. Use POST /generate to create systems.</p>")
 
 

@@ -12,7 +12,7 @@
             <h1>🚀 LangGraph System Generator</h1>
             <p class="subtitle">Generate complete multi-agent systems from natural language prompts</p>
             <div class="health-status" id="healthStatus">
-                <span class="status-dot" id="statusDot"></span>
+                <span class="status-dot" id="statusDot" aria-hidden="true" role="presentation"></span>
                 <span id="statusText">Checking status...</span>
             </div>
         </header>
@@ -29,9 +29,9 @@
                             rows="6" 
                             placeholder="Example: Create a router-based chatbot that can handle customer support, technical questions, and general inquiries. Use tools for web search and database lookups."
                             required
-                            aria-describedby="charCount"
+                            aria-describedby="charCountMessage"
                         ></textarea>
-                        <div class="char-count">
+                        <div class="char-count" id="charCountMessage">
                             <span id="charCount">0</span> / 5000 characters
                         </div>
                     </div>

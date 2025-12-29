@@ -297,7 +297,7 @@ form.addEventListener('submit', async (e) => {
         return;
     }
     
-    if (data.prompt.trim().length === 0) {
+    if (getCharacterCount(data.prompt.trim()) === 0) {
         showError('Please enter a prompt describing your system.');
         return;
     }

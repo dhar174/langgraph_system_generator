@@ -64,9 +64,9 @@ def test_root_endpoint_with_static_files():
     assert response.status_code == 200
     # Should return HTML content
     assert "text/html" in response.headers.get("content-type", "")
-    # Check for key elements from index.html (case-insensitive)
-    content = response.text.lower()
-    assert "langgraph" in content and "system generator" in content
+    # Check for key elements from index.html with expected casing
+    content = response.text
+    assert "LangGraph" in content and "System Generator" in content
 
 
 @pytest.mark.asyncio
