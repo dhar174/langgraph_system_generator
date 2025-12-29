@@ -44,12 +44,18 @@ header h1 {
     font-size: 3rem;
     font-weight: 700;
     margin-bottom: 0.5rem;
-    background: linear-gradient(135deg, #6366f1 0%, #a855f7 100%);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    background-clip: text;
+    /* Fallback solid color for accessibility when gradient text isn't supported */
+    color: #6366f1;
 }
 
+@supports ((-webkit-background-clip: text) or (background-clip: text)) {
+    header h1 {
+        background: linear-gradient(135deg, #6366f1 0%, #a855f7 100%);
+        -webkit-background-clip: text;
+        background-clip: text;
+        -webkit-text-fill-color: transparent;
+    }
+}
 .subtitle {
     font-size: 1.25rem;
     color: var(--text-secondary);
