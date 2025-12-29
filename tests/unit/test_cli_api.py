@@ -43,6 +43,11 @@ async def test_api_generate_stub(tmp_path: Path):
     assert payload["success"] is True
     assert payload["manifest"]["prompt"] == "API prompt"
     assert "manifest_path" in payload
+    # Verify new response fields
+    assert payload["mode"] == "stub"
+    assert payload["prompt"] == "API prompt"
+    assert "output_dir" in payload
+    assert payload["output_dir"] == str(output_dir)
 
 
 def test_health_endpoint():
@@ -50,6 +55,18 @@ def test_health_endpoint():
     response = client.get("/health")
     assert response.status_code == 200
     assert response.json()["status"] == "ok"
+
+
+def test_root_endpoint_with_static_files():
+    """Test that root endpoint serves the web interface when static files exist."""
+    client = TestClient(app)
+    response = client.get("/")
+    assert response.status_code == 200
+    # Should return HTML content
+    assert "text/html" in response.headers.get("content-type", "")
+    # Check for key elements from index.html with expected casing
+    content = response.text
+    assert "LangGraph" in content and "System Generator" in content
 
 
 @pytest.mark.asyncio
