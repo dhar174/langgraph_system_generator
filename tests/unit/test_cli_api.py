@@ -50,6 +50,37 @@ async def test_api_generate_stub(tmp_path: Path):
     assert payload["output_dir"] == str(output_dir)
 
 
+@pytest.mark.asyncio
+async def test_api_generate_with_formats(tmp_path: Path):
+    """Test API with format selection."""
+    transport = httpx.ASGITransport(app=app)
+    output_dir = Path.cwd() / "output" / tmp_path.name
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(
+            "/generate",
+            json={
+                "prompt": "Test with formats",
+                "mode": "stub",
+                "output_dir": str(output_dir),
+                "formats": ["ipynb", "html"],
+            },
+        )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["success"] is True
+    assert payload["manifest"]["prompt"] == "Test with formats"
+    
+    # Verify selected formats are in manifest
+    assert "notebook_path" in payload["manifest"]
+    assert "html_path" in payload["manifest"]
+    
+    # Verify unselected formats are NOT in manifest
+    assert "docx_path" not in payload["manifest"]
+    assert "pdf_path" not in payload["manifest"]
+
+
+
 def test_health_endpoint():
     client = TestClient(app)
     response = client.get("/health")

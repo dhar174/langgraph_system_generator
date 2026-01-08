@@ -176,12 +176,23 @@ async def generate_artifacts(
     *,
     output_dir: str | Path,
     mode: GenerationMode = "stub",
+    formats: List[str] | None = None,
 ) -> GenerationArtifacts:
     """Generate notebook artifacts either in stub or live mode.
 
     Stub mode produces deterministic outputs without external API calls.
     Live mode invokes the generator graph and requires configured LLM credentials.
+
+    Args:
+        prompt: User prompt describing the desired system
+        output_dir: Directory to write generation artifacts
+        mode: Generation mode ('stub' or 'live')
+        formats: List of output formats to generate (ipynb, html, pdf, docx, zip).
+                 If None or empty, generates all formats.
     """
+
+    from langgraph_system_generator.notebook.composer import NotebookComposer
+    from langgraph_system_generator.notebook.exporters import NotebookExporter
 
     target = Path(output_dir)
     target.mkdir(parents=True, exist_ok=True)
@@ -200,12 +211,15 @@ async def generate_artifacts(
     else:
         selected_patterns = serialized.get("selected_patterns") or {}
         architecture_type = selected_patterns.get("primary") or "router"
+    
+    plan_title = serialized.get("notebook_plan", {}).get("title") or "Generated Notebook"
+    
     manifest: Dict[str, Any] = {
         "prompt": prompt,
         "mode": mode,
         "architecture_type": architecture_type,
         "cell_count": len(serialized.get("generated_cells", []) or []),
-        "plan_title": serialized.get("notebook_plan", {}).get("title"),
+        "plan_title": plan_title,
     }
 
     # Persist helpful artifacts for downstream consumers
@@ -220,6 +234,70 @@ async def generate_artifacts(
         cells_path = target / "generated_cells.json"
         _write_json(cells_path, cells)
         manifest["cells_path"] = str(cells_path)
+
+    # Build and export notebook in requested formats
+    if cells:
+        # Convert serialized cells back to CellSpec objects
+        cell_specs = [CellSpec(**cell) for cell in cells]
+        
+        # Build the notebook
+        composer = NotebookComposer(colab_friendly=True)
+        notebook = composer.build_notebook(cell_specs, ensure_minimum_sections=True)
+        
+        # Determine which formats to generate
+        if formats is None or not formats:
+            formats = ["ipynb", "html", "docx", "zip"]
+        
+        exporter = NotebookExporter()
+        
+        # Export to requested formats
+        if "ipynb" in formats:
+            ipynb_path = target / "notebook.ipynb"
+            exporter.export_ipynb(notebook, ipynb_path)
+            manifest["notebook_path"] = str(ipynb_path)
+        
+        if "html" in formats:
+            try:
+                html_path = target / "notebook.html"
+                exporter.export_to_html(notebook, html_path)
+                manifest["html_path"] = str(html_path)
+            except Exception as e:
+                manifest["html_error"] = str(e)
+        
+        if "docx" in formats:
+            try:
+                docx_path = target / "notebook.docx"
+                exporter.export_notebook_to_docx(notebook, docx_path, title=plan_title)
+                manifest["docx_path"] = str(docx_path)
+            except Exception as e:
+                manifest["docx_error"] = str(e)
+        
+        if "pdf" in formats:
+            try:
+                # PDF export requires the notebook to be saved first
+                if "ipynb" not in formats:
+                    ipynb_path = target / "notebook.ipynb"
+                    exporter.export_ipynb(notebook, ipynb_path)
+                pdf_path = target / "notebook.pdf"
+                exporter.export_to_pdf(ipynb_path, pdf_path, method="webpdf")
+                manifest["pdf_path"] = str(pdf_path)
+            except Exception as e:
+                manifest["pdf_error"] = str(e)
+        
+        if "zip" in formats:
+            try:
+                # Include JSON artifacts in the ZIP
+                extra_files = []
+                if manifest.get("plan_path"):
+                    extra_files.append(manifest["plan_path"])
+                if manifest.get("cells_path"):
+                    extra_files.append(manifest["cells_path"])
+                
+                zip_path = target / "notebook_bundle.zip"
+                exporter.export_zip(notebook, zip_path, extra_files=extra_files)
+                manifest["zip_path"] = str(zip_path)
+            except Exception as e:
+                manifest["zip_error"] = str(e)
 
     manifest_path = target / "manifest.json"
     _write_json(manifest_path, manifest)
@@ -258,6 +336,7 @@ def _run_generate(args: argparse.Namespace) -> int:
             args.prompt,
             output_dir=args.output,
             mode=args.mode,
+            formats=args.formats,
         )
     )
 
@@ -267,6 +346,16 @@ def _run_generate(args: argparse.Namespace) -> int:
         print(f"  Plan: {artifacts['manifest']['plan_path']}")
     if artifacts["manifest"].get("cells_path"):
         print(f"  Cells: {artifacts['manifest']['cells_path']}")
+    if artifacts["manifest"].get("notebook_path"):
+        print(f"  Notebook: {artifacts['manifest']['notebook_path']}")
+    if artifacts["manifest"].get("html_path"):
+        print(f"  HTML: {artifacts['manifest']['html_path']}")
+    if artifacts["manifest"].get("docx_path"):
+        print(f"  DOCX: {artifacts['manifest']['docx_path']}")
+    if artifacts["manifest"].get("pdf_path"):
+        print(f"  PDF: {artifacts['manifest']['pdf_path']}")
+    if artifacts["manifest"].get("zip_path"):
+        print(f"  ZIP Bundle: {artifacts['manifest']['zip_path']}")
     return 0
 
 
@@ -305,6 +394,13 @@ def build_parser() -> argparse.ArgumentParser:
         choices=["stub", "live"],
         default="stub",
         help="Generation mode. 'stub' avoids external API calls (default).",
+    )
+    gen.add_argument(
+        "--formats",
+        nargs="+",
+        choices=["ipynb", "html", "pdf", "docx", "zip"],
+        default=None,
+        help="Output formats to generate (default: all formats). Specify one or more.",
     )
     gen.set_defaults(func=_run_generate)
 
