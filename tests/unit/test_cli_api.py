@@ -80,7 +80,6 @@ async def test_api_generate_with_formats(tmp_path: Path):
     assert "pdf_path" not in payload["manifest"]
 
 
-
 def test_health_endpoint():
     client = TestClient(app)
     response = client.get("/health")
