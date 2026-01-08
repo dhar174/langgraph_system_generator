@@ -37,6 +37,10 @@ class GenerationRequest(BaseModel):
         default="./output/api",
         description="Directory to write generation artifacts.",
     )
+    formats: Optional[list[str]] = Field(
+        default=None,
+        description="List of output formats to generate (ipynb, html, pdf, docx, zip). Generates all if not specified.",
+    )
 
 
 class GenerationResponse(BaseModel):
@@ -79,6 +83,7 @@ async def generate_notebook(request: GenerationRequest) -> GenerationResponse:
             request.prompt,
             output_dir=str(output_path),
             mode=request.mode,
+            formats=request.formats,
         )
         return GenerationResponse(
             success=True,

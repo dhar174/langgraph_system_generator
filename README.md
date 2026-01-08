@@ -42,11 +42,31 @@ Use the bundled CLI (stub mode by default) to generate scaffold artifacts or reb
 # Generate offline-friendly artifacts from a prompt
 lnf generate "Create a router-based chatbot" --output ./output/demo --mode stub
 
+# Generate specific output formats (default: all formats)
+lnf generate "Create a chatbot" --output ./output/demo --formats ipynb html docx
+
 # Build the FAISS index from cached docs with fake embeddings (no API key needed)
 lnf build-index --cache ./data/cached_docs --store ./data/vector_store
 ```
 
 Pass `--mode live` to `lnf generate` when you have `OPENAI_API_KEY` configured and want to invoke the full generator graph.
+
+### Output Formats
+
+The generator produces the following artifacts:
+
+- **JSON artifacts**: `manifest.json`, `notebook_plan.json`, `generated_cells.json` for programmatic access
+- **Jupyter Notebook** (`.ipynb`): Fully functional notebook ready to run in Jupyter or Google Colab
+- **HTML** (`.html`): Web-ready notebook export for viewing and sharing
+- **DOCX** (`.docx`): Microsoft Word document for documentation and editing
+- **PDF** (`.pdf`): Print-ready PDF document (requires additional dependencies)
+- **ZIP Bundle** (`.zip`): Complete package with notebook and all JSON artifacts
+
+Use the `--formats` option to select specific formats (default: generates all except PDF):
+
+```bash
+lnf generate "Create a chatbot" --formats ipynb html docx zip
+```
 
 ## Web Interface
 
@@ -88,8 +108,27 @@ curl -X POST http://localhost:8000/generate \
   -d '{
     "prompt": "Create a customer support chatbot with routing",
     "mode": "stub",
-    "output_dir": "./output/my_system"
+    "output_dir": "./output/my_system",
+    "formats": ["ipynb", "html", "docx", "zip"]
   }'
+```
+
+The API response includes paths to all generated artifacts in the manifest:
+
+```json
+{
+  "success": true,
+  "mode": "stub",
+  "prompt": "Create a customer support chatbot with routing",
+  "manifest": {
+    "notebook_path": "./output/my_system/notebook.ipynb",
+    "html_path": "./output/my_system/notebook.html",
+    "docx_path": "./output/my_system/notebook.docx",
+    "zip_path": "./output/my_system/notebook_bundle.zip",
+    "plan_path": "./output/my_system/notebook_plan.json",
+    "cells_path": "./output/my_system/generated_cells.json"
+  }
+}
 ```
 
 You can also containerize the application:
