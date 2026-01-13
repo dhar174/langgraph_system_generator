@@ -17,3 +17,8 @@ venv/
 # Generated output files
 output/
 langgraph_system_generator.code-workspace
+data/cached_docs/documents.json
+data/vector_store/manifest.json
+data/vector_store/index.pkl
+data/vector_store/index.faiss
+data/cached_docs/documents.json
