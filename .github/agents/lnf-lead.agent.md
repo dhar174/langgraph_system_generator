@@ -80,3 +80,8 @@ When to delegate:
 - Feature implemented per plan and documented.
 - Tests added/updated and passing.
 - Example usage still works (CLI + sample notebook generation once those exist).
+
+* **Environment Note**: You are running in a headless Linux container.
+     - Always use headless mode (default).
+     - If a test fails due to "connection refused", verify the server was started with `execute` first.
+     - You cannot "see" the browser window, so rely on `playwright/screenshot` to generate artifacts I can view.
