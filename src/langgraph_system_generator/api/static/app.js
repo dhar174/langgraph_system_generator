@@ -633,7 +633,6 @@ function clearHistory() {
 }
 
 function updateHistoryDisplay() {
-    const historyCard = document.getElementById('historyCard');
     const historyContent = document.getElementById('historyContent');
     const history = loadFromHistory();
     
@@ -732,6 +731,14 @@ function rerunFromHistory(entry) {
     
     if (data.memory_config) {
         document.getElementById('memoryConfig').value = data.memory_config;
+    }
+    
+    // Restore output formats from history, if available
+    if (Array.isArray(data.formats)) {
+        const formatCheckboxes = document.querySelectorAll('input[type="checkbox"][name="formats"]');
+        formatCheckboxes.forEach((checkbox) => {
+            checkbox.checked = data.formats.includes(checkbox.value);
+        });
     }
     
     // Scroll to form

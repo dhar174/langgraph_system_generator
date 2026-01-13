@@ -232,7 +232,12 @@ async def generate_artifacts(
         "plan_title": plan_title,
     }
     
-    # Add advanced options to manifest if provided
+    # Add advanced options to manifest if provided.
+    # NOTE: These parameters are currently stored as metadata for tracking and
+    # reproducibility purposes. They do not directly affect the generation pipeline
+    # in the current implementation. In live mode, the generation uses the configured
+    # LLM settings from the generator graph, not these UI-provided values.
+    # Future enhancements could integrate these parameters into the generation process.
     if model:
         manifest["model"] = model
     if temperature is not None:
