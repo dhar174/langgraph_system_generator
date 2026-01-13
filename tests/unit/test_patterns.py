@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import pytest
-
 from langgraph_system_generator.patterns import (
     CritiqueLoopPattern,
     RouterPattern,

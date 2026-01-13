@@ -2,13 +2,12 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
 
 from langgraph_system_generator.generator.state import CellSpec, NotebookPlan
-from langgraph_system_generator.generator.utils import extract_json_from_llm_response
 from langgraph_system_generator.patterns import (
     CritiqueLoopPattern,
     RouterPattern,
@@ -236,9 +235,6 @@ class WorkflowState(MessagesState):
         tool_category = tool.get("category", "")
         tool_config = tool.get("configuration", {})
 
-        # Create function name
-        func_name = tool_name.lower().replace(" ", "_").replace("-", "_")
-
         try:
             # Build prompt for LLM
             system_prompt = SystemMessage(
@@ -295,11 +291,10 @@ Generate the complete Python function implementation."""
 """
             return header + generated_code
 
-        except (ValueError, KeyError, AttributeError) as e:
+        except (ValueError, KeyError, AttributeError):
             # Fallback to template with better implementation hints
-            # Log error for debugging (optional: add logger if available)
             return self._generate_tool_fallback(tool)
-        except Exception as e:
+        except Exception:
             # Unexpected error - still fallback but this is unusual
             return self._generate_tool_fallback(tool)
 
@@ -455,10 +450,10 @@ Generate the complete Python function implementation."""
 
             return generated_code
 
-        except (ValueError, KeyError, AttributeError) as e:
+        except (ValueError, KeyError, AttributeError):
             # Fallback to improved template
             return self._generate_node_fallback(node, workflow_design)
-        except Exception as e:
+        except Exception:
             # Unexpected error - still fallback
             return self._generate_node_fallback(node, workflow_design)
 

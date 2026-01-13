@@ -176,7 +176,7 @@ def critique_node(state: WorkflowState) -> WorkflowState:
     """
     current_draft = state.get("current_draft", "")
     messages = state["messages"]
-    criteria = state.get("criteria", {criteria})
+    criteria = state.get("criteria", [])
     
     # Initialize LLM with structured output
     llm = ChatOpenAI(model="{llm_model}", temperature=0)

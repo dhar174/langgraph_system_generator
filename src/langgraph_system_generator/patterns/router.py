@@ -162,8 +162,10 @@ Respond with ONLY the route name.""")
     
     # Validate route
     valid_routes = [r.lower() for r in routes]
+    if not valid_routes:
+        raise ValueError("Router configuration must include at least one route.")
     if selected_route not in valid_routes:
-        selected_route = routes[0].lower()  # Default to first route
+        selected_route = valid_routes[0]  # Default to first route
     
     return {{
         **state,

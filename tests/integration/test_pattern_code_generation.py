@@ -108,14 +108,10 @@ async def test_tool_code_generation_not_empty(tmp_path: Path):
     # Find tools section
     code_cells = [cell for cell in nb.cells if cell.cell_type == "code"]
 
-    tools_section_found = False
     for cell in code_cells:
-        if (
-            "# Tool:" in cell.source
-            or "def " in cell.source
-            and "_tool" in cell.source.lower()
+        if "# Tool:" in cell.source or (
+            "def " in cell.source and "_tool" in cell.source.lower()
         ):
-            tools_section_found = True
             # Tool should have either real implementation or helpful comments
             # Check it's not just "pass" with nothing else
             lines = [
