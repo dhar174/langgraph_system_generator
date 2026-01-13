@@ -169,7 +169,7 @@ header h1 {
 .form-group textarea:focus,
 .form-group input[type="text"]:focus,
 .form-group input[type="number"]:focus,
-. form-group input[type="url"]:focus,
+.form-group input[type="url"]:focus,
 .form-group select:focus {
     outline: none;
     border-color: var(--primary-color);
