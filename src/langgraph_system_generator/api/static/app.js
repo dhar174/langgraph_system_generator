@@ -12,6 +12,54 @@ const errorContent = document.getElementById('errorContent');
 const healthStatus = document.getElementById('healthStatus');
 const statusDot = document.getElementById('statusDot');
 const statusText = document.getElementById('statusText');
+const progressCard = document.getElementById('progressCard');
+const progressFill = document.getElementById('progressFill');
+const progressText = document.getElementById('progressText');
+const progressPercentage = document.getElementById('progressPercentage');
+const progressSteps = document.getElementById('progressSteps');
+
+// Advanced options
+const advancedToggle = document.getElementById('advancedToggle');
+const advancedPanel = document.getElementById('advancedPanel');
+const temperatureSlider = document.getElementById('temperature');
+const tempValue = document.getElementById('tempValue');
+
+// Theme toggle
+const themeToggle = document.getElementById('themeToggle');
+const themeIcon = themeToggle.querySelector('.theme-icon');
+
+// Initialize theme from localStorage
+const currentTheme = localStorage.getItem('theme') || 'dark';
+document.documentElement.setAttribute('data-theme', currentTheme);
+themeIcon.textContent = currentTheme === 'dark' ? '🌙' : '☀️';
+
+// Theme toggle functionality
+themeToggle.addEventListener('click', () => {
+    const currentTheme = document.documentElement.getAttribute('data-theme');
+    const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
+    
+    document.documentElement.setAttribute('data-theme', newTheme);
+    localStorage.setItem('theme', newTheme);
+    themeIcon.textContent = newTheme === 'dark' ? '🌙' : '☀️';
+});
+
+// Advanced options toggle
+advancedToggle.addEventListener('click', () => {
+    const isExpanded = advancedToggle.getAttribute('aria-expanded') === 'true';
+    
+    if (isExpanded) {
+        advancedPanel.style.display = 'none';
+        advancedToggle.setAttribute('aria-expanded', 'false');
+    } else {
+        advancedPanel.style.display = 'block';
+        advancedToggle.setAttribute('aria-expanded', 'true');
+    }
+});
+
+// Temperature slider update
+temperatureSlider.addEventListener('input', (e) => {
+    tempValue.textContent = e.target.value;
+});
 
 // Helper to count Unicode characters (code points) for accurate counting
 function getCharacterCount(text) {
@@ -65,6 +113,50 @@ function setLoading(isLoading) {
 function hideResults() {
     resultCard.style.display = 'none';
     errorCard.style.display = 'none';
+    progressCard.style.display = 'none';
+}
+
+// Show progress with steps
+function showProgress(step, percentage, message) {
+    hideResults();
+    progressCard.style.display = 'block';
+    progressFill.style.width = percentage + '%';
+    progressPercentage.textContent = percentage + '%';
+    progressText.textContent = message;
+    
+    // Update steps display
+    const steps = [
+        { text: 'Validating input', percent: 10 },
+        { text: 'Preparing generation context', percent: 25 },
+        { text: 'Invoking LLM', percent: 50 },
+        { text: 'Generating artifacts', percent: 75 },
+        { text: 'Finalizing outputs', percent: 90 },
+        { text: 'Complete', percent: 100 }
+    ];
+    
+    progressSteps.innerHTML = '';
+    steps.forEach((s, index) => {
+        const stepDiv = document.createElement('div');
+        stepDiv.className = 'progress-step';
+        
+        if (percentage >= s.percent) {
+            stepDiv.classList.add('complete');
+        } else if (Math.abs(percentage - s.percent) < 15) {
+            stepDiv.classList.add('active');
+        }
+        
+        const icon = document.createElement('span');
+        icon.className = 'step-icon';
+        icon.textContent = percentage >= s.percent ? '✅' : '⏳';
+        
+        const text = document.createElement('span');
+        text.className = 'step-text';
+        text.textContent = s.text;
+        
+        stepDiv.appendChild(icon);
+        stepDiv.appendChild(text);
+        progressSteps.appendChild(stepDiv);
+    });
 }
 
 // Show success result
@@ -243,6 +335,65 @@ function showResult(data) {
     stepsItem.appendChild(stepsList);
     resultWrapper.appendChild(stepsItem);
     
+    // Add export buttons section
+    const exportSection = document.createElement('div');
+    exportSection.className = 'result-item';
+    exportSection.style.marginTop = '1.5rem';
+    
+    const exportHeading = document.createElement('h4');
+    exportHeading.style.marginBottom = '1rem';
+    exportHeading.style.color = 'var(--text-primary)';
+    exportHeading.textContent = '📥 Available Downloads:';
+    
+    const exportButtons = document.createElement('div');
+    exportButtons.style.display = 'flex';
+    exportButtons.style.gap = '0.75rem';
+    exportButtons.style.flexWrap = 'wrap';
+    
+    // Add download buttons for available formats
+    const formats = [
+        { key: 'notebook_path', label: 'Notebook (.ipynb)', icon: '📓' },
+        { key: 'html_path', label: 'HTML', icon: '🌐' },
+        { key: 'docx_path', label: 'Word Doc', icon: '📄' },
+        { key: 'pdf_path', label: 'PDF', icon: '📕' },
+        { key: 'zip_path', label: 'ZIP Bundle', icon: '📦' }
+    ];
+    
+    formats.forEach(format => {
+        if (manifest[format.key]) {
+            const btn = document.createElement('a');
+            btn.className = 'btn btn-secondary';
+            btn.href = manifest[format.key];
+            btn.download = '';
+            btn.style.display = 'inline-flex';
+            btn.style.textDecoration = 'none';
+            btn.textContent = `${format.icon} ${format.label}`;
+            exportButtons.appendChild(btn);
+        }
+    });
+    
+    // Add copy result button
+    const copyBtn = document.createElement('button');
+    copyBtn.className = 'btn btn-secondary';
+    copyBtn.textContent = '📋 Copy Result Info';
+    copyBtn.onclick = () => {
+        const resultText = JSON.stringify(manifest, null, 2);
+        navigator.clipboard.writeText(resultText).then(() => {
+            const originalText = copyBtn.textContent;
+            copyBtn.textContent = '✅ Copied!';
+            setTimeout(() => {
+                copyBtn.textContent = originalText;
+            }, 2000);
+        }).catch(err => {
+            console.error('Failed to copy:', err);
+        });
+    };
+    exportButtons.appendChild(copyBtn);
+    
+    exportSection.appendChild(exportHeading);
+    exportSection.appendChild(exportButtons);
+    resultWrapper.appendChild(exportSection);
+    
     // Add to DOM
     resultContent.appendChild(resultWrapper);
     resultCard.style.display = 'block';
@@ -285,11 +436,38 @@ form.addEventListener('submit', async (e) => {
     e.preventDefault();
     
     const formData = new FormData(form);
+    
+    // Collect selected formats
+    const formats = [];
+    const formatCheckboxes = document.querySelectorAll('input[name="formats"]:checked');
+    formatCheckboxes.forEach(cb => formats.push(cb.value));
+    
     const data = {
         prompt: formData.get('prompt'),
         mode: formData.get('mode'),
         output_dir: formData.get('outputDir')
     };
+    
+    // Add formats if any selected
+    if (formats.length > 0) {
+        data.formats = formats;
+    }
+    
+    // Add advanced options if specified
+    const model = formData.get('model');
+    if (model) data.model = model;
+    
+    const temperature = parseFloat(formData.get('temperature'));
+    if (!isNaN(temperature)) data.temperature = temperature;
+    
+    const maxTokens = formData.get('maxTokens');
+    if (maxTokens) data.max_tokens = parseInt(maxTokens);
+    
+    const agentType = formData.get('agentType');
+    if (agentType) data.agent_type = agentType;
+    
+    const memoryConfig = formData.get('memoryConfig');
+    if (memoryConfig) data.memory_config = memoryConfig;
     
     // Validate prompt length (using Unicode code points)
     if (getCharacterCount(data.prompt) > 5000) {
@@ -302,10 +480,20 @@ form.addEventListener('submit', async (e) => {
         return;
     }
     
+    // Save to history
+    saveToHistory(data);
+    
     setLoading(true);
     hideResults();
     
+    // Show initial progress
+    showProgress(1, 10, 'Validating input...');
+    
     try {
+        // Simulate progress updates
+        setTimeout(() => showProgress(2, 25, 'Preparing generation context...'), 500);
+        setTimeout(() => showProgress(3, 50, 'Invoking LLM...'), 1000);
+        
         const response = await fetch('/generate', {
             method: 'POST',
             headers: {
@@ -314,10 +502,17 @@ form.addEventListener('submit', async (e) => {
             body: JSON.stringify(data)
         });
         
+        showProgress(4, 75, 'Generating artifacts...');
+        
         const result = await response.json();
         
+        showProgress(5, 90, 'Finalizing outputs...');
+        
         if (response.ok && result.success) {
-            showResult(result);
+            setTimeout(() => {
+                showProgress(6, 100, 'Complete!');
+                setTimeout(() => showResult(result), 500);
+            }, 300);
         } else {
             // Log detailed error for debugging but show generic message to user
             const serverErrorDetail = (result && (result.error || result.detail)) || '';
@@ -345,3 +540,39 @@ const healthCheckInterval = setInterval(checkHealth, 30000); // Check every 30 s
 window.addEventListener('beforeunload', () => {
     clearInterval(healthCheckInterval);
 });
+
+// History Management
+function saveToHistory(data) {
+    try {
+        const history = JSON.parse(localStorage.getItem('generationHistory') || '[]');
+        const entry = {
+            timestamp: new Date().toISOString(),
+            prompt: data.prompt.substring(0, 100) + (data.prompt.length > 100 ? '...' : ''),
+            mode: data.mode,
+            model: data.model || 'default',
+            fullData: data
+        };
+        history.unshift(entry);
+        // Keep only last 10 entries
+        if (history.length > 10) {
+            history.pop();
+        }
+        localStorage.setItem('generationHistory', JSON.stringify(history));
+    } catch (e) {
+        console.error('Failed to save to history:', e);
+    }
+}
+
+function loadFromHistory() {
+    try {
+        return JSON.parse(localStorage.getItem('generationHistory') || '[]');
+    } catch (e) {
+        console.error('Failed to load history:', e);
+        return [];
+    }
+}
+
+function clearHistory() {
+    localStorage.removeItem('generationHistory');
+    console.log('History cleared');
+}

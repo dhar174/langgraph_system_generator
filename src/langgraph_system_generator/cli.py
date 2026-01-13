@@ -177,6 +177,11 @@ async def generate_artifacts(
     output_dir: str | Path,
     mode: GenerationMode = "stub",
     formats: List[str] | None = None,
+    model: str | None = None,
+    temperature: float | None = None,
+    max_tokens: int | None = None,
+    agent_type: str | None = None,
+    memory_config: str | None = None,
 ) -> GenerationArtifacts:
     """Generate notebook artifacts either in stub or live mode.
 
@@ -189,6 +194,11 @@ async def generate_artifacts(
         mode: Generation mode ('stub' or 'live')
         formats: List of output formats to generate (ipynb, html, pdf, docx, zip).
                  If None or empty, generates all formats.
+        model: LLM model to use (optional, uses default if not specified)
+        temperature: Temperature for LLM sampling (0.0-2.0, optional)
+        max_tokens: Maximum tokens for LLM response (optional)
+        agent_type: Type of agent architecture (optional, auto-detected if not specified)
+        memory_config: Memory configuration for the agent (optional)
     """
 
     from langgraph_system_generator.notebook.composer import NotebookComposer
@@ -221,6 +231,18 @@ async def generate_artifacts(
         "cell_count": len(serialized.get("generated_cells", []) or []),
         "plan_title": plan_title,
     }
+    
+    # Add advanced options to manifest if provided
+    if model:
+        manifest["model"] = model
+    if temperature is not None:
+        manifest["temperature"] = temperature
+    if max_tokens is not None:
+        manifest["max_tokens"] = max_tokens
+    if agent_type:
+        manifest["agent_type"] = agent_type
+    if memory_config:
+        manifest["memory_config"] = memory_config
 
     # Persist helpful artifacts for downstream consumers
     plan = serialized.get("notebook_plan")

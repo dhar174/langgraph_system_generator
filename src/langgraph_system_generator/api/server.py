@@ -41,6 +41,31 @@ class GenerationRequest(BaseModel):
         default=None,
         description="List of output formats to generate (ipynb, html, pdf, docx, zip). Generates all if not specified.",
     )
+    # Advanced options
+    model: Optional[str] = Field(
+        default=None,
+        description="LLM model to use (e.g., gpt-4, gpt-3.5-turbo, claude-3-opus, etc.). Uses default if not specified.",
+    )
+    temperature: Optional[float] = Field(
+        default=None,
+        ge=0.0,
+        le=2.0,
+        description="Temperature for LLM sampling (0.0-2.0). Higher values make output more random.",
+    )
+    max_tokens: Optional[int] = Field(
+        default=None,
+        ge=1,
+        le=100000,
+        description="Maximum tokens for LLM response. Controls output length.",
+    )
+    agent_type: Optional[str] = Field(
+        default=None,
+        description="Type of agent architecture (router, subagents, hybrid, etc.).",
+    )
+    memory_config: Optional[str] = Field(
+        default=None,
+        description="Memory configuration for the agent (none, short, long, full).",
+    )
 
 
 class GenerationResponse(BaseModel):
@@ -84,6 +109,11 @@ async def generate_notebook(request: GenerationRequest) -> GenerationResponse:
             output_dir=str(output_path),
             mode=request.mode,
             formats=request.formats,
+            model=request.model,
+            temperature=request.temperature,
+            max_tokens=request.max_tokens,
+            agent_type=request.agent_type,
+            memory_config=request.memory_config,
         )
         return GenerationResponse(
             success=True,
