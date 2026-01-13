@@ -12,6 +12,54 @@ const errorContent = document.getElementById('errorContent');
 const healthStatus = document.getElementById('healthStatus');
 const statusDot = document.getElementById('statusDot');
 const statusText = document.getElementById('statusText');
+const progressCard = document.getElementById('progressCard');
+const progressFill = document.getElementById('progressFill');
+const progressText = document.getElementById('progressText');
+const progressPercentage = document.getElementById('progressPercentage');
+const progressSteps = document.getElementById('progressSteps');
+
+// Advanced options
+const advancedToggle = document.getElementById('advancedToggle');
+const advancedPanel = document.getElementById('advancedPanel');
+const temperatureSlider = document.getElementById('temperature');
+const tempValue = document.getElementById('tempValue');
+
+// Theme toggle
+const themeToggle = document.getElementById('themeToggle');
+const themeIcon = themeToggle.querySelector('.theme-icon');
+
+// Initialize theme from localStorage
+const currentTheme = localStorage.getItem('theme') || 'dark';
+document.documentElement.setAttribute('data-theme', currentTheme);
+themeIcon.textContent = currentTheme === 'dark' ? '🌙' : '☀️';
+
+// Theme toggle functionality
+themeToggle.addEventListener('click', () => {
+    const currentTheme = document.documentElement.getAttribute('data-theme');
+    const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
+    
+    document.documentElement.setAttribute('data-theme', newTheme);
+    localStorage.setItem('theme', newTheme);
+    themeIcon.textContent = newTheme === 'dark' ? '🌙' : '☀️';
+});
+
+// Advanced options toggle
+advancedToggle.addEventListener('click', () => {
+    const isExpanded = advancedToggle.getAttribute('aria-expanded') === 'true';
+    
+    if (isExpanded) {
+        advancedPanel.style.display = 'none';
+        advancedToggle.setAttribute('aria-expanded', 'false');
+    } else {
+        advancedPanel.style.display = 'block';
+        advancedToggle.setAttribute('aria-expanded', 'true');
+    }
+});
+
+// Temperature slider update
+temperatureSlider.addEventListener('input', (e) => {
+    tempValue.textContent = e.target.value;
+});
 
 // Helper to count Unicode characters (code points) for accurate counting
 function getCharacterCount(text) {
@@ -65,6 +113,73 @@ function setLoading(isLoading) {
 function hideResults() {
     resultCard.style.display = 'none';
     errorCard.style.display = 'none';
+    progressCard.style.display = 'none';
+}
+
+// Progress steps configuration
+const PROGRESS_STEPS = [
+    { text: 'Validating input', percent: 10 },
+    { text: 'Preparing generation context', percent: 25 },
+    { text: 'Invoking LLM', percent: 50 },
+    { text: 'Generating artifacts', percent: 75 },
+    { text: 'Finalizing outputs', percent: 90 },
+    { text: 'Complete', percent: 100 }
+];
+
+// Initialize progress steps once
+function initProgressSteps() {
+    progressSteps.innerHTML = '';
+    PROGRESS_STEPS.forEach((s, index) => {
+        const stepDiv = document.createElement('div');
+        stepDiv.className = 'progress-step';
+        stepDiv.dataset.stepPercent = s.percent;
+        
+        const icon = document.createElement('span');
+        icon.className = 'step-icon';
+        icon.setAttribute('aria-label', 'Step status');
+        icon.textContent = '⏳';
+        
+        const text = document.createElement('span');
+        text.className = 'step-text';
+        text.textContent = s.text;
+        
+        stepDiv.appendChild(icon);
+        stepDiv.appendChild(text);
+        progressSteps.appendChild(stepDiv);
+    });
+}
+
+// Show progress with steps (now just updates existing elements)
+function showProgress(step, percentage, message) {
+    hideResults();
+    progressCard.style.display = 'block';
+    progressFill.style.width = percentage + '%';
+    progressPercentage.textContent = percentage + '%';
+    progressText.textContent = message;
+    
+    // Initialize steps if not already done
+    if (progressSteps.children.length === 0) {
+        initProgressSteps();
+    }
+    
+    // Update step states without recreating DOM
+    Array.from(progressSteps.children).forEach((stepDiv) => {
+        const stepPercent = parseInt(stepDiv.dataset.stepPercent);
+        const icon = stepDiv.querySelector('.step-icon');
+        
+        // Remove previous classes
+        stepDiv.classList.remove('complete', 'active');
+        
+        if (percentage >= stepPercent) {
+            stepDiv.classList.add('complete');
+            icon.textContent = '✅';
+        } else if (Math.abs(percentage - stepPercent) < 15) {
+            stepDiv.classList.add('active');
+            icon.textContent = '⏳';
+        } else {
+            icon.textContent = '⏳';
+        }
+    });
 }
 
 // Show success result
@@ -243,6 +358,65 @@ function showResult(data) {
     stepsItem.appendChild(stepsList);
     resultWrapper.appendChild(stepsItem);
     
+    // Add export buttons section
+    const exportSection = document.createElement('div');
+    exportSection.className = 'result-item';
+    exportSection.style.marginTop = '1.5rem';
+    
+    const exportHeading = document.createElement('h4');
+    exportHeading.style.marginBottom = '1rem';
+    exportHeading.style.color = 'var(--text-primary)';
+    exportHeading.textContent = '📥 Available Downloads:';
+    
+    const exportButtons = document.createElement('div');
+    exportButtons.style.display = 'flex';
+    exportButtons.style.gap = '0.75rem';
+    exportButtons.style.flexWrap = 'wrap';
+    
+    // Add download buttons for available formats
+    const formats = [
+        { key: 'notebook_path', label: 'Notebook (.ipynb)', icon: '📓' },
+        { key: 'html_path', label: 'HTML', icon: '🌐' },
+        { key: 'docx_path', label: 'Word Doc', icon: '📄' },
+        { key: 'pdf_path', label: 'PDF', icon: '📕' },
+        { key: 'zip_path', label: 'ZIP Bundle', icon: '📦' }
+    ];
+    
+    formats.forEach(format => {
+        if (manifest[format.key]) {
+            const btn = document.createElement('a');
+            btn.className = 'btn btn-secondary';
+            btn.href = manifest[format.key];
+            btn.download = '';
+            btn.style.display = 'inline-flex';
+            btn.style.textDecoration = 'none';
+            btn.textContent = `${format.icon} ${format.label}`;
+            exportButtons.appendChild(btn);
+        }
+    });
+    
+    // Add copy result button
+    const copyBtn = document.createElement('button');
+    copyBtn.className = 'btn btn-secondary';
+    copyBtn.textContent = '📋 Copy Result Info';
+    copyBtn.onclick = () => {
+        const resultText = JSON.stringify(manifest, null, 2);
+        navigator.clipboard.writeText(resultText).then(() => {
+            const originalText = copyBtn.textContent;
+            copyBtn.textContent = '✅ Copied!';
+            setTimeout(() => {
+                copyBtn.textContent = originalText;
+            }, 2000);
+        }).catch(err => {
+            console.error('Failed to copy:', err);
+        });
+    };
+    exportButtons.appendChild(copyBtn);
+    
+    exportSection.appendChild(exportHeading);
+    exportSection.appendChild(exportButtons);
+    resultWrapper.appendChild(exportSection);
+    
     // Add to DOM
     resultContent.appendChild(resultWrapper);
     resultCard.style.display = 'block';
@@ -285,11 +459,41 @@ form.addEventListener('submit', async (e) => {
     e.preventDefault();
     
     const formData = new FormData(form);
+    
+    // Collect selected formats
+    const formats = [];
+    const formatCheckboxes = document.querySelectorAll('input[name="formats"]:checked');
+    formatCheckboxes.forEach(cb => formats.push(cb.value));
+    
+    // Validate at least one format is selected
+    if (formats.length === 0) {
+        showError('Please select at least one output format.');
+        return;
+    }
+    
     const data = {
         prompt: formData.get('prompt'),
         mode: formData.get('mode'),
-        output_dir: formData.get('outputDir')
+        output_dir: formData.get('outputDir'),
+        formats: formats
     };
+    
+    // Add advanced options if specified
+    const model = formData.get('model');
+    if (model) data.model = model;
+    
+    const temperature = parseFloat(formData.get('temperature'));
+    // Only send temperature if it differs from default (0.7)
+    if (!isNaN(temperature) && temperature !== 0.7) data.temperature = temperature;
+    
+    const maxTokens = formData.get('maxTokens');
+    if (maxTokens) data.max_tokens = parseInt(maxTokens);
+    
+    const agentType = formData.get('agentType');
+    if (agentType) data.agent_type = agentType;
+    
+    const memoryConfig = formData.get('memoryConfig');
+    if (memoryConfig) data.memory_config = memoryConfig;
     
     // Validate prompt length (using Unicode code points)
     if (getCharacterCount(data.prompt) > 5000) {
@@ -302,10 +506,31 @@ form.addEventListener('submit', async (e) => {
         return;
     }
     
+    // Save to history
+    saveToHistory(data);
+    
     setLoading(true);
     hideResults();
     
+    // Show initial progress
+    showProgress(1, 10, 'Validating input...');
+    
+    // Track progress timeout IDs to clear them if API completes early
+    const progressTimeouts = [];
+    
     try {
+        // Simulate progress updates only if they haven't been overtaken by actual progress
+        progressTimeouts.push(setTimeout(() => {
+            if (progressPercentage.textContent === '10%') {
+                showProgress(2, 25, 'Preparing generation context...');
+            }
+        }, 500));
+        progressTimeouts.push(setTimeout(() => {
+            if (parseInt(progressPercentage.textContent) < 50) {
+                showProgress(3, 50, 'Invoking LLM...');
+            }
+        }, 1000));
+        
         const response = await fetch('/generate', {
             method: 'POST',
             headers: {
@@ -314,10 +539,20 @@ form.addEventListener('submit', async (e) => {
             body: JSON.stringify(data)
         });
         
+        // Clear any pending simulated progress updates
+        progressTimeouts.forEach(id => clearTimeout(id));
+        
+        showProgress(4, 75, 'Generating artifacts...');
+        
         const result = await response.json();
         
+        showProgress(5, 90, 'Finalizing outputs...');
+        
         if (response.ok && result.success) {
-            showResult(result);
+            setTimeout(() => {
+                showProgress(6, 100, 'Complete!');
+                setTimeout(() => showResult(result), 500);
+            }, 300);
         } else {
             // Log detailed error for debugging but show generic message to user
             const serverErrorDetail = (result && (result.error || result.detail)) || '';
@@ -345,3 +580,209 @@ const healthCheckInterval = setInterval(checkHealth, 30000); // Check every 30 s
 window.addEventListener('beforeunload', () => {
     clearInterval(healthCheckInterval);
 });
+
+// History Management
+function saveToHistory(data) {
+    try {
+        const history = JSON.parse(localStorage.getItem('generationHistory') || '[]');
+        const promptText = data && typeof data.prompt === 'string' ? data.prompt : String(data.prompt || '');
+        const promptCodePoints = Array.from(promptText);
+        const isTruncated = promptCodePoints.length > 100;
+        const promptPreview = promptCodePoints.slice(0, 100).join('') + (isTruncated ? '...' : '');
+        const entry = {
+            timestamp: new Date().toISOString(),
+            prompt: promptPreview,
+            fullPrompt: promptText,
+            mode: data.mode,
+            model: data.model || 'default',
+            fullData: data
+        };
+        history.unshift(entry);
+        // Keep only last 10 entries
+        if (history.length > 10) {
+            history.pop();
+        }
+        localStorage.setItem('generationHistory', JSON.stringify(history));
+        updateHistoryDisplay();
+    } catch (e) {
+        console.error('Failed to save to history:', e);
+        // Show user-facing notification
+        showError('Failed to save generation to history. Your browser storage may be full or disabled.');
+    }
+}
+
+function loadFromHistory() {
+    try {
+        return JSON.parse(localStorage.getItem('generationHistory') || '[]');
+    } catch (e) {
+        console.error('Failed to load history:', e);
+        return [];
+    }
+}
+
+function clearHistory() {
+    try {
+        localStorage.removeItem('generationHistory');
+        updateHistoryDisplay();
+        console.log('History cleared');
+    } catch (e) {
+        console.error('Failed to clear history:', e);
+        // Show user-facing notification
+        showError('Failed to clear history. Your browser storage may be disabled.');
+    }
+}
+
+function updateHistoryDisplay() {
+    const historyContent = document.getElementById('historyContent');
+    const history = loadFromHistory();
+    
+    if (history.length === 0) {
+        historyContent.textContent = '';
+        const emptyMessage = document.createElement('p');
+        emptyMessage.style.color = 'var(--text-muted)';
+        emptyMessage.style.textAlign = 'center';
+        emptyMessage.textContent = 'No recent generations';
+        historyContent.appendChild(emptyMessage);
+        return;
+    }
+    
+    historyContent.textContent = '';
+    history.forEach((entry, index) => {
+        const item = document.createElement('div');
+        item.className = 'history-item';
+        item.setAttribute('role', 'button');
+        item.setAttribute('tabindex', '0');
+        
+        const header = document.createElement('div');
+        header.className = 'history-item-header';
+        
+        const time = document.createElement('div');
+        time.className = 'history-item-time';
+        const date = new Date(entry.timestamp);
+        time.textContent = date.toLocaleString();
+        
+        header.appendChild(time);
+        
+        const prompt = document.createElement('div');
+        prompt.className = 'history-item-prompt';
+        prompt.textContent = entry.prompt;
+        prompt.title = entry.fullPrompt;
+        
+        const meta = document.createElement('div');
+        meta.className = 'history-item-meta';
+        
+        const modeTag = document.createElement('span');
+        modeTag.className = 'history-tag';
+        modeTag.textContent = entry.mode;
+        
+        const modelTag = document.createElement('span');
+        modelTag.className = 'history-tag';
+        modelTag.textContent = entry.model;
+        
+        meta.appendChild(modeTag);
+        meta.appendChild(modelTag);
+        
+        item.appendChild(header);
+        item.appendChild(prompt);
+        item.appendChild(meta);
+        
+        // Click to reuse this configuration
+        item.addEventListener('click', () => {
+            rerunFromHistory(entry);
+        });
+        
+        // Keyboard support
+        item.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                rerunFromHistory(entry);
+            }
+        });
+        
+        historyContent.appendChild(item);
+    });
+}
+
+function rerunFromHistory(entry) {
+    const data = entry.fullData;
+    
+    // Fill in the form
+    document.getElementById('prompt').value = data.prompt;
+    document.getElementById('mode').value = data.mode || 'stub';
+    document.getElementById('outputDir').value = data.output_dir || './output/web_generated';
+    
+    if (data.model) {
+        document.getElementById('model').value = data.model;
+    }
+    
+    if (data.temperature !== undefined) {
+        const tempSlider = document.getElementById('temperature');
+        tempSlider.value = data.temperature;
+        document.getElementById('tempValue').textContent = data.temperature;
+    }
+    
+    if (data.max_tokens) {
+        document.getElementById('maxTokens').value = data.max_tokens;
+    }
+    
+    if (data.agent_type) {
+        document.getElementById('agentType').value = data.agent_type;
+    }
+    
+    if (data.memory_config) {
+        document.getElementById('memoryConfig').value = data.memory_config;
+    }
+    
+    // Restore output formats from history, if available
+    if (Array.isArray(data.formats)) {
+        const formatCheckboxes = document.querySelectorAll('input[type="checkbox"][name="formats"]');
+        formatCheckboxes.forEach((checkbox) => {
+            checkbox.checked = data.formats.includes(checkbox.value);
+        });
+    }
+    
+    // Scroll to form
+    form.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    
+    // Hide history
+    document.getElementById('historyCard').style.display = 'none';
+    
+    // Show a notification
+    const notification = document.createElement('div');
+    notification.style.cssText = 'position: fixed; top: 20px; right: 20px; background: var(--success-color); color: white; padding: 1rem; border-radius: 0.5rem; z-index: 1000; opacity: 1; transition: opacity 0.3s ease; animation: slideDown 0.3s ease;';
+    notification.textContent = '✅ Configuration loaded from history';
+    document.body.appendChild(notification);
+    
+    setTimeout(() => {
+        // Fade out the notification before removing it
+        notification.style.opacity = '0';
+        setTimeout(() => notification.remove(), 300);
+    }, 2000);
+}
+
+// History toggle button
+const historyToggleBtn = document.getElementById('historyToggleBtn');
+const historyCard = document.getElementById('historyCard');
+
+historyToggleBtn.addEventListener('click', () => {
+    const isVisible = historyCard.style.display !== 'none';
+    
+    if (isVisible) {
+        historyCard.style.display = 'none';
+    } else {
+        updateHistoryDisplay();
+        historyCard.style.display = 'block';
+        historyCard.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+});
+
+// Clear history button
+const clearHistoryBtn = document.getElementById('clearHistoryBtn');
+clearHistoryBtn.addEventListener('click', () => {
+    if (confirm('Are you sure you want to clear all history?')) {
+        clearHistory();
+    }
+});
+
+// Initialize history display on load
+updateHistoryDisplay();

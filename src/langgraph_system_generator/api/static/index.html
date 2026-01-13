@@ -11,9 +11,17 @@
         <header>
             <h1>🚀 LangGraph System Generator</h1>
             <p class="subtitle">Generate complete multi-agent systems from natural language prompts</p>
-            <div class="health-status" id="healthStatus">
-                <span class="status-dot" id="statusDot" aria-hidden="true" role="presentation"></span>
-                <span id="statusText">Checking status...</span>
+            <div class="header-controls">
+                <div class="health-status" id="healthStatus">
+                    <span class="status-dot" id="statusDot" aria-hidden="true" role="presentation"></span>
+                    <span id="statusText">Checking status...</span>
+                </div>
+                <button type="button" class="btn-secondary btn-icon" id="historyToggleBtn" aria-label="Toggle generation history" title="Show history">
+                    📜
+                </button>
+                <button type="button" class="theme-toggle" id="themeToggle" aria-label="Toggle dark/light theme" title="Toggle theme">
+                    <span class="theme-icon">🌙</span>
+                </button>
             </div>
         </header>
 
@@ -59,11 +67,159 @@
                         >
                     </div>
 
+                    <!-- Advanced Options Panel -->
+                    <div class="advanced-options">
+                        <button type="button" class="advanced-toggle" id="advancedToggle" aria-expanded="false" aria-controls="advancedPanel">
+                            <span class="toggle-icon">▶</span>
+                            <span class="toggle-text">Advanced Options</span>
+                        </button>
+                        
+                        <div class="advanced-panel" id="advancedPanel" style="display: none;">
+                            <div class="options-grid">
+                                <!-- Model Selection -->
+                                <div class="form-group">
+                                    <label for="model">
+                                        Model
+                                        <span class="tooltip" tabindex="0" role="button" aria-label="Help: Select the LLM model to use for generation" data-tooltip="Select the LLM model to use for generation">ⓘ</span>
+                                    </label>
+                                    <select id="model" name="model">
+                                        <option value="">Default (gpt-5-nano)</option>
+                                        <option value="gpt-4">GPT-4</option>
+                                        <option value="gpt-4-turbo">GPT-4 Turbo</option>
+                                        <option value="gpt-3.5-turbo">GPT-3.5 Turbo</option>
+                                        <option value="claude-3-opus">Claude 3 Opus</option>
+                                        <option value="claude-3-sonnet">Claude 3 Sonnet</option>
+                                        <option value="claude-3-haiku">Claude 3 Haiku</option>
+                                        <option value="gemini-pro">Gemini Pro</option>
+                                    </select>
+                                </div>
+
+                                <!-- Temperature -->
+                                <div class="form-group">
+                                    <label for="temperature">
+                                        Temperature: <span id="tempValue">0.7</span>
+                                        <span class="tooltip" tabindex="0" role="button" aria-label="Help: Controls randomness. Lower = more focused, Higher = more creative" data-tooltip="Controls randomness. Lower = more focused, Higher = more creative">ⓘ</span>
+                                    </label>
+                                    <input 
+                                        type="range" 
+                                        id="temperature" 
+                                        name="temperature" 
+                                        min="0" 
+                                        max="2" 
+                                        step="0.1" 
+                                        value="0.7"
+                                        class="slider"
+                                    >
+                                </div>
+
+                                <!-- Max Tokens -->
+                                <div class="form-group">
+                                    <label for="maxTokens">
+                                        Max Tokens
+                                        <span class="tooltip" tabindex="0" role="button" aria-label="Help: Maximum length of generated output" data-tooltip="Maximum length of generated output">ⓘ</span>
+                                    </label>
+                                    <input 
+                                        type="number" 
+                                        id="maxTokens" 
+                                        name="maxTokens" 
+                                        min="100" 
+                                        max="32768" 
+                                        step="100"
+                                        placeholder="Default (4000)"
+                                    >
+                                </div>
+
+                                <!-- Agent Type -->
+                                <div class="form-group">
+                                    <label for="agentType">
+                                        Agent Type
+                                        <span class="tooltip" tabindex="0" role="button" aria-label="Help: Architecture pattern for the agent system" data-tooltip="Architecture pattern for the agent system">ⓘ</span>
+                                    </label>
+                                    <select id="agentType" name="agentType">
+                                        <option value="">Auto-detect</option>
+                                        <option value="router">Router</option>
+                                        <option value="subagents">Subagents</option>
+                                        <option value="hybrid">Hybrid</option>
+                                    </select>
+                                </div>
+
+                                <!-- Memory Config -->
+                                <div class="form-group">
+                                    <label for="memoryConfig">
+                                        Memory Configuration
+                                        <span class="tooltip" tabindex="0" role="button" aria-label="Help: How much context the agent should retain" data-tooltip="How much context the agent should retain">ⓘ</span>
+                                    </label>
+                                    <select id="memoryConfig" name="memoryConfig">
+                                        <option value="">None</option>
+                                        <option value="short">Short-term</option>
+                                        <option value="long">Long-term</option>
+                                        <option value="full">Full History</option>
+                                    </select>
+                                </div>
+
+                                <!-- Output Formats -->
+                                <div class="form-group form-group-full">
+                                    <label>
+                                        Output Formats
+                                        <span class="tooltip" tabindex="0" role="button" aria-label="Help: Select file formats to generate. PDF requires additional dependencies." data-tooltip="Select file formats to generate. PDF requires additional dependencies.">ⓘ</span>
+                                    </label>
+                                    <div class="checkbox-group">
+                                        <label class="checkbox-label">
+                                            <input type="checkbox" name="formats" value="ipynb" checked>
+                                            <span>Jupyter Notebook (.ipynb)</span>
+                                        </label>
+                                        <label class="checkbox-label">
+                                            <input type="checkbox" name="formats" value="html" checked>
+                                            <span>HTML (.html)</span>
+                                        </label>
+                                        <label class="checkbox-label">
+                                            <input type="checkbox" name="formats" value="docx" checked>
+                                            <span>Word Document (.docx)</span>
+                                        </label>
+                                        <label class="checkbox-label">
+                                            <input type="checkbox" name="formats" value="pdf">
+                                            <span>PDF (.pdf) <small style="color: var(--text-muted);">(requires extra deps)</small></span>
+                                        </label>
+                                        <label class="checkbox-label">
+                                            <input type="checkbox" name="formats" value="zip" checked>
+                                            <span>ZIP Bundle (.zip)</span>
+                                        </label>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
                     <button type="submit" class="btn btn-primary" id="generateBtn">
                         <span class="btn-text">Generate System</span>
                         <span class="spinner" style="display: none;" aria-label="Generating system" role="status"></span>
                     </button>
                 </form>
+            </div>
+
+            <!-- Progress Card -->
+            <div class="card progress-card" id="progressCard" style="display: none;" aria-live="polite" aria-atomic="true">
+                <h2>Generation Progress</h2>
+                <div class="progress-container">
+                    <div class="progress-bar">
+                        <div class="progress-fill" id="progressFill" style="width: 0%"></div>
+                    </div>
+                    <div class="progress-text" id="progressText">Initializing...</div>
+                    <div class="progress-percentage" id="progressPercentage">0%</div>
+                </div>
+                <div class="progress-steps" id="progressSteps">
+                    <div class="progress-step">
+                        <span class="step-icon">⏳</span>
+                        <span class="step-text">Validating input...</span>
+                    </div>
+                </div>
+                <div class="logs-container" id="logsContainer" style="display: none;">
+                    <button type="button" class="logs-toggle" id="logsToggle">
+                        <span class="toggle-icon">▶</span>
+                        <span class="toggle-text">Show Logs</span>
+                    </button>
+                    <pre class="logs-content" id="logsContent" style="display: none;"></pre>
+                </div>
             </div>
 
             <div class="card result-card" id="resultCard" style="display: none;" aria-live="polite" aria-atomic="true">
@@ -74,6 +230,15 @@
             <div class="card error-card" id="errorCard" style="display: none;" aria-live="polite" aria-atomic="true">
                 <h2>⚠️ Error</h2>
                 <div id="errorContent"></div>
+            </div>
+
+            <!-- History Card -->
+            <div class="card history-card" id="historyCard" style="display: none;">
+                <div class="history-header">
+                    <h2>📜 Recent Generations</h2>
+                    <button type="button" class="btn btn-secondary btn-small" id="clearHistoryBtn">Clear History</button>
+                </div>
+                <div id="historyContent" class="history-content"></div>
             </div>
         </main>
 
