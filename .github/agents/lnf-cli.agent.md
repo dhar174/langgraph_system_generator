@@ -3,7 +3,7 @@ name: lnf-cli
 description: Implements the CLI and packaging for LNF build-index and generate commands, output folder conventions, and release-ready packaging.
 target: github-copilot
 infer: false
-tools: ["read", "search", "edit", "execute", "github/*"]
+tools: ["read", "search", "edit", "web", "execute", "github/*"]
 metadata:
   project: "LNF"
   role: "cli"
