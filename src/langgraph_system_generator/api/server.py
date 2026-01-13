@@ -50,13 +50,19 @@ class GenerationRequest(BaseModel):
         default=None,
         ge=0.0,
         le=2.0,
-        description="Temperature for LLM sampling (0.0-2.0). Higher values make output more random.",
+        description=(
+            "Temperature for LLM sampling. This API accepts values from 0.0 to 2.0, "
+            "but the actual allowed range depends on the selected model/provider "
+            "(e.g., some Claude models only support 0.0-1.0). Higher values make "
+            "output more random, and values outside a provider's supported range "
+            "may cause downstream API errors."
+        ),
     )
     max_tokens: Optional[int] = Field(
         default=None,
         ge=1,
-        le=100000,
-        description="Maximum tokens for LLM response. Controls output length.",
+        le=32768,
+        description="Maximum tokens for LLM response. Controls output length and must not exceed the model's context window (capped at 32768 here).",
     )
     agent_type: Optional[str] = Field(
         default=None,

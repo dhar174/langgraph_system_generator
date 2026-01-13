@@ -116,38 +116,28 @@ function hideResults() {
     progressCard.style.display = 'none';
 }
 
-// Show progress with steps
-function showProgress(step, percentage, message) {
-    hideResults();
-    progressCard.style.display = 'block';
-    progressFill.style.width = percentage + '%';
-    progressPercentage.textContent = percentage + '%';
-    progressText.textContent = message;
-    
-    // Update steps display
-    const steps = [
-        { text: 'Validating input', percent: 10 },
-        { text: 'Preparing generation context', percent: 25 },
-        { text: 'Invoking LLM', percent: 50 },
-        { text: 'Generating artifacts', percent: 75 },
-        { text: 'Finalizing outputs', percent: 90 },
-        { text: 'Complete', percent: 100 }
-    ];
-    
+// Progress steps configuration
+const PROGRESS_STEPS = [
+    { text: 'Validating input', percent: 10 },
+    { text: 'Preparing generation context', percent: 25 },
+    { text: 'Invoking LLM', percent: 50 },
+    { text: 'Generating artifacts', percent: 75 },
+    { text: 'Finalizing outputs', percent: 90 },
+    { text: 'Complete', percent: 100 }
+];
+
+// Initialize progress steps once
+function initProgressSteps() {
     progressSteps.innerHTML = '';
-    steps.forEach((s, index) => {
+    PROGRESS_STEPS.forEach((s, index) => {
         const stepDiv = document.createElement('div');
         stepDiv.className = 'progress-step';
-        
-        if (percentage >= s.percent) {
-            stepDiv.classList.add('complete');
-        } else if (Math.abs(percentage - s.percent) < 15) {
-            stepDiv.classList.add('active');
-        }
+        stepDiv.dataset.stepPercent = s.percent;
         
         const icon = document.createElement('span');
         icon.className = 'step-icon';
-        icon.textContent = percentage >= s.percent ? '✅' : '⏳';
+        icon.setAttribute('aria-label', 'Step status');
+        icon.textContent = '⏳';
         
         const text = document.createElement('span');
         text.className = 'step-text';
@@ -156,6 +146,39 @@ function showProgress(step, percentage, message) {
         stepDiv.appendChild(icon);
         stepDiv.appendChild(text);
         progressSteps.appendChild(stepDiv);
+    });
+}
+
+// Show progress with steps (now just updates existing elements)
+function showProgress(step, percentage, message) {
+    hideResults();
+    progressCard.style.display = 'block';
+    progressFill.style.width = percentage + '%';
+    progressPercentage.textContent = percentage + '%';
+    progressText.textContent = message;
+    
+    // Initialize steps if not already done
+    if (progressSteps.children.length === 0) {
+        initProgressSteps();
+    }
+    
+    // Update step states without recreating DOM
+    Array.from(progressSteps.children).forEach((stepDiv) => {
+        const stepPercent = parseInt(stepDiv.dataset.stepPercent);
+        const icon = stepDiv.querySelector('.step-icon');
+        
+        // Remove previous classes
+        stepDiv.classList.remove('complete', 'active');
+        
+        if (percentage >= stepPercent) {
+            stepDiv.classList.add('complete');
+            icon.textContent = '✅';
+        } else if (Math.abs(percentage - stepPercent) < 15) {
+            stepDiv.classList.add('active');
+            icon.textContent = '⏳';
+        } else {
+            icon.textContent = '⏳';
+        }
     });
 }
 
@@ -442,23 +465,26 @@ form.addEventListener('submit', async (e) => {
     const formatCheckboxes = document.querySelectorAll('input[name="formats"]:checked');
     formatCheckboxes.forEach(cb => formats.push(cb.value));
     
+    // Validate at least one format is selected
+    if (formats.length === 0) {
+        showError('Please select at least one output format.');
+        return;
+    }
+    
     const data = {
         prompt: formData.get('prompt'),
         mode: formData.get('mode'),
-        output_dir: formData.get('outputDir')
+        output_dir: formData.get('outputDir'),
+        formats: formats
     };
-    
-    // Add formats if any selected
-    if (formats.length > 0) {
-        data.formats = formats;
-    }
     
     // Add advanced options if specified
     const model = formData.get('model');
     if (model) data.model = model;
     
     const temperature = parseFloat(formData.get('temperature'));
-    if (!isNaN(temperature)) data.temperature = temperature;
+    // Only send temperature if it differs from default (0.7)
+    if (!isNaN(temperature) && temperature !== 0.7) data.temperature = temperature;
     
     const maxTokens = formData.get('maxTokens');
     if (maxTokens) data.max_tokens = parseInt(maxTokens);
@@ -489,10 +515,21 @@ form.addEventListener('submit', async (e) => {
     // Show initial progress
     showProgress(1, 10, 'Validating input...');
     
+    // Track progress timeout IDs to clear them if API completes early
+    const progressTimeouts = [];
+    
     try {
-        // Simulate progress updates
-        setTimeout(() => showProgress(2, 25, 'Preparing generation context...'), 500);
-        setTimeout(() => showProgress(3, 50, 'Invoking LLM...'), 1000);
+        // Simulate progress updates only if they haven't been overtaken by actual progress
+        progressTimeouts.push(setTimeout(() => {
+            if (progressPercentage.textContent === '10%') {
+                showProgress(2, 25, 'Preparing generation context...');
+            }
+        }, 500));
+        progressTimeouts.push(setTimeout(() => {
+            if (parseInt(progressPercentage.textContent) < 50) {
+                showProgress(3, 50, 'Invoking LLM...');
+            }
+        }, 1000));
         
         const response = await fetch('/generate', {
             method: 'POST',
@@ -501,6 +538,9 @@ form.addEventListener('submit', async (e) => {
             },
             body: JSON.stringify(data)
         });
+        
+        // Clear any pending simulated progress updates
+        progressTimeouts.forEach(id => clearTimeout(id));
         
         showProgress(4, 75, 'Generating artifacts...');
         
@@ -545,10 +585,14 @@ window.addEventListener('beforeunload', () => {
 function saveToHistory(data) {
     try {
         const history = JSON.parse(localStorage.getItem('generationHistory') || '[]');
+        const promptText = data && typeof data.prompt === 'string' ? data.prompt : String(data.prompt || '');
+        const promptCodePoints = Array.from(promptText);
+        const isTruncated = promptCodePoints.length > 100;
+        const promptPreview = promptCodePoints.slice(0, 100).join('') + (isTruncated ? '...' : '');
         const entry = {
             timestamp: new Date().toISOString(),
-            prompt: data.prompt.substring(0, 100) + (data.prompt.length > 100 ? '...' : ''),
-            fullPrompt: data.prompt,
+            prompt: promptPreview,
+            fullPrompt: promptText,
             mode: data.mode,
             model: data.model || 'default',
             fullData: data
@@ -562,6 +606,8 @@ function saveToHistory(data) {
         updateHistoryDisplay();
     } catch (e) {
         console.error('Failed to save to history:', e);
+        // Show user-facing notification
+        showError('Failed to save generation to history. Your browser storage may be full or disabled.');
     }
 }
 
@@ -575,9 +621,15 @@ function loadFromHistory() {
 }
 
 function clearHistory() {
-    localStorage.removeItem('generationHistory');
-    updateHistoryDisplay();
-    console.log('History cleared');
+    try {
+        localStorage.removeItem('generationHistory');
+        updateHistoryDisplay();
+        console.log('History cleared');
+    } catch (e) {
+        console.error('Failed to clear history:', e);
+        // Show user-facing notification
+        showError('Failed to clear history. Your browser storage may be disabled.');
+    }
 }
 
 function updateHistoryDisplay() {
@@ -586,11 +638,16 @@ function updateHistoryDisplay() {
     const history = loadFromHistory();
     
     if (history.length === 0) {
-        historyContent.innerHTML = '<p style="color: var(--text-muted); text-align: center;">No recent generations</p>';
+        historyContent.textContent = '';
+        const emptyMessage = document.createElement('p');
+        emptyMessage.style.color = 'var(--text-muted)';
+        emptyMessage.style.textAlign = 'center';
+        emptyMessage.textContent = 'No recent generations';
+        historyContent.appendChild(emptyMessage);
         return;
     }
     
-    historyContent.innerHTML = '';
+    historyContent.textContent = '';
     history.forEach((entry, index) => {
         const item = document.createElement('div');
         item.className = 'history-item';
@@ -685,12 +742,13 @@ function rerunFromHistory(entry) {
     
     // Show a notification
     const notification = document.createElement('div');
-    notification.style.cssText = 'position: fixed; top: 20px; right: 20px; background: var(--success-color); color: white; padding: 1rem; border-radius: 0.5rem; z-index: 1000; animation: slideDown 0.3s ease;';
+    notification.style.cssText = 'position: fixed; top: 20px; right: 20px; background: var(--success-color); color: white; padding: 1rem; border-radius: 0.5rem; z-index: 1000; opacity: 1; transition: opacity 0.3s ease; animation: slideDown 0.3s ease;';
     notification.textContent = '✅ Configuration loaded from history';
     document.body.appendChild(notification);
     
     setTimeout(() => {
-        notification.style.animation = 'slideDown 0.3s ease reverse';
+        // Fade out the notification before removing it
+        notification.style.opacity = '0';
         setTimeout(() => notification.remove(), 300);
     }, 2000);
 }
