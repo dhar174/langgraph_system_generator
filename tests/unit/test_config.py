@@ -18,7 +18,7 @@ def test_settings_loads_from_env_file(tmp_path):
                 "OPENAI_API_KEY=test-key",
                 "LANGSMITH_PROJECT=custom-project",
                 "VECTOR_STORE_TYPE=chromadb",
-                "DEFAULT_MODEL=gpt-5-nano",
+                "DEFAULT_MODEL=gpt-5-mini",
                 "MAX_REPAIR_ATTEMPTS=2",
                 "DEFAULT_BUDGET_TOKENS=2048",
             ]
@@ -37,7 +37,7 @@ def test_settings_loads_from_env_file(tmp_path):
     assert loaded.openai_api_key == "test-key"
     assert loaded.langsmith_project == "custom-project"
     assert loaded.vector_store_type == "chromadb"
-    assert loaded.default_model == "gpt-5-nano"
+    assert loaded.default_model == "gpt-5-mini"
     assert loaded.max_repair_attempts == 2
     assert loaded.default_budget_tokens == 2048
 
@@ -65,7 +65,7 @@ def test_settings_defaults(monkeypatch):
     assert loaded.langsmith_project == "langgraph-notebook-foundry"
     assert loaded.vector_store_type == "faiss"
     assert loaded.vector_store_path == "./data/vector_store"
-    assert loaded.default_model == "gpt-5-nano"
+    assert loaded.default_model == "gpt-5-mini"
     assert loaded.max_repair_attempts == 3
     assert loaded.default_budget_tokens == 100000
 
