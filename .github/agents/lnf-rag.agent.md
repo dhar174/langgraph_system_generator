@@ -3,7 +3,7 @@ name: lnf-rag
 description: Implements the RAG system for LangGraph/LangChain docs scraping, chunking, embeddings, vector store, and retrieval APIs.
 target: github-copilot
 infer: false
-tools: ["read", "search", "edit", "execute"]
+tools: ["read", "search", "edit", "web", "execute", "github/*"]
 metadata:
   project: "LNF"
   role: "rag"
