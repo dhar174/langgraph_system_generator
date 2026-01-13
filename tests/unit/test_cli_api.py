@@ -87,6 +87,15 @@ def test_health_endpoint():
     assert response.json()["status"] == "ok"
 
 
+def test_chrome_devtools_endpoint():
+    """Test that Chrome DevTools endpoint returns 204 No Content."""
+    client = TestClient(app)
+    response = client.get("/.well-known/appspecific/com.chrome.devtools.json")
+    assert response.status_code == 204
+    # 204 responses should have no content
+    assert response.content == b""
+
+
 def test_root_endpoint_with_static_files():
     """Test that root endpoint serves the web interface when static files exist."""
     client = TestClient(app)
