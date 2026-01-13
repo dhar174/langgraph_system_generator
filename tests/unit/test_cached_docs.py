@@ -12,18 +12,20 @@ def test_cached_docs_exist():
     """Test that precached documentation exists."""
     cache = DocumentCache("./data/cached_docs")
     assert cache.exists(), "Cached documentation should exist"
-    
+
     docs = cache.load_documents()
     assert len(docs) > 0, "Should have at least some cached documents"
     assert len(docs) >= 15, f"Expected at least 15 cached docs, got {len(docs)}"
-    
+
     # Check that documents have proper structure
     for doc in docs[:5]:
         assert doc.page_content, "Document should have content"
         assert "source" in doc.metadata, "Document should have source metadata"
         # Verify no redirect pages
         assert len(doc.page_content) >= 100, "Document content should be substantial"
-        assert "Redirecting..." not in doc.page_content[:50], "Should not contain redirect pages"
+        assert (
+            "Redirecting..." not in doc.page_content[:50]
+        ), "Should not contain redirect pages"
 
 
 @pytest.mark.asyncio
@@ -35,7 +37,7 @@ async def test_build_index_from_cached_docs(tmp_path):
         store_path=str(tmp_path),
         embeddings=FakeEmbeddings(size=32),
     )
-    
+
     assert manager.vector_store is not None
     assert manager.index_exists()
 
@@ -49,11 +51,11 @@ async def test_retrieval_from_cached_docs(tmp_path):
         store_path=str(tmp_path),
         embeddings=FakeEmbeddings(size=32),
     )
-    
+
     # Test retrieval
     retriever = DocsRetriever(manager)
     results = retriever.retrieve("LangGraph state management", k=3)
-    
+
     assert len(results) > 0, "Should retrieve some results"
     assert all("content" in r for r in results), "Results should have content"
     assert all("source" in r for r in results), "Results should have source"
@@ -64,18 +66,18 @@ def test_cached_docs_content():
     """Test that cached documents contain expected content."""
     cache = DocumentCache("./data/cached_docs")
     docs = cache.load_documents()
-    
+
     # Check that we have documents from different sources
     sources = set(doc.metadata.get("source", "") for doc in docs)
-    
+
     # Should have langgraph docs
     langgraph_sources = [s for s in sources if "langgraph" in s.lower()]
     assert len(langgraph_sources) > 0, "Should have LangGraph documentation"
-    
+
     # Should have langchain docs
     langchain_sources = [s for s in sources if "langchain" in s.lower()]
     assert len(langchain_sources) > 0, "Should have LangChain documentation"
-    
+
     # Check that documents have reasonable content length
     content_lengths = [len(doc.page_content) for doc in docs]
     avg_length = sum(content_lengths) / len(content_lengths)

@@ -150,10 +150,19 @@ async def test_notebook_has_required_sections(tmp_path: Path):
 
     # Check for required sections in cell metadata
     sections = {cell.metadata.get("section") for cell in nb.cells}
-    required_sections = {"setup", "config", "graph", "execution", "export", "troubleshooting"}
+    required_sections = {
+        "setup",
+        "config",
+        "graph",
+        "execution",
+        "export",
+        "troubleshooting",
+    }
 
     # The composer adds these required sections
-    assert required_sections.issubset(sections), f"Missing sections: {required_sections - sections}"
+    assert required_sections.issubset(
+        sections
+    ), f"Missing sections: {required_sections - sections}"
 
 
 @pytest.mark.asyncio
@@ -183,7 +192,14 @@ async def test_manifest_includes_all_paths(tmp_path: Path):
     assert "zip_path" in manifest
 
     # Verify all paths exist
-    for key in ["plan_path", "cells_path", "notebook_path", "html_path", "docx_path", "zip_path"]:
+    for key in [
+        "plan_path",
+        "cells_path",
+        "notebook_path",
+        "html_path",
+        "docx_path",
+        "zip_path",
+    ]:
         path = Path(manifest[key])
         assert path.exists(), f"{key} file not found: {path}"
 

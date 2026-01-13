@@ -25,9 +25,14 @@ def test_composer_adds_required_sections():
     nb = composer.build_notebook([custom_cell], ensure_minimum_sections=True)
 
     sections = {cell.metadata.get("section") for cell in nb.cells}
-    assert {"setup", "config", "graph", "execution", "export", "troubleshooting"}.issubset(
-        sections
-    )
+    assert {
+        "setup",
+        "config",
+        "graph",
+        "execution",
+        "export",
+        "troubleshooting",
+    }.issubset(sections)
     assert "custom" in sections
     nbformat.validate(nb)
 
@@ -60,7 +65,11 @@ def test_smoke_execute_simple_notebook(tmp_path: Path):
     composer = NotebookComposer()
     nb = composer.build_notebook(
         [
-            CellSpec(cell_type="code", content="value = 2 + 2\nprint(value)", section="execution")
+            CellSpec(
+                cell_type="code",
+                content="value = 2 + 2\nprint(value)",
+                section="execution",
+            )
         ],
         ensure_minimum_sections=False,
     )
@@ -105,7 +114,9 @@ def test_export_to_pdf(tmp_path: Path):
 
     nb = composer.build_notebook(
         [
-            CellSpec(cell_type="markdown", content="# Test PDF Export", section="intro"),
+            CellSpec(
+                cell_type="markdown", content="# Test PDF Export", section="intro"
+            ),
             CellSpec(cell_type="code", content="x = 1 + 1", section="code"),
         ],
         ensure_minimum_sections=False,
@@ -132,7 +143,11 @@ def test_export_notebook_to_docx(tmp_path: Path):
 
     nb = composer.build_notebook(
         [
-            CellSpec(cell_type="markdown", content="# Introduction\nThis is a test.", section="intro"),
+            CellSpec(
+                cell_type="markdown",
+                content="# Introduction\nThis is a test.",
+                section="intro",
+            ),
             CellSpec(cell_type="code", content="x = 42", section="code"),
         ],
         ensure_minimum_sections=False,
@@ -152,7 +167,10 @@ def test_manuscript_docx_creation(tmp_path: Path):
     chapters = [
         {
             "title": "Chapter 1: Introduction",
-            "content": ["This is the first paragraph.", "This is the second paragraph."],
+            "content": [
+                "This is the first paragraph.",
+                "This is the second paragraph.",
+            ],
         },
         {
             "title": "Chapter 2: Methods",
@@ -177,10 +195,22 @@ def test_manuscript_docx_from_notebook_cells(tmp_path: Path):
     generator = ManuscriptDOCXGenerator()
 
     cells = [
-        {"cell_type": "markdown", "content": "# Setup\nInitial setup instructions.", "section": "setup"},
-        {"cell_type": "code", "content": "import os\nprint('ready')", "section": "setup"},
+        {
+            "cell_type": "markdown",
+            "content": "# Setup\nInitial setup instructions.",
+            "section": "setup",
+        },
+        {
+            "cell_type": "code",
+            "content": "import os\nprint('ready')",
+            "section": "setup",
+        },
         {"cell_type": "markdown", "content": "## Configuration", "section": "config"},
-        {"cell_type": "code", "content": "config = {'key': 'value'}", "section": "config"},
+        {
+            "cell_type": "code",
+            "content": "config = {'key': 'value'}",
+            "section": "config",
+        },
     ]
 
     output_path = tmp_path / "notebook_manuscript.docx"
@@ -201,7 +231,10 @@ def test_manuscript_pdf_creation(tmp_path: Path):
     chapters = [
         {
             "title": "Chapter 1: Getting Started",
-            "content": ["First paragraph of chapter 1.", "Second paragraph of chapter 1."],
+            "content": [
+                "First paragraph of chapter 1.",
+                "Second paragraph of chapter 1.",
+            ],
         },
         {
             "title": "Chapter 2: Advanced Topics",
@@ -229,9 +262,21 @@ def test_manuscript_pdf_from_notebook_cells(tmp_path: Path):
     generator = ManuscriptPDFGenerator()
 
     cells = [
-        {"cell_type": "markdown", "content": "# Introduction\nWelcome to the notebook.", "section": "intro"},
-        {"cell_type": "code", "content": "def hello():\n    print('Hello, World!')", "section": "code"},
-        {"cell_type": "markdown", "content": "## Execution\nRun the code.", "section": "execution"},
+        {
+            "cell_type": "markdown",
+            "content": "# Introduction\nWelcome to the notebook.",
+            "section": "intro",
+        },
+        {
+            "cell_type": "code",
+            "content": "def hello():\n    print('Hello, World!')",
+            "section": "code",
+        },
+        {
+            "cell_type": "markdown",
+            "content": "## Execution\nRun the code.",
+            "section": "execution",
+        },
         {"cell_type": "code", "content": "hello()", "section": "execution"},
     ]
 
@@ -279,4 +324,3 @@ def test_manuscript_pdf_without_title_page(tmp_path: Path):
     )
 
     assert Path(result).exists()
-
