@@ -82,9 +82,16 @@ Then open your browser to `http://localhost:8000` to access the web UI.
 
 - **Interactive Form**: Enter your system requirements in natural language
 - **Mode Selection**: Choose between stub mode (fast, no API key) or live mode (full LLM generation)
-- **Real-time Status**: See server health and generation progress
+- **Advanced Options**: Customize model, temperature, max tokens, agent type, and memory configuration
+- **Theme Toggle**: Switch between dark and light themes
+- **Progress Tracking**: Real-time progress bar with detailed generation steps
+- **Generation History**: Track and reuse previous configurations
+- **Export Options**: Download notebooks in multiple formats (IPYNB, HTML, DOCX, PDF, ZIP)
 - **Results Display**: View generated artifacts with download links
 - **Responsive Design**: Works on desktop and mobile devices
+- **Accessibility**: Full keyboard navigation and screen reader support
+
+See [WEB_UI_ENHANCEMENTS.md](docs/WEB_UI_ENHANCEMENTS.md) for detailed documentation of all features.
 
 ![Web Interface](https://github.com/user-attachments/assets/29cdc1ce-d458-4296-8f50-dde4c3ff1717)
 

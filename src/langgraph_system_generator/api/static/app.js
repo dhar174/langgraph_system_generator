@@ -548,6 +548,7 @@ function saveToHistory(data) {
         const entry = {
             timestamp: new Date().toISOString(),
             prompt: data.prompt.substring(0, 100) + (data.prompt.length > 100 ? '...' : ''),
+            fullPrompt: data.prompt,
             mode: data.mode,
             model: data.model || 'default',
             fullData: data
@@ -558,6 +559,7 @@ function saveToHistory(data) {
             history.pop();
         }
         localStorage.setItem('generationHistory', JSON.stringify(history));
+        updateHistoryDisplay();
     } catch (e) {
         console.error('Failed to save to history:', e);
     }
@@ -574,5 +576,148 @@ function loadFromHistory() {
 
 function clearHistory() {
     localStorage.removeItem('generationHistory');
+    updateHistoryDisplay();
     console.log('History cleared');
 }
+
+function updateHistoryDisplay() {
+    const historyCard = document.getElementById('historyCard');
+    const historyContent = document.getElementById('historyContent');
+    const history = loadFromHistory();
+    
+    if (history.length === 0) {
+        historyContent.innerHTML = '<p style="color: var(--text-muted); text-align: center;">No recent generations</p>';
+        return;
+    }
+    
+    historyContent.innerHTML = '';
+    history.forEach((entry, index) => {
+        const item = document.createElement('div');
+        item.className = 'history-item';
+        item.setAttribute('role', 'button');
+        item.setAttribute('tabindex', '0');
+        
+        const header = document.createElement('div');
+        header.className = 'history-item-header';
+        
+        const time = document.createElement('div');
+        time.className = 'history-item-time';
+        const date = new Date(entry.timestamp);
+        time.textContent = date.toLocaleString();
+        
+        header.appendChild(time);
+        
+        const prompt = document.createElement('div');
+        prompt.className = 'history-item-prompt';
+        prompt.textContent = entry.prompt;
+        prompt.title = entry.fullPrompt;
+        
+        const meta = document.createElement('div');
+        meta.className = 'history-item-meta';
+        
+        const modeTag = document.createElement('span');
+        modeTag.className = 'history-tag';
+        modeTag.textContent = entry.mode;
+        
+        const modelTag = document.createElement('span');
+        modelTag.className = 'history-tag';
+        modelTag.textContent = entry.model;
+        
+        meta.appendChild(modeTag);
+        meta.appendChild(modelTag);
+        
+        item.appendChild(header);
+        item.appendChild(prompt);
+        item.appendChild(meta);
+        
+        // Click to reuse this configuration
+        item.addEventListener('click', () => {
+            rerunFromHistory(entry);
+        });
+        
+        // Keyboard support
+        item.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                rerunFromHistory(entry);
+            }
+        });
+        
+        historyContent.appendChild(item);
+    });
+}
+
+function rerunFromHistory(entry) {
+    const data = entry.fullData;
+    
+    // Fill in the form
+    document.getElementById('prompt').value = data.prompt;
+    document.getElementById('mode').value = data.mode || 'stub';
+    document.getElementById('outputDir').value = data.output_dir || './output/web_generated';
+    
+    if (data.model) {
+        document.getElementById('model').value = data.model;
+    }
+    
+    if (data.temperature !== undefined) {
+        const tempSlider = document.getElementById('temperature');
+        tempSlider.value = data.temperature;
+        document.getElementById('tempValue').textContent = data.temperature;
+    }
+    
+    if (data.max_tokens) {
+        document.getElementById('maxTokens').value = data.max_tokens;
+    }
+    
+    if (data.agent_type) {
+        document.getElementById('agentType').value = data.agent_type;
+    }
+    
+    if (data.memory_config) {
+        document.getElementById('memoryConfig').value = data.memory_config;
+    }
+    
+    // Scroll to form
+    form.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    
+    // Hide history
+    document.getElementById('historyCard').style.display = 'none';
+    
+    // Show a notification
+    const notification = document.createElement('div');
+    notification.style.cssText = 'position: fixed; top: 20px; right: 20px; background: var(--success-color); color: white; padding: 1rem; border-radius: 0.5rem; z-index: 1000; animation: slideDown 0.3s ease;';
+    notification.textContent = '✅ Configuration loaded from history';
+    document.body.appendChild(notification);
+    
+    setTimeout(() => {
+        notification.style.animation = 'slideDown 0.3s ease reverse';
+        setTimeout(() => notification.remove(), 300);
+    }, 2000);
+}
+
+// History toggle button
+const historyToggleBtn = document.getElementById('historyToggleBtn');
+const historyCard = document.getElementById('historyCard');
+
+historyToggleBtn.addEventListener('click', () => {
+    const isVisible = historyCard.style.display !== 'none';
+    
+    if (isVisible) {
+        historyCard.style.display = 'none';
+    } else {
+        updateHistoryDisplay();
+        historyCard.style.display = 'block';
+        historyCard.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+});
+
+// Clear history button
+const clearHistoryBtn = document.getElementById('clearHistoryBtn');
+clearHistoryBtn.addEventListener('click', () => {
+    if (confirm('Are you sure you want to clear all history?')) {
+        clearHistory();
+    }
+});
+
+// Initialize history display on load
+updateHistoryDisplay();

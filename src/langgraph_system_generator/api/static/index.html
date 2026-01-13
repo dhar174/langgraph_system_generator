@@ -16,6 +16,9 @@
                     <span class="status-dot" id="statusDot" aria-hidden="true" role="presentation"></span>
                     <span id="statusText">Checking status...</span>
                 </div>
+                <button type="button" class="btn-secondary btn-icon" id="historyToggleBtn" aria-label="Toggle generation history" title="Show history">
+                    📜
+                </button>
                 <button type="button" class="theme-toggle" id="themeToggle" aria-label="Toggle dark/light theme" title="Toggle theme">
                     <span class="theme-icon">🌙</span>
                 </button>
@@ -227,6 +230,15 @@
             <div class="card error-card" id="errorCard" style="display: none;" aria-live="polite" aria-atomic="true">
                 <h2>⚠️ Error</h2>
                 <div id="errorContent"></div>
+            </div>
+
+            <!-- History Card -->
+            <div class="card history-card" id="historyCard" style="display: none;">
+                <div class="history-header">
+                    <h2>📜 Recent Generations</h2>
+                    <button type="button" class="btn btn-secondary btn-small" id="clearHistoryBtn">Clear History</button>
+                </div>
+                <div id="historyContent" class="history-content"></div>
             </div>
         </main>
 
