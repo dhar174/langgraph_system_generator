@@ -3,7 +3,7 @@ name: lnf-foundation
 description: Builds Phase 1 infrastructure project scaffolding, settings/config, dependencies, packaging skeleton, and repo hygiene.
 target: github-copilot
 infer: false
-tools: ["read", "search", "edit", "execute"]
+tools: ["read", "search", "edit",  "web","execute","github/*"]
 metadata:
   project: "LNF"
   role: "foundation"
