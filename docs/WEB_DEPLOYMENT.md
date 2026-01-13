@@ -154,7 +154,7 @@ The repository is ready to use with GitHub Codespaces:
 | `OPENAI_API_KEY` | OpenAI API key (required for live mode) | - |
 | `LNF_OUTPUT_BASE` | Base directory for output files | `.` |
 | `VECTOR_STORE_PATH` | Path to vector store | `./data/vector_store` |
-| `DEFAULT_MODEL` | Default LLM model | `gpt-5-nano` |
+| `DEFAULT_MODEL` | Default LLM model | `gpt-5-mini` |
 
 ## Security Considerations
 

@@ -71,7 +71,7 @@ class WorkflowState(MessagesState):
     def generate_supervisor_code(
         subagents: List[str],
         subagent_descriptions: Optional[Dict[str, str]] = None,
-        llm_model: str = "gpt-5-nano",
+        llm_model: str = "gpt-5-mini",
         use_structured_output: bool = True,
     ) -> str:
         """Generate supervisor node implementation code.
@@ -216,7 +216,7 @@ Example: researcher|Find information about X""")
     def generate_subagent_code(
         agent_name: str,
         agent_description: str,
-        llm_model: str = "gpt-5-nano",
+        llm_model: str = "gpt-5-mini",
         include_tools: bool = False,
     ) -> str:
         """Generate code for a specific subagent node.

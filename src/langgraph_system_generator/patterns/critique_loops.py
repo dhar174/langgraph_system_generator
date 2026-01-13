@@ -70,7 +70,7 @@ class WorkflowState(MessagesState):
     @staticmethod
     def generate_generation_node_code(
         task_description: str = "Generate initial output",
-        llm_model: str = "gpt-5-nano",
+        llm_model: str = "gpt-5-mini",
     ) -> str:
         """Generate code for initial generation node.
 
@@ -117,7 +117,7 @@ Create high-quality output that is clear, accurate, and well-structured.""")
     @staticmethod
     def generate_critique_node_code(
         criteria: Optional[List[str]] = None,
-        llm_model: str = "gpt-5-nano",
+        llm_model: str = "gpt-5-mini",
         use_structured_output: bool = True,
     ) -> str:
         """Generate code for critique/review node.
@@ -258,7 +258,7 @@ Format: SCORE|APPROVED or NEEDS_REVISION|feedback""")
     }}'''
 
     @staticmethod
-    def generate_revise_node_code(llm_model: str = "gpt-5-nano") -> str:
+    def generate_revise_node_code(llm_model: str = "gpt-5-mini") -> str:
         """Generate code for revision node.
 
         Args:
