@@ -1,6 +1,9 @@
 """Tests for notebook utility functions."""
 
-from langgraph_system_generator.notebook.utils import escape_xml_chars, parse_markdown_heading
+from langgraph_system_generator.notebook.utils import (
+    escape_xml_chars,
+    parse_markdown_heading,
+)
 
 
 def test_escape_xml_chars():

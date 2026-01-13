@@ -70,11 +70,11 @@ async def test_api_generate_with_formats(tmp_path: Path):
     payload = response.json()
     assert payload["success"] is True
     assert payload["manifest"]["prompt"] == "Test with formats"
-    
+
     # Verify selected formats are in manifest
     assert "notebook_path" in payload["manifest"]
     assert "html_path" in payload["manifest"]
-    
+
     # Verify unselected formats are NOT in manifest
     assert "docx_path" not in payload["manifest"]
     assert "pdf_path" not in payload["manifest"]
@@ -100,7 +100,9 @@ def test_root_endpoint_with_static_files():
 
 
 @pytest.mark.asyncio
-async def test_live_mode_requires_credentials(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+async def test_live_mode_requires_credentials(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     with pytest.raises(RuntimeError):
         await generate_artifacts("Live prompt", output_dir=tmp_path, mode="live")

@@ -161,9 +161,9 @@ Respond with ONLY the route name.""")
     selected_route = response.content.strip().lower()
     
     # Validate route
-    valid_routes = {[f'"{r}"' for r in routes]}
+    valid_routes = [r.lower() for r in routes]
     if selected_route not in valid_routes:
-        selected_route = {f'"{routes[0]}"'}  # Default to first route
+        selected_route = routes[0].lower()  # Default to first route
     
     return {{
         **state,

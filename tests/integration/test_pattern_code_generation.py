@@ -110,7 +110,11 @@ async def test_tool_code_generation_not_empty(tmp_path: Path):
 
     tools_section_found = False
     for cell in code_cells:
-        if "# Tool:" in cell.source or "def " in cell.source and "_tool" in cell.source.lower():
+        if (
+            "# Tool:" in cell.source
+            or "def " in cell.source
+            and "_tool" in cell.source.lower()
+        ):
             tools_section_found = True
             # Tool should have either real implementation or helpful comments
             # Check it's not just "pass" with nothing else
@@ -226,9 +230,9 @@ async def test_pattern_selection_based_on_prompt(tmp_path: Path):
     all_content = "\n".join([cell.source for cell in nb.cells])
 
     # The architecture should be mentioned in the notebook
-    assert "router" in all_content.lower() or "routing" in all_content.lower(), (
-        "Router pattern not reflected in notebook"
-    )
+    assert (
+        "router" in all_content.lower() or "routing" in all_content.lower()
+    ), "Router pattern not reflected in notebook"
 
 
 @pytest.mark.asyncio
@@ -271,7 +275,7 @@ async def test_complete_workflow_has_no_broken_references(tmp_path: Path):
                 ), f"Node '{node_name}' added to graph but function not defined"
 
 
-@pytest.mark.asyncio  
+@pytest.mark.asyncio
 async def test_notebooks_include_execution_section(tmp_path: Path):
     """Test that generated notebooks include complete execution sections."""
 

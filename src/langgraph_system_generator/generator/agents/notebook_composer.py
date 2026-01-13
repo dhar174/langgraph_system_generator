@@ -295,8 +295,12 @@ Generate the complete Python function implementation."""
 """
             return header + generated_code
 
-        except Exception as e:
+        except (ValueError, KeyError, AttributeError) as e:
             # Fallback to template with better implementation hints
+            # Log error for debugging (optional: add logger if available)
+            return self._generate_tool_fallback(tool)
+        except Exception as e:
+            # Unexpected error - still fallback but this is unusual
             return self._generate_tool_fallback(tool)
 
     def _generate_tool_fallback(self, tool: Dict[str, Any]) -> str:
@@ -451,8 +455,11 @@ Generate the complete Python function implementation."""
 
             return generated_code
 
-        except Exception as e:
+        except (ValueError, KeyError, AttributeError) as e:
             # Fallback to improved template
+            return self._generate_node_fallback(node, workflow_design)
+        except Exception as e:
+            # Unexpected error - still fallback
             return self._generate_node_fallback(node, workflow_design)
 
     def _generate_node_fallback(
