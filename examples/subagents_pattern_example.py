@@ -18,7 +18,6 @@ Requirements:
     - OPENAI_API_KEY environment variable
 """
 
-import asyncio
 import os
 
 from langgraph_system_generator.patterns import SubagentsPattern
@@ -137,7 +136,7 @@ def demonstrate_collaborative_workflow():
     }
     
     # Generate the system
-    system_code = SubagentsPattern.generate_complete_example(subagents, descriptions)
+    SubagentsPattern.generate_complete_example(subagents, descriptions)
     
     print("\nGenerated Collaborative Content Creation System:")
     print("-" * 40)

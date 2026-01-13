@@ -18,7 +18,6 @@ Requirements:
     - OPENAI_API_KEY environment variable
 """
 
-import asyncio
 import os
 
 from langgraph_system_generator.patterns import CritiqueLoopPattern
@@ -193,7 +192,7 @@ WORKFLOW STAGES:
         "Best practices included",
     ]
     
-    graph_code = CritiqueLoopPattern.generate_graph_code(
+    CritiqueLoopPattern.generate_graph_code(
         max_revisions=3, min_quality_score=0.8
     )
     
@@ -272,7 +271,7 @@ def demonstrate_quality_criteria():
         
         # Generate example for this use case
         print(f"\n  Generating critique node for {use_case}...")
-        critique_code = CritiqueLoopPattern.generate_critique_node_code(
+        CritiqueLoopPattern.generate_critique_node_code(
             criteria=criteria, use_structured_output=True
         )
         print(f"  ✓ Generated with {len(criteria)} evaluation criteria")
@@ -324,7 +323,7 @@ def demonstrate_advanced_configurations():
               f"({config['min_quality_score']*100}%)")
         
         # Generate conditional edge code
-        edge_code = CritiqueLoopPattern.generate_conditional_edge_code(
+        CritiqueLoopPattern.generate_conditional_edge_code(
             max_revisions=config["max_revisions"],
             min_quality_score=config["min_quality_score"],
         )

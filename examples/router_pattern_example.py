@@ -18,9 +18,7 @@ Requirements:
     - OPENAI_API_KEY environment variable
 """
 
-import asyncio
 import os
-from typing import Dict
 
 from langgraph_system_generator.patterns import RouterPattern
 
