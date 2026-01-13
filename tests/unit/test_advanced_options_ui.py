@@ -38,10 +38,31 @@ def test_advanced_options_html_structure():
         "Panel should start hidden with display: none"
     
     # Check all advanced form fields exist
-    required_fields = ["model", "temperature", "maxTokens", "agentType", "memoryConfig"]
+    required_fields = [
+        "model", "customEndpoint", "preset", "temperature", "maxTokens", 
+        "agentType", "memoryConfig", "graphStyle", "retrieverType", "documentLoader"
+    ]
     for field_id in required_fields:
         field = soup.find(id=field_id)
         assert field is not None, f"Missing required field with id={field_id}"
+    
+    # Check custom endpoint group starts hidden
+    custom_group = soup.find(id="customEndpointGroup")
+    assert custom_group is not None, "Missing customEndpointGroup"
+    style_attr = custom_group.get("style") or ""
+    assert "display:none" in style_attr.replace(" ", "") or "display: none" in style_attr, \
+        "Custom endpoint group should start hidden"
+    
+    # Check model select has optgroups for organization
+    model_select = soup.find(id="model")
+    optgroups = model_select.find_all("optgroup")
+    assert len(optgroups) > 0, "Model select should have optgroups for organization"
+    
+    # Verify key optgroups exist
+    optgroup_labels = [og.get("label") for og in optgroups]
+    assert "OpenAI" in optgroup_labels, "Missing OpenAI optgroup"
+    assert "Anthropic Claude" in optgroup_labels, "Missing Anthropic Claude optgroup"
+    assert "Google Gemini" in optgroup_labels, "Missing Google Gemini optgroup"
     
     # Check JavaScript is loaded
     scripts = soup.find_all("script")
@@ -77,6 +98,12 @@ def test_advanced_options_javascript():
         "Missing logic to set aria-expanded to true"
     assert "setAttribute('aria-expanded', 'false')" in content, \
         "Missing logic to set aria-expanded to false"
+    
+    # Check model change event listener for custom endpoint
+    assert "modelSelect.addEventListener('change'" in content, \
+        "Missing change event listener for model select"
+    assert "customEndpointGroup.style.display" in content, \
+        "Missing logic to show/hide custom endpoint group"
 
 
 def test_advanced_options_css():
