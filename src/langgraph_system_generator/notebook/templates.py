@@ -56,7 +56,7 @@ def installation_and_imports(
     ]
 
 
-def configuration_cell(model: str = "gpt-4o-mini") -> List[CellSpec]:
+def configuration_cell(model: str = "gpt-5-nano") -> List[CellSpec]:
     """Return configuration cells with API key handling."""
     config_code = dedent(
         f"""

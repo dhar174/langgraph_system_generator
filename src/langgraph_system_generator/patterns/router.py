@@ -71,7 +71,7 @@ class WorkflowState(MessagesState):
     @staticmethod
     def generate_router_node_code(
         routes: List[str],
-        llm_model: str = "gpt-4o-mini",
+        llm_model: str = "gpt-5-nano",
         use_structured_output: bool = True,
     ) -> str:
         """Generate router node implementation code.
@@ -174,7 +174,7 @@ Respond with ONLY the route name.""")
 
     @staticmethod
     def generate_route_node_code(
-        route_name: str, route_purpose: str, llm_model: str = "gpt-4o-mini"
+        route_name: str, route_purpose: str, llm_model: str = "gpt-5-nano"
     ) -> str:
         """Generate code for a specific route handler node.
 

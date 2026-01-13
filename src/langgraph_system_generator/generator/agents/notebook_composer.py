@@ -148,7 +148,7 @@ This notebook implements a LangGraph workflow using the **{plan.architecture_typ
 from getpass import getpass
 
 # Configuration
-MODEL = "gpt-4o-mini"
+MODEL = "gpt-5-nano"
 MAX_ITERATIONS = 10
 
 # API Keys
@@ -484,7 +484,7 @@ Generate the complete Python function implementation."""
     messages = state["messages"]
     
     # Example LLM-based implementation:
-    # llm = ChatOpenAI(model="gpt-4o-mini", temperature=0.7)
+    # llm = ChatOpenAI(model="gpt-5-nano", temperature=0.7)
     # response = llm.invoke(messages)
     # 
     # return {{

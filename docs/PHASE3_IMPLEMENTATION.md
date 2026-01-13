@@ -199,7 +199,7 @@ Core dependencies used:
 Settings via environment variables or `.env` file:
 - `OPENAI_API_KEY`: Required for LLM calls
 - `VECTOR_STORE_PATH`: RAG documentation index location
-- `DEFAULT_MODEL`: LLM model (default: gpt-4-turbo-preview)
+- `DEFAULT_MODEL`: LLM model (default: gpt-5-nano)
 - `MAX_REPAIR_ATTEMPTS`: Repair loop limit (default: 3)
 
 ## Notes
