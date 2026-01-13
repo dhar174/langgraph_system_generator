@@ -3,7 +3,7 @@ name: lnf-qa
 description: Implements QA validation + repair loops notebook validation, execution checks, unit/integration tests, and automated repair prompts.
 target: github-copilot
 infer: false
-tools: ["read", "search", "edit", "execute"]
+tools: ["read", "search", "edit", "web","execute","github/*"]
 metadata:
   project: "LNF"
   role: "qa"
