@@ -127,7 +127,7 @@ This document provides a comprehensive, phase-by-phase implementation plan for b
    VECTOR_STORE_PATH=./data/vector_store
    
    # Generation Settings
-   DEFAULT_MODEL=gpt-4-turbo-preview
+   DEFAULT_MODEL=gpt-5-nano
    MAX_REPAIR_ATTEMPTS=3
    DEFAULT_BUDGET_TOKENS=100000
    ```
@@ -146,7 +146,7 @@ This document provides a comprehensive, phase-by-phase implementation plan for b
        vector_store_type: str = "faiss"
        vector_store_path: str = "./data/vector_store"
        
-       default_model: str = "gpt-4-turbo-preview"
+       default_model: str = "gpt-5-nano"
        max_repair_attempts: int = 3
        default_budget_tokens: int = 100000
        
@@ -365,7 +365,7 @@ This document provides a comprehensive, phase-by-phase implementation plan for b
        """Extracts structured constraints from user prompt."""
        
        def __init__(self):
-           self.llm = ChatOpenAI(model="gpt-4-turbo-preview")
+           self.llm = ChatOpenAI(model="gpt-5-nano")
        
        async def analyze(self, prompt: str) -> List[Constraint]:
            """Extract constraints from prompt."""
@@ -395,7 +395,7 @@ This document provides a comprehensive, phase-by-phase implementation plan for b
        """Chooses optimal LangGraph pattern architecture."""
        
        def __init__(self, docs_retriever: DocsRetriever):
-           self.llm = ChatOpenAI(model="gpt-4-turbo-preview")
+           self.llm = ChatOpenAI(model="gpt-5-nano")
            self.docs_retriever = docs_retriever
        
        async def select_architecture(
@@ -868,7 +868,7 @@ def should_continue(state):
            )
        
        @staticmethod
-       def config_cell(model: str = "gpt-4") -> CellSpec:
+       def config_cell(model: str = "gpt-5-nano") -> CellSpec:
            return CellSpec(
                cell_type="code",
                content=f'''import os
@@ -1134,7 +1134,7 @@ if not os.environ.get("OPENAI_API_KEY"):
        """Repairs issues in generated notebooks."""
        
        def __init__(self):
-           self.llm = ChatOpenAI(model="gpt-4-turbo-preview")
+           self.llm = ChatOpenAI(model="gpt-5-nano")
        
        async def repair_notebook(
            self,
@@ -1247,7 +1247,7 @@ Please suggest specific fixes for each issue. Focus on:
    @cli.command()
    @click.argument('prompt', type=str)
    @click.option('--output', '-o', default='./output', help='Output directory')
-   @click.option('--model', default='gpt-4-turbo-preview', help='LLM model')
+   @click.option('--model', default='gpt-5-nano', help='LLM model')
    def generate(prompt: str, output: str, model: str):
        """Generate a LangGraph notebook from a prompt."""
        
@@ -1304,7 +1304,7 @@ Please suggest specific fixes for each issue. Focus on:
    
    class GenerationRequest(BaseModel):
        prompt: str
-       model: str = "gpt-4-turbo-preview"
+       model: str = "gpt-5-nano"
        output_format: str = "ipynb"
    
    @app.post("/generate")
