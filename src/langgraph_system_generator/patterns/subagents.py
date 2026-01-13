@@ -6,15 +6,15 @@ coordinates and delegates tasks to multiple specialized subagents.
 
 Example Usage:
     >>> from langgraph_system_generator.patterns.subagents import SubagentsPattern
-    >>> 
+    >>>
     >>> # Generate state code
     >>> state_code = SubagentsPattern.generate_state_code()
-    >>> 
+    >>>
     >>> # Generate supervisor implementation
     >>> supervisor_code = SubagentsPattern.generate_supervisor_code(
     ...     subagents=["researcher", "writer", "reviewer"]
     ... )
-    >>> 
+    >>>
     >>> # Generate complete graph code
     >>> graph_code = SubagentsPattern.generate_graph_code(
     ...     subagents=["researcher", "writer", "reviewer"]
@@ -26,13 +26,13 @@ from typing import Dict, List, Optional
 
 class SubagentsPattern:
     """Template generator for supervisor-subagent multi-agent patterns.
-    
+
     The subagents pattern is ideal for workflows where:
     - A supervisor coordinates multiple specialized agents
     - Tasks need to be decomposed and delegated
     - Agents may need to collaborate or work sequentially
     - The supervisor maintains overall workflow state and decisions
-    
+
     Architecture:
         START -> supervisor -> [subagent_a, subagent_b, ...] -> supervisor -> END
     """
@@ -40,10 +40,10 @@ class SubagentsPattern:
     @staticmethod
     def generate_state_code(additional_fields: Optional[Dict[str, str]] = None) -> str:
         """Generate state schema code for subagents pattern.
-        
+
         Args:
             additional_fields: Optional dict mapping field names to descriptions
-            
+
         Returns:
             Python code string defining the WorkflowState class
         """
@@ -51,7 +51,7 @@ class SubagentsPattern:
         if additional_fields:
             for field_name, description in additional_fields.items():
                 additional += f"    {field_name}: str  # {description}\n"
-        
+
         return f'''from typing import Annotated, Sequence
 from langgraph.graph import MessagesState
 
@@ -72,29 +72,33 @@ class WorkflowState(MessagesState):
         subagents: List[str],
         subagent_descriptions: Optional[Dict[str, str]] = None,
         llm_model: str = "gpt-4o-mini",
-        use_structured_output: bool = True
+        use_structured_output: bool = True,
     ) -> str:
         """Generate supervisor node implementation code.
-        
+
         Args:
             subagents: List of subagent names
             subagent_descriptions: Optional dict mapping agent names to descriptions
             llm_model: LLM model to use for supervisor decisions
             use_structured_output: Whether to use structured output
-            
+
         Returns:
             Python code string implementing the supervisor node
         """
         if subagent_descriptions is None:
-            subagent_descriptions = {agent: f"{agent} specialist" for agent in subagents}
-        
-        agents_info = "\n".join([
-            f"- {agent}: {subagent_descriptions.get(agent, f'{agent} specialist')}"
-            for agent in subagents
-        ])
-        
+            subagent_descriptions = {
+                agent: f"{agent} specialist" for agent in subagents
+            }
+
+        agents_info = "\n".join(
+            [
+                f"- {agent}: {subagent_descriptions.get(agent, f'{agent} specialist')}"
+                for agent in subagents
+            ]
+        )
+
         agents_list = ", ".join([f'"{agent}"' for agent in subagents])
-        
+
         if use_structured_output:
             return f'''from langchain_openai import ChatOpenAI
 from langchain_core.messages import HumanMessage, SystemMessage
@@ -213,29 +217,29 @@ Example: researcher|Find information about X""")
         agent_name: str,
         agent_description: str,
         llm_model: str = "gpt-4o-mini",
-        include_tools: bool = False
+        include_tools: bool = False,
     ) -> str:
         """Generate code for a specific subagent node.
-        
+
         Args:
             agent_name: Name of the subagent
             agent_description: Description of agent's role and capabilities
             llm_model: LLM model to use
             include_tools: Whether to include tool binding example
-            
+
         Returns:
             Python code string implementing the subagent node
         """
         node_name = agent_name.lower().replace(" ", "_").replace("-", "_")
-        
+
         tools_code = ""
         if include_tools:
-            tools_code = '''
+            tools_code = """
     # Example: Bind tools to this agent
     # from langchain_community.tools import DuckDuckGoSearchRun
     # tools = [DuckDuckGoSearchRun()]
-    # llm_with_tools = llm.bind_tools(tools)'''
-        
+    # llm_with_tools = llm.bind_tools(tools)"""
+
         return f'''def {node_name}_node(state: WorkflowState) -> WorkflowState:
     """Subagent: {agent_name}.
     
@@ -275,31 +279,32 @@ Execute the supervisor's instructions carefully and provide detailed results."""
     }}'''
 
     @staticmethod
-    def generate_graph_code(
-        subagents: List[str],
-        max_iterations: int = 10
-    ) -> str:
+    def generate_graph_code(subagents: List[str], max_iterations: int = 10) -> str:
         """Generate complete subagents graph construction code.
-        
+
         Args:
             subagents: List of subagent names
             max_iterations: Maximum iterations before forcing completion
-            
+
         Returns:
             Python code string for building the complete graph
         """
         # Generate node additions
-        node_additions = "\n".join([
-            f'workflow.add_node("{agent.lower().replace(" ", "_")}", {agent.lower().replace(" ", "_")}_node)'
-            for agent in subagents
-        ])
-        
+        node_additions = "\n".join(
+            [
+                f'workflow.add_node("{agent.lower().replace(" ", "_")}", {agent.lower().replace(" ", "_")}_node)'
+                for agent in subagents
+            ]
+        )
+
         # Generate routing logic
-        route_conditions = "\n    ".join([
-            f'elif next_agent == "{agent}":\n        return "{agent.lower().replace(" ", "_")}"'
-            for agent in subagents
-        ])
-        
+        route_conditions = "\n    ".join(
+            [
+                f'elif next_agent == "{agent}":\n        return "{agent.lower().replace(" ", "_")}"'
+                for agent in subagents
+            ]
+        )
+
         return f'''from langgraph.graph import END, START, StateGraph
 from langgraph.checkpoint.memory import MemorySaver
 
@@ -343,40 +348,39 @@ graph = workflow.compile(checkpointer=memory)'''
 
     @staticmethod
     def generate_complete_example(
-        subagents: List[str],
-        subagent_descriptions: Optional[Dict[str, str]] = None
+        subagents: List[str], subagent_descriptions: Optional[Dict[str, str]] = None
     ) -> str:
         """Generate a complete, runnable subagents pattern example.
-        
+
         Args:
             subagents: List of subagent names
             subagent_descriptions: Optional dict mapping agent names to descriptions
-            
+
         Returns:
             Complete Python code for a supervisor-subagent workflow
         """
         if subagent_descriptions is None:
             subagent_descriptions = {
-                agent: f"{agent} specialist agent"
-                for agent in subagents
+                agent: f"{agent} specialist agent" for agent in subagents
             }
-        
+
         # Generate all components
         state_code = SubagentsPattern.generate_state_code()
         supervisor_code = SubagentsPattern.generate_supervisor_code(
             subagents, subagent_descriptions
         )
-        
-        subagent_nodes_code = "\n\n".join([
-            SubagentsPattern.generate_subagent_code(
-                agent,
-                subagent_descriptions.get(agent, f"{agent} specialist")
-            )
-            for agent in subagents
-        ])
-        
+
+        subagent_nodes_code = "\n\n".join(
+            [
+                SubagentsPattern.generate_subagent_code(
+                    agent, subagent_descriptions.get(agent, f"{agent} specialist")
+                )
+                for agent in subagents
+            ]
+        )
+
         graph_code = SubagentsPattern.generate_graph_code(subagents)
-        
+
         return f'''"""
 Subagents Pattern Example
 Generated by LangGraph System Generator
@@ -421,4 +425,3 @@ if __name__ == "__main__":
     
     asyncio.run(run_example())
 '''
-

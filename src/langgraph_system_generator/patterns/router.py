@@ -6,15 +6,15 @@ dynamically dispatches requests to specialized agent nodes.
 
 Example Usage:
     >>> from langgraph_system_generator.patterns.router import RouterPattern
-    >>> 
+    >>>
     >>> # Generate state code
     >>> state_code = RouterPattern.generate_state_code()
-    >>> 
+    >>>
     >>> # Generate router node implementation
     >>> router_code = RouterPattern.generate_router_node_code(
     ...     routes=["search", "analyze", "summarize"]
     ... )
-    >>> 
+    >>>
     >>> # Generate complete graph code
     >>> graph_code = RouterPattern.generate_graph_code(
     ...     routes=["search", "analyze", "summarize"],
@@ -27,13 +27,13 @@ from typing import Dict, List, Optional
 
 class RouterPattern:
     """Template generator for router-based multi-agent patterns.
-    
+
     The router pattern is ideal for workflows where:
     - A central dispatcher routes requests to specialized agents
     - Each route handles a specific type of request or domain
     - Routing logic is based on input classification
     - Agents can be executed conditionally based on input
-    
+
     Architecture:
         START -> router_node -> [route_a_node, route_b_node, ...] -> END
     """
@@ -41,10 +41,10 @@ class RouterPattern:
     @staticmethod
     def generate_state_code(additional_fields: Optional[Dict[str, str]] = None) -> str:
         """Generate state schema code for router pattern.
-        
+
         Args:
             additional_fields: Optional dict mapping field names to descriptions
-            
+
         Returns:
             Python code string defining the RouterState class
         """
@@ -52,7 +52,7 @@ class RouterPattern:
         if additional_fields:
             for field_name, description in additional_fields.items():
                 additional += f"    {field_name}: str  # {description}\n"
-        
+
         return f'''from typing import Annotated, Dict
 from langgraph.graph import MessagesState
 
@@ -72,20 +72,23 @@ class WorkflowState(MessagesState):
     def generate_router_node_code(
         routes: List[str],
         llm_model: str = "gpt-4o-mini",
-        use_structured_output: bool = True
+        use_structured_output: bool = True,
     ) -> str:
         """Generate router node implementation code.
-        
+
         Args:
             routes: List of available route names
             llm_model: LLM model to use for classification
             use_structured_output: Whether to use structured output for routing
-            
+
         Returns:
             Python code string implementing the router node
         """
         routes_str = ", ".join([f'"{r}"' for r in routes])
-        
+        routes_list_str = "\n".join(
+            [f"- {route}: Handle {route}-related requests" for route in routes]
+        )
+
         if use_structured_output:
             return f'''from langchain_openai import ChatOpenAI
 from langchain_core.messages import HumanMessage
@@ -120,7 +123,7 @@ def router_node(state: WorkflowState) -> WorkflowState:
     classification_prompt = f"""Analyze the following request and determine which route should handle it.
 
 Available routes:
-{chr(10).join([f"- {route}: Handle {route}-related requests" for route in {routes}])}
+{routes_list_str}
 
 User request: {{last_message}}
 
@@ -169,22 +172,20 @@ Respond with ONLY the route name.""")
 
     @staticmethod
     def generate_route_node_code(
-        route_name: str,
-        route_purpose: str,
-        llm_model: str = "gpt-4o-mini"
+        route_name: str, route_purpose: str, llm_model: str = "gpt-4o-mini"
     ) -> str:
         """Generate code for a specific route handler node.
-        
+
         Args:
             route_name: Name of the route/agent
             route_purpose: Description of what this route handles
             llm_model: LLM model to use
-            
+
         Returns:
             Python code string implementing the route node
         """
         node_name = route_name.lower().replace(" ", "_").replace("-", "_")
-        
+
         return f'''def {node_name}_node(state: WorkflowState) -> WorkflowState:
     """Handle {route_name} requests.
     
@@ -222,31 +223,35 @@ Provide helpful, accurate, and detailed responses.""")
     def generate_graph_code(
         routes: List[str],
         entry_point: str = "router",
-        use_conditional_edges: bool = True
+        use_conditional_edges: bool = True,
     ) -> str:
         """Generate complete router graph construction code.
-        
+
         Args:
             routes: List of route names
             entry_point: Entry point node name
             use_conditional_edges: Whether to use conditional edges for routing
-            
+
         Returns:
             Python code string for building the complete graph
         """
         # Generate node additions
-        node_additions = "\n".join([
-            f'workflow.add_node("{route.lower().replace(" ", "_")}", {route.lower().replace(" ", "_")}_node)'
-            for route in routes
-        ])
-        
+        node_additions = "\n".join(
+            [
+                f'workflow.add_node("{route.lower().replace(" ", "_")}", {route.lower().replace(" ", "_")}_node)'
+                for route in routes
+            ]
+        )
+
         if use_conditional_edges:
             # Generate conditional routing function
-            route_conditions = "\n    ".join([
-                f'if route == "{route}":\n        return "{route.lower().replace(" ", "_")}"'
-                for route in routes
-            ])
-            
+            route_conditions = "\n    ".join(
+                [
+                    f'if route == "{route}":\n        return "{route.lower().replace(" ", "_")}"'
+                    for route in routes
+                ]
+            )
+
             return f'''from langgraph.graph import END, START, StateGraph
 from langgraph.checkpoint.memory import MemorySaver
 
@@ -285,7 +290,7 @@ workflow.add_conditional_edges(
 graph = workflow.compile(checkpointer=memory)'''
         else:
             # Simple edge-based routing (less common, included for completeness)
-            return f'''from langgraph.graph import END, START, StateGraph
+            return f"""from langgraph.graph import END, START, StateGraph
 from langgraph.checkpoint.memory import MemorySaver
 
 # Create graph
@@ -304,39 +309,41 @@ workflow.add_edge(START, "router")
 {chr(10).join([f'workflow.add_edge("{route.lower().replace(" ", "_")}", END)' for route in routes])}
 
 # Compile graph
-graph = workflow.compile(checkpointer=memory)'''
+graph = workflow.compile(checkpointer=memory)"""
 
     @staticmethod
     def generate_complete_example(
-        routes: List[str],
-        route_purposes: Optional[Dict[str, str]] = None
+        routes: List[str], route_purposes: Optional[Dict[str, str]] = None
     ) -> str:
         """Generate a complete, runnable router pattern example.
-        
+
         Args:
             routes: List of route names
             route_purposes: Optional dict mapping route names to their purposes
-            
+
         Returns:
             Complete Python code for a router-based workflow
         """
         if route_purposes is None:
-            route_purposes = {route: f"Handle {route}-related tasks" for route in routes}
-        
+            route_purposes = {
+                route: f"Handle {route}-related tasks" for route in routes
+            }
+
         # Generate all components
         state_code = RouterPattern.generate_state_code()
         router_code = RouterPattern.generate_router_node_code(routes)
-        
-        route_nodes_code = "\n\n".join([
-            RouterPattern.generate_route_node_code(
-                route,
-                route_purposes.get(route, f"Handle {route}-related tasks")
-            )
-            for route in routes
-        ])
-        
+
+        route_nodes_code = "\n\n".join(
+            [
+                RouterPattern.generate_route_node_code(
+                    route, route_purposes.get(route, f"Handle {route}-related tasks")
+                )
+                for route in routes
+            ]
+        )
+
         graph_code = RouterPattern.generate_graph_code(routes)
-        
+
         return f'''"""
 Router Pattern Example
 Generated by LangGraph System Generator
@@ -380,4 +387,3 @@ if __name__ == "__main__":
     
     asyncio.run(run_example())
 '''
-

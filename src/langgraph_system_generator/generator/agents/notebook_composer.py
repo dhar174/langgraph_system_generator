@@ -42,9 +42,12 @@ class NotebookComposer:
             List of CellSpec objects defining all notebook cells
         """
         # Ensure architecture_type is in workflow_design for pattern selection
-        if "architecture_type" not in workflow_design and "architecture_type" in architecture:
+        if (
+            "architecture_type" not in workflow_design
+            and "architecture_type" in architecture
+        ):
             workflow_design["architecture_type"] = architecture["architecture_type"]
-        
+
         cells = []
 
         # Title and intro cells
@@ -169,7 +172,7 @@ if not os.environ.get("ANTHROPIC_API_KEY"):
         """Create state definition cells using pattern library or custom generation."""
         architecture_type = workflow_design.get("architecture_type", "router")
         state_schema = workflow_design.get("state_schema", {})
-        
+
         # Use pattern library for known architectures
         if architecture_type == "router":
             state_content = RouterPattern.generate_state_code(state_schema)
@@ -200,10 +203,6 @@ class WorkflowState(MessagesState):
             ),
             CellSpec(cell_type="code", content=state_content, section="state"),
         ]
-                section="state",
-            ),
-            CellSpec(cell_type="code", content=state_content, section="state"),
-        ]
 
     def _create_tool_cells(self, tools: List[Dict[str, Any]]) -> List[CellSpec]:
         """Create tool implementation cells with LLM-generated code."""
@@ -218,33 +217,32 @@ class WorkflowState(MessagesState):
         for tool in tools:
             # Try to generate real implementation with LLM
             tool_code = self._generate_tool_implementation(tool)
-            
-            cells.append(
-                CellSpec(cell_type="code", content=tool_code, section="tools")
-            )
+
+            cells.append(CellSpec(cell_type="code", content=tool_code, section="tools"))
 
         return cells
 
     def _generate_tool_implementation(self, tool: Dict[str, Any]) -> str:
         """Generate tool implementation using LLM.
-        
+
         Args:
             tool: Tool specification with name, purpose, category, etc.
-            
+
         Returns:
             Python code string implementing the tool
         """
-        tool_name = tool.get('name', 'unknown_tool')
-        tool_purpose = tool.get('purpose', '')
-        tool_category = tool.get('category', '')
-        tool_config = tool.get('configuration', {})
-        
+        tool_name = tool.get("name", "unknown_tool")
+        tool_purpose = tool.get("purpose", "")
+        tool_category = tool.get("category", "")
+        tool_config = tool.get("configuration", {})
+
         # Create function name
-        func_name = tool_name.lower().replace(' ', '_').replace('-', '_')
-        
+        func_name = tool_name.lower().replace(" ", "_").replace("-", "_")
+
         try:
             # Build prompt for LLM
-            system_prompt = SystemMessage(content="""You are an expert Python developer specializing in LangGraph workflows and tool implementations.
+            system_prompt = SystemMessage(
+                content="""You are an expert Python developer specializing in LangGraph workflows and tool implementations.
 
 Generate a complete, production-ready Python function implementation for the specified tool.
 
@@ -263,19 +261,22 @@ Common tool categories and approaches:
 - **API calls**: Use requests or httpx
 - **validation**: Use pydantic or custom validation logic
 
-Return ONLY the Python function code, nothing else.""")
-            
-            user_prompt = HumanMessage(content=f"""Tool Name: {tool_name}
+Return ONLY the Python function code, nothing else."""
+            )
+
+            user_prompt = HumanMessage(
+                content=f"""Tool Name: {tool_name}
 Purpose: {tool_purpose}
 Category: {tool_category}
 Configuration: {tool_config}
 
-Generate the complete Python function implementation.""")
-            
+Generate the complete Python function implementation."""
+            )
+
             # Get LLM response (synchronous)
             response = self.llm.invoke([system_prompt, user_prompt])
             generated_code = response.content.strip()
-            
+
             # Clean up code (remove markdown code blocks if present)
             if generated_code.startswith("```python"):
                 generated_code = generated_code[9:]
@@ -283,9 +284,9 @@ Generate the complete Python function implementation.""")
                 generated_code = generated_code[3:]
             if generated_code.endswith("```"):
                 generated_code = generated_code[:-3]
-            
+
             generated_code = generated_code.strip()
-            
+
             # Add header comment
             header = f"""# Tool: {tool_name}
 # Purpose: {tool_purpose}
@@ -293,25 +294,25 @@ Generate the complete Python function implementation.""")
 
 """
             return header + generated_code
-            
+
         except Exception as e:
             # Fallback to template with better implementation hints
             return self._generate_tool_fallback(tool)
 
     def _generate_tool_fallback(self, tool: Dict[str, Any]) -> str:
         """Generate a fallback tool implementation with helpful hints.
-        
+
         Args:
             tool: Tool specification
-            
+
         Returns:
             Python code with implementation hints
         """
-        tool_name = tool.get('name', 'unknown_tool')
-        tool_purpose = tool.get('purpose', '')
-        tool_category = tool.get('category', '').lower()
-        func_name = tool_name.lower().replace(' ', '_').replace('-', '_')
-        
+        tool_name = tool.get("name", "unknown_tool")
+        tool_purpose = tool.get("purpose", "")
+        tool_category = tool.get("category", "").lower()
+        func_name = tool_name.lower().replace(" ", "_").replace("-", "_")
+
         # Provide category-specific implementation hints
         implementation_hint = ""
         if "search" in tool_category:
@@ -340,7 +341,7 @@ Generate the complete Python function implementation.""")
         else:
             implementation_hint = """    # Implement your tool logic here
     # Return appropriate results"""
-        
+
         return f"""# Tool: {tool_name}
 # Purpose: {tool_purpose}
 # Category: {tool_category}
@@ -366,7 +367,7 @@ def {func_name}(*args, **kwargs):
 
         nodes = workflow_design.get("nodes", [])
         architecture_type = workflow_design.get("architecture_type", "router")
-        
+
         # Check if we should use pattern-based generation
         if architecture_type in ["router", "subagents", "critique_loop"]:
             # Use pattern library for architecture-specific nodes
@@ -385,26 +386,25 @@ def {func_name}(*args, **kwargs):
         return cells
 
     def _generate_node_implementation(
-        self, 
-        node: Dict[str, Any],
-        workflow_design: Dict[str, Any]
+        self, node: Dict[str, Any], workflow_design: Dict[str, Any]
     ) -> str:
         """Generate node implementation using LLM.
-        
+
         Args:
             node: Node specification with name, purpose, etc.
             workflow_design: Complete workflow design for context
-            
+
         Returns:
             Python code string implementing the node
         """
         node_name = node.get("name", "unknown")
         node_purpose = node.get("purpose", "")
         state_schema = workflow_design.get("state_schema", {})
-        
+
         try:
             # Build prompt for LLM
-            system_prompt = SystemMessage(content="""You are an expert Python developer specializing in LangGraph node implementations.
+            system_prompt = SystemMessage(
+                content="""You are an expert Python developer specializing in LangGraph node implementations.
 
 Generate a complete, production-ready Python function for a LangGraph node.
 
@@ -418,22 +418,27 @@ Requirements:
 - Implement actual logic based on the purpose (no 'pass' statements)
 - Handle state fields appropriately
 
-Return ONLY the Python function code, nothing else.""")
-            
-            state_info = "\n".join([f"- {field}: {desc}" for field, desc in state_schema.items()])
-            
-            user_prompt = HumanMessage(content=f"""Node Name: {node_name}
+Return ONLY the Python function code, nothing else."""
+            )
+
+            state_info = "\n".join(
+                [f"- {field}: {desc}" for field, desc in state_schema.items()]
+            )
+
+            user_prompt = HumanMessage(
+                content=f"""Node Name: {node_name}
 Purpose: {node_purpose}
 
 State Schema:
 {state_info}
 
-Generate the complete Python function implementation.""")
-            
+Generate the complete Python function implementation."""
+            )
+
             # Get LLM response
             response = self.llm.invoke([system_prompt, user_prompt])
             generated_code = response.content.strip()
-            
+
             # Clean up code
             if generated_code.startswith("```python"):
                 generated_code = generated_code[9:]
@@ -441,32 +446,30 @@ Generate the complete Python function implementation.""")
                 generated_code = generated_code[3:]
             if generated_code.endswith("```"):
                 generated_code = generated_code[:-3]
-            
+
             generated_code = generated_code.strip()
-            
+
             return generated_code
-            
+
         except Exception as e:
             # Fallback to improved template
             return self._generate_node_fallback(node, workflow_design)
 
     def _generate_node_fallback(
-        self,
-        node: Dict[str, Any],
-        workflow_design: Dict[str, Any]
+        self, node: Dict[str, Any], workflow_design: Dict[str, Any]
     ) -> str:
         """Generate fallback node implementation with helpful hints.
-        
+
         Args:
             node: Node specification
             workflow_design: Workflow design for context
-            
+
         Returns:
             Python code with implementation hints
         """
         node_name = node.get("name", "unknown")
         node_purpose = node.get("purpose", "")
-        
+
         return f"""def {node_name}_node(state: WorkflowState) -> WorkflowState:
     \"\"\"
     {node_purpose}
@@ -494,90 +497,113 @@ Generate the complete Python function implementation.""")
         self,
         nodes: List[Dict[str, Any]],
         architecture_type: str,
-        workflow_design: Dict[str, Any]
+        workflow_design: Dict[str, Any],
     ) -> List[CellSpec]:
         """Generate nodes using pattern library templates.
-        
+
         Args:
             nodes: List of node specifications
             architecture_type: Architecture pattern type
             workflow_design: Complete workflow design
-            
+
         Returns:
             List of CellSpec objects with pattern-based node implementations
         """
         cells = []
-        
+
         if architecture_type == "router":
             # Extract routes from nodes
-            routes = [node.get("name") for node in nodes if node.get("name") != "router"]
-            
+            routes = [
+                node.get("name") for node in nodes if node.get("name") != "router"
+            ]
+
             # Generate router node
             router_code = RouterPattern.generate_router_node_code(routes)
-            cells.append(CellSpec(cell_type="code", content=router_code, section="nodes"))
-            
+            cells.append(
+                CellSpec(cell_type="code", content=router_code, section="nodes")
+            )
+
             # Generate route handler nodes
             for node in nodes:
                 if node.get("name") != "router":
                     route_code = RouterPattern.generate_route_node_code(
                         node.get("name"),
-                        node.get("purpose", f"Handle {node.get('name')} requests")
+                        node.get("purpose", f"Handle {node.get('name')} requests"),
                     )
-                    cells.append(CellSpec(cell_type="code", content=route_code, section="nodes"))
-        
+                    cells.append(
+                        CellSpec(cell_type="code", content=route_code, section="nodes")
+                    )
+
         elif architecture_type == "subagents":
             # Extract subagents (excluding supervisor)
-            subagents = [node.get("name") for node in nodes if node.get("name") != "supervisor"]
+            subagents = [
+                node.get("name") for node in nodes if node.get("name") != "supervisor"
+            ]
             subagent_descriptions = {
                 node.get("name"): node.get("purpose", "")
                 for node in nodes
                 if node.get("name") != "supervisor"
             }
-            
+
             # Generate supervisor node
             supervisor_code = SubagentsPattern.generate_supervisor_code(
                 subagents, subagent_descriptions
             )
-            cells.append(CellSpec(cell_type="code", content=supervisor_code, section="nodes"))
-            
+            cells.append(
+                CellSpec(cell_type="code", content=supervisor_code, section="nodes")
+            )
+
             # Generate subagent nodes
             for node in nodes:
                 if node.get("name") != "supervisor":
                     subagent_code = SubagentsPattern.generate_subagent_code(
                         node.get("name"),
-                        node.get("purpose", f"{node.get('name')} specialist")
+                        node.get("purpose", f"{node.get('name')} specialist"),
                     )
-                    cells.append(CellSpec(cell_type="code", content=subagent_code, section="nodes"))
-        
+                    cells.append(
+                        CellSpec(
+                            cell_type="code", content=subagent_code, section="nodes"
+                        )
+                    )
+
         elif architecture_type == "critique_loop":
             # Generate critique loop nodes
             generate_code = CritiqueLoopPattern.generate_generation_node_code()
-            cells.append(CellSpec(cell_type="code", content=generate_code, section="nodes"))
-            
+            cells.append(
+                CellSpec(cell_type="code", content=generate_code, section="nodes")
+            )
+
             critique_code = CritiqueLoopPattern.generate_critique_node_code()
-            cells.append(CellSpec(cell_type="code", content=critique_code, section="nodes"))
-            
+            cells.append(
+                CellSpec(cell_type="code", content=critique_code, section="nodes")
+            )
+
             revise_code = CritiqueLoopPattern.generate_revise_node_code()
-            cells.append(CellSpec(cell_type="code", content=revise_code, section="nodes"))
-        
+            cells.append(
+                CellSpec(cell_type="code", content=revise_code, section="nodes")
+            )
+
         return cells
 
     def _create_graph_cells(self, workflow_design: Dict[str, Any]) -> List[CellSpec]:
         """Create graph construction cells using pattern library or custom generation."""
         architecture_type = workflow_design.get("architecture_type", "router")
         nodes = workflow_design.get("nodes", [])
-        
+
         # Use pattern library for known architectures
         if architecture_type == "router":
-            routes = [node.get("name") for node in nodes if node.get("name") != "router"]
+            routes = [
+                node.get("name") for node in nodes if node.get("name") != "router"
+            ]
             graph_code = RouterPattern.generate_graph_code(routes)
         elif architecture_type == "subagents":
-            subagents = [node.get("name") for node in nodes if node.get("name") != "supervisor"]
+            subagents = [
+                node.get("name") for node in nodes if node.get("name") != "supervisor"
+            ]
             graph_code = SubagentsPattern.generate_graph_code(subagents)
         elif architecture_type == "critique_loop":
             graph_code = CritiqueLoopPattern.generate_graph_code(
-                max_revisions=3,
-                min_quality_score=0.8
+                max_revisions=3, min_quality_score=0.8
             )
         else:
             # Fallback to enhanced template-based generation
@@ -594,10 +620,10 @@ Generate the complete Python function implementation.""")
 
     def _generate_graph_fallback(self, workflow_design: Dict[str, Any]) -> str:
         """Generate fallback graph construction code.
-        
+
         Args:
             workflow_design: Complete workflow design
-            
+
         Returns:
             Python code for graph construction
         """
@@ -605,27 +631,33 @@ Generate the complete Python function implementation.""")
         nodes = workflow_design.get("nodes", [])
         edges = workflow_design.get("edges", [])
         conditional_edges = workflow_design.get("conditional_edges", [])
-        
+
         # Generate node additions
-        node_additions = "\n".join([
-            f'workflow.add_node("{node.get("name")}", {node.get("name")}_node)'
-            for node in nodes
-        ])
-        
+        node_additions = "\n".join(
+            [
+                f'workflow.add_node("{node.get("name")}", {node.get("name")}_node)'
+                for node in nodes
+            ]
+        )
+
         # Generate regular edges
-        edge_additions = "\n".join([
-            f'workflow.add_edge("{edge.get("from")}", "{edge.get("to")}")'
-            for edge in edges
-        ])
-        
+        edge_additions = "\n".join(
+            [
+                f'workflow.add_edge("{edge.get("from")}", "{edge.get("to")}")'
+                for edge in edges
+            ]
+        )
+
         # Generate conditional edges if present
         conditional_code = ""
         if conditional_edges:
-            conditional_code = "\n\n# Add conditional edges\n" + "\n".join([
-                f'# TODO: Implement conditional logic for {ce.get("from")}'
-                for ce in conditional_edges
-            ])
-        
+            conditional_code = "\n\n# Add conditional edges\n" + "\n".join(
+                [
+                    f'# TODO: Implement conditional logic for {ce.get("from")}'
+                    for ce in conditional_edges
+                ]
+            )
+
         return f"""from langgraph.graph import END, START, StateGraph
 from langgraph.checkpoint.memory import MemorySaver
 

@@ -6,13 +6,13 @@ improved through cycles of generation, critique, and revision.
 
 Example Usage:
     >>> from langgraph_system_generator.patterns.critique_loops import CritiqueLoopPattern
-    >>> 
+    >>>
     >>> # Generate state code
     >>> state_code = CritiqueLoopPattern.generate_state_code()
-    >>> 
+    >>>
     >>> # Generate critique node
     >>> critique_code = CritiqueLoopPattern.generate_critique_node_code()
-    >>> 
+    >>>
     >>> # Generate complete graph code
     >>> graph_code = CritiqueLoopPattern.generate_graph_code(max_revisions=3)
 """
@@ -22,13 +22,13 @@ from typing import Dict, List, Optional
 
 class CritiqueLoopPattern:
     """Template generator for critique-revise loop patterns.
-    
+
     The critique-revise pattern is ideal for workflows where:
     - Output quality needs iterative refinement
     - Expert critique guides improvements
     - Multiple revision cycles are acceptable
     - Quality standards must be met before completion
-    
+
     Architecture:
         START -> generate -> critique -> [revise -> critique] -> END
         (loops until approval or max iterations)
@@ -37,10 +37,10 @@ class CritiqueLoopPattern:
     @staticmethod
     def generate_state_code(additional_fields: Optional[Dict[str, str]] = None) -> str:
         """Generate state schema code for critique-revise pattern.
-        
+
         Args:
             additional_fields: Optional dict mapping field names to descriptions
-            
+
         Returns:
             Python code string defining the WorkflowState class
         """
@@ -48,7 +48,7 @@ class CritiqueLoopPattern:
         if additional_fields:
             for field_name, description in additional_fields.items():
                 additional += f"    {field_name}: str  # {description}\n"
-        
+
         return f'''from typing import Annotated, List
 from langgraph.graph import MessagesState
 
@@ -70,14 +70,14 @@ class WorkflowState(MessagesState):
     @staticmethod
     def generate_generation_node_code(
         task_description: str = "Generate initial output",
-        llm_model: str = "gpt-4o-mini"
+        llm_model: str = "gpt-4o-mini",
     ) -> str:
         """Generate code for initial generation node.
-        
+
         Args:
             task_description: Description of what to generate
             llm_model: LLM model to use
-            
+
         Returns:
             Python code string implementing the generation node
         """
@@ -118,15 +118,15 @@ Create high-quality output that is clear, accurate, and well-structured.""")
     def generate_critique_node_code(
         criteria: Optional[List[str]] = None,
         llm_model: str = "gpt-4o-mini",
-        use_structured_output: bool = True
+        use_structured_output: bool = True,
     ) -> str:
         """Generate code for critique/review node.
-        
+
         Args:
             criteria: Optional list of quality criteria to evaluate
             llm_model: LLM model to use
             use_structured_output: Whether to use structured output
-            
+
         Returns:
             Python code string implementing the critique node
         """
@@ -135,11 +135,11 @@ Create high-quality output that is clear, accurate, and well-structured.""")
                 "Accuracy and correctness",
                 "Clarity and readability",
                 "Completeness",
-                "Structure and organization"
+                "Structure and organization",
             ]
-        
+
         criteria_str = "\\n".join([f"- {c}" for c in criteria])
-        
+
         if use_structured_output:
             return f'''from langchain_openai import ChatOpenAI
 from langchain_core.messages import HumanMessage, SystemMessage
@@ -258,14 +258,12 @@ Format: SCORE|APPROVED or NEEDS_REVISION|feedback""")
     }}'''
 
     @staticmethod
-    def generate_revise_node_code(
-        llm_model: str = "gpt-4o-mini"
-    ) -> str:
+    def generate_revise_node_code(llm_model: str = "gpt-4o-mini") -> str:
         """Generate code for revision node.
-        
+
         Args:
             llm_model: LLM model to use
-            
+
         Returns:
             Python code string implementing the revision node
         """
@@ -316,15 +314,14 @@ Revise the draft to address the feedback.""")
 
     @staticmethod
     def generate_conditional_edge_code(
-        max_revisions: int = 3,
-        min_quality_score: float = 0.8
+        max_revisions: int = 3, min_quality_score: float = 0.8
     ) -> str:
         """Generate conditional edge routing code.
-        
+
         Args:
             max_revisions: Maximum number of revision cycles
             min_quality_score: Minimum quality score to approve
-            
+
         Returns:
             Python code string for conditional routing logic
         """
@@ -357,19 +354,18 @@ Revise the draft to address the feedback.""")
 
     @staticmethod
     def generate_graph_code(
-        max_revisions: int = 3,
-        min_quality_score: float = 0.8
+        max_revisions: int = 3, min_quality_score: float = 0.8
     ) -> str:
         """Generate complete critique-revise graph construction code.
-        
+
         Args:
             max_revisions: Maximum revision cycles
             min_quality_score: Minimum quality score to approve
-            
+
         Returns:
             Python code string for building the complete graph
         """
-        return f'''from langgraph.graph import END, START, StateGraph
+        return f"""from langgraph.graph import END, START, StateGraph
 from langgraph.checkpoint.memory import MemorySaver
 
 
@@ -406,21 +402,21 @@ workflow.add_conditional_edges(
 workflow.add_edge("revise", "critique")
 
 # Compile graph
-graph = workflow.compile(checkpointer=memory)'''
+graph = workflow.compile(checkpointer=memory)"""
 
     @staticmethod
     def generate_complete_example(
         task_description: str = "Write a technical article",
         criteria: Optional[List[str]] = None,
-        max_revisions: int = 3
+        max_revisions: int = 3,
     ) -> str:
         """Generate a complete, runnable critique-revise loop example.
-        
+
         Args:
             task_description: Description of generation task
             criteria: Optional list of quality criteria
             max_revisions: Maximum revision cycles
-            
+
         Returns:
             Complete Python code for a critique-revise workflow
         """
@@ -429,16 +425,18 @@ graph = workflow.compile(checkpointer=memory)'''
                 "Accuracy and correctness",
                 "Clarity and readability",
                 "Completeness",
-                "Structure and organization"
+                "Structure and organization",
             ]
-        
+
         # Generate all components
         state_code = CritiqueLoopPattern.generate_state_code()
-        generate_code = CritiqueLoopPattern.generate_generation_node_code(task_description)
+        generate_code = CritiqueLoopPattern.generate_generation_node_code(
+            task_description
+        )
         critique_code = CritiqueLoopPattern.generate_critique_node_code(criteria)
         revise_code = CritiqueLoopPattern.generate_revise_node_code()
         graph_code = CritiqueLoopPattern.generate_graph_code(max_revisions)
-        
+
         return f'''"""
 Critique-Revise Loop Pattern Example
 Generated by LangGraph System Generator
@@ -496,4 +494,3 @@ if __name__ == "__main__":
     
     asyncio.run(run_example())
 '''
-
