@@ -63,16 +63,29 @@ def configuration_cell(model: str = "gpt-5-mini") -> List[CellSpec]:
         import os
         from getpass import getpass
         from pathlib import Path
+        from google.colab import userdata
+        
+        
+        
         
         WORKDIR = Path(os.getenv("WORKDIR", ".")).resolve()
         WORKDIR.mkdir(parents=True, exist_ok=True)
         MODEL = os.getenv("MODEL", "gpt-5-mini")
         
         if not os.environ.get("OPENAI_API_KEY"):
+          if userdata.get('OPENAI_API_KEY'):
+            os.environ["OPENAI_API_KEY"] = userdata.get('OPENAI_API_KEY')
+          else:
             os.environ["OPENAI_API_KEY"] = getpass("Enter OPENAI_API_KEY (kept local): ")
         
-        if not os.environ.get("ANTHROPIC_API_KEY"):
-            os.environ["ANTHROPIC_API_KEY"] = getpass("Enter ANTHROPIC_API_KEY (optional): ")
+        if os.environ.get("OPENAI_API_KEY"):
+          print("OPENAI_API_KEY found in environment variables.")
+        
+        if not os.environ.get("ANTHROPIC_API_KEY") and not os.environ.get("OPENAI_API_KEY"):
+            if userdata.get('ANTHROPIC_API_KEY'):
+                os.environ["ANTHROPIC_API_KEY"] = userdata.get('ANTHROPIC_API_KEY')
+            elif not os.environ.get("OPENAI_API_KEY"):
+                os.environ["ANTHROPIC_API_KEY"] = getpass("Enter ANTHROPIC_API_KEY (optional): ")
         
         print(f"Using model: {MODEL}")
         print(f"Working directory: {WORKDIR}")
