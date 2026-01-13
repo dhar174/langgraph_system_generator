@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.responses import FileResponse, HTMLResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
@@ -99,6 +99,17 @@ async def health() -> Dict[str, str]:
     """Simple health check."""
 
     return {"status": "ok"}
+
+
+@app.get("/.well-known/appspecific/com.chrome.devtools.json")
+async def chrome_devtools_endpoint():
+    """Handle Chrome DevTools endpoint request.
+    
+    Chrome automatically requests this endpoint to check for DevTools support.
+    Return 204 No Content to indicate the endpoint is recognized but we don't
+    provide DevTools-specific features.
+    """
+    return Response(status_code=204)
 
 
 @app.post("/generate", response_model=GenerationResponse)
