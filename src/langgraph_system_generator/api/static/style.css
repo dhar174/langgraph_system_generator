@@ -667,13 +667,11 @@ footer a:hover {
     word-wrap: break-word;
 }
 
-/* Micro-interactions */
 .card {
-    transition: transform 0.2s, box-shadow 0.2s;
+    transition: box-shadow 0.2s;
 }
 
 .card:hover {
-    transform: translateY(-2px);
     box-shadow: 0 6px 12px var(--shadow);
 }
 
