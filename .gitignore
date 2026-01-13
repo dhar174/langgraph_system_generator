@@ -16,3 +16,4 @@ venv/
 
 # Generated output files
 output/
+langgraph_system_generator.code-workspace
