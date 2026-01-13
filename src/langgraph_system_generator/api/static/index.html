@@ -80,17 +80,67 @@
                                 <div class="form-group">
                                     <label for="model">
                                         Model
-                                        <span class="tooltip" tabindex="0" role="button" aria-label="Help: Select the LLM model to use for generation" data-tooltip="Select the LLM model to use for generation">ⓘ</span>
+                                        <span class="tooltip" tabindex="0" role="button" aria-label="Help: Select the LLM model to use for generation. Different models have different capabilities, speeds, and costs." data-tooltip="Select the LLM model to use for generation">ⓘ</span>
                                     </label>
                                     <select id="model" name="model">
                                         <option value="">Default (gpt-5-nano)</option>
-                                        <option value="gpt-4">GPT-4</option>
-                                        <option value="gpt-4-turbo">GPT-4 Turbo</option>
-                                        <option value="gpt-3.5-turbo">GPT-3.5 Turbo</option>
-                                        <option value="claude-3-opus">Claude 3 Opus</option>
-                                        <option value="claude-3-sonnet">Claude 3 Sonnet</option>
-                                        <option value="claude-3-haiku">Claude 3 Haiku</option>
-                                        <option value="gemini-pro">Gemini Pro</option>
+                                        <optgroup label="OpenAI">
+                                            <option value="gpt-4o">GPT-4o (Latest, Multimodal)</option>
+                                            <option value="gpt-4o-mini">GPT-4o Mini (Fast, Cost-effective)</option>
+                                            <option value="gpt-4-turbo">GPT-4 Turbo</option>
+                                            <option value="gpt-4">GPT-4</option>
+                                            <option value="gpt-3.5-turbo">GPT-3.5 Turbo</option>
+                                        </optgroup>
+                                        <optgroup label="Anthropic Claude">
+                                            <option value="claude-3-opus-20240229">Claude 3 Opus (Most Capable)</option>
+                                            <option value="claude-3-5-sonnet-20241022">Claude 3.5 Sonnet (Latest)</option>
+                                            <option value="claude-3-sonnet-20240229">Claude 3 Sonnet</option>
+                                            <option value="claude-3-haiku-20240307">Claude 3 Haiku (Fastest)</option>
+                                        </optgroup>
+                                        <optgroup label="Google Gemini">
+                                            <option value="gemini-2.0-flash-exp">Gemini 2.0 Flash (Experimental)</option>
+                                            <option value="gemini-1.5-pro">Gemini 1.5 Pro</option>
+                                            <option value="gemini-1.5-flash">Gemini 1.5 Flash</option>
+                                            <option value="gemini-pro">Gemini Pro</option>
+                                        </optgroup>
+                                        <optgroup label="Custom">
+                                            <option value="custom">Custom Endpoint (Configure Below)</option>
+                                        </optgroup>
+                                    </select>
+                                </div>
+
+                                <!-- Custom Endpoint Override -->
+                                <div class="form-group form-group-full" id="customEndpointGroup" style="display: none;">
+                                    <label for="customEndpoint">
+                                        Custom API Endpoint
+                                        <span class="tooltip" tabindex="0" role="button" aria-label="Help: Enter custom API endpoint URL (e.g., http://localhost:8000/v1 for local models)" data-tooltip="Enter custom API endpoint URL">ⓘ</span>
+                                    </label>
+                                    <input 
+                                        type="url" 
+                                        id="customEndpoint" 
+                                        name="customEndpoint" 
+                                        placeholder="https://api.example.com/v1"
+                                        aria-describedby="customEndpointHelp"
+                                    >
+                                    <small class="help-text" id="customEndpointHelp">
+                                        For local models or custom providers. Include full base URL with protocol.
+                                    </small>
+                                </div>
+
+                                <!-- Preset/Task Selection -->
+                                <div class="form-group">
+                                    <label for="preset">
+                                        Task Preset
+                                        <span class="tooltip" tabindex="0" role="button" aria-label="Help: Choose a preset optimized for specific use cases" data-tooltip="Choose a preset optimized for specific use cases">ⓘ</span>
+                                    </label>
+                                    <select id="preset" name="preset">
+                                        <option value="">None (Custom)</option>
+                                        <option value="code-generation">Code Generation</option>
+                                        <option value="data-analysis">Data Analysis</option>
+                                        <option value="customer-support">Customer Support</option>
+                                        <option value="content-creation">Content Creation</option>
+                                        <option value="research-assistant">Research Assistant</option>
+                                        <option value="workflow-automation">Workflow Automation</option>
                                     </select>
                                 </div>
 
@@ -154,6 +204,53 @@
                                         <option value="short">Short-term</option>
                                         <option value="long">Long-term</option>
                                         <option value="full">Full History</option>
+                                    </select>
+                                </div>
+
+                                <!-- Graph Style -->
+                                <div class="form-group">
+                                    <label for="graphStyle">
+                                        Graph Style
+                                        <span class="tooltip" tabindex="0" role="button" aria-label="Help: Visual and execution style for the LangGraph workflow" data-tooltip="Visual and execution style for the workflow">ⓘ</span>
+                                    </label>
+                                    <select id="graphStyle" name="graphStyle">
+                                        <option value="">Default (Auto)</option>
+                                        <option value="sequential">Sequential (Linear)</option>
+                                        <option value="parallel">Parallel (Concurrent)</option>
+                                        <option value="conditional">Conditional (Branching)</option>
+                                        <option value="cyclic">Cyclic (Loop-based)</option>
+                                    </select>
+                                </div>
+
+                                <!-- Retriever Options -->
+                                <div class="form-group">
+                                    <label for="retrieverType">
+                                        Retriever Type
+                                        <span class="tooltip" tabindex="0" role="button" aria-label="Help: Document retrieval method for RAG-based agents" data-tooltip="Document retrieval method for RAG">ⓘ</span>
+                                    </label>
+                                    <select id="retrieverType" name="retrieverType">
+                                        <option value="">None</option>
+                                        <option value="vector">Vector Similarity (Default)</option>
+                                        <option value="keyword">Keyword/BM25</option>
+                                        <option value="hybrid">Hybrid (Vector + Keyword)</option>
+                                        <option value="mmr">MMR (Diverse Results)</option>
+                                    </select>
+                                </div>
+
+                                <!-- Document Loader -->
+                                <div class="form-group">
+                                    <label for="documentLoader">
+                                        Document Loader
+                                        <span class="tooltip" tabindex="0" role="button" aria-label="Help: Source types for loading documents into the system" data-tooltip="Source types for loading documents">ⓘ</span>
+                                    </label>
+                                    <select id="documentLoader" name="documentLoader">
+                                        <option value="">Auto-detect</option>
+                                        <option value="text">Plain Text</option>
+                                        <option value="pdf">PDF</option>
+                                        <option value="web">Web Scraper</option>
+                                        <option value="markdown">Markdown</option>
+                                        <option value="json">JSON</option>
+                                        <option value="csv">CSV</option>
                                     </select>
                                 </div>
 

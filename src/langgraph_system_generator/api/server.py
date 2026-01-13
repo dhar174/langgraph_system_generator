@@ -46,6 +46,14 @@ class GenerationRequest(BaseModel):
         default=None,
         description="LLM model to use (e.g., gpt-4, gpt-3.5-turbo, claude-3-opus, etc.). Uses default if not specified.",
     )
+    custom_endpoint: Optional[str] = Field(
+        default=None,
+        description="Custom API endpoint URL for self-hosted or alternative LLM providers.",
+    )
+    preset: Optional[str] = Field(
+        default=None,
+        description="Task preset (code-generation, data-analysis, customer-support, etc.) for optimized settings.",
+    )
     temperature: Optional[float] = Field(
         default=None,
         ge=0.0,
@@ -71,6 +79,18 @@ class GenerationRequest(BaseModel):
     memory_config: Optional[str] = Field(
         default=None,
         description="Memory configuration for the agent (none, short, long, full).",
+    )
+    graph_style: Optional[str] = Field(
+        default=None,
+        description="Graph execution style (sequential, parallel, conditional, cyclic).",
+    )
+    retriever_type: Optional[str] = Field(
+        default=None,
+        description="Document retriever type for RAG (vector, keyword, hybrid, mmr).",
+    )
+    document_loader: Optional[str] = Field(
+        default=None,
+        description="Document loader type (text, pdf, web, markdown, json, csv).",
     )
 
 
@@ -131,6 +151,11 @@ async def generate_notebook(request: GenerationRequest) -> GenerationResponse:
             max_tokens=request.max_tokens,
             agent_type=request.agent_type,
             memory_config=request.memory_config,
+            custom_endpoint=request.custom_endpoint,
+            preset=request.preset,
+            graph_style=request.graph_style,
+            retriever_type=request.retriever_type,
+            document_loader=request.document_loader,
         )
         return GenerationResponse(
             success=True,

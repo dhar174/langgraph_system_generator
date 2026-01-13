@@ -182,6 +182,11 @@ async def generate_artifacts(
     max_tokens: int | None = None,
     agent_type: str | None = None,
     memory_config: str | None = None,
+    custom_endpoint: str | None = None,
+    preset: str | None = None,
+    graph_style: str | None = None,
+    retriever_type: str | None = None,
+    document_loader: str | None = None,
 ) -> GenerationArtifacts:
     """Generate notebook artifacts either in stub or live mode.
 
@@ -199,6 +204,11 @@ async def generate_artifacts(
         max_tokens: Maximum tokens for LLM response (optional)
         agent_type: Type of agent architecture (optional, auto-detected if not specified)
         memory_config: Memory configuration for the agent (optional)
+        custom_endpoint: Custom API endpoint URL (optional)
+        preset: Task preset for optimized settings (optional)
+        graph_style: Graph execution style (optional)
+        retriever_type: Document retriever type for RAG (optional)
+        document_loader: Document loader type (optional)
     """
 
     from langgraph_system_generator.notebook.composer import NotebookComposer
@@ -248,6 +258,16 @@ async def generate_artifacts(
         manifest["agent_type"] = agent_type
     if memory_config:
         manifest["memory_config"] = memory_config
+    if custom_endpoint:
+        manifest["custom_endpoint"] = custom_endpoint
+    if preset:
+        manifest["preset"] = preset
+    if graph_style:
+        manifest["graph_style"] = graph_style
+    if retriever_type:
+        manifest["retriever_type"] = retriever_type
+    if document_loader:
+        manifest["document_loader"] = document_loader
 
     # Persist helpful artifacts for downstream consumers
     plan = serialized.get("notebook_plan")

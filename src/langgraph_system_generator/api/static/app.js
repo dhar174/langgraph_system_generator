@@ -23,6 +23,8 @@ const advancedToggle = document.getElementById('advancedToggle');
 const advancedPanel = document.getElementById('advancedPanel');
 const temperatureSlider = document.getElementById('temperature');
 const tempValue = document.getElementById('tempValue');
+const modelSelect = document.getElementById('model');
+const customEndpointGroup = document.getElementById('customEndpointGroup');
 
 // Theme toggle
 const themeToggle = document.getElementById('themeToggle');
@@ -59,6 +61,17 @@ advancedToggle.addEventListener('click', () => {
 // Temperature slider update
 temperatureSlider.addEventListener('input', (e) => {
     tempValue.textContent = e.target.value;
+});
+
+// Model selection - show/hide custom endpoint field
+modelSelect.addEventListener('change', (e) => {
+    if (e.target.value === 'custom') {
+        customEndpointGroup.style.display = 'block';
+        document.getElementById('customEndpoint').required = true;
+    } else {
+        customEndpointGroup.style.display = 'none';
+        document.getElementById('customEndpoint').required = false;
+    }
 });
 
 // Helper to count Unicode characters (code points) for accurate counting
@@ -482,6 +495,12 @@ form.addEventListener('submit', async (e) => {
     const model = formData.get('model');
     if (model) data.model = model;
     
+    const customEndpoint = formData.get('customEndpoint');
+    if (customEndpoint && model === 'custom') data.custom_endpoint = customEndpoint;
+    
+    const preset = formData.get('preset');
+    if (preset) data.preset = preset;
+    
     const temperature = parseFloat(formData.get('temperature'));
     // Only send temperature if it differs from default (0.7)
     if (!isNaN(temperature) && temperature !== 0.7) data.temperature = temperature;
@@ -494,6 +513,15 @@ form.addEventListener('submit', async (e) => {
     
     const memoryConfig = formData.get('memoryConfig');
     if (memoryConfig) data.memory_config = memoryConfig;
+    
+    const graphStyle = formData.get('graphStyle');
+    if (graphStyle) data.graph_style = graphStyle;
+    
+    const retrieverType = formData.get('retrieverType');
+    if (retrieverType) data.retriever_type = retrieverType;
+    
+    const documentLoader = formData.get('documentLoader');
+    if (documentLoader) data.document_loader = documentLoader;
     
     // Validate prompt length (using Unicode code points)
     if (getCharacterCount(data.prompt) > 5000) {
@@ -713,6 +741,16 @@ function rerunFromHistory(entry) {
     
     if (data.model) {
         document.getElementById('model').value = data.model;
+        // Trigger change event to show/hide custom endpoint
+        document.getElementById('model').dispatchEvent(new Event('change'));
+    }
+    
+    if (data.custom_endpoint) {
+        document.getElementById('customEndpoint').value = data.custom_endpoint;
+    }
+    
+    if (data.preset) {
+        document.getElementById('preset').value = data.preset;
     }
     
     if (data.temperature !== undefined) {
@@ -731,6 +769,18 @@ function rerunFromHistory(entry) {
     
     if (data.memory_config) {
         document.getElementById('memoryConfig').value = data.memory_config;
+    }
+    
+    if (data.graph_style) {
+        document.getElementById('graphStyle').value = data.graph_style;
+    }
+    
+    if (data.retriever_type) {
+        document.getElementById('retrieverType').value = data.retriever_type;
+    }
+    
+    if (data.document_loader) {
+        document.getElementById('documentLoader').value = data.document_loader;
     }
     
     // Restore output formats from history, if available
