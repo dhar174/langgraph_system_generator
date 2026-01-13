@@ -337,7 +337,7 @@ workflow.add_edge(START, "supervisor")
 workflow.add_conditional_edges(
     "supervisor",
     supervisor_router,
-    {{{", ".join([f'"{agent.lower().replace(" ", "_")}": "{agent.lower().replace(" ", "_")}"' for agent in subagents])}, END: END}}
+    {{{", ".join([f'"{agent.lower().replace(" ", "_")}": "{agent.lower().replace(" ", "_")}"' for agent in subagents])}, "END": END}}
 )
 
 # All subagents return to supervisor for next decision
