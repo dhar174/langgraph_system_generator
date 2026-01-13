@@ -148,6 +148,79 @@ docker run -p 8000:8000 \
   lnf
 ```
 
+## Pattern Library
+
+The system includes a powerful pattern library for generating common multi-agent architectures. Three core patterns are available:
+
+### Router Pattern
+Dynamic routing to specialized agents based on input classification. Ideal for modular systems with domain-specific expertise.
+
+```python
+from langgraph_system_generator.patterns import RouterPattern
+
+# Generate a complete router-based system
+routes = ["search", "analyze", "summarize"]
+route_purposes = {
+    "search": "Search for information",
+    "analyze": "Analyze data and identify patterns",
+    "summarize": "Condense content into summaries",
+}
+
+code = RouterPattern.generate_complete_example(routes, route_purposes)
+# Returns fully functional LangGraph workflow code
+```
+
+### Subagents Pattern
+Supervisor-based coordination of specialized agents for complex, multi-step workflows.
+
+```python
+from langgraph_system_generator.patterns import SubagentsPattern
+
+# Generate a research team with supervisor
+subagents = ["researcher", "analyst", "writer"]
+descriptions = {
+    "researcher": "Gathers information from multiple sources",
+    "analyst": "Analyzes data and identifies patterns",
+    "writer": "Creates comprehensive reports",
+}
+
+code = SubagentsPattern.generate_complete_example(subagents, descriptions)
+# Returns supervisor-subagent coordination system
+```
+
+### Critique-Revise Loop Pattern
+Iterative quality improvement through cycles of generation, critique, and revision.
+
+```python
+from langgraph_system_generator.patterns import CritiqueLoopPattern
+
+# Generate content refinement system
+task = "Write technical documentation"
+criteria = ["Technical accuracy", "Clarity", "Completeness", "Code examples"]
+
+code = CritiqueLoopPattern.generate_complete_example(
+    task_description=task,
+    criteria=criteria,
+    max_revisions=3,
+)
+# Returns iterative refinement workflow
+```
+
+### Examples and Documentation
+
+- **Comprehensive Documentation**: See [docs/patterns.md](docs/patterns.md) for detailed pattern guide
+- **Runnable Examples**: Check `examples/` directory for practical demonstrations:
+  - `examples/router_pattern_example.py` - Router pattern usage
+  - `examples/subagents_pattern_example.py` - Subagents pattern usage
+  - `examples/critique_revise_pattern_example.py` - Critique-revise pattern usage
+- **Test Coverage**: ≥90% coverage for all pattern modules (see `tests/unit/test_patterns.py`)
+
+Run an example:
+```bash
+export OPENAI_API_KEY='your-key-here'
+python examples/router_pattern_example.py
+```
+
 ## Precached Documentation
 
 This repository includes precached LangGraph and LangChain documentation (19+ pages, ~300KB) 
