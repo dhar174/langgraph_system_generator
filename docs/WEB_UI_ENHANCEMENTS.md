@@ -28,7 +28,7 @@ The web interface now exposes advanced configuration options for power users whi
 
 **Max Tokens**
 - Control output length
-- Range: 100 - 100,000 tokens
+- Range: 100 - 32,768 tokens
 - Useful for managing API costs
 
 **Agent Type Selection**

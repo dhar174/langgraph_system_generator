@@ -12,7 +12,7 @@ Successfully implemented comprehensive enhancements to the LangGraph System Gene
 - Collapsible advanced options panel with toggle button
 - Model selection dropdown (8 popular models + default)
 - Temperature slider (0.0-2.0) with real-time value display
-- Max tokens input field (100-100,000)
+- Max tokens input field (100-32,768)
 - Agent type selector (Auto-detect, Router, Subagents, Hybrid)
 - Memory configuration selector (None, Short-term, Long-term, Full History)
 - Output format checkboxes (IPYNB, HTML, DOCX, PDF, ZIP)

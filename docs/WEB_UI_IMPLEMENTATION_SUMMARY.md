@@ -22,7 +22,7 @@ The issue requested five major enhancement areas:
 - Extended `GenerationRequest` model in `server.py` with:
   - `model`: Optional[str] - LLM model selection
   - `temperature`: Optional[float] - Sampling temperature (0.0-2.0)
-  - `max_tokens`: Optional[int] - Maximum output tokens (1-100000)
+  - `max_tokens`: Optional[int] - Maximum output tokens (1-32768)
   - `agent_type`: Optional[str] - Architecture pattern selection
   - `memory_config`: Optional[str] - Memory configuration
 - Updated `generate_artifacts()` function in `cli.py` to accept and use new parameters
@@ -395,7 +395,7 @@ The issue requested five major enhancement areas:
 ### Input Validation
 - Pydantic models validate all inputs
 - Temperature range checked (0.0-2.0)
-- Max tokens range checked (1-100000)
+- Max tokens range checked (1-32768)
 - Output directory validated
 - Prompt length limited (5000 chars)
 
