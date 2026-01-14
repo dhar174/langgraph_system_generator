@@ -19,5 +19,4 @@ jobs:
           excluded_paths: "ignore,.github"
           root_path: "src/"
           commit_message: "Repo visualization diagram"
-          branch: "main"
           should_push: true
