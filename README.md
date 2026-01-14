@@ -236,7 +236,9 @@ See `data/cached_docs/README.md` for more details.
 See `docs/dev.md` for additional setup details.
 
 ```mermaid
+%%{init: {'theme':'base','themeVariables':{'fontSize':'18px','primaryColor':'#ffffff','primaryBorderColor':'#222222','primaryTextColor':'#111111','lineColor':'#333333','tertiaryColor':'#f6f6f6'}}}%%
 classDiagram
+direction TB
   class ArchitectureSelector {
     docs_retriever : DocsRetriever | None
     llm : ChatOpenAI
@@ -474,6 +476,27 @@ classDiagram
     load_index() FAISS
     load_or_create(documents: List[Document]) FAISS
   }
+
+  %% Auto-derived relationships from type references
+  ArchitectureSelector --> Constraint : uses
+  ArchitectureSelector --> DocSnippet : uses
+  ArchitectureSelector --> DocsRetriever : uses
+  DocsRetriever --> RetrievedSnippet : uses
+  DocsRetriever --> VectorStoreManager : uses
+  GeneratorState --> CellSpec : uses
+  GeneratorState --> Constraint : uses
+  GeneratorState --> DocSnippet : uses
+  GeneratorState --> NotebookPlan : uses
+  GeneratorState --> QAReport : uses
+  GraphDesigner --> Constraint : uses
+  NotebookComposer --> CellSpec : uses
+  NotebookRepairAgent --> NotebookValidator : uses
+  NotebookRepairAgent --> QAReport : uses
+  NotebookValidator --> QAReport : uses
+  QARepairAgent --> CellSpec : uses
+  QARepairAgent --> QAReport : uses
+  RequirementsAnalyst --> Constraint : uses
+  ToolchainEngineer --> Constraint : uses
 ```
 
 ![Visualization of the codebase](./diagram.svg)
