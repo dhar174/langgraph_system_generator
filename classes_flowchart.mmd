@@ -1,0 +1,63 @@
+%%{init: {'theme':'base','flowchart':{'nodeSpacing':60,'rankSpacing':80,'curve':'basis'},'themeVariables':{'fontSize':'18px','primaryColor':'#ffffff','primaryBorderColor':'#222222','primaryTextColor':'#111111','lineColor':'#333333','tertiaryColor':'#f6f6f6'}}}%%
+flowchart TB
+  classDef box fill:#ffffff,stroke:#222222,stroke-width:2px;
+  subgraph Generation / Orchestration
+    ArchitectureSelector[ArchitectureSelector]:::box
+    CritiqueLoopPattern[CritiqueLoopPattern]:::box
+    GeneratorState[GeneratorState]:::box
+    GraphDesigner[GraphDesigner]:::box
+    ManuscriptDOCXGenerator[ManuscriptDOCXGenerator]:::box
+    ManuscriptPDFGenerator[ManuscriptPDFGenerator]:::box
+    NotebookComposer[NotebookComposer]:::box
+    NotebookExporter[NotebookExporter]:::box
+    NotebookPlan[NotebookPlan]:::box
+    RouterPattern[RouterPattern]:::box
+    SubagentsPattern[SubagentsPattern]:::box
+  end
+
+  subgraph Docs / RAG
+    DocSnippet[DocSnippet]:::box
+    DocsIndexer[DocsIndexer]:::box
+    DocsRetriever[DocsRetriever]:::box
+    DocumentCache[DocumentCache]:::box
+    VectorStoreManager[VectorStoreManager]:::box
+  end
+
+  subgraph QA / Repair
+    NotebookRepairAgent[NotebookRepairAgent]:::box
+    NotebookValidator[NotebookValidator]:::box
+    QARepairAgent[QARepairAgent]:::box
+    QAReport[QAReport]:::box
+  end
+
+  subgraph Other / Types
+    CellSpec[CellSpec]:::box
+    Constraint[Constraint]:::box
+    GenerationArtifacts[GenerationArtifacts]:::box
+    GenerationRequest[GenerationRequest]:::box
+    GenerationResponse[GenerationResponse]:::box
+    RequirementsAnalyst[RequirementsAnalyst]:::box
+    RetrievedSnippet[RetrievedSnippet]:::box
+    Settings[Settings]:::box
+    ToolchainEngineer[ToolchainEngineer]:::box
+  end
+
+  ArchitectureSelector --> Constraint
+  ArchitectureSelector --> DocSnippet
+  ArchitectureSelector --> DocsRetriever
+  DocsRetriever --> RetrievedSnippet
+  DocsRetriever --> VectorStoreManager
+  GeneratorState --> CellSpec
+  GeneratorState --> Constraint
+  GeneratorState --> DocSnippet
+  GeneratorState --> NotebookPlan
+  GeneratorState --> QAReport
+  GraphDesigner --> Constraint
+  NotebookComposer --> CellSpec
+  NotebookRepairAgent --> NotebookValidator
+  NotebookRepairAgent --> QAReport
+  NotebookValidator --> QAReport
+  QARepairAgent --> CellSpec
+  QARepairAgent --> QAReport
+  RequirementsAnalyst --> Constraint
+  ToolchainEngineer --> Constraint

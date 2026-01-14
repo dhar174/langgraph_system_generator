@@ -1,0 +1,41 @@
+digraph "packages" {
+rankdir=BT
+charset="utf-8"
+"src.langgraph_system_generator" [color="black", label=<src.langgraph_system_generator>, shape="box", style="solid"];
+"src.langgraph_system_generator.api" [color="black", label=<src.langgraph_system_generator.api>, shape="box", style="solid"];
+"src.langgraph_system_generator.api.server" [color="black", label=<src.langgraph_system_generator.api.server>, shape="box", style="solid"];
+"src.langgraph_system_generator.cli" [color="black", label=<src.langgraph_system_generator.cli>, shape="box", style="solid"];
+"src.langgraph_system_generator.generator" [color="black", label=<src.langgraph_system_generator.generator>, shape="box", style="solid"];
+"src.langgraph_system_generator.generator.agents" [color="black", label=<src.langgraph_system_generator.generator.agents>, shape="box", style="solid"];
+"src.langgraph_system_generator.generator.agents.architecture_selector" [color="black", label=<src.langgraph_system_generator.generator.agents.architecture_selector>, shape="box", style="solid"];
+"src.langgraph_system_generator.generator.agents.graph_designer" [color="black", label=<src.langgraph_system_generator.generator.agents.graph_designer>, shape="box", style="solid"];
+"src.langgraph_system_generator.generator.agents.notebook_composer" [color="black", label=<src.langgraph_system_generator.generator.agents.notebook_composer>, shape="box", style="solid"];
+"src.langgraph_system_generator.generator.agents.qa_repair_agent" [color="black", label=<src.langgraph_system_generator.generator.agents.qa_repair_agent>, shape="box", style="solid"];
+"src.langgraph_system_generator.generator.agents.requirements_analyst" [color="black", label=<src.langgraph_system_generator.generator.agents.requirements_analyst>, shape="box", style="solid"];
+"src.langgraph_system_generator.generator.agents.toolchain_engineer" [color="black", label=<src.langgraph_system_generator.generator.agents.toolchain_engineer>, shape="box", style="solid"];
+"src.langgraph_system_generator.generator.graph" [color="black", label=<src.langgraph_system_generator.generator.graph>, shape="box", style="solid"];
+"src.langgraph_system_generator.generator.nodes" [color="black", label=<src.langgraph_system_generator.generator.nodes>, shape="box", style="solid"];
+"src.langgraph_system_generator.generator.state" [color="black", label=<src.langgraph_system_generator.generator.state>, shape="box", style="solid"];
+"src.langgraph_system_generator.generator.utils" [color="black", label=<src.langgraph_system_generator.generator.utils>, shape="box", style="solid"];
+"src.langgraph_system_generator.notebook" [color="black", label=<src.langgraph_system_generator.notebook>, shape="box", style="solid"];
+"src.langgraph_system_generator.notebook.composer" [color="black", label=<src.langgraph_system_generator.notebook.composer>, shape="box", style="solid"];
+"src.langgraph_system_generator.notebook.exporters" [color="black", label=<src.langgraph_system_generator.notebook.exporters>, shape="box", style="solid"];
+"src.langgraph_system_generator.notebook.manuscript_docx" [color="black", label=<src.langgraph_system_generator.notebook.manuscript_docx>, shape="box", style="solid"];
+"src.langgraph_system_generator.notebook.manuscript_pdf" [color="black", label=<src.langgraph_system_generator.notebook.manuscript_pdf>, shape="box", style="solid"];
+"src.langgraph_system_generator.notebook.templates" [color="black", label=<src.langgraph_system_generator.notebook.templates>, shape="box", style="solid"];
+"src.langgraph_system_generator.notebook.utils" [color="black", label=<src.langgraph_system_generator.notebook.utils>, shape="box", style="solid"];
+"src.langgraph_system_generator.patterns" [color="black", label=<src.langgraph_system_generator.patterns>, shape="box", style="solid"];
+"src.langgraph_system_generator.patterns.critique_loops" [color="black", label=<src.langgraph_system_generator.patterns.critique_loops>, shape="box", style="solid"];
+"src.langgraph_system_generator.patterns.router" [color="black", label=<src.langgraph_system_generator.patterns.router>, shape="box", style="solid"];
+"src.langgraph_system_generator.patterns.subagents" [color="black", label=<src.langgraph_system_generator.patterns.subagents>, shape="box", style="solid"];
+"src.langgraph_system_generator.qa" [color="black", label=<src.langgraph_system_generator.qa>, shape="box", style="solid"];
+"src.langgraph_system_generator.qa.repair" [color="black", label=<src.langgraph_system_generator.qa.repair>, shape="box", style="solid"];
+"src.langgraph_system_generator.qa.validators" [color="black", label=<src.langgraph_system_generator.qa.validators>, shape="box", style="solid"];
+"src.langgraph_system_generator.rag" [color="black", label=<src.langgraph_system_generator.rag>, shape="box", style="solid"];
+"src.langgraph_system_generator.rag.cache" [color="black", label=<src.langgraph_system_generator.rag.cache>, shape="box", style="solid"];
+"src.langgraph_system_generator.rag.embeddings" [color="black", label=<src.langgraph_system_generator.rag.embeddings>, shape="box", style="solid"];
+"src.langgraph_system_generator.rag.indexer" [color="black", label=<src.langgraph_system_generator.rag.indexer>, shape="box", style="solid"];
+"src.langgraph_system_generator.rag.retriever" [color="black", label=<src.langgraph_system_generator.rag.retriever>, shape="box", style="solid"];
+"src.langgraph_system_generator.utils" [color="black", label=<src.langgraph_system_generator.utils>, shape="box", style="solid"];
+"src.langgraph_system_generator.utils.config" [color="black", label=<src.langgraph_system_generator.utils.config>, shape="box", style="solid"];
+}

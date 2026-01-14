@@ -1,0 +1,247 @@
+<html>
+  <body>
+    <script src="https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js"></script>
+      <div class="mermaid">
+    
+        classDiagram
+          class ArchitectureSelector {
+            docs_retriever : DocsRetriever | None
+            llm : ChatOpenAI
+            select_architecture(constraints: List[Constraint], docs_context: List[DocSnippet]) Dict[str, Any]
+          }
+          class CellSpec {
+            cell_type : Optional[str]
+            content : Optional[str]
+            metadata : Optional[Dict[str, Any]]
+            section : Optional[str]
+          }
+          class Constraint {
+            priority : Optional[int]
+            type : Optional[str]
+            value : Optional[str]
+          }
+          class CritiqueLoopPattern {
+            generate_complete_example(task_description: str, criteria: Optional[List[str]], max_revisions: int) str
+            generate_conditional_edge_code(max_revisions: int, min_quality_score: float) str
+            generate_critique_node_code(criteria: Optional[List[str]], llm_model: str, use_structured_output: bool) str
+            generate_generation_node_code(task_description: str, llm_model: str) str
+            generate_graph_code(max_revisions: int, min_quality_score: float) str
+            generate_revise_node_code(llm_model: str) str
+            generate_state_code(additional_fields: Optional[Dict[str, str]]) str
+          }
+          class DocSnippet {
+            content : Optional[str]
+            heading : Optional[str]
+            relevance_score : Optional[float]
+            source : Optional[str]
+          }
+          class DocsIndexer {
+            DOCS_URLS
+            LANGCHAIN_AGENTS_URLS : list
+            LANGCHAIN_CHAINS_URLS : list
+            LANGCHAIN_CORE_URLS : list
+            LANGCHAIN_RAG_URLS : list
+            LANGGRAPH_ADVANCED_URLS : list
+            LANGGRAPH_CORE_URLS : list
+            LANGGRAPH_PATTERNS_URLS : list
+            LANGGRAPH_STATE_URLS : list
+            chunk_overlap : int
+            chunk_size : int
+            request_timeout : float
+            urls : list
+            chunk_documents(docs: List[Document]) List[Document]
+            scrape_docs() List[Document]
+          }
+          class DocsRetriever {
+            vector_store_manager : VectorStoreManager
+            retrieve(query: str, k: int) List[RetrievedSnippet]
+            retrieve_for_pattern(pattern_name: str) List[RetrievedSnippet]
+          }
+          class DocumentCache {
+            cache_file
+            cache_path : Path
+            exists() bool
+            load_documents() List[Document]
+            save_documents(documents: List[Document]) None
+          }
+          class GenerationArtifacts {
+            manifest : Dict[str, Any]
+            manifest_path : str
+            mode : Literal
+            output_dir : str
+            prompt : str
+            result : Dict[str, Any]
+          }
+          class GenerationRequest {
+            agent_type : Optional[str]
+            custom_endpoint : Optional[str]
+            document_loader : Optional[str]
+            formats : Optional[list[str]]
+            graph_style : Optional[str]
+            max_tokens : Optional[int]
+            memory_config : Optional[str]
+            mode : Optional[GenerationMode]
+            model : Optional[str]
+            output_dir : Optional[str]
+            preset : Optional[str]
+            prompt : Optional[str]
+            retriever_type : Optional[str]
+            temperature : Optional[float]
+          }
+          class GenerationResponse {
+            error : Optional[str]
+            manifest : Optional[Dict[str, Any]]
+            manifest_path : Optional[str]
+            mode : Optional[str]
+            output_dir : Optional[str]
+            prompt : Optional[str]
+            success : bool
+          }
+          class GeneratorState {
+            architecture_justification : str
+            architecture_type : Optional[str]
+            artifacts_manifest : Dict[str, str]
+            constraints : Annotated[List[Constraint], operator.add]
+            docs_context : Annotated[List[DocSnippet], operator.add]
+            error_message : Optional[str]
+            generated_cells : Annotated[List[CellSpec], operator.add]
+            generation_complete : bool
+            notebook_plan : Optional[NotebookPlan]
+            qa_reports : List[QAReport]
+            repair_attempts : int
+            selected_patterns : Dict[str, Any]
+            tools_plan : Optional[List[Dict[str, Any]]]
+            uploaded_files : Optional[List[str]]
+            user_prompt : str
+            workflow_design : Optional[Dict[str, Any]]
+          }
+          class GraphDesigner {
+            llm : ChatOpenAI
+            design_workflow(architecture: Dict[str, Any], constraints: List[Constraint]) Dict[str, Any]
+          }
+          class ManuscriptDOCXGenerator {
+            font_name : str
+            font_size : int
+            line_spacing : float
+            create_manuscript(title: str, author: str | None, chapters: Sequence[Dict[str, Any]] | None, output_path: str | Path, include_title_page: bool) str
+            create_notebook_manuscript(notebook_cells: Sequence[Dict[str, Any]], output_path: str | Path, title: str | None, author: str | None) str
+          }
+          class ManuscriptPDFGenerator {
+            body_style : ParagraphStyle
+            chapter_style : ParagraphStyle
+            code_style : ParagraphStyle
+            font_name : str
+            font_size : int
+            page_size : tuple
+            section_style : ParagraphStyle
+            styles : StyleSheet1
+            subsection_style : ParagraphStyle
+            create_manuscript(title: str, chapters: Sequence[Dict[str, Any]], output_path: str | Path, author: str | None, include_title_page: bool) str
+            create_notebook_manuscript(notebook_cells: Sequence[Dict[str, Any]], output_path: str | Path, title: str | None, author: str | None) str
+          }
+          class NotebookComposer {
+            llm : ChatOpenAI
+            compose_notebook(notebook_plan: NotebookPlan, workflow_design: Dict[str, Any], tools: List[Dict[str, Any]], architecture: Dict[str, Any]) List[CellSpec]
+          }
+          class NotebookComposer {
+            colab_friendly : bool
+            build_notebook(cells: Sequence[CellSpec], ensure_minimum_sections: bool) NotebookNode
+            write(notebook: NotebookNode, path: str | Path) str
+          }
+          class NotebookExporter {
+            export_ipynb(notebook: nbformat.NotebookNode, path: str | Path) str
+            export_notebook_to_docx(notebook: nbformat.NotebookNode, output_path: str | Path, title: str | None) str
+            export_to_html(notebook: nbformat.NotebookNode, output_path: str | Path) str
+            export_to_pdf(notebook_path: str | Path, output_path: str | Path, method: str) str
+            export_zip(notebook: nbformat.NotebookNode, zip_path: str | Path, extra_files: Sequence[str | os.PathLike[str]] | None, notebook_name: str) str
+          }
+          class NotebookPlan {
+            architecture_type : Optional[str]
+            cell_count_estimate : Optional[int]
+            patterns_used : Optional[List[str]]
+            sections : Optional[List[str]]
+            title : Optional[str]
+          }
+          class NotebookRepairAgent {
+            DEFAULT_MAX_ATTEMPTS : int
+            max_attempts : int
+            validator : NotebookValidator
+            get_repair_summary(qa_reports: List[QAReport]) Dict[str, Any]
+            repair_notebook(notebook_path: str | Path, qa_reports: List[QAReport], attempt: int) tuple[bool, List[QAReport]]
+            should_retry(qa_reports: List[QAReport], attempt: int) bool
+          }
+          class NotebookValidator {
+            PLACEHOLDER_PATTERNS : list
+            REQUIRED_IMPORTS : list
+            REQUIRED_SECTIONS : list
+            check_graph_compiles(notebook_path: str | Path) QAReport
+            check_imports_present(notebook_path: str | Path, required_imports: Optional[List[str]]) QAReport
+            check_no_placeholders(notebook_path: str | Path) QAReport
+            check_required_sections(notebook_path: str | Path, required_sections: Optional[List[str]]) QAReport
+            validate_all(notebook_path: str | Path) List[QAReport]
+            validate_json_structure(notebook_path: str | Path) QAReport
+          }
+          class QARepairAgent {
+            llm : ChatOpenAI
+            repair(cells: List[CellSpec], qa_reports: List[QAReport]) List[CellSpec]
+            validate(cells: List[CellSpec]) List[QAReport]
+          }
+          class QAReport {
+            check_name : Optional[str]
+            message : Optional[str]
+            passed : Optional[bool]
+            suggestions : Optional[List[str]]
+          }
+          class RequirementsAnalyst {
+            llm : ChatOpenAI
+            analyze(prompt: str) List[Constraint]
+          }
+          class RetrievedSnippet {
+            content : str
+            heading : Optional[str]
+            relevance_score : float
+            source : str
+          }
+          class RouterPattern {
+            generate_complete_example(routes: List[str], route_purposes: Optional[Dict[str, str]]) str
+            generate_graph_code(routes: List[str], entry_point: str, use_conditional_edges: bool) str
+            generate_route_node_code(route_name: str, route_purpose: str, llm_model: str) str
+            generate_router_node_code(routes: List[str], llm_model: str, use_structured_output: bool) str
+            generate_state_code(additional_fields: Optional[Dict[str, str]]) str
+          }
+          class Settings {
+            anthropic_api_key : Optional[str]
+            default_budget_tokens : Optional[int]
+            default_model : Optional[str]
+            langsmith_api_key : Optional[str]
+            langsmith_project : Optional[str]
+            max_repair_attempts : Optional[int]
+            model_config : SettingsConfigDict
+            openai_api_key : Optional[str]
+            vector_store_path : Optional[str]
+            vector_store_type : Optional[str]
+          }
+          class SubagentsPattern {
+            generate_complete_example(subagents: List[str], subagent_descriptions: Optional[Dict[str, str]]) str
+            generate_graph_code(subagents: List[str], max_iterations: int) str
+            generate_state_code(additional_fields: Optional[Dict[str, str]]) str
+            generate_subagent_code(agent_name: str, agent_description: str, llm_model: str, include_tools: bool) str
+            generate_supervisor_code(subagents: List[str], subagent_descriptions: Optional[Dict[str, str]], llm_model: str, use_structured_output: bool) str
+          }
+          class ToolchainEngineer {
+            llm : ChatOpenAI
+            plan_tools(workflow_design: Dict[str, Any], constraints: List[Constraint]) List[Dict[str, Any]]
+          }
+          class VectorStoreManager {
+            embeddings : OpenAIEmbeddings
+            store_path : str
+            vector_store : Optional[FAISS]
+            create_index(documents: List[Document]) FAISS
+            index_exists() bool
+            load_index() FAISS
+            load_or_create(documents: List[Document]) FAISS
+          }
+  
+       </div>
+  </body>
+</html>

@@ -1,0 +1,434 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="13477pt" height="335pt" viewBox="0.00 0.00 13477.00 335.00">
+<g id="graph0" class="graph" transform="scale(1 1) rotate(0) translate(4 331.4)">
+<title>classes</title>
+<polygon fill="white" stroke="none" points="-4,4 -4,-331.4 13473.31,-331.4 13473.31,4 -4,4"/>
+<!-- src.langgraph_system_generator.generator.agents.architecture_selector.ArchitectureSelector -->
+<g id="node1" class="node">
+<title>src.langgraph_system_generator.generator.agents.architecture_selector.ArchitectureSelector</title>
+<polygon fill="none" stroke="black" points="0,-118.1 0,-209.3 559.13,-209.3 559.13,-118.1 0,-118.1"/>
+<text xml:space="preserve" text-anchor="start" x="221.65" y="-192.7" font-family="Times,serif" font-size="14.00">ArchitectureSelector</text>
+<polyline fill="none" stroke="black" points="0,-184.5 559.13,-184.5"/>
+<text xml:space="preserve" text-anchor="start" x="173.59" y="-167.9" font-family="Times,serif" font-size="14.00">docs_retriever : DocsRetriever | None</text>
+<text xml:space="preserve" text-anchor="start" x="173.59" y="-151.1" font-family="Times,serif" font-size="14.00">llm : ChatOpenAI</text>
+<polyline fill="none" stroke="black" points="0,-142.9 559.13,-142.9"/>
+<text xml:space="preserve" text-anchor="start" x="8" y="-126.3" font-family="Times,serif" font-size="14.00">select_architecture(constraints: List[Constraint], docs_context: List[DocSnippet]): Dict[str, Any]</text>
+</g>
+<!-- src.langgraph_system_generator.generator.state.CellSpec -->
+<g id="node2" class="node">
+<title>src.langgraph_system_generator.generator.state.CellSpec</title>
+<polygon fill="none" stroke="black" points="577.43,-101.3 577.43,-226.1 791.7,-226.1 791.7,-101.3 577.43,-101.3"/>
+<text xml:space="preserve" text-anchor="start" x="659.29" y="-209.5" font-family="Times,serif" font-size="14.00">CellSpec</text>
+<polyline fill="none" stroke="black" points="577.43,-201.3 791.7,-201.3"/>
+<text xml:space="preserve" text-anchor="start" x="585.43" y="-184.7" font-family="Times,serif" font-size="14.00">cell_type : Optional[str]</text>
+<text xml:space="preserve" text-anchor="start" x="585.43" y="-167.9" font-family="Times,serif" font-size="14.00">content : Optional[str]</text>
+<text xml:space="preserve" text-anchor="start" x="585.43" y="-151.1" font-family="Times,serif" font-size="14.00">metadata : Optional[Dict[str, Any]]</text>
+<text xml:space="preserve" text-anchor="start" x="585.43" y="-134.3" font-family="Times,serif" font-size="14.00">section : Optional[str]</text>
+<polyline fill="none" stroke="black" points="577.43,-126.1 791.7,-126.1"/>
+<text xml:space="preserve" text-anchor="start" x="682.81" y="-109.5" font-family="Times,serif" font-size="14.00"> </text>
+</g>
+<!-- src.langgraph_system_generator.generator.state.Constraint -->
+<g id="node3" class="node">
+<title>src.langgraph_system_generator.generator.state.Constraint</title>
+<polygon fill="none" stroke="black" points="809.57,-109.7 809.57,-217.7 951.55,-217.7 951.55,-109.7 809.57,-109.7"/>
+<text xml:space="preserve" text-anchor="start" x="851.4" y="-201.1" font-family="Times,serif" font-size="14.00">Constraint</text>
+<polyline fill="none" stroke="black" points="809.57,-192.9 951.55,-192.9"/>
+<text xml:space="preserve" text-anchor="start" x="817.57" y="-176.3" font-family="Times,serif" font-size="14.00">priority : Optional[int]</text>
+<text xml:space="preserve" text-anchor="start" x="817.57" y="-159.5" font-family="Times,serif" font-size="14.00">type : Optional[str]</text>
+<text xml:space="preserve" text-anchor="start" x="817.57" y="-142.7" font-family="Times,serif" font-size="14.00">value : Optional[str]</text>
+<polyline fill="none" stroke="black" points="809.57,-134.5 951.55,-134.5"/>
+<text xml:space="preserve" text-anchor="start" x="878.81" y="-117.9" font-family="Times,serif" font-size="14.00"> </text>
+</g>
+<!-- src.langgraph_system_generator.patterns.critique_loops.CritiqueLoopPattern -->
+<g id="node4" class="node">
+<title>src.langgraph_system_generator.patterns.critique_loops.CritiqueLoopPattern</title>
+<polygon fill="none" stroke="black" points="969.21,-76.1 969.21,-251.3 1583.92,-251.3 1583.92,-76.1 969.21,-76.1"/>
+<text xml:space="preserve" text-anchor="start" x="1219.02" y="-234.7" font-family="Times,serif" font-size="14.00">CritiqueLoopPattern</text>
+<polyline fill="none" stroke="black" points="969.21,-226.5 1583.92,-226.5"/>
+<polyline fill="none" stroke="black" points="969.21,-201.7 1583.92,-201.7"/>
+<text xml:space="preserve" text-anchor="start" x="977.21" y="-185.1" font-family="Times,serif" font-size="14.00">generate_complete_example(task_description: str, criteria: Optional[List[str]], max_revisions: int): str</text>
+<text xml:space="preserve" text-anchor="start" x="977.21" y="-168.3" font-family="Times,serif" font-size="14.00">generate_conditional_edge_code(max_revisions: int, min_quality_score: float): str</text>
+<text xml:space="preserve" text-anchor="start" x="977.21" y="-151.5" font-family="Times,serif" font-size="14.00">generate_critique_node_code(criteria: Optional[List[str]], llm_model: str, use_structured_output: bool): str</text>
+<text xml:space="preserve" text-anchor="start" x="977.21" y="-134.7" font-family="Times,serif" font-size="14.00">generate_generation_node_code(task_description: str, llm_model: str): str</text>
+<text xml:space="preserve" text-anchor="start" x="977.21" y="-117.9" font-family="Times,serif" font-size="14.00">generate_graph_code(max_revisions: int, min_quality_score: float): str</text>
+<text xml:space="preserve" text-anchor="start" x="977.21" y="-101.1" font-family="Times,serif" font-size="14.00">generate_revise_node_code(llm_model: str): str</text>
+<text xml:space="preserve" text-anchor="start" x="977.21" y="-84.3" font-family="Times,serif" font-size="14.00">generate_state_code(additional_fields: Optional[Dict[str, str]]): str</text>
+</g>
+<!-- src.langgraph_system_generator.generator.state.DocSnippet -->
+<g id="node5" class="node">
+<title>src.langgraph_system_generator.generator.state.DocSnippet</title>
+<polygon fill="none" stroke="black" points="1602.05,-101.3 1602.05,-226.1 1803.08,-226.1 1803.08,-101.3 1602.05,-101.3"/>
+<text xml:space="preserve" text-anchor="start" x="1669.51" y="-209.5" font-family="Times,serif" font-size="14.00">DocSnippet</text>
+<polyline fill="none" stroke="black" points="1602.05,-201.3 1803.08,-201.3"/>
+<text xml:space="preserve" text-anchor="start" x="1610.05" y="-184.7" font-family="Times,serif" font-size="14.00">content : Optional[str]</text>
+<text xml:space="preserve" text-anchor="start" x="1610.05" y="-167.9" font-family="Times,serif" font-size="14.00">heading : Optional[str]</text>
+<text xml:space="preserve" text-anchor="start" x="1610.05" y="-151.1" font-family="Times,serif" font-size="14.00">relevance_score : Optional[float]</text>
+<text xml:space="preserve" text-anchor="start" x="1610.05" y="-134.3" font-family="Times,serif" font-size="14.00">source : Optional[str]</text>
+<polyline fill="none" stroke="black" points="1602.05,-126.1 1803.08,-126.1"/>
+<text xml:space="preserve" text-anchor="start" x="1700.81" y="-109.5" font-family="Times,serif" font-size="14.00"> </text>
+</g>
+<!-- src.langgraph_system_generator.rag.indexer.DocsIndexer -->
+<g id="node6" class="node">
+<title>src.langgraph_system_generator.rag.indexer.DocsIndexer</title>
+<polygon fill="none" stroke="black" points="1821.33,-17.3 1821.33,-310.1 2167.8,-310.1 2167.8,-17.3 1821.33,-17.3"/>
+<text xml:space="preserve" text-anchor="start" x="1958.8" y="-293.5" font-family="Times,serif" font-size="14.00">DocsIndexer</text>
+<polyline fill="none" stroke="black" points="1821.33,-285.3 2167.8,-285.3"/>
+<text xml:space="preserve" text-anchor="start" x="1873.22" y="-268.7" font-family="Times,serif" font-size="14.00">DOCS_URLS</text>
+<text xml:space="preserve" text-anchor="start" x="1873.22" y="-251.9" font-family="Times,serif" font-size="14.00">LANGCHAIN_AGENTS_URLS : list</text>
+<text xml:space="preserve" text-anchor="start" x="1873.22" y="-235.1" font-family="Times,serif" font-size="14.00">LANGCHAIN_CHAINS_URLS : list</text>
+<text xml:space="preserve" text-anchor="start" x="1873.22" y="-218.3" font-family="Times,serif" font-size="14.00">LANGCHAIN_CORE_URLS : list</text>
+<text xml:space="preserve" text-anchor="start" x="1873.22" y="-201.5" font-family="Times,serif" font-size="14.00">LANGCHAIN_RAG_URLS : list</text>
+<text xml:space="preserve" text-anchor="start" x="1873.22" y="-184.7" font-family="Times,serif" font-size="14.00">LANGGRAPH_ADVANCED_URLS : list</text>
+<text xml:space="preserve" text-anchor="start" x="1873.22" y="-167.9" font-family="Times,serif" font-size="14.00">LANGGRAPH_CORE_URLS : list</text>
+<text xml:space="preserve" text-anchor="start" x="1873.22" y="-151.1" font-family="Times,serif" font-size="14.00">LANGGRAPH_PATTERNS_URLS : list</text>
+<text xml:space="preserve" text-anchor="start" x="1873.22" y="-134.3" font-family="Times,serif" font-size="14.00">LANGGRAPH_STATE_URLS : list</text>
+<text xml:space="preserve" text-anchor="start" x="1873.22" y="-117.5" font-family="Times,serif" font-size="14.00">chunk_overlap : int</text>
+<text xml:space="preserve" text-anchor="start" x="1873.22" y="-100.7" font-family="Times,serif" font-size="14.00">chunk_size : int</text>
+<text xml:space="preserve" text-anchor="start" x="1873.22" y="-83.9" font-family="Times,serif" font-size="14.00">request_timeout : float</text>
+<text xml:space="preserve" text-anchor="start" x="1873.22" y="-67.1" font-family="Times,serif" font-size="14.00">urls : list</text>
+<polyline fill="none" stroke="black" points="1821.33,-58.9 2167.8,-58.9"/>
+<text xml:space="preserve" text-anchor="start" x="1829.33" y="-42.3" font-family="Times,serif" font-size="14.00">chunk_documents(docs: List[Document]): List[Document]</text>
+<text xml:space="preserve" text-anchor="start" x="1829.33" y="-25.5" font-family="Times,serif" font-size="14.00">scrape_docs(): List[Document]</text>
+</g>
+<!-- src.langgraph_system_generator.rag.retriever.DocsRetriever -->
+<g id="node7" class="node">
+<title>src.langgraph_system_generator.rag.retriever.DocsRetriever</title>
+<polygon fill="none" stroke="black" points="2186.3,-118.1 2186.3,-209.3 2556.83,-209.3 2556.83,-118.1 2186.3,-118.1"/>
+<text xml:space="preserve" text-anchor="start" x="2331.14" y="-192.7" font-family="Times,serif" font-size="14.00">DocsRetriever</text>
+<polyline fill="none" stroke="black" points="2186.3,-184.5 2556.83,-184.5"/>
+<text xml:space="preserve" text-anchor="start" x="2245.23" y="-167.9" font-family="Times,serif" font-size="14.00">vector_store_manager : VectorStoreManager</text>
+<polyline fill="none" stroke="black" points="2186.3,-159.7 2556.83,-159.7"/>
+<text xml:space="preserve" text-anchor="start" x="2194.3" y="-143.1" font-family="Times,serif" font-size="14.00">retrieve(query: str, k: int): List[RetrievedSnippet]</text>
+<text xml:space="preserve" text-anchor="start" x="2194.3" y="-126.3" font-family="Times,serif" font-size="14.00">retrieve_for_pattern(pattern_name: str): List[RetrievedSnippet]</text>
+</g>
+<!-- src.langgraph_system_generator.rag.cache.DocumentCache -->
+<g id="node8" class="node">
+<title>src.langgraph_system_generator.rag.cache.DocumentCache</title>
+<polygon fill="none" stroke="black" points="2575.05,-101.3 2575.05,-226.1 2888.08,-226.1 2888.08,-101.3 2575.05,-101.3"/>
+<text xml:space="preserve" text-anchor="start" x="2684.92" y="-209.5" font-family="Times,serif" font-size="14.00">DocumentCache</text>
+<polyline fill="none" stroke="black" points="2575.05,-201.3 2888.08,-201.3"/>
+<text xml:space="preserve" text-anchor="start" x="2682.2" y="-184.7" font-family="Times,serif" font-size="14.00">cache_file</text>
+<text xml:space="preserve" text-anchor="start" x="2682.2" y="-167.9" font-family="Times,serif" font-size="14.00">cache_path : Path</text>
+<polyline fill="none" stroke="black" points="2575.05,-159.7 2888.08,-159.7"/>
+<text xml:space="preserve" text-anchor="start" x="2583.05" y="-143.1" font-family="Times,serif" font-size="14.00">exists(): bool</text>
+<text xml:space="preserve" text-anchor="start" x="2583.05" y="-126.3" font-family="Times,serif" font-size="14.00">load_documents(): List[Document]</text>
+<text xml:space="preserve" text-anchor="start" x="2583.05" y="-109.5" font-family="Times,serif" font-size="14.00">save_documents(documents: List[Document]): None</text>
+</g>
+<!-- src.langgraph_system_generator.cli.GenerationArtifacts -->
+<g id="node9" class="node">
+<title>src.langgraph_system_generator.cli.GenerationArtifacts</title>
+<polygon fill="none" stroke="black" points="2905.75,-84.5 2905.75,-242.9 3059.38,-242.9 3059.38,-84.5 2905.75,-84.5"/>
+<text xml:space="preserve" text-anchor="start" x="2926.98" y="-226.3" font-family="Times,serif" font-size="14.00">GenerationArtifacts</text>
+<polyline fill="none" stroke="black" points="2905.75,-218.1 3059.38,-218.1"/>
+<text xml:space="preserve" text-anchor="start" x="2913.75" y="-201.5" font-family="Times,serif" font-size="14.00">manifest : Dict[str, Any]</text>
+<text xml:space="preserve" text-anchor="start" x="2913.75" y="-184.7" font-family="Times,serif" font-size="14.00">manifest_path : str</text>
+<text xml:space="preserve" text-anchor="start" x="2913.75" y="-167.9" font-family="Times,serif" font-size="14.00">mode : Literal</text>
+<text xml:space="preserve" text-anchor="start" x="2913.75" y="-151.1" font-family="Times,serif" font-size="14.00">output_dir : str</text>
+<text xml:space="preserve" text-anchor="start" x="2913.75" y="-134.3" font-family="Times,serif" font-size="14.00">prompt : str</text>
+<text xml:space="preserve" text-anchor="start" x="2913.75" y="-117.5" font-family="Times,serif" font-size="14.00">result : Dict[str, Any]</text>
+<polyline fill="none" stroke="black" points="2905.75,-109.3 3059.38,-109.3"/>
+<text xml:space="preserve" text-anchor="start" x="2980.81" y="-92.7" font-family="Times,serif" font-size="14.00"> </text>
+</g>
+<!-- src.langgraph_system_generator.api.server.GenerationRequest -->
+<g id="node10" class="node">
+<title>src.langgraph_system_generator.api.server.GenerationRequest</title>
+<polygon fill="none" stroke="black" points="3076.98,-17.3 3076.98,-310.1 3288.15,-310.1 3288.15,-17.3 3076.98,-17.3"/>
+<text xml:space="preserve" text-anchor="start" x="3128.92" y="-293.5" font-family="Times,serif" font-size="14.00">GenerationRequest</text>
+<polyline fill="none" stroke="black" points="3076.98,-285.3 3288.15,-285.3"/>
+<text xml:space="preserve" text-anchor="start" x="3084.98" y="-268.7" font-family="Times,serif" font-size="14.00">agent_type : Optional[str]</text>
+<text xml:space="preserve" text-anchor="start" x="3084.98" y="-251.9" font-family="Times,serif" font-size="14.00">custom_endpoint : Optional[str]</text>
+<text xml:space="preserve" text-anchor="start" x="3084.98" y="-235.1" font-family="Times,serif" font-size="14.00">document_loader : Optional[str]</text>
+<text xml:space="preserve" text-anchor="start" x="3084.98" y="-218.3" font-family="Times,serif" font-size="14.00">formats : Optional[list[str]]</text>
+<text xml:space="preserve" text-anchor="start" x="3084.98" y="-201.5" font-family="Times,serif" font-size="14.00">graph_style : Optional[str]</text>
+<text xml:space="preserve" text-anchor="start" x="3084.98" y="-184.7" font-family="Times,serif" font-size="14.00">max_tokens : Optional[int]</text>
+<text xml:space="preserve" text-anchor="start" x="3084.98" y="-167.9" font-family="Times,serif" font-size="14.00">memory_config : Optional[str]</text>
+<text xml:space="preserve" text-anchor="start" x="3084.98" y="-151.1" font-family="Times,serif" font-size="14.00">mode : Optional[GenerationMode]</text>
+<text xml:space="preserve" text-anchor="start" x="3084.98" y="-134.3" font-family="Times,serif" font-size="14.00">model : Optional[str]</text>
+<text xml:space="preserve" text-anchor="start" x="3084.98" y="-117.5" font-family="Times,serif" font-size="14.00">output_dir : Optional[str]</text>
+<text xml:space="preserve" text-anchor="start" x="3084.98" y="-100.7" font-family="Times,serif" font-size="14.00">preset : Optional[str]</text>
+<text xml:space="preserve" text-anchor="start" x="3084.98" y="-83.9" font-family="Times,serif" font-size="14.00">prompt : Optional[str]</text>
+<text xml:space="preserve" text-anchor="start" x="3084.98" y="-67.1" font-family="Times,serif" font-size="14.00">retriever_type : Optional[str]</text>
+<text xml:space="preserve" text-anchor="start" x="3084.98" y="-50.3" font-family="Times,serif" font-size="14.00">temperature : Optional[float]</text>
+<polyline fill="none" stroke="black" points="3076.98,-42.1 3288.15,-42.1"/>
+<text xml:space="preserve" text-anchor="start" x="3180.81" y="-25.5" font-family="Times,serif" font-size="14.00"> </text>
+</g>
+<!-- src.langgraph_system_generator.api.server.GenerationResponse -->
+<g id="node11" class="node">
+<title>src.langgraph_system_generator.api.server.GenerationResponse</title>
+<polygon fill="none" stroke="black" points="3306.59,-76.1 3306.59,-251.3 3518.54,-251.3 3518.54,-76.1 3306.59,-76.1"/>
+<text xml:space="preserve" text-anchor="start" x="3354.64" y="-234.7" font-family="Times,serif" font-size="14.00">GenerationResponse</text>
+<polyline fill="none" stroke="black" points="3306.59,-226.5 3518.54,-226.5"/>
+<text xml:space="preserve" text-anchor="start" x="3314.59" y="-209.9" font-family="Times,serif" font-size="14.00">error : Optional[str]</text>
+<text xml:space="preserve" text-anchor="start" x="3314.59" y="-193.1" font-family="Times,serif" font-size="14.00">manifest : Optional[Dict[str, Any]]</text>
+<text xml:space="preserve" text-anchor="start" x="3314.59" y="-176.3" font-family="Times,serif" font-size="14.00">manifest_path : Optional[str]</text>
+<text xml:space="preserve" text-anchor="start" x="3314.59" y="-159.5" font-family="Times,serif" font-size="14.00">mode : Optional[str]</text>
+<text xml:space="preserve" text-anchor="start" x="3314.59" y="-142.7" font-family="Times,serif" font-size="14.00">output_dir : Optional[str]</text>
+<text xml:space="preserve" text-anchor="start" x="3314.59" y="-125.9" font-family="Times,serif" font-size="14.00">prompt : Optional[str]</text>
+<text xml:space="preserve" text-anchor="start" x="3314.59" y="-109.1" font-family="Times,serif" font-size="14.00">success : bool</text>
+<polyline fill="none" stroke="black" points="3306.59,-100.9 3518.54,-100.9"/>
+<text xml:space="preserve" text-anchor="start" x="3410.81" y="-84.3" font-family="Times,serif" font-size="14.00"> </text>
+</g>
+<!-- src.langgraph_system_generator.generator.state.GeneratorState -->
+<g id="node12" class="node">
+<title>src.langgraph_system_generator.generator.state.GeneratorState</title>
+<polygon fill="none" stroke="black" points="3536.08,-0.5 3536.08,-326.9 3879.05,-326.9 3879.05,-0.5 3536.08,-0.5"/>
+<text xml:space="preserve" text-anchor="start" x="3665.58" y="-310.3" font-family="Times,serif" font-size="14.00">GeneratorState</text>
+<polyline fill="none" stroke="black" points="3536.08,-302.1 3879.05,-302.1"/>
+<text xml:space="preserve" text-anchor="start" x="3544.08" y="-285.5" font-family="Times,serif" font-size="14.00">architecture_justification : str</text>
+<text xml:space="preserve" text-anchor="start" x="3544.08" y="-268.7" font-family="Times,serif" font-size="14.00">architecture_type : Optional[str]</text>
+<text xml:space="preserve" text-anchor="start" x="3544.08" y="-251.9" font-family="Times,serif" font-size="14.00">artifacts_manifest : Dict[str, str]</text>
+<text xml:space="preserve" text-anchor="start" x="3544.08" y="-235.1" font-family="Times,serif" font-size="14.00">constraints : Annotated[List[Constraint], operator.add]</text>
+<text xml:space="preserve" text-anchor="start" x="3544.08" y="-218.3" font-family="Times,serif" font-size="14.00">docs_context : Annotated[List[DocSnippet], operator.add]</text>
+<text xml:space="preserve" text-anchor="start" x="3544.08" y="-201.5" font-family="Times,serif" font-size="14.00">error_message : Optional[str]</text>
+<text xml:space="preserve" text-anchor="start" x="3544.08" y="-184.7" font-family="Times,serif" font-size="14.00">generated_cells : Annotated[List[CellSpec], operator.add]</text>
+<text xml:space="preserve" text-anchor="start" x="3544.08" y="-167.9" font-family="Times,serif" font-size="14.00">generation_complete : bool</text>
+<text xml:space="preserve" text-anchor="start" x="3544.08" y="-151.1" font-family="Times,serif" font-size="14.00">notebook_plan : Optional[NotebookPlan]</text>
+<text xml:space="preserve" text-anchor="start" x="3544.08" y="-134.3" font-family="Times,serif" font-size="14.00">qa_reports : List[QAReport]</text>
+<text xml:space="preserve" text-anchor="start" x="3544.08" y="-117.5" font-family="Times,serif" font-size="14.00">repair_attempts : int</text>
+<text xml:space="preserve" text-anchor="start" x="3544.08" y="-100.7" font-family="Times,serif" font-size="14.00">selected_patterns : Dict[str, Any]</text>
+<text xml:space="preserve" text-anchor="start" x="3544.08" y="-83.9" font-family="Times,serif" font-size="14.00">tools_plan : Optional[List[Dict[str, Any]]]</text>
+<text xml:space="preserve" text-anchor="start" x="3544.08" y="-67.1" font-family="Times,serif" font-size="14.00">uploaded_files : Optional[List[str]]</text>
+<text xml:space="preserve" text-anchor="start" x="3544.08" y="-50.3" font-family="Times,serif" font-size="14.00">user_prompt : str</text>
+<text xml:space="preserve" text-anchor="start" x="3544.08" y="-33.5" font-family="Times,serif" font-size="14.00">workflow_design : Optional[Dict[str, Any]]</text>
+<polyline fill="none" stroke="black" points="3536.08,-25.3 3879.05,-25.3"/>
+<text xml:space="preserve" text-anchor="start" x="3705.81" y="-8.7" font-family="Times,serif" font-size="14.00"> </text>
+</g>
+<!-- src.langgraph_system_generator.generator.agents.graph_designer.GraphDesigner -->
+<g id="node13" class="node">
+<title>src.langgraph_system_generator.generator.agents.graph_designer.GraphDesigner</title>
+<polygon fill="none" stroke="black" points="3896.71,-126.5 3896.71,-200.9 4422.42,-200.9 4422.42,-126.5 3896.71,-126.5"/>
+<text xml:space="preserve" text-anchor="start" x="4116.8" y="-184.3" font-family="Times,serif" font-size="14.00">GraphDesigner</text>
+<polyline fill="none" stroke="black" points="3896.71,-176.1 4422.42,-176.1"/>
+<text xml:space="preserve" text-anchor="start" x="4109.02" y="-159.5" font-family="Times,serif" font-size="14.00">llm : ChatOpenAI</text>
+<polyline fill="none" stroke="black" points="3896.71,-151.3 4422.42,-151.3"/>
+<text xml:space="preserve" text-anchor="start" x="3904.71" y="-134.7" font-family="Times,serif" font-size="14.00">design_workflow(architecture: Dict[str, Any], constraints: List[Constraint]): Dict[str, Any]</text>
+</g>
+<!-- src.langgraph_system_generator.notebook.manuscript_docx.ManuscriptDOCXGenerator -->
+<g id="node14" class="node">
+<title>src.langgraph_system_generator.notebook.manuscript_docx.ManuscriptDOCXGenerator</title>
+<polygon fill="none" stroke="black" points="4440.52,-101.3 4440.52,-226.1 5252.61,-226.1 5252.61,-101.3 4440.52,-101.3"/>
+<text xml:space="preserve" text-anchor="start" x="4766.86" y="-209.5" font-family="Times,serif" font-size="14.00">ManuscriptDOCXGenerator</text>
+<polyline fill="none" stroke="black" points="4440.52,-201.3 5252.61,-201.3"/>
+<text xml:space="preserve" text-anchor="start" x="4792.91" y="-184.7" font-family="Times,serif" font-size="14.00">font_name : str</text>
+<text xml:space="preserve" text-anchor="start" x="4792.91" y="-167.9" font-family="Times,serif" font-size="14.00">font_size : int</text>
+<text xml:space="preserve" text-anchor="start" x="4792.91" y="-151.1" font-family="Times,serif" font-size="14.00">line_spacing : float</text>
+<polyline fill="none" stroke="black" points="4440.52,-142.9 5252.61,-142.9"/>
+<text xml:space="preserve" text-anchor="start" x="4448.52" y="-126.3" font-family="Times,serif" font-size="14.00">create_manuscript(title: str, author: str | None, chapters: Sequence[Dict[str, Any]] | None, output_path: str | Path, include_title_page: bool): str</text>
+<text xml:space="preserve" text-anchor="start" x="4448.52" y="-109.5" font-family="Times,serif" font-size="14.00">create_notebook_manuscript(notebook_cells: Sequence[Dict[str, Any]], output_path: str | Path, title: str | None, author: str | None): str</text>
+</g>
+<!-- src.langgraph_system_generator.notebook.manuscript_pdf.ManuscriptPDFGenerator -->
+<g id="node15" class="node">
+<title>src.langgraph_system_generator.notebook.manuscript_pdf.ManuscriptPDFGenerator</title>
+<polygon fill="none" stroke="black" points="5270.58,-50.9 5270.58,-276.5 6042.54,-276.5 6042.54,-50.9 5270.58,-50.9"/>
+<text xml:space="preserve" text-anchor="start" x="5583.86" y="-259.9" font-family="Times,serif" font-size="14.00">ManuscriptPDFGenerator</text>
+<polyline fill="none" stroke="black" points="5270.58,-251.7 6042.54,-251.7"/>
+<text xml:space="preserve" text-anchor="start" x="5562.08" y="-235.1" font-family="Times,serif" font-size="14.00">body_style : ParagraphStyle</text>
+<text xml:space="preserve" text-anchor="start" x="5562.08" y="-218.3" font-family="Times,serif" font-size="14.00">chapter_style : ParagraphStyle</text>
+<text xml:space="preserve" text-anchor="start" x="5562.08" y="-201.5" font-family="Times,serif" font-size="14.00">code_style : ParagraphStyle</text>
+<text xml:space="preserve" text-anchor="start" x="5562.08" y="-184.7" font-family="Times,serif" font-size="14.00">font_name : str</text>
+<text xml:space="preserve" text-anchor="start" x="5562.08" y="-167.9" font-family="Times,serif" font-size="14.00">font_size : int</text>
+<text xml:space="preserve" text-anchor="start" x="5562.08" y="-151.1" font-family="Times,serif" font-size="14.00">page_size : tuple</text>
+<text xml:space="preserve" text-anchor="start" x="5562.08" y="-134.3" font-family="Times,serif" font-size="14.00">section_style : ParagraphStyle</text>
+<text xml:space="preserve" text-anchor="start" x="5562.08" y="-117.5" font-family="Times,serif" font-size="14.00">styles : StyleSheet1</text>
+<text xml:space="preserve" text-anchor="start" x="5562.08" y="-100.7" font-family="Times,serif" font-size="14.00">subsection_style : ParagraphStyle</text>
+<polyline fill="none" stroke="black" points="5270.58,-92.5 6042.54,-92.5"/>
+<text xml:space="preserve" text-anchor="start" x="5278.58" y="-75.9" font-family="Times,serif" font-size="14.00">create_manuscript(title: str, chapters: Sequence[Dict[str, Any]], output_path: str | Path, author: str | None, include_title_page: bool): str</text>
+<text xml:space="preserve" text-anchor="start" x="5278.58" y="-59.1" font-family="Times,serif" font-size="14.00">create_notebook_manuscript(notebook_cells: Sequence[Dict[str, Any]], output_path: str | Path, title: str | None, author: str | None): str</text>
+</g>
+<!-- src.langgraph_system_generator.generator.agents.notebook_composer.NotebookComposer -->
+<g id="node16" class="node">
+<title>src.langgraph_system_generator.generator.agents.notebook_composer.NotebookComposer</title>
+<polygon fill="none" stroke="black" points="6061.02,-126.5 6061.02,-200.9 6956.11,-200.9 6956.11,-126.5 6061.02,-126.5"/>
+<text xml:space="preserve" text-anchor="start" x="6452.18" y="-184.3" font-family="Times,serif" font-size="14.00">NotebookComposer</text>
+<polyline fill="none" stroke="black" points="6061.02,-176.1 6956.11,-176.1"/>
+<text xml:space="preserve" text-anchor="start" x="6458.02" y="-159.5" font-family="Times,serif" font-size="14.00">llm : ChatOpenAI</text>
+<polyline fill="none" stroke="black" points="6061.02,-151.3 6956.11,-151.3"/>
+<text xml:space="preserve" text-anchor="start" x="6069.02" y="-134.7" font-family="Times,serif" font-size="14.00">compose_notebook(notebook_plan: NotebookPlan, workflow_design: Dict[str, Any], tools: List[Dict[str, Any]], architecture: Dict[str, Any]): List[CellSpec]</text>
+</g>
+<!-- src.langgraph_system_generator.notebook.composer.NotebookComposer -->
+<g id="node17" class="node">
+<title>src.langgraph_system_generator.notebook.composer.NotebookComposer</title>
+<polygon fill="none" stroke="black" points="6974.53,-118.1 6974.53,-209.3 7516.59,-209.3 7516.59,-118.1 6974.53,-118.1"/>
+<text xml:space="preserve" text-anchor="start" x="7189.18" y="-192.7" font-family="Times,serif" font-size="14.00">NotebookComposer</text>
+<polyline fill="none" stroke="black" points="6974.53,-184.5 7516.59,-184.5"/>
+<text xml:space="preserve" text-anchor="start" x="7186.86" y="-167.9" font-family="Times,serif" font-size="14.00">colab_friendly : bool</text>
+<polyline fill="none" stroke="black" points="6974.53,-159.7 7516.59,-159.7"/>
+<text xml:space="preserve" text-anchor="start" x="6982.53" y="-143.1" font-family="Times,serif" font-size="14.00">build_notebook(cells: Sequence[CellSpec], ensure_minimum_sections: bool): NotebookNode</text>
+<text xml:space="preserve" text-anchor="start" x="6982.53" y="-126.3" font-family="Times,serif" font-size="14.00">write(notebook: NotebookNode, path: str | Path): str</text>
+</g>
+<!-- src.langgraph_system_generator.notebook.exporters.NotebookExporter -->
+<g id="node18" class="node">
+<title>src.langgraph_system_generator.notebook.exporters.NotebookExporter</title>
+<polygon fill="none" stroke="black" points="7534.71,-92.9 7534.71,-234.5 8360.42,-234.5 8360.42,-92.9 7534.71,-92.9"/>
+<text xml:space="preserve" text-anchor="start" x="7895.47" y="-217.9" font-family="Times,serif" font-size="14.00">NotebookExporter</text>
+<polyline fill="none" stroke="black" points="7534.71,-209.7 8360.42,-209.7"/>
+<polyline fill="none" stroke="black" points="7534.71,-184.9 8360.42,-184.9"/>
+<text xml:space="preserve" text-anchor="start" x="7542.71" y="-168.3" font-family="Times,serif" font-size="14.00">export_ipynb(notebook: nbformat.NotebookNode, path: str | Path): str</text>
+<text xml:space="preserve" text-anchor="start" x="7542.71" y="-151.5" font-family="Times,serif" font-size="14.00">export_notebook_to_docx(notebook: nbformat.NotebookNode, output_path: str | Path, title: str | None): str</text>
+<text xml:space="preserve" text-anchor="start" x="7542.71" y="-134.7" font-family="Times,serif" font-size="14.00">export_to_html(notebook: nbformat.NotebookNode, output_path: str | Path): str</text>
+<text xml:space="preserve" text-anchor="start" x="7542.71" y="-117.9" font-family="Times,serif" font-size="14.00">export_to_pdf(notebook_path: str | Path, output_path: str | Path, method: str): str</text>
+<text xml:space="preserve" text-anchor="start" x="7542.71" y="-101.1" font-family="Times,serif" font-size="14.00">export_zip(notebook: nbformat.NotebookNode, zip_path: str | Path, extra_files: Sequence[str | os.PathLike[str]] | None, notebook_name: str): str</text>
+</g>
+<!-- src.langgraph_system_generator.generator.state.NotebookPlan -->
+<g id="node19" class="node">
+<title>src.langgraph_system_generator.generator.state.NotebookPlan</title>
+<polygon fill="none" stroke="black" points="8378.59,-92.9 8378.59,-234.5 8590.54,-234.5 8590.54,-92.9 8378.59,-92.9"/>
+<text xml:space="preserve" text-anchor="start" x="8444.51" y="-217.9" font-family="Times,serif" font-size="14.00">NotebookPlan</text>
+<polyline fill="none" stroke="black" points="8378.59,-209.7 8590.54,-209.7"/>
+<text xml:space="preserve" text-anchor="start" x="8386.59" y="-193.1" font-family="Times,serif" font-size="14.00">architecture_type : Optional[str]</text>
+<text xml:space="preserve" text-anchor="start" x="8386.59" y="-176.3" font-family="Times,serif" font-size="14.00">cell_count_estimate : Optional[int]</text>
+<text xml:space="preserve" text-anchor="start" x="8386.59" y="-159.5" font-family="Times,serif" font-size="14.00">patterns_used : Optional[List[str]]</text>
+<text xml:space="preserve" text-anchor="start" x="8386.59" y="-142.7" font-family="Times,serif" font-size="14.00">sections : Optional[List[str]]</text>
+<text xml:space="preserve" text-anchor="start" x="8386.59" y="-125.9" font-family="Times,serif" font-size="14.00">title : Optional[str]</text>
+<polyline fill="none" stroke="black" points="8378.59,-117.7 8590.54,-117.7"/>
+<text xml:space="preserve" text-anchor="start" x="8482.81" y="-101.1" font-family="Times,serif" font-size="14.00"> </text>
+</g>
+<!-- src.langgraph_system_generator.qa.repair.NotebookRepairAgent -->
+<g id="node20" class="node">
+<title>src.langgraph_system_generator.qa.repair.NotebookRepairAgent</title>
+<polygon fill="none" stroke="black" points="8608.34,-92.9 8608.34,-234.5 9264.79,-234.5 9264.79,-92.9 8608.34,-92.9"/>
+<text xml:space="preserve" text-anchor="start" x="8873.19" y="-217.9" font-family="Times,serif" font-size="14.00">NotebookRepairAgent</text>
+<polyline fill="none" stroke="black" points="8608.34,-209.7 9264.79,-209.7"/>
+<text xml:space="preserve" text-anchor="start" x="8832.34" y="-193.1" font-family="Times,serif" font-size="14.00">DEFAULT_MAX_ATTEMPTS : int</text>
+<text xml:space="preserve" text-anchor="start" x="8832.34" y="-176.3" font-family="Times,serif" font-size="14.00">max_attempts : int</text>
+<text xml:space="preserve" text-anchor="start" x="8832.34" y="-159.5" font-family="Times,serif" font-size="14.00">validator : NotebookValidator</text>
+<polyline fill="none" stroke="black" points="8608.34,-151.3 9264.79,-151.3"/>
+<text xml:space="preserve" text-anchor="start" x="8616.34" y="-134.7" font-family="Times,serif" font-size="14.00">get_repair_summary(qa_reports: List[QAReport]): Dict[str, Any]</text>
+<text xml:space="preserve" text-anchor="start" x="8616.34" y="-117.9" font-family="Times,serif" font-size="14.00">repair_notebook(notebook_path: str | Path, qa_reports: List[QAReport], attempt: int): tuple[bool, List[QAReport]]</text>
+<text xml:space="preserve" text-anchor="start" x="8616.34" y="-101.1" font-family="Times,serif" font-size="14.00">should_retry(qa_reports: List[QAReport], attempt: int): bool</text>
+</g>
+<!-- src.langgraph_system_generator.qa.validators.NotebookValidator -->
+<g id="node21" class="node">
+<title>src.langgraph_system_generator.qa.validators.NotebookValidator</title>
+<polygon fill="none" stroke="black" points="9282.93,-67.7 9282.93,-259.7 9868.2,-259.7 9868.2,-67.7 9282.93,-67.7"/>
+<text xml:space="preserve" text-anchor="start" x="9521.52" y="-243.1" font-family="Times,serif" font-size="14.00">NotebookValidator</text>
+<polyline fill="none" stroke="black" points="9282.93,-234.9 9868.2,-234.9"/>
+<text xml:space="preserve" text-anchor="start" x="9472.11" y="-218.3" font-family="Times,serif" font-size="14.00">PLACEHOLDER_PATTERNS : list</text>
+<text xml:space="preserve" text-anchor="start" x="9472.11" y="-201.5" font-family="Times,serif" font-size="14.00">REQUIRED_IMPORTS : list</text>
+<text xml:space="preserve" text-anchor="start" x="9472.11" y="-184.7" font-family="Times,serif" font-size="14.00">REQUIRED_SECTIONS : list</text>
+<polyline fill="none" stroke="black" points="9282.93,-176.5 9868.2,-176.5"/>
+<text xml:space="preserve" text-anchor="start" x="9290.93" y="-159.9" font-family="Times,serif" font-size="14.00">check_graph_compiles(notebook_path: str | Path): QAReport</text>
+<text xml:space="preserve" text-anchor="start" x="9290.93" y="-143.1" font-family="Times,serif" font-size="14.00">check_imports_present(notebook_path: str | Path, required_imports: Optional[List[str]]): QAReport</text>
+<text xml:space="preserve" text-anchor="start" x="9290.93" y="-126.3" font-family="Times,serif" font-size="14.00">check_no_placeholders(notebook_path: str | Path): QAReport</text>
+<text xml:space="preserve" text-anchor="start" x="9290.93" y="-109.5" font-family="Times,serif" font-size="14.00">check_required_sections(notebook_path: str | Path, required_sections: Optional[List[str]]): QAReport</text>
+<text xml:space="preserve" text-anchor="start" x="9290.93" y="-92.7" font-family="Times,serif" font-size="14.00">validate_all(notebook_path: str | Path): List[QAReport]</text>
+<text xml:space="preserve" text-anchor="start" x="9290.93" y="-75.9" font-family="Times,serif" font-size="14.00">validate_json_structure(notebook_path: str | Path): QAReport</text>
+</g>
+<!-- src.langgraph_system_generator.generator.agents.qa_repair_agent.QARepairAgent -->
+<g id="node22" class="node">
+<title>src.langgraph_system_generator.generator.agents.qa_repair_agent.QARepairAgent</title>
+<polygon fill="none" stroke="black" points="9886.26,-118.1 9886.26,-209.3 10310.87,-209.3 10310.87,-118.1 9886.26,-118.1"/>
+<text xml:space="preserve" text-anchor="start" x="10052.69" y="-192.7" font-family="Times,serif" font-size="14.00">QARepairAgent</text>
+<polyline fill="none" stroke="black" points="9886.26,-184.5 10310.87,-184.5"/>
+<text xml:space="preserve" text-anchor="start" x="10048.02" y="-167.9" font-family="Times,serif" font-size="14.00">llm : ChatOpenAI</text>
+<polyline fill="none" stroke="black" points="9886.26,-159.7 10310.87,-159.7"/>
+<text xml:space="preserve" text-anchor="start" x="9894.26" y="-143.1" font-family="Times,serif" font-size="14.00">repair(cells: List[CellSpec], qa_reports: List[QAReport]): List[CellSpec]</text>
+<text xml:space="preserve" text-anchor="start" x="9894.26" y="-126.3" font-family="Times,serif" font-size="14.00">validate(cells: List[CellSpec]): List[QAReport]</text>
+</g>
+<!-- src.langgraph_system_generator.generator.state.QAReport -->
+<g id="node23" class="node">
+<title>src.langgraph_system_generator.generator.state.QAReport</title>
+<polygon fill="none" stroke="black" points="10328.74,-101.3 10328.74,-226.1 10524.39,-226.1 10524.39,-101.3 10328.74,-101.3"/>
+<text xml:space="preserve" text-anchor="start" x="10397.4" y="-209.5" font-family="Times,serif" font-size="14.00">QAReport</text>
+<polyline fill="none" stroke="black" points="10328.74,-201.3 10524.39,-201.3"/>
+<text xml:space="preserve" text-anchor="start" x="10336.74" y="-184.7" font-family="Times,serif" font-size="14.00">check_name : Optional[str]</text>
+<text xml:space="preserve" text-anchor="start" x="10336.74" y="-167.9" font-family="Times,serif" font-size="14.00">message : Optional[str]</text>
+<text xml:space="preserve" text-anchor="start" x="10336.74" y="-151.1" font-family="Times,serif" font-size="14.00">passed : Optional[bool]</text>
+<text xml:space="preserve" text-anchor="start" x="10336.74" y="-134.3" font-family="Times,serif" font-size="14.00">suggestions : Optional[List[str]]</text>
+<polyline fill="none" stroke="black" points="10328.74,-126.1 10524.39,-126.1"/>
+<text xml:space="preserve" text-anchor="start" x="10424.81" y="-109.5" font-family="Times,serif" font-size="14.00"> </text>
+</g>
+<!-- src.langgraph_system_generator.generator.agents.requirements_analyst.RequirementsAnalyst -->
+<g id="node24" class="node">
+<title>src.langgraph_system_generator.generator.agents.requirements_analyst.RequirementsAnalyst</title>
+<polygon fill="none" stroke="black" points="10542.2,-126.5 10542.2,-200.9 10768.93,-200.9 10768.93,-126.5 10542.2,-126.5"/>
+<text xml:space="preserve" text-anchor="start" x="10594.91" y="-184.3" font-family="Times,serif" font-size="14.00">RequirementsAnalyst</text>
+<polyline fill="none" stroke="black" points="10542.2,-176.1 10768.93,-176.1"/>
+<text xml:space="preserve" text-anchor="start" x="10605.02" y="-159.5" font-family="Times,serif" font-size="14.00">llm : ChatOpenAI</text>
+<polyline fill="none" stroke="black" points="10542.2,-151.3 10768.93,-151.3"/>
+<text xml:space="preserve" text-anchor="start" x="10550.2" y="-134.7" font-family="Times,serif" font-size="14.00">analyze(prompt: str): List[Constraint]</text>
+</g>
+<!-- src.langgraph_system_generator.rag.retriever.RetrievedSnippet -->
+<g id="node25" class="node">
+<title>src.langgraph_system_generator.rag.retriever.RetrievedSnippet</title>
+<polygon fill="none" stroke="black" points="10786.8,-101.3 10786.8,-226.1 10930.33,-226.1 10930.33,-101.3 10786.8,-101.3"/>
+<text xml:space="preserve" text-anchor="start" x="10809.96" y="-209.5" font-family="Times,serif" font-size="14.00">RetrievedSnippet</text>
+<polyline fill="none" stroke="black" points="10786.8,-201.3 10930.33,-201.3"/>
+<text xml:space="preserve" text-anchor="start" x="10794.8" y="-184.7" font-family="Times,serif" font-size="14.00">content : str</text>
+<text xml:space="preserve" text-anchor="start" x="10794.8" y="-167.9" font-family="Times,serif" font-size="14.00">heading : Optional[str]</text>
+<text xml:space="preserve" text-anchor="start" x="10794.8" y="-151.1" font-family="Times,serif" font-size="14.00">relevance_score : float</text>
+<text xml:space="preserve" text-anchor="start" x="10794.8" y="-134.3" font-family="Times,serif" font-size="14.00">source : str</text>
+<polyline fill="none" stroke="black" points="10786.8,-126.1 10930.33,-126.1"/>
+<text xml:space="preserve" text-anchor="start" x="10856.81" y="-109.5" font-family="Times,serif" font-size="14.00"> </text>
+</g>
+<!-- src.langgraph_system_generator.patterns.router.RouterPattern -->
+<g id="node26" class="node">
+<title>src.langgraph_system_generator.patterns.router.RouterPattern</title>
+<polygon fill="none" stroke="black" points="10948.74,-92.9 10948.74,-234.5 11490.39,-234.5 11490.39,-92.9 10948.74,-92.9"/>
+<text xml:space="preserve" text-anchor="start" x="11180.69" y="-217.9" font-family="Times,serif" font-size="14.00">RouterPattern</text>
+<polyline fill="none" stroke="black" points="10948.74,-209.7 11490.39,-209.7"/>
+<polyline fill="none" stroke="black" points="10948.74,-184.9 11490.39,-184.9"/>
+<text xml:space="preserve" text-anchor="start" x="10956.74" y="-168.3" font-family="Times,serif" font-size="14.00">generate_complete_example(routes: List[str], route_purposes: Optional[Dict[str, str]]): str</text>
+<text xml:space="preserve" text-anchor="start" x="10956.74" y="-151.5" font-family="Times,serif" font-size="14.00">generate_graph_code(routes: List[str], entry_point: str, use_conditional_edges: bool): str</text>
+<text xml:space="preserve" text-anchor="start" x="10956.74" y="-134.7" font-family="Times,serif" font-size="14.00">generate_route_node_code(route_name: str, route_purpose: str, llm_model: str): str</text>
+<text xml:space="preserve" text-anchor="start" x="10956.74" y="-117.9" font-family="Times,serif" font-size="14.00">generate_router_node_code(routes: List[str], llm_model: str, use_structured_output: bool): str</text>
+<text xml:space="preserve" text-anchor="start" x="10956.74" y="-101.1" font-family="Times,serif" font-size="14.00">generate_state_code(additional_fields: Optional[Dict[str, str]]): str</text>
+</g>
+<!-- src.langgraph_system_generator.utils.config.Settings -->
+<g id="node27" class="node">
+<title>src.langgraph_system_generator.utils.config.Settings</title>
+<polygon fill="none" stroke="black" points="11508.81,-50.9 11508.81,-276.5 11736.32,-276.5 11736.32,-50.9 11508.81,-50.9"/>
+<text xml:space="preserve" text-anchor="start" x="11600.01" y="-259.9" font-family="Times,serif" font-size="14.00">Settings</text>
+<polyline fill="none" stroke="black" points="11508.81,-251.7 11736.32,-251.7"/>
+<text xml:space="preserve" text-anchor="start" x="11516.81" y="-235.1" font-family="Times,serif" font-size="14.00">anthropic_api_key : Optional[str]</text>
+<text xml:space="preserve" text-anchor="start" x="11516.81" y="-218.3" font-family="Times,serif" font-size="14.00">default_budget_tokens : Optional[int]</text>
+<text xml:space="preserve" text-anchor="start" x="11516.81" y="-201.5" font-family="Times,serif" font-size="14.00">default_model : Optional[str]</text>
+<text xml:space="preserve" text-anchor="start" x="11516.81" y="-184.7" font-family="Times,serif" font-size="14.00">langsmith_api_key : Optional[str]</text>
+<text xml:space="preserve" text-anchor="start" x="11516.81" y="-167.9" font-family="Times,serif" font-size="14.00">langsmith_project : Optional[str]</text>
+<text xml:space="preserve" text-anchor="start" x="11516.81" y="-151.1" font-family="Times,serif" font-size="14.00">max_repair_attempts : Optional[int]</text>
+<text xml:space="preserve" text-anchor="start" x="11516.81" y="-134.3" font-family="Times,serif" font-size="14.00">model_config : SettingsConfigDict</text>
+<text xml:space="preserve" text-anchor="start" x="11516.81" y="-117.5" font-family="Times,serif" font-size="14.00">openai_api_key : Optional[str]</text>
+<text xml:space="preserve" text-anchor="start" x="11516.81" y="-100.7" font-family="Times,serif" font-size="14.00">vector_store_path : Optional[str]</text>
+<text xml:space="preserve" text-anchor="start" x="11516.81" y="-83.9" font-family="Times,serif" font-size="14.00">vector_store_type : Optional[str]</text>
+<polyline fill="none" stroke="black" points="11508.81,-75.7 11736.32,-75.7"/>
+<text xml:space="preserve" text-anchor="start" x="11620.81" y="-59.1" font-family="Times,serif" font-size="14.00"> </text>
+</g>
+<!-- src.langgraph_system_generator.patterns.subagents.SubagentsPattern -->
+<g id="node28" class="node">
+<title>src.langgraph_system_generator.patterns.subagents.SubagentsPattern</title>
+<polygon fill="none" stroke="black" points="11754.12,-92.9 11754.12,-234.5 12573.01,-234.5 12573.01,-92.9 11754.12,-92.9"/>
+<text xml:space="preserve" text-anchor="start" x="12114.96" y="-217.9" font-family="Times,serif" font-size="14.00">SubagentsPattern</text>
+<polyline fill="none" stroke="black" points="11754.12,-209.7 12573.01,-209.7"/>
+<polyline fill="none" stroke="black" points="11754.12,-184.9 12573.01,-184.9"/>
+<text xml:space="preserve" text-anchor="start" x="11762.12" y="-168.3" font-family="Times,serif" font-size="14.00">generate_complete_example(subagents: List[str], subagent_descriptions: Optional[Dict[str, str]]): str</text>
+<text xml:space="preserve" text-anchor="start" x="11762.12" y="-151.5" font-family="Times,serif" font-size="14.00">generate_graph_code(subagents: List[str], max_iterations: int): str</text>
+<text xml:space="preserve" text-anchor="start" x="11762.12" y="-134.7" font-family="Times,serif" font-size="14.00">generate_state_code(additional_fields: Optional[Dict[str, str]]): str</text>
+<text xml:space="preserve" text-anchor="start" x="11762.12" y="-117.9" font-family="Times,serif" font-size="14.00">generate_subagent_code(agent_name: str, agent_description: str, llm_model: str, include_tools: bool): str</text>
+<text xml:space="preserve" text-anchor="start" x="11762.12" y="-101.1" font-family="Times,serif" font-size="14.00">generate_supervisor_code(subagents: List[str], subagent_descriptions: Optional[Dict[str, str]], llm_model: str, use_structured_output: bool): str</text>
+</g>
+<!-- src.langgraph_system_generator.generator.agents.toolchain_engineer.ToolchainEngineer -->
+<g id="node29" class="node">
+<title>src.langgraph_system_generator.generator.agents.toolchain_engineer.ToolchainEngineer</title>
+<polygon fill="none" stroke="black" points="12591.02,-126.5 12591.02,-200.9 13140.1,-200.9 13140.1,-126.5 12591.02,-126.5"/>
+<text xml:space="preserve" text-anchor="start" x="12811.92" y="-184.3" font-family="Times,serif" font-size="14.00">ToolchainEngineer</text>
+<polyline fill="none" stroke="black" points="12591.02,-176.1 13140.1,-176.1"/>
+<text xml:space="preserve" text-anchor="start" x="12815.02" y="-159.5" font-family="Times,serif" font-size="14.00">llm : ChatOpenAI</text>
+<polyline fill="none" stroke="black" points="12591.02,-151.3 13140.1,-151.3"/>
+<text xml:space="preserve" text-anchor="start" x="12599.02" y="-134.7" font-family="Times,serif" font-size="14.00">plan_tools(workflow_design: Dict[str, Any], constraints: List[Constraint]): List[Dict[str, Any]]</text>
+</g>
+<!-- src.langgraph_system_generator.rag.embeddings.VectorStoreManager -->
+<g id="node30" class="node">
+<title>src.langgraph_system_generator.rag.embeddings.VectorStoreManager</title>
+<polygon fill="none" stroke="black" points="13157.82,-84.5 13157.82,-242.9 13469.31,-242.9 13469.31,-84.5 13157.82,-84.5"/>
+<text xml:space="preserve" text-anchor="start" x="13254.87" y="-226.3" font-family="Times,serif" font-size="14.00">VectorStoreManager</text>
+<polyline fill="none" stroke="black" points="13157.82,-218.1 13469.31,-218.1"/>
+<text xml:space="preserve" text-anchor="start" x="13216.75" y="-201.5" font-family="Times,serif" font-size="14.00">embeddings : OpenAIEmbeddings</text>
+<text xml:space="preserve" text-anchor="start" x="13216.75" y="-184.7" font-family="Times,serif" font-size="14.00">store_path : str</text>
+<text xml:space="preserve" text-anchor="start" x="13216.75" y="-167.9" font-family="Times,serif" font-size="14.00">vector_store : Optional[FAISS]</text>
+<polyline fill="none" stroke="black" points="13157.82,-159.7 13469.31,-159.7"/>
+<text xml:space="preserve" text-anchor="start" x="13165.82" y="-143.1" font-family="Times,serif" font-size="14.00">create_index(documents: List[Document]): FAISS</text>
+<text xml:space="preserve" text-anchor="start" x="13165.82" y="-126.3" font-family="Times,serif" font-size="14.00">index_exists(): bool</text>
+<text xml:space="preserve" text-anchor="start" x="13165.82" y="-109.5" font-family="Times,serif" font-size="14.00">load_index(): FAISS</text>
+<text xml:space="preserve" text-anchor="start" x="13165.82" y="-92.7" font-family="Times,serif" font-size="14.00">load_or_create(documents: List[Document]): FAISS</text>
+</g>
+</g>
+</svg>
