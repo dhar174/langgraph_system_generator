@@ -18,6 +18,11 @@ const progressText = document.getElementById('progressText');
 const progressPercentage = document.getElementById('progressPercentage');
 const progressSteps = document.getElementById('progressSteps');
 
+// Validation constants
+const CHAR_COUNT_MIN = 10;
+const CHAR_COUNT_MAX = 5000;
+const CHAR_COUNT_WARNING = 4500;
+
 // Advanced options
 const advancedToggle = document.getElementById('advancedToggle');
 const advancedPanel = document.getElementById('advancedPanel');
@@ -85,16 +90,16 @@ promptTextarea.addEventListener('input', () => {
     charCount.textContent = count;
     
     // Visual feedback for character count
-    if (count > 5000) {
+    if (count > CHAR_COUNT_MAX) {
         charCount.style.color = 'var(--error-color)';
         charCount.style.fontWeight = 'bold';
         promptTextarea.classList.add('invalid');
         promptTextarea.classList.remove('valid');
-    } else if (count > 4500) {
+    } else if (count > CHAR_COUNT_WARNING) {
         charCount.style.color = 'var(--warning-color)';
         charCount.style.fontWeight = 'bold';
         promptTextarea.classList.remove('invalid', 'valid');
-    } else if (count >= 10) {
+    } else if (count >= CHAR_COUNT_MIN) {
         charCount.style.color = 'var(--text-muted)';
         charCount.style.fontWeight = 'normal';
         promptTextarea.classList.add('valid');
@@ -122,19 +127,31 @@ outputDirInput.addEventListener('input', (e) => {
     // the server should still perform authoritative validation.
     // Note: Do not treat ":" as universally invalid; it is allowed on Unix/Mac filesystems.
     const invalidChars = /[<>"|?*\x00-\x1F]/;
-    const windowsReservedNames = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(\..*)?$/i;
+    const windowsReservedNames = /^(con|prn|aux|nul|com[0-9]|lpt[0-9])(\..*)?$/i;
     const hasReservedName = value
         .split(/[\\/]/)
         .some((part) => windowsReservedNames.test(part));
+    
+    // Robust platform detection (using modern API with fallbacks)
+    let isWindowsPlatform = false;
+    if (typeof navigator !== 'undefined') {
+        const uaDataPlatform =
+            navigator.userAgentData && navigator.userAgentData.platform;
+        const legacyPlatform = navigator.platform;
+        const ua = navigator.userAgent;
+        const platform = uaDataPlatform || legacyPlatform || ua || '';
+        if (typeof platform === 'string') {
+            isWindowsPlatform = platform.toLowerCase().includes('win');
+        }
+    }
+    
     // Disallow colons that are not used as a drive letter separator (e.g. "C:\") on Windows platforms.
-    const isWindowsPlatform =
-        typeof navigator !== 'undefined' &&
-        navigator.platform &&
-        navigator.platform.toLowerCase().startsWith('win');
-    const hasInvalidColonUsage =
-        isWindowsPlatform &&
-        /:/.test(value) &&
-        !/^[a-zA-Z]:[\\/]/.test(value);
+    let hasInvalidColonUsage = false;
+    if (isWindowsPlatform && /:/.test(value)) {
+        const hasDriveLetterPrefix = /^[a-zA-Z]:[\\/]/.test(value);
+        const hasExtraColon = value.indexOf(':', 2) !== -1;
+        hasInvalidColonUsage = !hasDriveLetterPrefix || hasExtraColon;
+    }
 
     if (invalidChars.test(value) || hasReservedName || hasInvalidColonUsage) {
         outputDirInput.classList.add('invalid');
@@ -578,13 +595,13 @@ form.addEventListener('submit', async (e) => {
     if (documentLoader) data.document_loader = documentLoader;
     
     // Validate prompt length (using Unicode code points)
-    if (getCharacterCount(data.prompt) > 5000) {
-        showError('Prompt exceeds maximum length of 5000 characters.');
+    if (getCharacterCount(data.prompt) > CHAR_COUNT_MAX) {
+        showError(`Prompt exceeds maximum length of ${CHAR_COUNT_MAX} characters.`);
         return;
     }
     
-    if (getCharacterCount(data.prompt.trim()) === 0) {
-        showError('Please enter a prompt describing your system.');
+    if (getCharacterCount(data.prompt.trim()) < CHAR_COUNT_MIN) {
+        showError(`Please enter a prompt of at least ${CHAR_COUNT_MIN} characters.`);
         return;
     }
     
