@@ -252,7 +252,7 @@ header h1 {
 .form-group textarea.invalid,
 .form-group input.invalid {
     border-color: var(--error-color);
-    box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.1);
+    box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.2);
 }
 
 /* Valid state */
@@ -917,13 +917,13 @@ textarea:focus-visible {
 .form-section {
     margin-bottom: var(--space-xl);
     padding: var(--space-lg);
-    background: rgba(255, 255, 255, 0.02);
+    background: rgba(255, 255, 255, 0.06);
     border-radius: var(--radius-lg);
     border: 1px solid rgba(255, 255, 255, 0.05);
 }
 
 [data-theme="light"] .form-section {
-    background: rgba(0, 0, 0, 0.02);
+    background: rgba(0, 0, 0, 0.06);
     border-color: rgba(0, 0, 0, 0.05);
 }
 

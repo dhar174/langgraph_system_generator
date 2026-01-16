@@ -117,9 +117,18 @@ outputDirInput.addEventListener('input', (e) => {
         return;
     }
     
-    // Check for invalid characters (basic check)
-    const invalidChars = /[<>"|?*\x00-\x1F]/;
-    if (invalidChars.test(value)) {
+    // Check for invalid characters and common Windows path restrictions.
+    // This is a conservative check to avoid obviously invalid or problematic paths;
+    // the server should still perform authoritative validation.
+    const invalidChars = /[<>:"|?*\x00-\x1F]/;
+    const windowsReservedNames = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(\..*)?$/i;
+    const hasReservedName = value
+        .split(/[\\/]/)
+        .some((part) => windowsReservedNames.test(part));
+    // Disallow colons that are not used as a drive letter separator (e.g. "C:\")
+    const hasInvalidColonUsage = /:/.test(value) && !/^[a-zA-Z]:[\\/]/.test(value);
+
+    if (invalidChars.test(value) || hasReservedName || hasInvalidColonUsage) {
         outputDirInput.classList.add('invalid');
         outputDirInput.classList.remove('valid');
     } else {
