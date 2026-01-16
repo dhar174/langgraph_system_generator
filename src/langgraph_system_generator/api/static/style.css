@@ -1052,8 +1052,10 @@ textarea:focus-visible {
 }
 
 /* Smooth scroll behavior */
-html {
-    scroll-behavior: smooth;
+@media (prefers-reduced-motion: no-preference) {
+    html {
+        scroll-behavior: smooth;
+    }
 }
 
 /* Reduced motion for accessibility */
