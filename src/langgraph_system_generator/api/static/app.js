@@ -120,13 +120,21 @@ outputDirInput.addEventListener('input', (e) => {
     // Check for invalid characters and common Windows path restrictions.
     // This is a conservative check to avoid obviously invalid or problematic paths;
     // the server should still perform authoritative validation.
+    // Note: Do not treat ":" as universally invalid; it is allowed on Unix/Mac filesystems.
     const invalidChars = /[<>"|?*\x00-\x1F]/;
     const windowsReservedNames = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(\..*)?$/i;
     const hasReservedName = value
         .split(/[\\/]/)
         .some((part) => windowsReservedNames.test(part));
-    // Disallow colons that are not used as a drive letter separator (e.g. "C:\")
-    const hasInvalidColonUsage = /:/.test(value) && !/^[a-zA-Z]:[\\/]/.test(value);
+    // Disallow colons that are not used as a drive letter separator (e.g. "C:\") on Windows platforms.
+    const isWindowsPlatform =
+        typeof navigator !== 'undefined' &&
+        navigator.platform &&
+        navigator.platform.toLowerCase().startsWith('win');
+    const hasInvalidColonUsage =
+        isWindowsPlatform &&
+        /:/.test(value) &&
+        !/^[a-zA-Z]:[\\/]/.test(value);
 
     if (invalidChars.test(value) || hasReservedName || hasInvalidColonUsage) {
         outputDirInput.classList.add('invalid');

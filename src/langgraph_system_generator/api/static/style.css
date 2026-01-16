@@ -57,6 +57,9 @@
     --radius-lg: 0.75rem;
     --radius-xl: 1rem;
     --radius-full: 9999px;
+    
+    /* Form Section */
+    --form-section-bg-opacity: 0.06;
 }
 
 [data-theme="light"] {
@@ -917,13 +920,13 @@ textarea:focus-visible {
 .form-section {
     margin-bottom: var(--space-xl);
     padding: var(--space-lg);
-    background: rgba(255, 255, 255, 0.06);
+    background: rgba(255, 255, 255, var(--form-section-bg-opacity));
     border-radius: var(--radius-lg);
     border: 1px solid rgba(255, 255, 255, 0.05);
 }
 
 [data-theme="light"] .form-section {
-    background: rgba(0, 0, 0, 0.06);
+    background: rgba(0, 0, 0, var(--form-section-bg-opacity));
     border-color: rgba(0, 0, 0, 0.05);
 }
 
