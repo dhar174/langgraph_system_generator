@@ -84,10 +84,10 @@ class WorkflowState(MessagesState):
         Returns:
             Python code string implementing the router node
         """
-        routes_str = ", ".join([f'"{r}"' for r in routes])
+        routes_str = ", ".join([f'"{r}"' for r in routes]) if routes else '"default"'
         routes_list_str = "\n".join(
             [f"- {route}: Handle {route}-related requests" for route in routes]
-        )
+        ) if routes else "- default: Default route handler"
 
         if use_structured_output:
             return f'''from langchain_openai import ChatOpenAI
