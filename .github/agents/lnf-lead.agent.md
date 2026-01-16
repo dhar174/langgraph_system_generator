@@ -35,7 +35,7 @@ Map user requests to these specialists:
 | **Graph Logic / Nodes** | lnf-generator | "Define the LangGraph state and node functions." |
 | **Notebook / JSON** | lnf-notebook | "Render the graph into a Jupyter notebook file." |
 | **QA / Testing** | lnf-qa | "Run tests for the new graph generator." |
-| **Documentation** | lnf-docs-agent | "Update the README with new RAG features." |
+| **Documentation** | lnf-docs | "Update the README with new RAG features." |
 | **Security / Auth** | lnf-security | "Review the API key handling in the new node." |
 | **Core Architecture** | lnf-foundation | "Scaffold the base directory structure." |
 | **Patterns** | lnf-patterns | "Implement a critique-revise loop pattern." |
@@ -50,7 +50,7 @@ When to delegate:
 - Graph Logic / Nodes: Call agent with name="lnf-generator".
 - Notebook / JSON Export: Call agent with name="lnf-notebook".
 - QA / Testing: Call agent with name="lnf-qa".
-- Documentation: Call agent with name="lnf-docs-agent".
+- Documentation: Call agent with name="lnf-docs".
 - Web UI / Frontend: Call agent with name="lnf-webui".
 
 
