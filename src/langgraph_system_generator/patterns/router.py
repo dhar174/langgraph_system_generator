@@ -4,22 +4,83 @@ This module provides templates and code generators for implementing
 router-based LangGraph architectures where a central router node
 dynamically dispatches requests to specialized agent nodes.
 
+Architecture:
+    The router pattern implements a hub-and-spoke architecture:
+    
+        START -> router_node -> [route_1, route_2, ..., route_n] -> END
+    
+    The router node analyzes incoming requests and directs them to the
+    appropriate specialized agent based on content, intent, or other criteria.
+    Each route handler is optimized for a specific domain or task type.
+
+Key Features:
+    - Dynamic routing based on LLM classification
+    - Support for structured output (type-safe routing decisions)
+    - Extensible state management with custom fields
+    - Conditional edge routing for complex workflows
+    - Configurable LLM models for different performance/cost tradeoffs
+
+Use Cases:
+    - Customer support systems with specialized agents (billing, technical, general)
+    - Multi-domain question answering (search, calculation, reasoning)
+    - Content processing pipelines (analysis, summarization, translation)
+    - Task delegation in multi-agent systems
+
 Example Usage:
-    >>> from langgraph_system_generator.patterns.router import RouterPattern
-    >>>
-    >>> # Generate state code
-    >>> state_code = RouterPattern.generate_state_code()
-    >>>
-    >>> # Generate router node implementation
-    >>> router_code = RouterPattern.generate_router_node_code(
-    ...     routes=["search", "analyze", "summarize"]
-    ... )
-    >>>
-    >>> # Generate complete graph code
-    >>> graph_code = RouterPattern.generate_graph_code(
-    ...     routes=["search", "analyze", "summarize"],
-    ...     entry_point="router"
-    ... )
+    Basic router pattern generation:
+    
+        >>> from langgraph_system_generator.patterns.router import RouterPattern
+        >>>
+        >>> # Generate complete workflow
+        >>> routes = ["search", "analyze", "summarize"]
+        >>> route_purposes = {
+        ...     "search": "Search for information from various sources",
+        ...     "analyze": "Analyze data and identify patterns",
+        ...     "summarize": "Create concise summaries of content"
+        ... }
+        >>> code = RouterPattern.generate_complete_example(routes, route_purposes)
+        >>> # Save to file or execute
+        >>> with open("my_router_workflow.py", "w") as f:
+        ...     f.write(code)
+    
+    Custom state with additional fields:
+    
+        >>> # Add custom tracking fields
+        >>> custom_fields = {
+        ...     "user_id": "User identifier for personalization",
+        ...     "priority": "Request priority level",
+        ...     "metadata": "Additional context"
+        ... }
+        >>> state_code = RouterPattern.generate_state_code(
+        ...     additional_fields=custom_fields
+        ... )
+    
+    Generate individual components:
+    
+        >>> # Generate just the router node
+        >>> router_code = RouterPattern.generate_router_node_code(
+        ...     routes=["search", "analyze"],
+        ...     llm_model="gpt-4",
+        ...     use_structured_output=True
+        ... )
+        >>>
+        >>> # Generate a specific route handler
+        >>> route_code = RouterPattern.generate_route_node_code(
+        ...     route_name="search",
+        ...     route_purpose="Perform web searches and retrieve information",
+        ...     llm_model="gpt-4-turbo"
+        ... )
+
+Integration with Generated Workflows:
+    The generated code is production-ready and can be integrated into
+    larger systems. Each pattern method generates syntactically valid
+    Python code that can be saved to files, executed dynamically, or
+    incorporated into notebook cells.
+
+See Also:
+    - SubagentsPattern: For supervisor-coordinated multi-agent workflows
+    - CritiqueLoopPattern: For iterative refinement workflows
+    - examples/router_pattern_example.py: Complete working examples
 """
 
 from typing import Dict, List, Optional
@@ -84,10 +145,10 @@ class WorkflowState(MessagesState):
         Returns:
             Python code string implementing the router node
         """
-        routes_str = ", ".join([f'"{r}"' for r in routes])
+        routes_str = ", ".join([f'"{r}"' for r in routes]) if routes else '"default"'
         routes_list_str = "\n".join(
             [f"- {route}: Handle {route}-related requests" for route in routes]
-        )
+        ) if routes else "- default: Default route handler"
 
         if use_structured_output:
             return f'''from langchain_openai import ChatOpenAI
