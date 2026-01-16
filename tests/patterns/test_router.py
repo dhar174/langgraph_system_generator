@@ -551,7 +551,7 @@ class TestRouterPatternRobustness:
 
     def test_handles_unicode_in_descriptions(self):
         """Test handling of unicode characters in descriptions."""
-        purpose = "Analyze data with émojis 🔍 and spëcial çharacters"
+        purpose = "Analyze data with emojis 🔍 and spëcial çharacters"
         code = RouterPattern.generate_route_node_code("analyze", purpose)
 
         assert "def analyze_node" in code
