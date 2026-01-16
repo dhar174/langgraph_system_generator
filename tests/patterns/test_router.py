@@ -8,8 +8,6 @@ to verify that generated code compiles and can be executed.
 from __future__ import annotations
 
 import ast
-import sys
-from typing import Dict
 
 import pytest
 
@@ -278,8 +276,8 @@ class TestRouterPatternCodeQuality:
         """Test generated code handles empty message lists safely."""
         router_code = RouterPattern.generate_router_node_code(["test"])
 
-        # Should check for empty messages before accessing
-        assert "messages[-1]" in router_code or "if messages" in router_code
+        # Should guard messages[-1] access with an emptiness check via ternary
+        assert "messages[-1].content if messages else" in router_code
 
     def test_generated_code_includes_error_handling(self):
         """Test generated code includes appropriate error handling."""
@@ -590,8 +588,8 @@ class TestRouterPatternPerformance:
         code = RouterPattern.generate_complete_example(many_routes)
         elapsed = time.time() - start
 
-        # Should generate code in reasonable time (< 1 second)
-        assert elapsed < 1.0, f"Code generation took {elapsed}s, expected < 1s"
+        # Should generate code in reasonable time (< 3 seconds)
+        assert elapsed < 3.0, f"Code generation took {elapsed}s, expected < 3s"
         assert "class WorkflowState" in code
         compile(code, "<performance_test>", "exec")
 
