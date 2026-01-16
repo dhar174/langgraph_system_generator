@@ -137,7 +137,7 @@ async function callAPI(endpoint, options = {}) {
 | **lnf-cli** | API endpoint changes, new response fields, error formats |
 | **lnf-qa** | Frontend test coverage, E2E test scenarios |
 | **lnf-security** | XSS prevention, secure localStorage usage, CORS policy |
-| **lnf-docs-agent** | UI documentation, user guide updates, feature screenshots |
+| **lnf-docs** | UI documentation, user guide updates, feature screenshots |
 
 ## Environment Notes
 
