@@ -40,6 +40,7 @@ Map user requests to these specialists:
 | **Core Architecture** | lnf-foundation | "Scaffold the base directory structure." |
 | **Patterns** | lnf-patterns | "Implement a critique-revise loop pattern." |
 | **CLI / Interface** | lnf-cli | "Update the CLI arguments to support the new flag." |
+| **Web UI / Frontend** | lnf-webui | "Update the generation form to add a new input field." |
 
 Example Delegation Prompt:
 "User wants to add a new RAG retriever node. I will call the lnf-rag agent with the prompt: 'Create a new retriever module in src/rag/ that uses FAISS and follows the project patterns.'"
@@ -50,6 +51,7 @@ When to delegate:
 - Notebook / JSON Export: Call agent with name="lnf-notebook".
 - QA / Testing: Call agent with name="lnf-qa".
 - Documentation: Call agent with name="lnf-docs-agent".
+- Web UI / Frontend: Call agent with name="lnf-webui".
 
 
 ## Workflow for Implementation
