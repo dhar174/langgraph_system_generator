@@ -120,7 +120,7 @@ outputDirInput.addEventListener('input', (e) => {
     // Check for invalid characters and common Windows path restrictions.
     // This is a conservative check to avoid obviously invalid or problematic paths;
     // the server should still perform authoritative validation.
-    const invalidChars = /[<>:"|?*\x00-\x1F]/;
+    const invalidChars = /[<>"|?*\x00-\x1F]/;
     const windowsReservedNames = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(\..*)?$/i;
     const hasReservedName = value
         .split(/[\\/]/)
