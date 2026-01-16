@@ -84,10 +84,47 @@ promptTextarea.addEventListener('input', () => {
     const count = getCharacterCount(promptTextarea.value);
     charCount.textContent = count;
     
+    // Visual feedback for character count
     if (count > 5000) {
         charCount.style.color = 'var(--error-color)';
+        charCount.style.fontWeight = 'bold';
+        promptTextarea.classList.add('invalid');
+        promptTextarea.classList.remove('valid');
+    } else if (count > 4500) {
+        charCount.style.color = 'var(--warning-color)';
+        charCount.style.fontWeight = 'bold';
+        promptTextarea.classList.remove('invalid', 'valid');
+    } else if (count >= 10) {
+        charCount.style.color = 'var(--text-muted)';
+        charCount.style.fontWeight = 'normal';
+        promptTextarea.classList.add('valid');
+        promptTextarea.classList.remove('invalid');
     } else {
         charCount.style.color = 'var(--text-muted)';
+        charCount.style.fontWeight = 'normal';
+        promptTextarea.classList.remove('invalid', 'valid');
+    }
+});
+
+// Output directory validation
+const outputDirInput = document.getElementById('outputDir');
+outputDirInput.addEventListener('input', (e) => {
+    const value = e.target.value.trim();
+    
+    // Basic path validation
+    if (value.length === 0) {
+        outputDirInput.classList.remove('valid', 'invalid');
+        return;
+    }
+    
+    // Check for invalid characters (basic check)
+    const invalidChars = /[<>"|?*\x00-\x1F]/;
+    if (invalidChars.test(value)) {
+        outputDirInput.classList.add('invalid');
+        outputDirInput.classList.remove('valid');
+    } else {
+        outputDirInput.classList.add('valid');
+        outputDirInput.classList.remove('invalid');
     }
 });
 
