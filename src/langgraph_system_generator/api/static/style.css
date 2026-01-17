@@ -253,16 +253,20 @@ header h1 {
     transform: translateY(-1px);
 }
 
-/* Invalid/Error state */
+/* Invalid/Error state - maintain error styling even when focused */
 .form-group textarea.invalid,
-.form-group input.invalid {
+.form-group textarea.invalid:focus,
+.form-group input.invalid,
+.form-group input.invalid:focus {
     border-color: var(--error-color);
     box-shadow: 0 0 0 3px var(--shadow-error);
 }
 
 /* Valid state */
 .form-group textarea.valid,
-.form-group input.valid {
+.form-group textarea.valid:focus,
+.form-group input.valid,
+.form-group input.valid:focus {
     border-color: var(--success-color);
 }
 
@@ -957,39 +961,6 @@ textarea:focus-visible {
     margin-left: 2px;
 }
 
-/* Validation Messages */
-.validation-message {
-    font-size: 0.875rem;
-    margin-top: var(--space-xs);
-    display: flex;
-    align-items: center;
-    gap: var(--space-xs);
-    animation: slideIn var(--transition-normal) ease;
-}
-
-.validation-message.error {
-    color: var(--error-color);
-}
-
-.validation-message.success {
-    color: var(--success-color);
-}
-
-.validation-message.warning {
-    color: var(--warning-color);
-}
-
-@keyframes slideIn {
-    from {
-        opacity: 0;
-        transform: translateY(-4px);
-    }
-    to {
-        opacity: 1;
-        transform: translateY(0);
-    }
-}
-
 /* Touch-friendly mobile improvements */
 @media (max-width: 768px) {
     .btn {
@@ -1009,27 +980,6 @@ textarea:focus-visible {
         min-width: 44px;
         min-height: 44px;
     }
-}
-
-/* Loading skeleton animation */
-@keyframes skeleton-loading {
-    0% {
-        background-position: -200px 0;
-    }
-    100% {
-        background-position: calc(200px + 100%) 0;
-    }
-}
-
-.skeleton {
-    background: linear-gradient(
-        90deg,
-        var(--bg-tertiary) 0%,
-        var(--bg-hover) 50%,
-        var(--bg-tertiary) 100%
-    );
-    background-size: 200px 100%;
-    animation: skeleton-loading 1.5s ease-in-out infinite;
 }
 
 /* Improved focus-visible for better keyboard navigation */

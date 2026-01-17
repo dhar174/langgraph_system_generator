@@ -142,10 +142,11 @@ outputDirInput.addEventListener('input', (e) => {
     // Note: Do not treat ":" as universally invalid; it is allowed on Unix/Mac filesystems.
     const invalidChars = /[<>"|?*\x00-\x1F]/;
     // Windows reserved names are case-insensitive and forbidden at any directory level.
-    // Regex checks each path component separately via split.
+    // Regex checks each path component separately via split. Filter empty parts from split.
     const windowsReservedNames = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(\..*)?$/i;
     const hasReservedName = value
         .split(/[\\/]/)
+        .filter((part) => part.length > 0)
         .some((part) => windowsReservedNames.test(part));
     
     // Robust platform detection (using modern API with fallbacks)
@@ -177,11 +178,15 @@ outputDirInput.addEventListener('input', (e) => {
     // Disallow colons that are not used as a drive letter designator (e.g. "C:\" or "C:file.txt")
     // on Windows platforms.
     let hasInvalidColonUsage = false;
-    if (isWindowsPlatform && /:/.test(value)) {
-        // Accept any leading "<letter>:" as a valid drive designator, regardless of following separator.
-        const hasDriveLetterPrefix = /^[a-zA-Z]:/.test(value);
-        const hasExtraColon = value.slice(2).includes(':');
-        hasInvalidColonUsage = !hasDriveLetterPrefix || hasExtraColon;
+    if (isWindowsPlatform) {
+        const firstColonIndex = value.indexOf(':');
+        if (firstColonIndex !== -1) {
+            // Accept a single leading "<letter>:" as a valid drive designator.
+            const hasDriveLetterPrefix =
+                firstColonIndex === 1 && /^[a-zA-Z]$/.test(value[0]);
+            const hasExtraColon = value.indexOf(':', firstColonIndex + 1) !== -1;
+            hasInvalidColonUsage = !hasDriveLetterPrefix || hasExtraColon;
+        }
     }
 
     // Determine validation result and provide user feedback
@@ -206,6 +211,11 @@ outputDirInput.addEventListener('input', (e) => {
         outputDirInput.removeAttribute('title');
     }
 });
+
+// Trigger initial validation for default or pre-filled value
+if (outputDirInput.value && outputDirInput.value.length > 0) {
+    outputDirInput.dispatchEvent(new Event('input'));
+}
 
 // Check health status
 async function checkHealth() {
