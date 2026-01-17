@@ -58,9 +58,11 @@ Example Usage:
     Generate individual components:
     
         >>> # Generate just the router node
+        >>> from langgraph_system_generator.utils.config import ModelConfig
+        >>> config = ModelConfig(model="gpt-5-mini", temperature=0.5)
         >>> router_code = RouterPattern.generate_router_node_code(
         ...     routes=["search", "analyze"],
-        ...     llm_model="gpt-4",
+        ...     model_config=config,
         ...     use_structured_output=True
         ... )
         >>>
@@ -68,7 +70,7 @@ Example Usage:
         >>> route_code = RouterPattern.generate_route_node_code(
         ...     route_name="search",
         ...     route_purpose="Perform web searches and retrieve information",
-        ...     llm_model="gpt-4-turbo"
+        ...     model_config=config
         ... )
 
 Integration with Generated Workflows:
