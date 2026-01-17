@@ -97,6 +97,7 @@
     --shadow: rgba(0, 0, 0, 0.08);
     --shadow-lg: rgba(0, 0, 0, 0.15);
     --shadow-focus: rgba(99, 102, 241, 0.25);
+    --shadow-error: rgba(220, 38, 38, 0.30);
 }
 
 body {

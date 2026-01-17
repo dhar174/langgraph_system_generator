@@ -1,7 +1,7 @@
 // DOM elements
 const form = document.getElementById('generateForm');
 const promptTextarea = document.getElementById('prompt');
-const charCount = document.getElementById('charCount');
+let charCount = document.getElementById('charCount');
 const generateBtn = document.getElementById('generateBtn');
 const btnText = generateBtn.querySelector('.btn-text');
 const spinner = generateBtn.querySelector('.spinner');
@@ -88,6 +88,8 @@ if (charCount) {
     const charCountMessage = document.getElementById('charCountMessage');
     if (charCountMessage) {
         charCountMessage.innerHTML = `<span id="charCount">0</span> / ${CHAR_COUNT_MAX} characters`;
+        // Re-query charCount element after innerHTML replacement
+        charCount = document.getElementById('charCount');
     }
 }
 
