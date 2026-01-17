@@ -393,8 +393,11 @@ class TestRouterPatternEdgeCases:
 
     def test_generate_router_with_special_model_name(self):
         """Test router generation with different model names."""
+        from langgraph_system_generator.utils.config import ModelConfig
+        
+        config = ModelConfig(model="gpt-4")
         code = RouterPattern.generate_router_node_code(
-            ["search"], llm_model="gpt-4"
+            ["search"], model_config=config
         )
         assert 'model="gpt-4"' in code
 
@@ -623,3 +626,178 @@ class TestPatternErrorHandling:
         # Subagent code should handle empty messages
         subagent_code = SubagentsPattern.generate_subagent_code("test", "Test agent")
         assert "messages[-1]" in subagent_code or "if messages" in subagent_code
+
+
+class TestPatternModelConfig:
+    """Tests for ModelConfig integration in pattern generators."""
+
+    def test_router_pattern_accepts_model_config_dict(self):
+        """Test RouterPattern accepts model config as dict."""
+        from langgraph_system_generator.utils.config import ModelConfig
+
+        config = {"model": "gpt-5-mini", "temperature": 0.5}
+        code = RouterPattern.generate_router_node_code(
+            ["search"], model_config=config
+        )
+
+        assert "def router_node(state: WorkflowState)" in code
+        assert 'model="gpt-5-mini"' in code
+        assert "temperature=0.5" in code
+
+    def test_router_pattern_accepts_model_config_object(self):
+        """Test RouterPattern accepts ModelConfig object."""
+        from langgraph_system_generator.utils.config import ModelConfig
+
+        config = ModelConfig(model="gpt-5-mini", temperature=0.8)
+        code = RouterPattern.generate_route_node_code(
+            "search", "Search for info", model_config=config
+        )
+
+        assert "def search_node(state: WorkflowState)" in code
+        assert 'model="gpt-5-mini"' in code
+        assert "temperature=0.8" in code
+
+    def test_router_pattern_uses_default_config_when_none(self):
+        """Test RouterPattern uses default config when None provided."""
+        code = RouterPattern.generate_router_node_code(["search"])
+
+        assert "def router_node(state: WorkflowState)" in code
+        assert 'model="gpt-5-mini"' in code
+        assert "temperature=" in code
+
+    def test_subagents_pattern_accepts_model_config(self):
+        """Test SubagentsPattern accepts model config."""
+        from langgraph_system_generator.utils.config import ModelConfig
+
+        config = ModelConfig(model="gpt-5-mini", temperature=0.9)
+        code = SubagentsPattern.generate_subagent_code(
+            "researcher", "Research specialist", model_config=config
+        )
+
+        assert "def researcher_node(state: WorkflowState)" in code
+        assert 'model="gpt-5-mini"' in code
+        assert "temperature=0.9" in code
+
+    def test_subagents_supervisor_uses_temperature_zero(self):
+        """Test supervisor node uses temperature=0 for deterministic decisions."""
+        from langgraph_system_generator.utils.config import ModelConfig
+
+        config = ModelConfig(model="gpt-5-mini", temperature=0.9)
+        code = SubagentsPattern.generate_supervisor_code(
+            ["researcher"], model_config=config
+        )
+
+        assert "def supervisor_node(state: WorkflowState)" in code
+        assert 'model="gpt-5-mini"' in code
+        # Supervisor should use temperature=0 for deterministic routing
+        assert "temperature=0" in code
+
+    def test_subagents_pattern_tool_binding_when_enabled(self):
+        """Test bind_tools is uncommented when include_tools=True."""
+        code = SubagentsPattern.generate_subagent_code(
+            "researcher", "Research specialist", include_tools=True
+        )
+
+        assert "def researcher_node(state: WorkflowState)" in code
+        # Should have uncommented tool binding code
+        assert "DuckDuckGoSearchRun" in code
+        assert "bind_tools" in code
+        assert "llm_with_tools" in code
+        # Should NOT have commented tool examples
+        assert "# Example: Bind tools" not in code
+
+    def test_subagents_pattern_no_tools_when_disabled(self):
+        """Test bind_tools code is not included when include_tools=False."""
+        code = SubagentsPattern.generate_subagent_code(
+            "researcher", "Research specialist", include_tools=False
+        )
+
+        assert "def researcher_node(state: WorkflowState)" in code
+        # Should NOT have tool binding code
+        assert "bind_tools" not in code
+
+    def test_critique_loop_accepts_model_config(self):
+        """Test CritiqueLoopPattern accepts model config."""
+        from langgraph_system_generator.utils.config import ModelConfig
+
+        config = ModelConfig(model="gpt-5-mini", temperature=0.6)
+        code = CritiqueLoopPattern.generate_generation_node_code(
+            model_config=config
+        )
+
+        assert "def generate_node(state: WorkflowState)" in code
+        assert 'model="gpt-5-mini"' in code
+        assert "temperature=0.6" in code
+
+    def test_critique_loop_critique_uses_temperature_zero(self):
+        """Test critique node uses temperature=0 for consistent reviews."""
+        from langgraph_system_generator.utils.config import ModelConfig
+
+        config = ModelConfig(model="gpt-5-mini", temperature=0.9)
+        code = CritiqueLoopPattern.generate_critique_node_code(
+            model_config=config
+        )
+
+        assert "def critique_node(state: WorkflowState)" in code
+        assert 'model="gpt-5-mini"' in code
+        # Critique should use temperature=0 for consistent evaluation
+        assert "temperature=0" in code
+
+    def test_critique_loop_revise_uses_config_temperature(self):
+        """Test revise node uses provided temperature."""
+        from langgraph_system_generator.utils.config import ModelConfig
+
+        config = ModelConfig(model="gpt-5-mini", temperature=0.7)
+        code = CritiqueLoopPattern.generate_revise_node_code(model_config=config)
+
+        assert "def revise_node(state: WorkflowState)" in code
+        assert 'model="gpt-5-mini"' in code
+        assert "temperature=0.7" in code
+
+    def test_all_patterns_preserve_gpt_5_mini_default(self):
+        """Test all patterns preserve gpt-5-mini as default model."""
+        # Router pattern
+        router_code = RouterPattern.generate_router_node_code(["search"])
+        assert 'model="gpt-5-mini"' in router_code
+
+        # Subagents pattern
+        supervisor_code = SubagentsPattern.generate_supervisor_code(["researcher"])
+        assert 'model="gpt-5-mini"' in supervisor_code
+
+        subagent_code = SubagentsPattern.generate_subagent_code("researcher", "Researcher")
+        assert 'model="gpt-5-mini"' in subagent_code
+
+        # Critique loop pattern
+        generate_code = CritiqueLoopPattern.generate_generation_node_code()
+        assert 'model="gpt-5-mini"' in generate_code
+
+        critique_code = CritiqueLoopPattern.generate_critique_node_code()
+        assert 'model="gpt-5-mini"' in critique_code
+
+        revise_code = CritiqueLoopPattern.generate_revise_node_code()
+        assert 'model="gpt-5-mini"' in revise_code
+
+    def test_complete_examples_accept_model_config(self):
+        """Test complete example generators accept model config."""
+        from langgraph_system_generator.utils.config import ModelConfig
+
+        config = ModelConfig(model="gpt-5-mini", temperature=0.5)
+
+        # Router pattern
+        router_example = RouterPattern.generate_complete_example(
+            ["search"], model_config=config
+        )
+        assert 'model="gpt-5-mini"' in router_example
+        assert "temperature=0.5" in router_example
+
+        # Subagents pattern
+        subagents_example = SubagentsPattern.generate_complete_example(
+            ["researcher"], model_config=config
+        )
+        assert 'model="gpt-5-mini"' in subagents_example
+
+        # Critique loop pattern
+        critique_example = CritiqueLoopPattern.generate_complete_example(
+            model_config=config
+        )
+        assert 'model="gpt-5-mini"' in critique_example
