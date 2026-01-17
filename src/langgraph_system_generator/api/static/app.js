@@ -153,16 +153,21 @@ outputDirInput.addEventListener('input', (e) => {
             navigator.userAgentData && navigator.userAgentData.platform;
         const legacyPlatform = navigator.platform;
         const ua = navigator.userAgent;
-        const platform = uaDataPlatform || legacyPlatform || ua || '';
-        if (typeof platform === 'string') {
-            isWindowsPlatform = platform.toLowerCase().includes('win');
+        const platform = uaDataPlatform || legacyPlatform || '';
+        // Note: userAgent is used as a final fallback compatibility signal for Windows detection
+        // when explicit platform information is unavailable.
+        const platformIndicator = platform || ua || '';
+        if (typeof platformIndicator === 'string') {
+            isWindowsPlatform = platformIndicator.toLowerCase().includes('win');
         }
     }
     
-    // Disallow colons that are not used as a drive letter separator (e.g. "C:\") on Windows platforms.
+    // Disallow colons that are not used as a drive letter designator (e.g. "C:\" or "C:file.txt")
+    // on Windows platforms.
     let hasInvalidColonUsage = false;
     if (isWindowsPlatform && /:/.test(value)) {
-        const hasDriveLetterPrefix = /^[a-zA-Z]:[\\/]/.test(value);
+        // Accept any leading "<letter>:" as a valid drive designator, regardless of following separator.
+        const hasDriveLetterPrefix = /^[a-zA-Z]:/.test(value);
         const hasExtraColon = value.slice(2).includes(':');
         hasInvalidColonUsage = !hasDriveLetterPrefix || hasExtraColon;
     }

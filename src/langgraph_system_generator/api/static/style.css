@@ -1049,7 +1049,7 @@ textarea:focus-visible {
     padding: var(--space-sm) var(--space-md);
     text-decoration: none;
     border-radius: 0 0 var(--radius-md) 0;
-    z-index: 100;
+    z-index: 1000;
 }
 
 .skip-link:focus {
@@ -1065,12 +1065,20 @@ textarea:focus-visible {
 
 /* Reduced motion for accessibility */
 @media (prefers-reduced-motion: reduce) {
+    html {
+        scroll-behavior: auto;
+    }
+    
     *,
     *::before,
     *::after {
         animation-duration: 0.01ms !important;
         animation-iteration-count: 1 !important;
         transition-duration: 0.01ms !important;
-        scroll-behavior: auto !important;
+    }
+    
+    /* Disable button ripple effect for reduced motion */
+    .btn::before {
+        display: none;
     }
 }
