@@ -248,12 +248,14 @@ Example: researcher|Find information about X""")
         node_name = agent_name.lower().replace(" ", "_").replace("-", "_")
 
         tools_code = ""
+        llm_var = "llm"
         if include_tools:
             tools_code = """
-    # Example: Bind tools to this agent
+    # Bind tools to this agent
     from langchain_community.tools import DuckDuckGoSearchRun
     tools = [DuckDuckGoSearchRun()]
     llm_with_tools = llm.bind_tools(tools)"""
+            llm_var = "llm_with_tools"
 
         return f'''def {node_name}_node(state: WorkflowState) -> WorkflowState:
     """Subagent: {agent_name}.
@@ -282,7 +284,7 @@ Execute the supervisor's instructions carefully and provide detailed results."""
     )
     
     # Execute agent task
-    response = llm.invoke([system_prompt, user_prompt])
+    response = {llm_var}.invoke([system_prompt, user_prompt])
     
     # Update task results
     task_results["{agent_name}"] = response.content
