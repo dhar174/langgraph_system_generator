@@ -196,7 +196,7 @@ Health check endpoint.
 ```json
 {
   "status": "healthy",
-  "version": "0.1.1"
+  "version": "<current_version>"
 }
 ```
 
@@ -486,8 +486,8 @@ The `manifest.json` contains complete generation metadata:
   "mode": "stub | live",
   "architecture": "router | subagents | hybrid",
   "patterns": ["router"],
-  "timestamp": "2024-01-17T18:00:00Z",
-  "version": "0.1.1",
+  "timestamp": "YYYY-MM-DDTHH:MM:SSZ",
+  "version": "<current_version>",
   
   "artifacts": {
     "notebook": "./notebook.ipynb",

@@ -120,7 +120,7 @@ os.environ["OPENAI_API_KEY"] = userdata.get('OPENAI_API_KEY')
 
 # Use in your code
 from langchain_openai import ChatOpenAI
-llm = ChatOpenAI(model="gpt-4-mini")
+llm = ChatOpenAI(model="gpt-5-mini")
 ```
 
 **Benefits:**
@@ -211,7 +211,7 @@ class AgentState(TypedDict):
     next_route: str
 
 # ====== NODES ======
-llm = ChatOpenAI(model="gpt-4-mini")
+llm = ChatOpenAI(model="gpt-5-mini")
 
 def router_node(state: AgentState):
     """Classify input and route to appropriate handler."""
@@ -320,7 +320,7 @@ class TeamState(TypedDict):
     iterations: int
 
 # ====== NODES ======
-llm = ChatOpenAI(model="gpt-4-mini")
+llm = ChatOpenAI(model="gpt-5-mini")
 
 def supervisor_node(state: TeamState):
     """Coordinate team members."""
@@ -490,7 +490,7 @@ for i, query in enumerate(queries):
 **Solution**: Verify secret name matches exactly: `OPENAI_API_KEY`
 
 **Issue**: Out of memory  
-**Solution**: Use smaller models (gpt-4-mini instead of gpt-4) or enable high-RAM runtime
+**Solution**: Use smaller models (`gpt-5-mini` or `gpt-3.5-turbo` instead of `gpt-4`) or enable high-RAM runtime
 
 **Issue**: Slow execution  
 **Solution**: Colab free tier has usage limits; consider Colab Pro for better performance

@@ -93,7 +93,7 @@ This wiki provides comprehensive coverage of:
 
 ## Version
 
-This documentation is for **LangGraph System Generator v0.1.1 (Alpha)**.
+This documentation targets the current **LangGraph System Generator Alpha** release. For the exact version, see the main project README or package metadata.
 
 ## License
 

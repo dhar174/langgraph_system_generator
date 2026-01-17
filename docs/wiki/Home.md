@@ -72,7 +72,7 @@ LangGraph System Generator excels at:
 
 ### Project Status
 
-LangGraph System Generator is in active development (v0.1.1, Alpha). It includes:
+LangGraph System Generator is in active development (Alpha). It includes:
 
 - ✅ Complete generation pipeline (Requirements → Architecture → Design → QA → Export)
 - ✅ Three core patterns with comprehensive examples

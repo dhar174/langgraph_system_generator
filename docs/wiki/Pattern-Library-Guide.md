@@ -450,7 +450,7 @@ class RouterPattern:
     @staticmethod
     def generate_router_node_code(
         routes: List[str],
-        llm_model: str = "gpt-4-mini",
+        llm_model: str = "gpt-5-mini",
         use_structured_output: bool = True
     ) -> str:
         """Generate router classification node."""
@@ -459,7 +459,7 @@ class RouterPattern:
     def generate_route_node_code(
         route_name: str,
         route_purpose: str,
-        llm_model: str = "gpt-4-mini"
+        llm_model: str = "gpt-5-mini"
     ) -> str:
         """Generate individual route handler."""
     
@@ -493,7 +493,7 @@ class SubagentsPattern:
     def generate_supervisor_code(
         subagents: List[str],
         subagent_descriptions: Optional[Dict[str, str]] = None,
-        llm_model: str = "gpt-4-mini",
+        llm_model: str = "gpt-5-mini",
         use_structured_output: bool = True
     ) -> str:
         """Generate supervisor coordination node."""
@@ -502,7 +502,7 @@ class SubagentsPattern:
     def generate_subagent_code(
         agent_name: str,
         agent_description: str,
-        llm_model: str = "gpt-4-mini",
+        llm_model: str = "gpt-5-mini",
         include_tools: bool = False
     ) -> str:
         """Generate individual subagent node."""
@@ -535,21 +535,21 @@ class CritiqueLoopPattern:
     @staticmethod
     def generate_generation_node_code(
         task_description: str = "Generate initial output",
-        llm_model: str = "gpt-4-mini"
+        llm_model: str = "gpt-5-mini"
     ) -> str:
         """Generate initial content creation node."""
     
     @staticmethod
     def generate_critique_node_code(
         criteria: Optional[List[str]] = None,
-        llm_model: str = "gpt-4-mini",
+        llm_model: str = "gpt-5-mini",
         use_structured_output: bool = True
     ) -> str:
         """Generate quality assessment node."""
     
     @staticmethod
     def generate_revise_node_code(
-        llm_model: str = "gpt-4-mini"
+        llm_model: str = "gpt-5-mini"
     ) -> str:
         """Generate revision node."""
     
