@@ -1,0 +1,49 @@
+on: 
+  milestone:
+    types: [closed]
+name: Milestone Closure
+jobs:
+  release-notes:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@master
+    - name: Create Release Notes
+      uses: docker://decathlon/release-notes-generator-action:2.0.0
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        OUTPUT_FOLDER: temp_release_notes
+        USE_MILESTONE_TITLE: "true"
+    - name: Upload Release Notes to Wiki
+      uses: docker://decathlon/wiki-page-creator-action:latest
+      env:
+        ACTION_MAIL: dhar174@users.noreply.github.com
+        ACTION_NAME: dhar174
+        GH_PAT: ${{ secrets.GH_PAT }}
+        MD_FOLDER: /
+        OWNER: dhar174
+        REPO_NAME: langgraph_system_generator
+    
+    - name: GitHub Wiki Action
+      uses: Andrew-Chen-Wang/github-wiki-action@v5.0.3
+      with:
+        # Select from 'clone' or 'init' to determine which method to use to push changes to the GitHub wiki. 'clone' will clone the .wiki.git repo and add an additional commit. 'init' will create a new repo with a single commit and force push to the .wiki.git. 'init' involves a force-push! The default is 'clone'.
+        strategy: # default is clone
+        # The repository housing the wiki. Use this if you're publishing to a wiki that's not the current repository. You can change the GitHub server with the github-server-url input. Default is github.repository.
+        repository: # default is ${{ github.repository }}
+        # An alternate https://github.com URL, usually for GitHub Enterprise deployments under your own domain. Default is github.server_url (usually https://github.com).
+        github-server-url: # default is ${{ github.server_url }}
+        # github.token is the default. This token is used when cloning and pushing wiki changes.
+        token: # default is ${{ github.token }}
+        # The directory to use for your wiki contents. Default wiki.
+        path: # default is wiki
+        # The message to use when committing new content. Default is 'Update wiki github.sha'. You probably don't need to change this, since this only applies if you look really closely in your wiki.
+        commit-message: # default is Update wiki ${{ github.sha }}
+        # A multiline list of files that should be ignored when committing and pushing to the remote wiki. Each line is a pattern like .gitignore. Make sure these paths are relative to the path option! The default is none.
+        ignore: # default is 
+        # Whether or not to actually attempt to push changes back to the wiki itself. If this is set to true, we instead print the remote URL and do not push to the remote wiki. The default is false. This is useful for testing.
+        dry-run: 
+        # If this option is true, we will preprocess the wiki to move the README.md to Home.md as well as rewriting all .md links to be bare links. This helps ensure that the Markdown works in source control as well as the wiki. The default is true.
+        preprocess: # default is true
+        # By default, any triggering of this action will result in a commit to the Wiki, even if that commit is empty. If this option is true, a workflow run which would result in no changes to the Wiki files, will no longer create an empty commit. The default is false.
+        disable-empty-commits: # optional
+            
