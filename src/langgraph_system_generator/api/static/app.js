@@ -168,10 +168,13 @@ outputDirInput.addEventListener('input', (e) => {
 
         if (typeof primaryPlatform === 'string') {
             isWindowsPlatform = primaryPlatform.toLowerCase().includes('win');
-        } else if (typeof ua === 'string' && ua.length > 0) {
-            // Note: userAgent is used as a final fallback compatibility signal for Windows detection
-            // when explicit platform information is unavailable.
-            isWindowsPlatform = ua.toLowerCase().includes('win');
+        } else if (typeof ua === 'string') {
+            const uaTrimmed = ua.trim();
+            if (uaTrimmed.length > 0) {
+                // Note: userAgent is used as a final fallback compatibility signal for Windows detection
+                // when explicit platform information is unavailable.
+                isWindowsPlatform = uaTrimmed.toLowerCase().includes('win');
+            }
         }
     }
     

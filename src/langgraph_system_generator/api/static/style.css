@@ -1022,9 +1022,8 @@ textarea:focus-visible {
     *,
     *::before,
     *::after {
-        animation-duration: 0.01ms;
-        animation-iteration-count: 1;
-        transition-duration: 0.01ms;
+        animation: none !important;
+        transition: none !important;
     }
     
     /* Disable button ripple effect for reduced motion */
