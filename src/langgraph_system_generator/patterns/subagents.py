@@ -247,12 +247,13 @@ Example: researcher|Find information about X""")
         
         node_name = agent_name.lower().replace(" ", "_").replace("-", "_")
 
-        tools_code = ""
+        tools_import = ""
+        tools_setup = ""
         llm_var = "llm"
         if include_tools:
-            tools_code = """
+            tools_import = "\n    from langchain_community.tools import DuckDuckGoSearchRun"
+            tools_setup = """
     # Bind tools to this agent
-    from langchain_community.tools import DuckDuckGoSearchRun
     tools = [DuckDuckGoSearchRun()]
     llm_with_tools = llm.bind_tools(tools)"""
             llm_var = "llm_with_tools"
@@ -263,14 +264,14 @@ Example: researcher|Find information about X""")
     Role: {agent_description}
     """
     from langchain_openai import ChatOpenAI
-    from langchain_core.messages import HumanMessage, SystemMessage
+    from langchain_core.messages import HumanMessage, SystemMessage{tools_import}
     
     messages = state["messages"]
     instructions = state.get("instructions", "")
     task_results = state.get("task_results", {{}})
     
     # Initialize specialized LLM for this agent
-    llm = ChatOpenAI(model="{llm_model}", temperature=0.7){tools_code}
+    llm = ChatOpenAI(model="{llm_model}", temperature=0.7){tools_setup}
     
     # Agent-specific system prompt
     system_prompt = SystemMessage(content="""You are {agent_name}.
