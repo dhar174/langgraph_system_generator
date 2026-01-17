@@ -26,6 +26,16 @@ from typing import Dict, List, Optional, Union
 from langgraph_system_generator.utils.config import ModelConfig
 
 
+def _build_llm_init(model: str, temperature: float, api_base: Optional[str] = None, max_tokens: Optional[int] = None) -> str:
+    """Build ChatOpenAI initialization string with optional parameters."""
+    params = [f'model="{model}"', f'temperature={temperature}']
+    if api_base:
+        params.append(f'base_url="{api_base}"')
+    if max_tokens:
+        params.append(f'max_tokens={max_tokens}')
+    return f"ChatOpenAI({', '.join(params)})"
+
+
 class SubagentsPattern:
     """Template generator for supervisor-subagent multi-agent patterns.
 
@@ -96,8 +106,11 @@ class WorkflowState(MessagesState):
             config = model_config
         
         llm_model = config.model
-        # Use temperature=0 for supervisor decisions (deterministic)
-        temperature = 0
+        # Supervisor decisions are deterministic
+        api_base = config.api_base
+        max_tokens = config.max_tokens
+        
+        llm_init = _build_llm_init(llm_model, 0, api_base, max_tokens)
         
         if subagent_descriptions is None:
             subagent_descriptions = {
@@ -144,7 +157,7 @@ def supervisor_node(state: WorkflowState) -> WorkflowState:
     task_results = state.get("task_results", {{}})
     
     # Initialize LLM with structured output
-    llm = ChatOpenAI(model="{llm_model}", temperature=0)
+    llm = {llm_init}
     structured_llm = llm.with_structured_output(SupervisorDecision)
     
     # Supervisor prompt
@@ -200,7 +213,7 @@ def supervisor_node(state: WorkflowState) -> WorkflowState:
     messages = state["messages"]
     task_results = state.get("task_results", {{}})
     
-    llm = ChatOpenAI(model="{llm_model}", temperature=0)
+    llm = {llm_init}
     
     # Supervisor prompt
     system_prompt = SystemMessage(content=f"""You are a supervisor coordinating agents.
@@ -254,6 +267,10 @@ Example: researcher|Find information about X""")
         
         llm_model = config.model
         temperature = config.temperature
+        api_base = config.api_base
+        max_tokens = config.max_tokens
+        
+        llm_init = _build_llm_init(llm_model, temperature, api_base, max_tokens)
         
         node_name = agent_name.lower().replace(" ", "_").replace("-", "_")
 
@@ -278,7 +295,7 @@ Example: researcher|Find information about X""")
     task_results = state.get("task_results", {{}})
     
     # Initialize specialized LLM for this agent
-    llm = ChatOpenAI(model="{llm_model}", temperature={temperature}){tools_code}
+    llm = {llm_init}{tools_code}
     
     # Agent-specific system prompt
     system_prompt = SystemMessage(content="""You are {agent_name}.

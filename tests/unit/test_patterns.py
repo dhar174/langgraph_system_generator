@@ -642,7 +642,8 @@ class TestPatternModelConfig:
 
         assert "def router_node(state: WorkflowState)" in code
         assert 'model="gpt-5-mini"' in code
-        assert "temperature=0.5" in code
+        # Router always uses temperature=0 for deterministic routing
+        assert "temperature=0" in code
 
     def test_router_pattern_accepts_model_config_object(self):
         """Test RouterPattern accepts ModelConfig object."""
@@ -788,7 +789,8 @@ class TestPatternModelConfig:
             ["search"], model_config=config
         )
         assert 'model="gpt-5-mini"' in router_example
-        assert "temperature=0.5" in router_example
+        # Router uses temperature=0 for deterministic routing
+        assert "temperature=0" in router_example
 
         # Subagents pattern
         subagents_example = SubagentsPattern.generate_complete_example(
@@ -801,3 +803,50 @@ class TestPatternModelConfig:
             model_config=config
         )
         assert 'model="gpt-5-mini"' in critique_example
+
+    def test_patterns_support_api_base_parameter(self):
+        """Test patterns include api_base in generated code when provided."""
+        from langgraph_system_generator.utils.config import ModelConfig
+
+        config = ModelConfig(model="gpt-5-mini", api_base="https://custom.api.com")
+
+        # Router pattern
+        router_code = RouterPattern.generate_route_node_code("search", "Search", model_config=config)
+        assert 'base_url="https://custom.api.com"' in router_code
+
+        # Subagents pattern
+        subagent_code = SubagentsPattern.generate_subagent_code("researcher", "Research", model_config=config)
+        assert 'base_url="https://custom.api.com"' in subagent_code
+
+        # Critique loop pattern
+        generate_code = CritiqueLoopPattern.generate_generation_node_code(model_config=config)
+        assert 'base_url="https://custom.api.com"' in generate_code
+
+    def test_patterns_support_max_tokens_parameter(self):
+        """Test patterns include max_tokens in generated code when provided."""
+        from langgraph_system_generator.utils.config import ModelConfig
+
+        config = ModelConfig(model="gpt-5-mini", max_tokens=2000)
+
+        # Router pattern
+        router_code = RouterPattern.generate_router_node_code(["search"], model_config=config)
+        assert "max_tokens=2000" in router_code
+
+        # Subagents pattern
+        supervisor_code = SubagentsPattern.generate_supervisor_code(["researcher"], model_config=config)
+        assert "max_tokens=2000" in supervisor_code
+
+        # Critique loop pattern
+        revise_code = CritiqueLoopPattern.generate_revise_node_code(model_config=config)
+        assert "max_tokens=2000" in revise_code
+
+    def test_router_uses_deterministic_temperature(self):
+        """Test router node overrides temperature to 0 for deterministic routing."""
+        from langgraph_system_generator.utils.config import ModelConfig
+
+        # Even with high temperature config, router should use 0
+        config = ModelConfig(model="gpt-5-mini", temperature=0.9)
+        code = RouterPattern.generate_router_node_code(["search"], model_config=config)
+        
+        assert "temperature=0" in code
+        assert "temperature=0.9" not in code

@@ -22,6 +22,16 @@ from typing import Dict, List, Optional, Union
 from langgraph_system_generator.utils.config import ModelConfig
 
 
+def _build_llm_init(model: str, temperature: float, api_base: Optional[str] = None, max_tokens: Optional[int] = None) -> str:
+    """Build ChatOpenAI initialization string with optional parameters."""
+    params = [f'model="{model}"', f'temperature={temperature}']
+    if api_base:
+        params.append(f'base_url="{api_base}"')
+    if max_tokens:
+        params.append(f'max_tokens={max_tokens}')
+    return f"ChatOpenAI({', '.join(params)})"
+
+
 class CritiqueLoopPattern:
     """Template generator for critique-revise loop patterns.
 
@@ -93,6 +103,10 @@ class WorkflowState(MessagesState):
         
         llm_model = config.model
         temperature = config.temperature
+        api_base = config.api_base
+        max_tokens = config.max_tokens
+        
+        llm_init = _build_llm_init(llm_model, temperature, api_base, max_tokens)
         
         return f'''def generate_node(state: WorkflowState) -> WorkflowState:
     """Generate initial output or first draft.
@@ -106,7 +120,7 @@ class WorkflowState(MessagesState):
     revision_count = state.get("revision_count", 0)
     
     # Initialize LLM
-    llm = ChatOpenAI(model="{llm_model}", temperature={temperature})
+    llm = {llm_init}
     
     # Generation prompt
     system_prompt = SystemMessage(content="""You are an expert content generator.
@@ -152,8 +166,11 @@ Create high-quality output that is clear, accurate, and well-structured.""")
             config = model_config
         
         llm_model = config.model
-        # Use temperature=0 for critique/review (deterministic)
-        temperature = 0
+        # Critique decisions are deterministic
+        api_base = config.api_base
+        max_tokens = config.max_tokens
+        
+        llm_init = _build_llm_init(llm_model, 0, api_base, max_tokens)
         
         if criteria is None:
             criteria = [
@@ -204,7 +221,7 @@ def critique_node(state: WorkflowState) -> WorkflowState:
     criteria = state.get("criteria", [])
     
     # Initialize LLM with structured output
-    llm = ChatOpenAI(model="{llm_model}", temperature=0)
+    llm = {llm_init}
     structured_llm = llm.with_structured_output(CritiqueAssessment)
     
     # Critique prompt
@@ -257,7 +274,7 @@ def critique_node(state: WorkflowState) -> WorkflowState:
     current_draft = state.get("current_draft", "")
     messages = state["messages"]
     
-    llm = ChatOpenAI(model="{llm_model}", temperature=0)
+    llm = {llm_init}
     
     # Critique prompt
     system_prompt = SystemMessage(content=f"""You are an expert critic.
@@ -302,6 +319,10 @@ Format: SCORE|APPROVED or NEEDS_REVISION|feedback""")
         
         llm_model = config.model
         temperature = config.temperature
+        api_base = config.api_base
+        max_tokens = config.max_tokens
+        
+        llm_init = _build_llm_init(llm_model, temperature, api_base, max_tokens)
         
         return f'''def revise_node(state: WorkflowState) -> WorkflowState:
     """Revise the draft based on critique feedback.
@@ -318,7 +339,7 @@ Format: SCORE|APPROVED or NEEDS_REVISION|feedback""")
     messages = state["messages"]
     
     # Initialize LLM
-    llm = ChatOpenAI(model="{llm_model}", temperature={temperature})
+    llm = {llm_init}
     
     # Revision prompt
     system_prompt = SystemMessage(content="""You are an expert editor and reviser.

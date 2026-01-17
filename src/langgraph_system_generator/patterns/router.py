@@ -90,6 +90,16 @@ from typing import Dict, List, Optional, Union
 from langgraph_system_generator.utils.config import ModelConfig
 
 
+def _build_llm_init(model: str, temperature: float, api_base: Optional[str] = None, max_tokens: Optional[int] = None) -> str:
+    """Build ChatOpenAI initialization string with optional parameters."""
+    params = [f'model="{model}"', f'temperature={temperature}']
+    if api_base:
+        params.append(f'base_url="{api_base}"')
+    if max_tokens:
+        params.append(f'max_tokens={max_tokens}')
+    return f"ChatOpenAI({', '.join(params)})"
+
+
 class RouterPattern:
     """Template generator for router-based multi-agent patterns.
 
@@ -158,7 +168,12 @@ class WorkflowState(MessagesState):
             config = model_config
         
         llm_model = config.model
-        temperature = config.temperature
+        # Router decisions are classification-like; use deterministic temperature
+        temperature = 0
+        api_base = config.api_base
+        max_tokens = config.max_tokens
+        
+        llm_init = _build_llm_init(llm_model, temperature, api_base, max_tokens)
         
         routes_str = ", ".join([f'"{r}"' for r in routes]) if routes else '"default"'
         routes_list_str = "\n".join(
@@ -192,7 +207,7 @@ def router_node(state: WorkflowState) -> WorkflowState:
     last_message = messages[-1].content if messages else ""
     
     # Initialize LLM with structured output
-    llm = ChatOpenAI(model="{llm_model}", temperature={temperature})
+    llm = {llm_init}
     structured_llm = llm.with_structured_output(RouteDecision)
     
     # Classification prompt
@@ -223,7 +238,7 @@ def router_node(state: WorkflowState) -> WorkflowState:
     messages = state["messages"]
     last_message = messages[-1].content if messages else ""
     
-    llm = ChatOpenAI(model="{llm_model}", temperature={temperature})
+    llm = {llm_init}
     
     # Classification prompt
     system_prompt = SystemMessage(content=f"""You are a routing classifier.
@@ -274,6 +289,10 @@ Respond with ONLY the route name.""")
         
         llm_model = config.model
         temperature = config.temperature
+        api_base = config.api_base
+        max_tokens = config.max_tokens
+        
+        llm_init = _build_llm_init(llm_model, temperature, api_base, max_tokens)
         
         node_name = route_name.lower().replace(" ", "_").replace("-", "_")
 
@@ -288,7 +307,7 @@ Respond with ONLY the route name.""")
     messages = state["messages"]
     
     # Initialize specialized LLM for this route
-    llm = ChatOpenAI(model="{llm_model}", temperature={temperature})
+    llm = {llm_init}
     
     # System prompt for this specialist
     system_prompt = SystemMessage(content="""You are a {route_name} specialist.
