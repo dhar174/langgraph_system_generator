@@ -141,6 +141,8 @@ outputDirInput.addEventListener('input', (e) => {
     // the server should still perform authoritative validation.
     // Note: Do not treat ":" as universally invalid; it is allowed on Unix/Mac filesystems.
     const invalidChars = /[<>"|?*\x00-\x1F]/;
+    // Windows reserved names are case-insensitive and forbidden at any directory level.
+    // Regex checks each path component separately via split.
     const windowsReservedNames = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(\..*)?$/i;
     const hasReservedName = value
         .split(/[\\/]/)
@@ -153,12 +155,22 @@ outputDirInput.addEventListener('input', (e) => {
             navigator.userAgentData && navigator.userAgentData.platform;
         const legacyPlatform = navigator.platform;
         const ua = navigator.userAgent;
-        const platform = uaDataPlatform || legacyPlatform || '';
-        // Note: userAgent is used as a final fallback compatibility signal for Windows detection
-        // when explicit platform information is unavailable.
-        const platformIndicator = platform || ua || '';
-        if (typeof platformIndicator === 'string') {
-            isWindowsPlatform = platformIndicator.toLowerCase().includes('win');
+        
+        // Prefer explicit platform information when available; only fall back to userAgent
+        // if neither userAgentData.platform nor navigator.platform provide a usable value.
+        const primaryPlatform =
+            (typeof uaDataPlatform === 'string' && uaDataPlatform.trim() !== '')
+                ? uaDataPlatform
+                : (typeof legacyPlatform === 'string' && legacyPlatform.trim() !== '')
+                    ? legacyPlatform
+                    : null;
+
+        if (typeof primaryPlatform === 'string') {
+            isWindowsPlatform = primaryPlatform.toLowerCase().includes('win');
+        } else if (typeof ua === 'string' && ua.length > 0) {
+            // Note: userAgent is used as a final fallback compatibility signal for Windows detection
+            // when explicit platform information is unavailable.
+            isWindowsPlatform = ua.toLowerCase().includes('win');
         }
     }
     
@@ -172,12 +184,26 @@ outputDirInput.addEventListener('input', (e) => {
         hasInvalidColonUsage = !hasDriveLetterPrefix || hasExtraColon;
     }
 
-    if (invalidChars.test(value) || hasReservedName || hasInvalidColonUsage) {
+    // Determine validation result and provide user feedback
+    let validationMessage = '';
+    if (invalidChars.test(value)) {
+        validationMessage = 'Path contains invalid characters';
+    } else if (hasReservedName) {
+        validationMessage = 'Path contains reserved Windows filename';
+    } else if (hasInvalidColonUsage) {
+        validationMessage = 'Invalid colon placement in path';
+    }
+    
+    if (validationMessage) {
         outputDirInput.classList.add('invalid');
         outputDirInput.classList.remove('valid');
+        outputDirInput.setAttribute('aria-invalid', 'true');
+        outputDirInput.setAttribute('title', validationMessage);
     } else {
         outputDirInput.classList.add('valid');
         outputDirInput.classList.remove('invalid');
+        outputDirInput.setAttribute('aria-invalid', 'false');
+        outputDirInput.removeAttribute('title');
     }
 });
 
@@ -625,11 +651,10 @@ form.addEventListener('submit', async (e) => {
     }
     
     // Prevent submission if the output directory path is currently invalid
-    if (typeof outputDirInput !== 'undefined' && outputDirInput && outputDirInput.classList.contains('invalid')) {
-        showError('Please provide a valid output directory before generating.');
-        if (typeof outputDirInput.focus === 'function') {
-            outputDirInput.focus();
-        }
+    if (outputDirInput && outputDirInput.classList.contains('invalid')) {
+        const errorMsg = outputDirInput.getAttribute('title') || 'Invalid output directory path';
+        showError(`Please fix the output directory: ${errorMsg}`);
+        outputDirInput.focus();
         return;
     }
     
