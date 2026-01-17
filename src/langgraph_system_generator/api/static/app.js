@@ -79,6 +79,18 @@ modelSelect.addEventListener('change', (e) => {
     }
 });
 
+// Sync HTML attributes with JavaScript constants on page load
+if (promptTextarea) {
+    promptTextarea.setAttribute('minlength', CHAR_COUNT_MIN);
+    promptTextarea.setAttribute('maxlength', CHAR_COUNT_MAX);
+}
+if (charCount) {
+    const charCountMessage = document.getElementById('charCountMessage');
+    if (charCountMessage) {
+        charCountMessage.innerHTML = `<span id="charCount">0</span> / ${CHAR_COUNT_MAX} characters`;
+    }
+}
+
 // Helper to count Unicode characters (code points) for accurate counting
 function getCharacterCount(text) {
     return Array.from(text || '').length;
@@ -127,7 +139,7 @@ outputDirInput.addEventListener('input', (e) => {
     // the server should still perform authoritative validation.
     // Note: Do not treat ":" as universally invalid; it is allowed on Unix/Mac filesystems.
     const invalidChars = /[<>"|?*\x00-\x1F]/;
-    const windowsReservedNames = /^(con|prn|aux|nul|com[0-9]|lpt[0-9])(\..*)?$/i;
+    const windowsReservedNames = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(\..*)?$/i;
     const hasReservedName = value
         .split(/[\\/]/)
         .some((part) => windowsReservedNames.test(part));
@@ -149,7 +161,7 @@ outputDirInput.addEventListener('input', (e) => {
     let hasInvalidColonUsage = false;
     if (isWindowsPlatform && /:/.test(value)) {
         const hasDriveLetterPrefix = /^[a-zA-Z]:[\\/]/.test(value);
-        const hasExtraColon = value.indexOf(':', 2) !== -1;
+        const hasExtraColon = value.slice(2).includes(':');
         hasInvalidColonUsage = !hasDriveLetterPrefix || hasExtraColon;
     }
 
@@ -602,6 +614,15 @@ form.addEventListener('submit', async (e) => {
     
     if (getCharacterCount(data.prompt.trim()) < CHAR_COUNT_MIN) {
         showError(`Please enter a prompt of at least ${CHAR_COUNT_MIN} characters.`);
+        return;
+    }
+    
+    // Prevent submission if the output directory path is currently invalid
+    if (typeof outputDirInput !== 'undefined' && outputDirInput && outputDirInput.classList.contains('invalid')) {
+        showError('Please provide a valid output directory before generating.');
+        if (typeof outputDirInput.focus === 'function') {
+            outputDirInput.focus();
+        }
         return;
     }
     

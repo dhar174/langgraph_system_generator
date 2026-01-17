@@ -38,6 +38,7 @@
     --shadow: rgba(0, 0, 0, 0.3);
     --shadow-lg: rgba(0, 0, 0, 0.5);
     --shadow-focus: rgba(99, 102, 241, 0.3);
+    --shadow-error: rgba(239, 68, 68, 0.2);
     
     /* Transitions */
     --transition-fast: 150ms;
@@ -255,7 +256,7 @@ header h1 {
 .form-group textarea.invalid,
 .form-group input.invalid {
     border-color: var(--error-color);
-    box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.2);
+    box-shadow: 0 0 0 3px var(--shadow-error);
 }
 
 /* Valid state */
