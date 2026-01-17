@@ -36,7 +36,7 @@ def valid_notebook() -> nbformat.NotebookNode:
         new_markdown_cell(source="## Config", metadata={"section": "config"})
     )
     nb.cells.append(
-        new_code_cell(source='MODEL = "gpt-5-mini"', metadata={"section": "config"})
+        new_code_cell(source='MODEL = "gpt-4o-mini"', metadata={"section": "config"})
     )
 
     # Add graph section

@@ -21,7 +21,7 @@ Example Usage:
     ... )
 """
 
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 
 class SubagentsPattern:
@@ -71,8 +71,9 @@ class WorkflowState(MessagesState):
     def generate_supervisor_code(
         subagents: List[str],
         subagent_descriptions: Optional[Dict[str, str]] = None,
-        llm_model: str = "gpt-5-mini",
+        llm_model: str = "gpt-4o-mini",
         use_structured_output: bool = True,
+        config: Optional[Dict[str, Any]] = None,
     ) -> str:
         """Generate supervisor node implementation code.
 
@@ -81,10 +82,17 @@ class WorkflowState(MessagesState):
             subagent_descriptions: Optional dict mapping agent names to descriptions
             llm_model: LLM model to use for supervisor decisions
             use_structured_output: Whether to use structured output
+            config: Optional config dict with keys like 'model', 'temperature', 'api_base'
+                   Takes precedence over individual parameters
 
         Returns:
             Python code string implementing the supervisor node
         """
+        # Extract config values if provided
+        if config:
+            llm_model = config.get("model", llm_model)
+            # temperature and other params can be added to generated code if needed
+        
         if subagent_descriptions is None:
             subagent_descriptions = {
                 agent: f"{agent} specialist" for agent in subagents
@@ -216,8 +224,9 @@ Example: researcher|Find information about X""")
     def generate_subagent_code(
         agent_name: str,
         agent_description: str,
-        llm_model: str = "gpt-5-mini",
-        include_tools: bool = False,
+        llm_model: str = "gpt-4o-mini",
+        include_tools: bool = True,
+        config: Optional[Dict[str, Any]] = None,
     ) -> str:
         """Generate code for a specific subagent node.
 
@@ -226,19 +235,25 @@ Example: researcher|Find information about X""")
             agent_description: Description of agent's role and capabilities
             llm_model: LLM model to use
             include_tools: Whether to include tool binding example
+            config: Optional config dict with keys like 'model', 'temperature', 'api_base'
+                   Takes precedence over individual parameters
 
         Returns:
             Python code string implementing the subagent node
         """
+        # Extract config values if provided
+        if config:
+            llm_model = config.get("model", llm_model)
+        
         node_name = agent_name.lower().replace(" ", "_").replace("-", "_")
 
         tools_code = ""
         if include_tools:
             tools_code = """
     # Example: Bind tools to this agent
-    # from langchain_community.tools import DuckDuckGoSearchRun
-    # tools = [DuckDuckGoSearchRun()]
-    # llm_with_tools = llm.bind_tools(tools)"""
+    from langchain_community.tools import DuckDuckGoSearchRun
+    tools = [DuckDuckGoSearchRun()]
+    llm_with_tools = llm.bind_tools(tools)"""
 
         return f'''def {node_name}_node(state: WorkflowState) -> WorkflowState:
     """Subagent: {agent_name}.

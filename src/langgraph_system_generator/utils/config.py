@@ -43,7 +43,7 @@ class Settings(BaseSettings):
     )
 
     default_model: str = Field(
-        default="gpt-5-mini",
+        default="gpt-4o-mini",
         description="Primary model identifier used for generation.",
     )
     max_repair_attempts: int = Field(

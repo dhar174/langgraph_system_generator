@@ -17,7 +17,7 @@ Example Usage:
     >>> graph_code = CritiqueLoopPattern.generate_graph_code(max_revisions=3)
 """
 
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 
 class CritiqueLoopPattern:
@@ -70,17 +70,24 @@ class WorkflowState(MessagesState):
     @staticmethod
     def generate_generation_node_code(
         task_description: str = "Generate initial output",
-        llm_model: str = "gpt-5-mini",
+        llm_model: str = "gpt-4o-mini",
+        config: Optional[Dict[str, Any]] = None,
     ) -> str:
         """Generate code for initial generation node.
 
         Args:
             task_description: Description of what to generate
             llm_model: LLM model to use
+            config: Optional config dict with keys like 'model', 'temperature', 'api_base'
+                   Takes precedence over individual parameters
 
         Returns:
             Python code string implementing the generation node
         """
+        # Extract config values if provided
+        if config:
+            llm_model = config.get("model", llm_model)
+        
         return f'''def generate_node(state: WorkflowState) -> WorkflowState:
     """Generate initial output or first draft.
     
@@ -117,8 +124,9 @@ Create high-quality output that is clear, accurate, and well-structured.""")
     @staticmethod
     def generate_critique_node_code(
         criteria: Optional[List[str]] = None,
-        llm_model: str = "gpt-5-mini",
+        llm_model: str = "gpt-4o-mini",
         use_structured_output: bool = True,
+        config: Optional[Dict[str, Any]] = None,
     ) -> str:
         """Generate code for critique/review node.
 
@@ -126,10 +134,16 @@ Create high-quality output that is clear, accurate, and well-structured.""")
             criteria: Optional list of quality criteria to evaluate
             llm_model: LLM model to use
             use_structured_output: Whether to use structured output
+            config: Optional config dict with keys like 'model', 'temperature', 'api_base'
+                   Takes precedence over individual parameters
 
         Returns:
             Python code string implementing the critique node
         """
+        # Extract config values if provided
+        if config:
+            llm_model = config.get("model", llm_model)
+        
         if criteria is None:
             criteria = [
                 "Accuracy and correctness",
@@ -258,15 +272,24 @@ Format: SCORE|APPROVED or NEEDS_REVISION|feedback""")
     }}'''
 
     @staticmethod
-    def generate_revise_node_code(llm_model: str = "gpt-5-mini") -> str:
+    def generate_revise_node_code(
+        llm_model: str = "gpt-4o-mini", 
+        config: Optional[Dict[str, Any]] = None
+    ) -> str:
         """Generate code for revision node.
 
         Args:
             llm_model: LLM model to use
+            config: Optional config dict with keys like 'model', 'temperature', 'api_base'
+                   Takes precedence over individual parameters
 
         Returns:
             Python code string implementing the revision node
         """
+        # Extract config values if provided
+        if config:
+            llm_model = config.get("model", llm_model)
+        
         return f'''def revise_node(state: WorkflowState) -> WorkflowState:
     """Revise the draft based on critique feedback.
     

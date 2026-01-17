@@ -83,7 +83,7 @@ See Also:
     - examples/router_pattern_example.py: Complete working examples
 """
 
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 
 class RouterPattern:
@@ -132,8 +132,9 @@ class WorkflowState(MessagesState):
     @staticmethod
     def generate_router_node_code(
         routes: List[str],
-        llm_model: str = "gpt-5-mini",
+        llm_model: str = "gpt-4o-mini",
         use_structured_output: bool = True,
+        config: Optional[Dict[str, Any]] = None,
     ) -> str:
         """Generate router node implementation code.
 
@@ -141,10 +142,16 @@ class WorkflowState(MessagesState):
             routes: List of available route names
             llm_model: LLM model to use for classification
             use_structured_output: Whether to use structured output for routing
+            config: Optional config dict with keys like 'model', 'temperature', 'api_base'
+                   Takes precedence over individual parameters
 
         Returns:
             Python code string implementing the router node
         """
+        # Extract config values if provided
+        if config:
+            llm_model = config.get("model", llm_model)
+        
         routes_str = ", ".join([f'"{r}"' for r in routes]) if routes else '"default"'
         routes_list_str = "\n".join(
             [f"- {route}: Handle {route}-related requests" for route in routes]
@@ -235,7 +242,10 @@ Respond with ONLY the route name.""")
 
     @staticmethod
     def generate_route_node_code(
-        route_name: str, route_purpose: str, llm_model: str = "gpt-5-mini"
+        route_name: str, 
+        route_purpose: str, 
+        llm_model: str = "gpt-4o-mini",
+        config: Optional[Dict[str, Any]] = None,
     ) -> str:
         """Generate code for a specific route handler node.
 
@@ -243,10 +253,16 @@ Respond with ONLY the route name.""")
             route_name: Name of the route/agent
             route_purpose: Description of what this route handles
             llm_model: LLM model to use
+            config: Optional config dict with keys like 'model', 'temperature', 'api_base'
+                   Takes precedence over individual parameters
 
         Returns:
             Python code string implementing the route node
         """
+        # Extract config values if provided
+        if config:
+            llm_model = config.get("model", llm_model)
+        
         node_name = route_name.lower().replace(" ", "_").replace("-", "_")
 
         return f'''def {node_name}_node(state: WorkflowState) -> WorkflowState:
