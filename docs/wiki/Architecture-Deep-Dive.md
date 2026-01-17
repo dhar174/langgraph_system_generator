@@ -542,7 +542,7 @@ Every generation produces a `manifest.json`:
   "mode": "stub",
   "architecture": "router",
   "patterns": ["router"],
-  "timestamp": "2024-01-17T18:00:00Z",
+  "timestamp": "YYYY-MM-DDTHH:MM:SSZ",
   "artifacts": {
     "notebook": "./notebook.ipynb",
     "html": "./notebook.html",
