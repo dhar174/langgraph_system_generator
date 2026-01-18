@@ -13,7 +13,18 @@ import nbformat
 
 # Base output directory for all notebook exports. This mirrors the API server's
 # restriction and ensures exporters cannot write outside the configured root.
-_BASE_OUTPUT = Path(os.environ.get("LNF_OUTPUT_BASE", ".")).resolve()
+_safe_root = Path.cwd().resolve()
+_env_base = os.environ.get("LNF_OUTPUT_BASE")
+if _env_base:
+    # Interpret environment override as a subdirectory of the current working directory.
+    candidate_base = (_safe_root / _env_base).resolve()
+    if candidate_base.is_relative_to(_safe_root):
+        _BASE_OUTPUT = candidate_base
+    else:
+        # Fall back to the safe root if the override would escape the allowed root.
+        _BASE_OUTPUT = _safe_root
+else:
+    _BASE_OUTPUT = _safe_root
 
 
 def _safe_output_path(path: str | os.PathLike[str]) -> Path:
