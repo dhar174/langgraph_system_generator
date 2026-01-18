@@ -14,14 +14,21 @@ import nbformat
 # Base output directory for all notebook exports. This mirrors the API server's
 # restriction and ensures exporters cannot write outside the configured root.
 _safe_root = Path.cwd().resolve()
-_env_base = os.environ.get("LNF_OUTPUT_BASE")
-if _env_base:
+_env_base_raw = os.environ.get("LNF_OUTPUT_BASE")
+if _env_base_raw:
     # Interpret environment override as a subdirectory of the current working directory.
-    candidate_base = (_safe_root / _env_base).resolve()
-    if candidate_base.is_relative_to(_safe_root):
-        _BASE_OUTPUT = candidate_base
+    # Only relative paths are allowed here; absolute values are ignored and we fall back
+    # to the safe root to avoid ambiguous behavior.
+    _env_base = Path(_env_base_raw)
+    if not _env_base.is_absolute():
+        candidate_base = (_safe_root / _env_base).resolve()
+        if candidate_base.is_relative_to(_safe_root):
+            _BASE_OUTPUT = candidate_base
+        else:
+            # Fall back to the safe root if the override would escape the allowed root.
+            _BASE_OUTPUT = _safe_root
     else:
-        # Fall back to the safe root if the override would escape the allowed root.
+        # Absolute LNF_OUTPUT_BASE values are not supported; use the safe root instead.
         _BASE_OUTPUT = _safe_root
 else:
     _BASE_OUTPUT = _safe_root
@@ -33,11 +40,20 @@ def _safe_output_path(path: str | os.PathLike[str]) -> Path:
     This provides a defense-in-depth guard so that exporters cannot be used to
     write files outside of the configured root directory, even when called
     directly from external code.
+
+    Note:
+        The safety check is applied to the parent directory of the requested
+        path (``target.parent``). The target file itself must therefore reside
+        within ``_BASE_OUTPUT``; attempting to use the base directory itself as
+        the output *file* path is not supported and will raise a ``RuntimeError``.
     """
     target = Path(path).resolve()
     output_dir = target.parent
     if not output_dir.is_relative_to(_BASE_OUTPUT):
-        raise RuntimeError("Output directory must reside within the allowed base directory.")
+        raise RuntimeError(
+            f"Output directory must reside within the allowed base directory. "
+            f"Allowed base: {_BASE_OUTPUT!s}, attempted path: {target!s}"
+        )
     output_dir.mkdir(parents=True, exist_ok=True)
     return target
 
@@ -137,8 +153,13 @@ class NotebookExporter:
             raise FileNotFoundError(f"Notebook not found: {source}")
 
         # Ensure the source notebook resides within the allowed base directory.
-        if not source.resolve().is_relative_to(_BASE_OUTPUT):
-            raise RuntimeError("Notebook path must reside within the allowed base directory.")
+        resolved_source = source.resolve()
+        if not resolved_source.is_relative_to(_BASE_OUTPUT):
+            raise RuntimeError(
+                "Notebook path must reside within the allowed base directory. "
+                f"Resolved base directory: '{_BASE_OUTPUT}'. "
+                f"Resolved notebook path: '{resolved_source}'."
+            )
 
         # Resolve the output path and ensure it stays within the allowed base directory.
         target = _safe_output_path(output_path)
