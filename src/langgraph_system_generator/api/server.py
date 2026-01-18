@@ -137,8 +137,15 @@ async def generate_notebook(request: GenerationRequest) -> GenerationResponse:
     """Generate notebook artifacts via the generator pipeline."""
 
     output_path = Path(request.output_dir).resolve()
-    if not output_path.is_relative_to(_BASE_OUTPUT):
-        raise HTTPException(status_code=400, detail="output_dir must reside within the allowed base directory.")
+    base_output = _BASE_OUTPUT.resolve()
+    try:
+        # Ensure the requested output directory is within the allowed base directory
+        output_path.relative_to(base_output)
+    except ValueError:
+        raise HTTPException(
+            status_code=400,
+            detail="output_dir must reside within the allowed base directory.",
+        )
 
     try:
         artifacts: GenerationArtifacts = await generate_artifacts(
