@@ -15,55 +15,7 @@ from pydantic import BaseModel, Field
 from langgraph_system_generator.cli import GenerationArtifacts, GenerationMode, generate_artifacts
 
 app = FastAPI(title="LangGraph Notebook Foundry API", version="0.1.1")
-
-def _init_base_output() -> Path:
-    """Initialize and validate the canonical base output directory.
-
-    The base directory may be configured via the LNF_OUTPUT_BASE environment
-    variable, but is always constrained to reside within a trusted root
-    directory under the application path. The resulting path is resolved to an
-    absolute location and must be a directory (it will be created if missing).
-    """
-    # Trusted root for all output, anchored to the application directory.
-    app_root = Path(__file__).parent.resolve()
-    default_root = (app_root / "output").resolve()
-
-    raw_base = os.environ.get("LNF_OUTPUT_BASE")
-    if not raw_base:
-        base = default_root
-    else:
-        # Treat LNF_OUTPUT_BASE as a subdirectory under the trusted root and
-        # normalize the resulting path before validating containment.
-        candidate = (default_root / raw_base).expanduser().resolve()
-        try:
-            is_relative = candidate.is_relative_to(default_root)  # type: ignore[attr-defined]
-        except AttributeError:
-            try:
-                candidate.relative_to(default_root)
-                is_relative = True
-            except ValueError:
-                is_relative = False
-
-        if not is_relative and candidate != default_root:
-            raise RuntimeError(
-                "LNF_OUTPUT_BASE must resolve to a directory within the trusted "
-                f"output root: {default_root!s}"
-            )
-        base = candidate
-
-    # If the path exists and is a file, refuse to use it as a directory.
-    if base.exists() and not base.is_dir():
-        raise RuntimeError(
-            f"LNF_OUTPUT_BASE must be a directory, but points to a file: {base!s}"
-        )
-    base.mkdir(parents=True, exist_ok=True)
-    return base
-
-_BASE_OUTPUT = _init_base_output()
-
-# Canonical base directory for all generated artifacts and exports.
-# Other modules (CLI, notebook exporters) should import and reuse this constant
-# to ensure a consistent safety policy.
+_BASE_OUTPUT = Path(os.environ.get("LNF_OUTPUT_BASE", ".")).resolve()
 
 # Mount static files
 _STATIC_DIR = Path(__file__).parent / "static"
@@ -184,29 +136,9 @@ async def chrome_devtools_endpoint():
 async def generate_notebook(request: GenerationRequest) -> GenerationResponse:
     """Generate notebook artifacts via the generator pipeline."""
 
-    # Always interpret the requested output directory as a subdirectory of the
-    # canonical base output directory to prevent path traversal or escaping
-    # the allowed root. Normalize the resulting path before validating it.
-    requested_output = Path(request.output_dir)
-    output_path = (_BASE_OUTPUT / requested_output).resolve()
-
-    # Ensure the resolved output path is within the configured base directory.
-    try:
-        # Python 3.9+: Path.is_relative_to is the most direct way to check
-        is_relative = output_path.is_relative_to(_BASE_OUTPUT)  # type: ignore[attr-defined]
-    except AttributeError:
-        # Fallback for Python < 3.9 using relative_to
-        try:
-            output_path.relative_to(_BASE_OUTPUT)
-            is_relative = True
-        except ValueError:
-            is_relative = False
-
-    if not is_relative and output_path != _BASE_OUTPUT:
-        raise HTTPException(
-            status_code=400,
-            detail="output_dir must reside within the allowed base directory.",
-        )
+    output_path = Path(request.output_dir).resolve()
+    if not output_path.is_relative_to(_BASE_OUTPUT):
+        raise HTTPException(status_code=400, detail="output_dir must reside within the allowed base directory.")
 
     try:
         artifacts: GenerationArtifacts = await generate_artifacts(

@@ -10,59 +10,6 @@ from pathlib import Path
 from typing import Sequence
 
 import nbformat
-from langgraph_system_generator.api.server import _BASE_OUTPUT
-
-
-def _safe_output_path(path: str | os.PathLike[str]) -> Path:
-    """Resolve an output path and ensure it stays within the allowed base directory.
-
-    This provides a defense-in-depth guard so that exporters cannot be used to
-    write files outside of the configured root directory, even when called
-    directly from external code.
-
-    The provided *path* is always interpreted as a location within the
-    configured ``_BASE_OUTPUT`` directory. Absolute paths are not honored as
-    escape hatches; they are treated as relative names under ``_BASE_OUTPUT``.
-
-    Note:
-        The safety check is applied to the fully-resolved target path. The
-        target file itself must therefore reside within ``_BASE_OUTPUT``;
-        attempting to use the base directory itself as the output *file* path
-        is not supported and will raise a ``RuntimeError``.
-    """
-    # Resolve the canonical base directory once to avoid any ambiguity.
-    base_root = _BASE_OUTPUT.resolve()
-    base_str = str(base_root)
-
-    # Always interpret the requested path as a subpath of the base directory,
-    # then resolve to an absolute, normalized form.
-    requested = Path(path)
-    target = (base_root / requested).resolve()
-
-    # Disallow using the base directory itself as an output *file* path.
-    if target == base_root:
-        raise RuntimeError(
-            f"Output file path cannot be the base output directory itself: {base_root!s}"
-        )
-
-    target_str = str(target)
-    # Ensure the resolved target path is either exactly the base directory (already
-    # excluded above) or a descendant of it (shares the base directory prefix
-    # followed by a path separator). This prevents directory traversal or
-    # escaping ``_BASE_OUTPUT`` even if *path* contains ``..`` segments or is
-    # an absolute path.
-    if not (
-        target_str == base_str
-        or target_str.startswith(base_str + os.sep)
-    ):
-        raise RuntimeError(
-            f"Output path must reside within the allowed base directory. "
-    output_dir = target.parent
-            f"Allowed base: {base_root!s}, attempted path: {target!s}"
-        )
-
-    output_dir.mkdir(parents=True, exist_ok=True)
-    return target
 
 
 class NotebookExporter:
@@ -71,7 +18,8 @@ class NotebookExporter:
     def export_ipynb(self, notebook: nbformat.NotebookNode, path: str | Path) -> str:
         """Write a validated notebook to disk."""
         nbformat.validate(notebook)
-        target = _safe_output_path(path)
+        target = Path(path)
+        target.parent.mkdir(parents=True, exist_ok=True)
         with target.open("w", encoding="utf-8") as handle:
             nbformat.write(notebook, handle)
         return str(target)
@@ -88,7 +36,8 @@ class NotebookExporter:
         buffer = io.StringIO()
         nbformat.write(notebook, buffer)
 
-        target = _safe_output_path(zip_path)
+        target = Path(zip_path)
+        target.parent.mkdir(parents=True, exist_ok=True)
         with zipfile.ZipFile(target, "w", compression=zipfile.ZIP_DEFLATED) as zf:
             zf.writestr(notebook_name, buffer.getvalue())
             for extra in extra_files or []:
@@ -121,7 +70,8 @@ class NotebookExporter:
             ) from exc
 
         nbformat.validate(notebook)
-        target = _safe_output_path(output_path)
+        target = Path(output_path)
+        target.parent.mkdir(parents=True, exist_ok=True)
 
         exporter = HTMLExporter()
         (body, resources) = exporter.from_notebook_node(notebook)
@@ -159,17 +109,8 @@ class NotebookExporter:
         if not source.exists():
             raise FileNotFoundError(f"Notebook not found: {source}")
 
-        # Ensure the source notebook resides within the allowed base directory.
-        resolved_source = source.resolve()
-        if not resolved_source.is_relative_to(_BASE_OUTPUT):
-            raise RuntimeError(
-                "Notebook path must reside within the allowed base directory. "
-                f"Resolved base directory: '{_BASE_OUTPUT}'. "
-                f"Resolved notebook path: '{resolved_source}'."
-            )
-
-        # Resolve the output path and ensure it stays within the allowed base directory.
-        target = _safe_output_path(output_path)
+        target = Path(output_path)
+        target.parent.mkdir(parents=True, exist_ok=True)
 
         if method == "latex":
             # Use LaTeX-based PDF export (requires LaTeX installation)
