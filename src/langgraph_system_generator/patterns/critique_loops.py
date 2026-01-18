@@ -17,7 +17,10 @@ Example Usage:
     >>> graph_code = CritiqueLoopPattern.generate_graph_code(max_revisions=3)
 """
 
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Union
+
+from langgraph_system_generator.patterns.utils import build_llm_init
+from langgraph_system_generator.utils.config import ModelConfig
 
 
 class CritiqueLoopPattern:
@@ -70,17 +73,32 @@ class WorkflowState(MessagesState):
     @staticmethod
     def generate_generation_node_code(
         task_description: str = "Generate initial output",
-        llm_model: str = "gpt-5-mini",
+        model_config: Optional[Union[ModelConfig, dict]] = None,
     ) -> str:
         """Generate code for initial generation node.
 
         Args:
             task_description: Description of what to generate
-            llm_model: LLM model to use
+            model_config: ModelConfig instance or dict with model settings
 
         Returns:
             Python code string implementing the generation node
         """
+        # Handle model_config parameter
+        if model_config is None:
+            config = ModelConfig()
+        elif isinstance(model_config, dict):
+            config = ModelConfig.from_dict(model_config)
+        else:
+            config = model_config
+        
+        llm_model = config.model
+        temperature = config.temperature
+        api_base = config.api_base
+        max_tokens = config.max_tokens
+        
+        llm_init = build_llm_init(llm_model, temperature, api_base, max_tokens)
+        
         return f'''def generate_node(state: WorkflowState) -> WorkflowState:
     """Generate initial output or first draft.
     
@@ -93,7 +111,7 @@ class WorkflowState(MessagesState):
     revision_count = state.get("revision_count", 0)
     
     # Initialize LLM
-    llm = ChatOpenAI(model="{llm_model}", temperature=0.7)
+    llm = {llm_init}
     
     # Generation prompt
     system_prompt = SystemMessage(content="""You are an expert content generator.
@@ -117,19 +135,34 @@ Create high-quality output that is clear, accurate, and well-structured.""")
     @staticmethod
     def generate_critique_node_code(
         criteria: Optional[List[str]] = None,
-        llm_model: str = "gpt-5-mini",
+        model_config: Optional[Union[ModelConfig, dict]] = None,
         use_structured_output: bool = True,
     ) -> str:
         """Generate code for critique/review node.
 
         Args:
             criteria: Optional list of quality criteria to evaluate
-            llm_model: LLM model to use
+            model_config: ModelConfig instance or dict with model settings
             use_structured_output: Whether to use structured output
 
         Returns:
             Python code string implementing the critique node
         """
+        # Handle model_config parameter
+        if model_config is None:
+            config = ModelConfig()
+        elif isinstance(model_config, dict):
+            config = ModelConfig.from_dict(model_config)
+        else:
+            config = model_config
+        
+        llm_model = config.model
+        # Critique uses temperature=0 for consistent, deterministic evaluation
+        api_base = config.api_base
+        max_tokens = config.max_tokens
+        
+        llm_init = build_llm_init(llm_model, 0, api_base, max_tokens)
+        
         if criteria is None:
             criteria = [
                 "Accuracy and correctness",
@@ -179,7 +212,7 @@ def critique_node(state: WorkflowState) -> WorkflowState:
     criteria = state.get("criteria", [])
     
     # Initialize LLM with structured output
-    llm = ChatOpenAI(model="{llm_model}", temperature=0)
+    llm = {llm_init}
     structured_llm = llm.with_structured_output(CritiqueAssessment)
     
     # Critique prompt
@@ -232,7 +265,7 @@ def critique_node(state: WorkflowState) -> WorkflowState:
     current_draft = state.get("current_draft", "")
     messages = state["messages"]
     
-    llm = ChatOpenAI(model="{llm_model}", temperature=0)
+    llm = {llm_init}
     
     # Critique prompt
     system_prompt = SystemMessage(content=f"""You are an expert critic.
@@ -258,15 +291,30 @@ Format: SCORE|APPROVED or NEEDS_REVISION|feedback""")
     }}'''
 
     @staticmethod
-    def generate_revise_node_code(llm_model: str = "gpt-5-mini") -> str:
+    def generate_revise_node_code(model_config: Optional[Union[ModelConfig, dict]] = None) -> str:
         """Generate code for revision node.
 
         Args:
-            llm_model: LLM model to use
+            model_config: ModelConfig instance or dict with model settings
 
         Returns:
             Python code string implementing the revision node
         """
+        # Handle model_config parameter
+        if model_config is None:
+            config = ModelConfig()
+        elif isinstance(model_config, dict):
+            config = ModelConfig.from_dict(model_config)
+        else:
+            config = model_config
+        
+        llm_model = config.model
+        temperature = config.temperature
+        api_base = config.api_base
+        max_tokens = config.max_tokens
+        
+        llm_init = build_llm_init(llm_model, temperature, api_base, max_tokens)
+        
         return f'''def revise_node(state: WorkflowState) -> WorkflowState:
     """Revise the draft based on critique feedback.
     
@@ -282,7 +330,7 @@ Format: SCORE|APPROVED or NEEDS_REVISION|feedback""")
     messages = state["messages"]
     
     # Initialize LLM
-    llm = ChatOpenAI(model="{llm_model}", temperature=0.7)
+    llm = {llm_init}
     
     # Revision prompt
     system_prompt = SystemMessage(content="""You are an expert editor and reviser.
@@ -409,6 +457,7 @@ graph = workflow.compile(checkpointer=memory)"""
         task_description: str = "Write a technical article",
         criteria: Optional[List[str]] = None,
         max_revisions: int = 3,
+        model_config: Optional[Union[ModelConfig, dict]] = None,
     ) -> str:
         """Generate a complete, runnable critique-revise loop example.
 
@@ -416,6 +465,7 @@ graph = workflow.compile(checkpointer=memory)"""
             task_description: Description of generation task
             criteria: Optional list of quality criteria
             max_revisions: Maximum revision cycles
+            model_config: ModelConfig instance or dict with model settings
 
         Returns:
             Complete Python code for a critique-revise workflow
@@ -431,10 +481,10 @@ graph = workflow.compile(checkpointer=memory)"""
         # Generate all components
         state_code = CritiqueLoopPattern.generate_state_code()
         generate_code = CritiqueLoopPattern.generate_generation_node_code(
-            task_description
+            task_description, model_config=model_config
         )
-        critique_code = CritiqueLoopPattern.generate_critique_node_code(criteria)
-        revise_code = CritiqueLoopPattern.generate_revise_node_code()
+        critique_code = CritiqueLoopPattern.generate_critique_node_code(criteria, model_config=model_config)
+        revise_code = CritiqueLoopPattern.generate_revise_node_code(model_config=model_config)
         graph_code = CritiqueLoopPattern.generate_graph_code(max_revisions)
 
         return f'''"""

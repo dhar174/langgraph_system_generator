@@ -58,9 +58,11 @@ Example Usage:
     Generate individual components:
     
         >>> # Generate just the router node
+        >>> from langgraph_system_generator.utils.config import ModelConfig
+        >>> config = ModelConfig(model="gpt-5-mini", temperature=0.5)
         >>> router_code = RouterPattern.generate_router_node_code(
         ...     routes=["search", "analyze"],
-        ...     llm_model="gpt-4",
+        ...     model_config=config,
         ...     use_structured_output=True
         ... )
         >>>
@@ -68,7 +70,7 @@ Example Usage:
         >>> route_code = RouterPattern.generate_route_node_code(
         ...     route_name="search",
         ...     route_purpose="Perform web searches and retrieve information",
-        ...     llm_model="gpt-4-turbo"
+        ...     model_config=config
         ... )
 
 Integration with Generated Workflows:
@@ -83,7 +85,10 @@ See Also:
     - examples/router_pattern_example.py: Complete working examples
 """
 
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Union
+
+from langgraph_system_generator.patterns.utils import build_llm_init
+from langgraph_system_generator.utils.config import ModelConfig
 
 
 class RouterPattern:
@@ -132,19 +137,35 @@ class WorkflowState(MessagesState):
     @staticmethod
     def generate_router_node_code(
         routes: List[str],
-        llm_model: str = "gpt-5-mini",
+        model_config: Optional[Union[ModelConfig, dict]] = None,
         use_structured_output: bool = True,
     ) -> str:
         """Generate router node implementation code.
 
         Args:
             routes: List of available route names
-            llm_model: LLM model to use for classification
+            model_config: ModelConfig instance or dict with model settings
             use_structured_output: Whether to use structured output for routing
 
         Returns:
             Python code string implementing the router node
         """
+        # Handle model_config parameter
+        if model_config is None:
+            config = ModelConfig()
+        elif isinstance(model_config, dict):
+            config = ModelConfig.from_dict(model_config)
+        else:
+            config = model_config
+        
+        llm_model = config.model
+        # Router uses temperature=0 for deterministic classification
+        temperature = 0
+        api_base = config.api_base
+        max_tokens = config.max_tokens
+        
+        llm_init = build_llm_init(llm_model, temperature, api_base, max_tokens)
+        
         routes_str = ", ".join([f'"{r}"' for r in routes]) if routes else '"default"'
         routes_list_str = "\n".join(
             [f"- {route}: Handle {route}-related requests" for route in routes]
@@ -177,7 +198,7 @@ def router_node(state: WorkflowState) -> WorkflowState:
     last_message = messages[-1].content if messages else ""
     
     # Initialize LLM with structured output
-    llm = ChatOpenAI(model="{llm_model}", temperature=0)
+    llm = {llm_init}
     structured_llm = llm.with_structured_output(RouteDecision)
     
     # Classification prompt
@@ -208,7 +229,7 @@ def router_node(state: WorkflowState) -> WorkflowState:
     messages = state["messages"]
     last_message = messages[-1].content if messages else ""
     
-    llm = ChatOpenAI(model="{llm_model}", temperature=0)
+    llm = {llm_init}
     
     # Classification prompt
     system_prompt = SystemMessage(content=f"""You are a routing classifier.
@@ -235,18 +256,35 @@ Respond with ONLY the route name.""")
 
     @staticmethod
     def generate_route_node_code(
-        route_name: str, route_purpose: str, llm_model: str = "gpt-5-mini"
+        route_name: str,
+        route_purpose: str,
+        model_config: Optional[Union[ModelConfig, dict]] = None,
     ) -> str:
         """Generate code for a specific route handler node.
 
         Args:
             route_name: Name of the route/agent
             route_purpose: Description of what this route handles
-            llm_model: LLM model to use
+            model_config: ModelConfig instance or dict with model settings
 
         Returns:
             Python code string implementing the route node
         """
+        # Handle model_config parameter
+        if model_config is None:
+            config = ModelConfig()
+        elif isinstance(model_config, dict):
+            config = ModelConfig.from_dict(model_config)
+        else:
+            config = model_config
+        
+        llm_model = config.model
+        temperature = config.temperature
+        api_base = config.api_base
+        max_tokens = config.max_tokens
+        
+        llm_init = build_llm_init(llm_model, temperature, api_base, max_tokens)
+        
         node_name = route_name.lower().replace(" ", "_").replace("-", "_")
 
         return f'''def {node_name}_node(state: WorkflowState) -> WorkflowState:
@@ -260,7 +298,7 @@ Respond with ONLY the route name.""")
     messages = state["messages"]
     
     # Initialize specialized LLM for this route
-    llm = ChatOpenAI(model="{llm_model}", temperature=0.7)
+    llm = {llm_init}
     
     # System prompt for this specialist
     system_prompt = SystemMessage(content="""You are a {route_name} specialist.
@@ -376,13 +414,16 @@ graph = workflow.compile(checkpointer=memory)"""
 
     @staticmethod
     def generate_complete_example(
-        routes: List[str], route_purposes: Optional[Dict[str, str]] = None
+        routes: List[str],
+        route_purposes: Optional[Dict[str, str]] = None,
+        model_config: Optional[Union[ModelConfig, dict]] = None,
     ) -> str:
         """Generate a complete, runnable router pattern example.
 
         Args:
             routes: List of route names
             route_purposes: Optional dict mapping route names to their purposes
+            model_config: ModelConfig instance or dict with model settings
 
         Returns:
             Complete Python code for a router-based workflow
@@ -394,12 +435,13 @@ graph = workflow.compile(checkpointer=memory)"""
 
         # Generate all components
         state_code = RouterPattern.generate_state_code()
-        router_code = RouterPattern.generate_router_node_code(routes)
+        router_code = RouterPattern.generate_router_node_code(routes, model_config=model_config)
 
         route_nodes_code = "\n\n".join(
             [
                 RouterPattern.generate_route_node_code(
-                    route, route_purposes.get(route, f"Handle {route}-related tasks")
+                    route, route_purposes.get(route, f"Handle {route}-related tasks"),
+                    model_config=model_config
                 )
                 for route in routes
             ]

@@ -21,7 +21,10 @@ Example Usage:
     ... )
 """
 
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Union
+
+from langgraph_system_generator.patterns.utils import build_llm_init
+from langgraph_system_generator.utils.config import ModelConfig
 
 
 class SubagentsPattern:
@@ -71,7 +74,7 @@ class WorkflowState(MessagesState):
     def generate_supervisor_code(
         subagents: List[str],
         subagent_descriptions: Optional[Dict[str, str]] = None,
-        llm_model: str = "gpt-5-mini",
+        model_config: Optional[Union[ModelConfig, dict]] = None,
         use_structured_output: bool = True,
     ) -> str:
         """Generate supervisor node implementation code.
@@ -79,12 +82,27 @@ class WorkflowState(MessagesState):
         Args:
             subagents: List of subagent names
             subagent_descriptions: Optional dict mapping agent names to descriptions
-            llm_model: LLM model to use for supervisor decisions
+            model_config: ModelConfig instance or dict with model settings
             use_structured_output: Whether to use structured output
 
         Returns:
             Python code string implementing the supervisor node
         """
+        # Handle model_config parameter
+        if model_config is None:
+            config = ModelConfig()
+        elif isinstance(model_config, dict):
+            config = ModelConfig.from_dict(model_config)
+        else:
+            config = model_config
+        
+        llm_model = config.model
+        # Supervisor uses temperature=0 for deterministic routing decisions
+        api_base = config.api_base
+        max_tokens = config.max_tokens
+        
+        llm_init = build_llm_init(llm_model, 0, api_base, max_tokens)
+        
         if subagent_descriptions is None:
             subagent_descriptions = {
                 agent: f"{agent} specialist" for agent in subagents
@@ -130,7 +148,7 @@ def supervisor_node(state: WorkflowState) -> WorkflowState:
     task_results = state.get("task_results", {{}})
     
     # Initialize LLM with structured output
-    llm = ChatOpenAI(model="{llm_model}", temperature=0)
+    llm = {llm_init}
     structured_llm = llm.with_structured_output(SupervisorDecision)
     
     # Supervisor prompt
@@ -186,7 +204,7 @@ def supervisor_node(state: WorkflowState) -> WorkflowState:
     messages = state["messages"]
     task_results = state.get("task_results", {{}})
     
-    llm = ChatOpenAI(model="{llm_model}", temperature=0)
+    llm = {llm_init}
     
     # Supervisor prompt
     system_prompt = SystemMessage(content=f"""You are a supervisor coordinating agents.
@@ -216,7 +234,7 @@ Example: researcher|Find information about X""")
     def generate_subagent_code(
         agent_name: str,
         agent_description: str,
-        llm_model: str = "gpt-5-mini",
+        model_config: Optional[Union[ModelConfig, dict]] = None,
         include_tools: bool = False,
     ) -> str:
         """Generate code for a specific subagent node.
@@ -224,24 +242,37 @@ Example: researcher|Find information about X""")
         Args:
             agent_name: Name of the subagent
             agent_description: Description of agent's role and capabilities
-            llm_model: LLM model to use
-            include_tools: Whether to include tool binding example
+            model_config: ModelConfig instance or dict with model settings
+            include_tools: Whether to include tool binding code
 
         Returns:
             Python code string implementing the subagent node
         """
+        # Handle model_config parameter
+        if model_config is None:
+            config = ModelConfig()
+        elif isinstance(model_config, dict):
+            config = ModelConfig.from_dict(model_config)
+        else:
+            config = model_config
+        
+        llm_model = config.model
+        temperature = config.temperature
+        api_base = config.api_base
+        max_tokens = config.max_tokens
+        
+        llm_init = build_llm_init(llm_model, temperature, api_base, max_tokens)
+        
         node_name = agent_name.lower().replace(" ", "_").replace("-", "_")
 
         tools_code = ""
         llm_var = "llm"
         if include_tools:
             tools_code = """
-    # Example: Bind tools to this agent
-    # from langchain_community.tools import DuckDuckGoSearchRun
-    # tools = [DuckDuckGoSearchRun()]
-    tools = []  # TODO: replace with actual tool instances
+    # Bind tools to this agent
+    from langchain_community.tools import DuckDuckGoSearchRun
+    tools = [DuckDuckGoSearchRun()]
     llm_with_tools = llm.bind_tools(tools)"""
-            llm_var = "llm_with_tools"
 
         return f'''def {node_name}_node(state: WorkflowState) -> WorkflowState:
     """Subagent: {agent_name}.
@@ -256,7 +287,7 @@ Example: researcher|Find information about X""")
     task_results = state.get("task_results", {{}})
     
     # Initialize specialized LLM for this agent
-    llm = ChatOpenAI(model="{llm_model}", temperature=0.7){tools_code}
+    llm = {llm_init}{tools_code}
     
     # Agent-specific system prompt
     system_prompt = SystemMessage(content="""You are {agent_name}.
@@ -351,13 +382,16 @@ graph = workflow.compile(checkpointer=memory)'''
 
     @staticmethod
     def generate_complete_example(
-        subagents: List[str], subagent_descriptions: Optional[Dict[str, str]] = None
+        subagents: List[str],
+        subagent_descriptions: Optional[Dict[str, str]] = None,
+        model_config: Optional[Union[ModelConfig, dict]] = None,
     ) -> str:
         """Generate a complete, runnable subagents pattern example.
 
         Args:
             subagents: List of subagent names
             subagent_descriptions: Optional dict mapping agent names to descriptions
+            model_config: ModelConfig instance or dict with model settings
 
         Returns:
             Complete Python code for a supervisor-subagent workflow
@@ -370,13 +404,14 @@ graph = workflow.compile(checkpointer=memory)'''
         # Generate all components
         state_code = SubagentsPattern.generate_state_code()
         supervisor_code = SubagentsPattern.generate_supervisor_code(
-            subagents, subagent_descriptions
+            subagents, subagent_descriptions, model_config=model_config
         )
 
         subagent_nodes_code = "\n\n".join(
             [
                 SubagentsPattern.generate_subagent_code(
-                    agent, subagent_descriptions.get(agent, f"{agent} specialist")
+                    agent, subagent_descriptions.get(agent, f"{agent} specialist"),
+                    model_config=model_config
                 )
                 for agent in subagents
             ]
