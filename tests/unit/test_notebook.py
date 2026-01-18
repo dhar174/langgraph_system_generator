@@ -331,7 +331,6 @@ def test_manuscript_pdf_without_title_page(tmp_path: Path):
 
 def test_safe_output_path_rejects_parent_directory_traversal(tmp_path: Path, monkeypatch):
     """Test that paths with .. are rejected."""
-    import os
     from langgraph_system_generator.notebook.exporters import NotebookExporter
     
     # Set the base output to tmp_path
@@ -358,7 +357,6 @@ def test_safe_output_path_rejects_parent_directory_traversal(tmp_path: Path, mon
 
 def test_safe_output_path_rejects_absolute_paths_outside_base(tmp_path: Path, monkeypatch):
     """Test that absolute paths outside the base directory are rejected."""
-    import os
     from langgraph_system_generator.notebook.exporters import NotebookExporter
     
     # Set the base output to tmp_path
@@ -385,7 +383,6 @@ def test_safe_output_path_rejects_absolute_paths_outside_base(tmp_path: Path, mo
 
 def test_base_output_env_var_enforced(tmp_path: Path, monkeypatch):
     """Test that LNF_OUTPUT_BASE environment variable is properly enforced."""
-    import os
     
     # Create a subdirectory within tmp_path as the allowed base
     allowed_base = tmp_path / "allowed"
@@ -418,7 +415,6 @@ def test_base_output_env_var_enforced(tmp_path: Path, monkeypatch):
 
 def test_absolute_env_var_is_ignored(tmp_path: Path, monkeypatch):
     """Test that absolute paths in LNF_OUTPUT_BASE are ignored and fall back to safe root."""
-    import os
     
     # Try to set an absolute path as LNF_OUTPUT_BASE
     monkeypatch.setenv("LNF_OUTPUT_BASE", "/tmp/absolute_path")
