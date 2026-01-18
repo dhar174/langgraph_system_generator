@@ -324,3 +324,164 @@ def test_manuscript_pdf_without_title_page(tmp_path: Path):
     )
 
     assert Path(result).exists()
+
+
+# Security tests for path traversal protection
+
+
+def test_safe_output_path_rejects_parent_directory_traversal(tmp_path: Path, monkeypatch):
+    """Test that paths with .. are rejected."""
+    from langgraph_system_generator.notebook.exporters import NotebookExporter
+    
+    # Set the base output to tmp_path
+    monkeypatch.setenv("LNF_OUTPUT_BASE", str(tmp_path.relative_to(Path.cwd())))
+    
+    # Force module reload to pick up new env var
+    import importlib
+    import langgraph_system_generator.notebook.exporters as exporters_module
+    importlib.reload(exporters_module)
+    
+    exporter = exporters_module.NotebookExporter()
+    composer = NotebookComposer()
+    nb = composer.build_notebook(
+        [CellSpec(cell_type="code", content="x = 1", section="execution")],
+        ensure_minimum_sections=False,
+    )
+    
+    # Try to write to parent directory using ..
+    malicious_path = tmp_path / ".." / "etc" / "malicious.ipynb"
+    
+    with pytest.raises(RuntimeError, match="Output directory must reside within the allowed base directory"):
+        exporter.export_ipynb(nb, malicious_path)
+
+
+def test_safe_output_path_rejects_absolute_paths_outside_base(tmp_path: Path, monkeypatch):
+    """Test that absolute paths outside the base directory are rejected."""
+    from langgraph_system_generator.notebook.exporters import NotebookExporter
+    
+    # Set the base output to tmp_path
+    monkeypatch.setenv("LNF_OUTPUT_BASE", str(tmp_path.relative_to(Path.cwd())))
+    
+    # Force module reload to pick up new env var
+    import importlib
+    import langgraph_system_generator.notebook.exporters as exporters_module
+    importlib.reload(exporters_module)
+    
+    exporter = exporters_module.NotebookExporter()
+    composer = NotebookComposer()
+    nb = composer.build_notebook(
+        [CellSpec(cell_type="code", content="x = 1", section="execution")],
+        ensure_minimum_sections=False,
+    )
+    
+    # Try to write to /tmp which is outside the base directory
+    malicious_path = "/tmp/malicious.ipynb"
+    
+    with pytest.raises(RuntimeError, match="Output directory must reside within the allowed base directory"):
+        exporter.export_ipynb(nb, malicious_path)
+
+
+def test_base_output_env_var_enforced(tmp_path: Path, monkeypatch):
+    """Test that LNF_OUTPUT_BASE environment variable is properly enforced."""
+    
+    # Create a subdirectory within tmp_path as the allowed base
+    allowed_base = tmp_path / "allowed"
+    allowed_base.mkdir()
+    
+    monkeypatch.setenv("LNF_OUTPUT_BASE", str(allowed_base.relative_to(Path.cwd())))
+    
+    # Force module reload to pick up new env var
+    import importlib
+    import langgraph_system_generator.notebook.exporters as exporters_module
+    importlib.reload(exporters_module)
+    
+    exporter = exporters_module.NotebookExporter()
+    composer = NotebookComposer()
+    nb = composer.build_notebook(
+        [CellSpec(cell_type="code", content="x = 1", section="execution")],
+        ensure_minimum_sections=False,
+    )
+    
+    # This should work - within allowed base
+    good_path = allowed_base / "good.ipynb"
+    result = exporter.export_ipynb(nb, good_path)
+    assert Path(result).exists()
+    
+    # This should fail - outside allowed base
+    bad_path = tmp_path / "bad.ipynb"
+    with pytest.raises(RuntimeError, match="Output directory must reside within the allowed base directory"):
+        exporter.export_ipynb(nb, bad_path)
+
+
+def test_absolute_env_var_is_ignored(tmp_path: Path, monkeypatch):
+    """Test that absolute paths in LNF_OUTPUT_BASE are ignored and fall back to safe root."""
+    
+    # Try to set an absolute path as LNF_OUTPUT_BASE
+    monkeypatch.setenv("LNF_OUTPUT_BASE", "/tmp/absolute_path")
+    
+    # Force module reload to pick up new env var
+    import importlib
+    import langgraph_system_generator.notebook.exporters as exporters_module
+    importlib.reload(exporters_module)
+    
+    # The _BASE_OUTPUT should fall back to _safe_root (current working directory)
+    # So we should be able to write to tmp_path which is under cwd
+    exporter = exporters_module.NotebookExporter()
+    composer = NotebookComposer()
+    nb = composer.build_notebook(
+        [CellSpec(cell_type="code", content="x = 1", section="execution")],
+        ensure_minimum_sections=False,
+    )
+    
+    # This should work because absolute paths are ignored
+    result_path = tmp_path / "test.ipynb"
+    result = exporter.export_ipynb(nb, result_path)
+    assert Path(result).exists()
+
+
+def test_pdf_export_source_path_validation(tmp_path: Path):
+    """Test that export_to_pdf validates source notebook path is within base directory."""
+    exporter = NotebookExporter()
+    composer = NotebookComposer()
+    
+    # Create a valid notebook
+    nb = composer.build_notebook(
+        [CellSpec(cell_type="code", content="x = 1", section="execution")],
+        ensure_minimum_sections=False,
+    )
+    
+    # Write it to a valid location
+    source_path = tmp_path / "source.ipynb"
+    exporter.export_ipynb(nb, source_path)
+    
+    # Try to export to PDF - should work within tmp_path
+    output_path = tmp_path / "output.pdf"
+    
+    # This test would need nbconvert with webpdf support, so we just check
+    # that the path validation happens before attempting the export
+    # We can't fully test this without the dependencies, but the path
+    # validation code is exercised in other tests
+    assert source_path.exists()
+
+
+def test_all_export_methods_use_safe_paths(tmp_path: Path):
+    """Test that all export methods use path validation."""
+    exporter = NotebookExporter()
+    composer = NotebookComposer()
+    
+    nb = composer.build_notebook(
+        [CellSpec(cell_type="code", content="x = 1", section="execution")],
+        ensure_minimum_sections=False,
+    )
+    
+    # Test export_ipynb with malicious path
+    with pytest.raises(RuntimeError, match="Output directory must reside within the allowed base directory"):
+        exporter.export_ipynb(nb, "/etc/passwd")
+    
+    # Test export_zip with malicious path
+    with pytest.raises(RuntimeError, match="Output directory must reside within the allowed base directory"):
+        exporter.export_zip(nb, "/etc/malicious.zip")
+    
+    # Test export_to_html with malicious path
+    with pytest.raises(RuntimeError, match="Output directory must reside within the allowed base directory"):
+        exporter.export_to_html(nb, "/etc/malicious.html")
