@@ -239,6 +239,7 @@ Example: researcher|Find information about X""")
     # Example: Bind tools to this agent
     # from langchain_community.tools import DuckDuckGoSearchRun
     # tools = [DuckDuckGoSearchRun()]
+    tools = []  # TODO: replace with actual tool instances
     llm_with_tools = llm.bind_tools(tools)"""
             llm_var = "llm_with_tools"
 
