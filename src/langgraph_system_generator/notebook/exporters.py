@@ -168,7 +168,7 @@ class NotebookExporter:
 
                 if expected_output.exists():
                     if expected_output != target:
-                        # Rename if necessary (though if target was .pdf, expected_output should match)
+                    raise RuntimeError(f"PDF export finished but file not found at {expected_output}")
                         if target.exists():
                             target.unlink()
                         expected_output.rename(target)
