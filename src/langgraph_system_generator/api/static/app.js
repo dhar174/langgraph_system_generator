@@ -1,10 +1,10 @@
 // DOM elements
 const form = document.getElementById('generateForm');
 const promptTextarea = document.getElementById('prompt');
-const charCount = document.getElementById('charCount');
+let charCount = document.getElementById('charCount');
 const generateBtn = document.getElementById('generateBtn');
-const btnText = generateBtn.querySelector('.btn-text');
-const spinner = generateBtn.querySelector('.spinner');
+const btnText = generateBtn?.querySelector('.btn-text');
+const spinner = generateBtn?.querySelector('.spinner');
 const resultCard = document.getElementById('resultCard');
 const resultContent = document.getElementById('resultContent');
 const errorCard = document.getElementById('errorCard');
@@ -17,6 +17,11 @@ const progressFill = document.getElementById('progressFill');
 const progressText = document.getElementById('progressText');
 const progressPercentage = document.getElementById('progressPercentage');
 const progressSteps = document.getElementById('progressSteps');
+
+// Validation constants
+const CHAR_COUNT_MIN = 10;
+const CHAR_COUNT_MAX = 5000;
+const CHAR_COUNT_WARNING = 4500;
 
 // Advanced options
 const advancedToggle = document.getElementById('advancedToggle');
@@ -74,6 +79,20 @@ modelSelect.addEventListener('change', (e) => {
     }
 });
 
+// Sync HTML attributes with JavaScript constants on page load
+if (promptTextarea) {
+    promptTextarea.setAttribute('minlength', CHAR_COUNT_MIN);
+    promptTextarea.setAttribute('maxlength', CHAR_COUNT_MAX);
+}
+if (charCount) {
+    const charCountMessage = document.getElementById('charCountMessage');
+    if (charCountMessage) {
+        charCountMessage.innerHTML = `<span id="charCount">0</span> / ${CHAR_COUNT_MAX} characters`;
+        // Re-query charCount element after innerHTML replacement
+        charCount = document.getElementById('charCount');
+    }
+}
+
 // Helper to count Unicode characters (code points) for accurate counting
 function getCharacterCount(text) {
     return Array.from(text || '').length;
@@ -84,12 +103,122 @@ promptTextarea.addEventListener('input', () => {
     const count = getCharacterCount(promptTextarea.value);
     charCount.textContent = count;
     
-    if (count > 5000) {
+    // Visual feedback for character count
+    if (count > CHAR_COUNT_MAX) {
         charCount.style.color = 'var(--error-color)';
+        charCount.style.fontWeight = 'bold';
+        promptTextarea.classList.add('invalid');
+        promptTextarea.classList.remove('valid');
+    } else if (count > CHAR_COUNT_WARNING) {
+        charCount.style.color = 'var(--warning-color)';
+        charCount.style.fontWeight = 'bold';
+        promptTextarea.classList.remove('invalid', 'valid');
+    } else if (count >= CHAR_COUNT_MIN) {
+        charCount.style.color = 'var(--text-muted)';
+        charCount.style.fontWeight = 'normal';
+        promptTextarea.classList.add('valid');
+        promptTextarea.classList.remove('invalid');
     } else {
         charCount.style.color = 'var(--text-muted)';
+        charCount.style.fontWeight = 'normal';
+        promptTextarea.classList.remove('invalid', 'valid');
     }
 });
+
+// Output directory validation
+const outputDirInput = document.getElementById('outputDir');
+outputDirInput?.addEventListener('input', (e) => {
+    const value = e.target.value.trim();
+    
+    // Basic path validation
+    if (value.length === 0) {
+        outputDirInput.classList.remove('valid', 'invalid');
+        return;
+    }
+    
+    // Check for invalid characters and common Windows path restrictions.
+    // This is a conservative check to avoid obviously invalid or problematic paths;
+    // the server should still perform authoritative validation.
+    // Note: Do not treat ":" as universally invalid; it is allowed on Unix/Mac filesystems.
+    const invalidChars = /[<>"|?*\x00-\x1F]/;
+    // Windows reserved names are case-insensitive and forbidden at any directory level.
+    // Regex checks each path component separately via split. Filter empty parts from split.
+    const windowsReservedNames = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(\..*)?$/i;
+    const hasReservedName = value
+        .split(/[\\/]/)
+        .filter((part) => part.length > 0)
+        .some((part) => windowsReservedNames.test(part));
+    
+    // Robust platform detection (using modern API with fallbacks)
+    let isWindowsPlatform = false;
+    if (typeof navigator !== 'undefined') {
+        const uaDataPlatform =
+            navigator.userAgentData && navigator.userAgentData.platform;
+        const legacyPlatform = navigator.platform;
+        const ua = navigator.userAgent;
+        
+        // Prefer explicit platform information when available; only fall back to userAgent
+        // if neither userAgentData.platform nor navigator.platform provide a usable value.
+        const primaryPlatform =
+            (typeof uaDataPlatform === 'string' && uaDataPlatform.trim() !== '')
+                ? uaDataPlatform
+                : (typeof legacyPlatform === 'string' && legacyPlatform.trim() !== '')
+                    ? legacyPlatform
+                    : null;
+
+        if (typeof primaryPlatform === 'string') {
+            isWindowsPlatform = primaryPlatform.toLowerCase().includes('win');
+        } else if (typeof ua === 'string') {
+            const uaTrimmed = ua.trim();
+            if (uaTrimmed.length > 0) {
+                // Note: userAgent is used as a final fallback compatibility signal for Windows detection
+                // when explicit platform information is unavailable.
+                isWindowsPlatform = uaTrimmed.toLowerCase().includes('win');
+            }
+        }
+    }
+    
+    // Disallow colons that are not used as a drive letter designator (e.g. "C:\" or "C:file.txt")
+    // on Windows platforms.
+    let hasInvalidColonUsage = false;
+    if (isWindowsPlatform) {
+        const firstColonIndex = value.indexOf(':');
+        if (firstColonIndex !== -1) {
+            // Accept a single leading "<letter>:" as a valid drive designator.
+            const hasDriveLetterPrefix =
+                firstColonIndex === 1 && /^[a-zA-Z]$/.test(value[0]);
+            const hasExtraColon = value.indexOf(':', firstColonIndex + 1) !== -1;
+            hasInvalidColonUsage = !hasDriveLetterPrefix || hasExtraColon;
+        }
+    }
+
+    // Determine validation result and provide user feedback
+    let validationMessage = '';
+    if (invalidChars.test(value)) {
+        validationMessage = 'Path contains invalid characters';
+    } else if (hasReservedName) {
+        validationMessage = 'Path contains reserved Windows filename';
+    } else if (hasInvalidColonUsage) {
+        validationMessage = 'Invalid colon placement in path';
+    }
+    
+    if (validationMessage) {
+        outputDirInput.classList.add('invalid');
+        outputDirInput.classList.remove('valid');
+        outputDirInput.setAttribute('aria-invalid', 'true');
+        outputDirInput.setAttribute('title', validationMessage);
+    } else {
+        outputDirInput.classList.add('valid');
+        outputDirInput.classList.remove('invalid');
+        outputDirInput.setAttribute('aria-invalid', 'false');
+        outputDirInput.removeAttribute('title');
+    }
+});
+
+// Trigger initial validation for default or pre-filled value
+if (outputDirInput && outputDirInput.value && outputDirInput.value.length > 0) {
+    outputDirInput.dispatchEvent(new Event('input'));
+}
 
 // Check health status
 async function checkHealth() {
@@ -524,13 +653,21 @@ form.addEventListener('submit', async (e) => {
     if (documentLoader) data.document_loader = documentLoader;
     
     // Validate prompt length (using Unicode code points)
-    if (getCharacterCount(data.prompt) > 5000) {
-        showError('Prompt exceeds maximum length of 5000 characters.');
+    if (getCharacterCount(data.prompt) > CHAR_COUNT_MAX) {
+        showError(`Prompt exceeds maximum length of ${CHAR_COUNT_MAX} characters.`);
         return;
     }
     
-    if (getCharacterCount(data.prompt.trim()) === 0) {
-        showError('Please enter a prompt describing your system.');
+    if (getCharacterCount(data.prompt.trim()) < CHAR_COUNT_MIN) {
+        showError(`Please enter a prompt of at least ${CHAR_COUNT_MIN} characters.`);
+        return;
+    }
+    
+    // Prevent submission if the output directory path is currently invalid
+    if (outputDirInput && outputDirInput.classList.contains('invalid')) {
+        const errorMsg = outputDirInput.getAttribute('title') || 'Invalid output directory path';
+        showError(`Please fix the output directory: ${errorMsg}`);
+        outputDirInput.focus();
         return;
     }
     
