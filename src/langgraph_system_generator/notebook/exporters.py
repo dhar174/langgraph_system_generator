@@ -11,6 +11,10 @@ from typing import Sequence
 
 import nbformat
 
+# Base output directory for all notebook exports. This mirrors the API server's
+# restriction and ensures exporters cannot write outside the configured root.
+_BASE_OUTPUT = Path(os.environ.get("LNF_OUTPUT_BASE", ".")).resolve()
+
 
 class NotebookExporter:
     """Exports nbformat notebooks to files or bundles."""
@@ -109,8 +113,12 @@ class NotebookExporter:
         if not source.exists():
             raise FileNotFoundError(f"Notebook not found: {source}")
 
-        target = Path(output_path)
-        target.parent.mkdir(parents=True, exist_ok=True)
+        # Resolve the output path and ensure it stays within the allowed base directory.
+        target = Path(output_path).resolve()
+        output_dir = target.parent
+        if not output_dir.is_relative_to(_BASE_OUTPUT):
+            raise RuntimeError("PDF output directory must reside within the allowed base directory.")
+        output_dir.mkdir(parents=True, exist_ok=True)
 
         if method == "latex":
             # Use LaTeX-based PDF export (requires LaTeX installation)
@@ -135,7 +143,6 @@ class NotebookExporter:
                 # If we pass --output /path/to/notebook.pdf, it might write to /path/to/notebook.pdf.pdf
 
                 # Let's try to let nbconvert determine the output filename by specifying output-dir and output base name
-                output_dir = target.parent
                 output_base = target.stem
 
                 # Check if target ends with .pdf
@@ -150,7 +157,7 @@ class NotebookExporter:
                         "--to",
                         "webpdf",
                         "--output-dir",
-                        str(output_dir.resolve()),
+                        str(output_dir),
                         "--output",
                         output_base,
                         str(source.resolve()),
