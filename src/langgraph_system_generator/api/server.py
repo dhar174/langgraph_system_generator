@@ -13,57 +13,9 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from langgraph_system_generator.cli import GenerationArtifacts, GenerationMode, generate_artifacts
+from langgraph_system_generator.constants import _BASE_OUTPUT
 
 app = FastAPI(title="LangGraph Notebook Foundry API", version="0.1.1")
-
-def _init_base_output() -> Path:
-    """Initialize and validate the canonical base output directory.
-
-    The base directory may be configured via the LNF_OUTPUT_BASE environment
-    variable, but is always constrained to reside within a trusted root
-    directory under the application path. The resulting path is resolved to an
-    absolute location and must be a directory (it will be created if missing).
-    """
-    # Trusted root for all output, anchored to the application directory.
-    app_root = Path(__file__).parent.resolve()
-    default_root = (app_root / "output").resolve()
-
-    raw_base = os.environ.get("LNF_OUTPUT_BASE")
-    if not raw_base:
-        base = default_root
-    else:
-        # Treat LNF_OUTPUT_BASE as a subdirectory under the trusted root and
-        # normalize the resulting path before validating containment.
-        candidate = (default_root / raw_base).expanduser().resolve()
-        try:
-            is_relative = candidate.is_relative_to(default_root)  # type: ignore[attr-defined]
-        except AttributeError:
-            try:
-                candidate.relative_to(default_root)
-                is_relative = True
-            except ValueError:
-                is_relative = False
-
-        if not is_relative and candidate != default_root:
-            raise RuntimeError(
-                "LNF_OUTPUT_BASE must resolve to a directory within the trusted "
-                f"output root: {default_root!s}"
-            )
-        base = candidate
-
-    # If the path exists and is a file, refuse to use it as a directory.
-    if base.exists() and not base.is_dir():
-        raise RuntimeError(
-            f"LNF_OUTPUT_BASE must be a directory, but points to a file: {base!s}"
-        )
-    base.mkdir(parents=True, exist_ok=True)
-    return base
-
-_BASE_OUTPUT = _init_base_output()
-
-# Canonical base directory for all generated artifacts and exports.
-# Other modules (CLI, notebook exporters) should import and reuse this constant
-# to ensure a consistent safety policy.
 
 # Mount static files
 _STATIC_DIR = Path(__file__).parent / "static"

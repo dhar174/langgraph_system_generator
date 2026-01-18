@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Sequence
 
 import nbformat
-from langgraph_system_generator.api.server import _BASE_OUTPUT
+from langgraph_system_generator.constants import _BASE_OUTPUT
 
 
 def _safe_output_path(path: str | os.PathLike[str]) -> Path:
@@ -57,10 +57,10 @@ def _safe_output_path(path: str | os.PathLike[str]) -> Path:
     ):
         raise RuntimeError(
             f"Output path must reside within the allowed base directory. "
-    output_dir = target.parent
             f"Allowed base: {base_root!s}, attempted path: {target!s}"
         )
 
+    output_dir = target.parent
     output_dir.mkdir(parents=True, exist_ok=True)
     return target
 
@@ -161,7 +161,10 @@ class NotebookExporter:
 
         # Ensure the source notebook resides within the allowed base directory.
         resolved_source = source.resolve()
-        if not resolved_source.is_relative_to(_BASE_OUTPUT):
+        try:
+            # Python 3.8 compatibility: emulate Path.is_relative_to using relative_to.
+            resolved_source.relative_to(_BASE_OUTPUT)
+        except ValueError:
             raise RuntimeError(
                 "Notebook path must reside within the allowed base directory. "
                 f"Resolved base directory: '{_BASE_OUTPUT}'. "
