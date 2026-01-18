@@ -17,6 +17,10 @@ from langgraph_system_generator.cli import GenerationArtifacts, GenerationMode, 
 app = FastAPI(title="LangGraph Notebook Foundry API", version="0.1.1")
 _BASE_OUTPUT = Path(os.environ.get("LNF_OUTPUT_BASE", ".")).resolve()
 
+# Canonical base directory for all generated artifacts and exports.
+# Other modules (CLI, notebook exporters) should import and reuse this constant
+# to ensure a consistent safety policy.
+
 # Mount static files
 _STATIC_DIR = Path(__file__).parent / "static"
 if _STATIC_DIR.exists():

@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Literal, TypedDict
 
 from langchain_community.embeddings import FakeEmbeddings
+from langgraph_system_generator.api.server import _BASE_OUTPUT
 
 from langgraph_system_generator.generator.graph import create_generator_graph
 from langgraph_system_generator.generator.state import CellSpec, Constraint, NotebookPlan
@@ -290,7 +291,13 @@ async def generate_artifacts(
     from langgraph_system_generator.notebook.composer import NotebookComposer
     from langgraph_system_generator.notebook.exporters import NotebookExporter
 
-    target = Path(output_dir)
+    # Normalize and validate the requested output directory against the canonical base.
+    target = Path(output_dir).resolve()
+    if not target.is_relative_to(_BASE_OUTPUT):
+        raise RuntimeError(
+            f"output_dir must reside within the allowed base directory. "
+            f"Allowed base: '{_BASE_OUTPUT}', attempted: '{target}'."
+        )
     target.mkdir(parents=True, exist_ok=True)
 
     if mode == "live":

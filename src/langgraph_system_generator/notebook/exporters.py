@@ -10,28 +10,7 @@ from pathlib import Path
 from typing import Sequence
 
 import nbformat
-
-# Base output directory for all notebook exports. This mirrors the API server's
-# restriction and ensures exporters cannot write outside the configured root.
-_safe_root = Path.cwd().resolve()
-_env_base_raw = os.environ.get("LNF_OUTPUT_BASE")
-if _env_base_raw:
-    # Interpret environment override as a subdirectory of the current working directory.
-    # Only relative paths are allowed here; absolute values are ignored and we fall back
-    # to the safe root to avoid ambiguous behavior.
-    _env_base = Path(_env_base_raw)
-    if not _env_base.is_absolute():
-        candidate_base = (_safe_root / _env_base).resolve()
-        if candidate_base.is_relative_to(_safe_root):
-            _BASE_OUTPUT = candidate_base
-        else:
-            # Fall back to the safe root if the override would escape the allowed root.
-            _BASE_OUTPUT = _safe_root
-    else:
-        # Absolute LNF_OUTPUT_BASE values are not supported; use the safe root instead.
-        _BASE_OUTPUT = _safe_root
-else:
-    _BASE_OUTPUT = _safe_root
+from langgraph_system_generator.api.server import _BASE_OUTPUT
 
 
 def _safe_output_path(path: str | os.PathLike[str]) -> Path:
