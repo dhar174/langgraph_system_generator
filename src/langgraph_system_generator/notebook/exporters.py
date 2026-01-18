@@ -16,14 +16,28 @@ import nbformat
 _BASE_OUTPUT = Path(os.environ.get("LNF_OUTPUT_BASE", ".")).resolve()
 
 
+def _safe_output_path(path: str | os.PathLike[str]) -> Path:
+    """Resolve an output path and ensure it stays within the allowed base directory.
+
+    This provides a defense-in-depth guard so that exporters cannot be used to
+    write files outside of the configured root directory, even when called
+    directly from external code.
+    """
+    target = Path(path).resolve()
+    output_dir = target.parent
+    if not output_dir.is_relative_to(_BASE_OUTPUT):
+        raise RuntimeError("Output directory must reside within the allowed base directory.")
+    output_dir.mkdir(parents=True, exist_ok=True)
+    return target
+
+
 class NotebookExporter:
     """Exports nbformat notebooks to files or bundles."""
 
     def export_ipynb(self, notebook: nbformat.NotebookNode, path: str | Path) -> str:
         """Write a validated notebook to disk."""
         nbformat.validate(notebook)
-        target = Path(path)
-        target.parent.mkdir(parents=True, exist_ok=True)
+        target = _safe_output_path(path)
         with target.open("w", encoding="utf-8") as handle:
             nbformat.write(notebook, handle)
         return str(target)
@@ -40,8 +54,7 @@ class NotebookExporter:
         buffer = io.StringIO()
         nbformat.write(notebook, buffer)
 
-        target = Path(zip_path)
-        target.parent.mkdir(parents=True, exist_ok=True)
+        target = _safe_output_path(zip_path)
         with zipfile.ZipFile(target, "w", compression=zipfile.ZIP_DEFLATED) as zf:
             zf.writestr(notebook_name, buffer.getvalue())
             for extra in extra_files or []:
@@ -74,8 +87,7 @@ class NotebookExporter:
             ) from exc
 
         nbformat.validate(notebook)
-        target = Path(output_path)
-        target.parent.mkdir(parents=True, exist_ok=True)
+        target = _safe_output_path(output_path)
 
         exporter = HTMLExporter()
         (body, resources) = exporter.from_notebook_node(notebook)
@@ -114,11 +126,7 @@ class NotebookExporter:
             raise FileNotFoundError(f"Notebook not found: {source}")
 
         # Resolve the output path and ensure it stays within the allowed base directory.
-        target = Path(output_path).resolve()
-        output_dir = target.parent
-        if not output_dir.is_relative_to(_BASE_OUTPUT):
-            raise RuntimeError("PDF output directory must reside within the allowed base directory.")
-        output_dir.mkdir(parents=True, exist_ok=True)
+        target = _safe_output_path(output_path)
 
         if method == "latex":
             # Use LaTeX-based PDF export (requires LaTeX installation)
