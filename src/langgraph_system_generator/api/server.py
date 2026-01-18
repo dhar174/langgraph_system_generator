@@ -15,11 +15,25 @@ from pydantic import BaseModel, Field
 from langgraph_system_generator.cli import GenerationArtifacts, GenerationMode, generate_artifacts
 
 app = FastAPI(title="LangGraph Notebook Foundry API", version="0.1.1")
-_BASE_OUTPUT = Path(os.environ.get("LNF_OUTPUT_BASE", ".")).resolve()
-# Ensure the configured base output path exists and is a directory. This does not
-# change where outputs may be written, but guarantees that the base root is
-# materialized before any subdirectories are created.
-_BASE_OUTPUT.mkdir(parents=True, exist_ok=True)
+
+def _init_base_output() -> Path:
+    """Initialize and validate the canonical base output directory.
+
+    The base directory may be configured via the LNF_OUTPUT_BASE environment
+    variable. Regardless of configuration, the resulting path is resolved to an
+    absolute location and must be a directory (it will be created if missing).
+    """
+    raw_base = os.environ.get("LNF_OUTPUT_BASE", ".")
+    base = Path(raw_base).expanduser().resolve()
+    # If the path exists and is a file, refuse to use it as a directory.
+    if base.exists() and not base.is_dir():
+        raise RuntimeError(
+            f"LNF_OUTPUT_BASE must be a directory, but points to a file: {base!s}"
+        )
+    base.mkdir(parents=True, exist_ok=True)
+    return base
+
+_BASE_OUTPUT = _init_base_output()
 
 # Canonical base directory for all generated artifacts and exports.
 # Other modules (CLI, notebook exporters) should import and reuse this constant

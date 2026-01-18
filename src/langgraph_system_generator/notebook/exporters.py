@@ -20,18 +20,24 @@ def _safe_output_path(path: str | os.PathLike[str]) -> Path:
     write files outside of the configured root directory, even when called
     directly from external code.
 
+    The provided *path* is always interpreted as a location within the
+    configured ``_BASE_OUTPUT`` directory. Absolute paths are not honored as
+    escape hatches; they are treated as relative names under ``_BASE_OUTPUT``.
+
     Note:
-        The safety check is applied to the parent directory of the requested
-        path (``target.parent``). The target file itself must therefore reside
-        within ``_BASE_OUTPUT``; attempting to use the base directory itself as
-        the output *file* path is not supported and will raise a ``RuntimeError``.
+        The safety check is applied to the fully-resolved target path. The
+        target file itself must therefore reside within ``_BASE_OUTPUT``;
+        attempting to use the base directory itself as the output *file* path
+        is not supported and will raise a ``RuntimeError``.
     """
     # Resolve the canonical base directory once to avoid any ambiguity.
     base_root = _BASE_OUTPUT.resolve()
+    base_str = str(base_root)
 
-    # Resolve the requested path to an absolute, normalized form.
-    target = Path(path).resolve()
-    output_dir = target.parent
+    # Always interpret the requested path as a subpath of the base directory,
+    # then resolve to an absolute, normalized form.
+    requested = Path(path)
+    target = (base_root / requested).resolve()
 
     # Disallow using the base directory itself as an output *file* path.
     if target == base_root:
@@ -39,10 +45,19 @@ def _safe_output_path(path: str | os.PathLike[str]) -> Path:
             f"Output file path cannot be the base output directory itself: {base_root!s}"
         )
 
-    # Ensure the parent directory of the target remains within the allowed base.
-    if not output_dir.is_relative_to(base_root):
+    target_str = str(target)
+    # Ensure the resolved target path is either exactly the base directory (already
+    # excluded above) or a descendant of it (shares the base directory prefix
+    # followed by a path separator). This prevents directory traversal or
+    # escaping ``_BASE_OUTPUT`` even if *path* contains ``..`` segments or is
+    # an absolute path.
+    if not (
+        target_str == base_str
+        or target_str.startswith(base_str + os.sep)
+    ):
         raise RuntimeError(
-            f"Output directory must reside within the allowed base directory. "
+            f"Output path must reside within the allowed base directory. "
+    output_dir = target.parent
             f"Allowed base: {base_root!s}, attempted path: {target!s}"
         )
 
