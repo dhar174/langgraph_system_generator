@@ -127,7 +127,7 @@ promptTextarea.addEventListener('input', () => {
 
 // Output directory validation
 const outputDirInput = document.getElementById('outputDir');
-outputDirInput.addEventListener('input', (e) => {
+outputDirInput?.addEventListener('input', (e) => {
     const value = e.target.value.trim();
     
     // Basic path validation
