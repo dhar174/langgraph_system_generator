@@ -26,13 +26,26 @@ def _safe_output_path(path: str | os.PathLike[str]) -> Path:
         within ``_BASE_OUTPUT``; attempting to use the base directory itself as
         the output *file* path is not supported and will raise a ``RuntimeError``.
     """
+    # Resolve the canonical base directory once to avoid any ambiguity.
+    base_root = _BASE_OUTPUT.resolve()
+
+    # Resolve the requested path to an absolute, normalized form.
     target = Path(path).resolve()
     output_dir = target.parent
-    if not output_dir.is_relative_to(_BASE_OUTPUT):
+
+    # Disallow using the base directory itself as an output *file* path.
+    if target == base_root:
+        raise RuntimeError(
+            f"Output file path cannot be the base output directory itself: {base_root!s}"
+        )
+
+    # Ensure the parent directory of the target remains within the allowed base.
+    if not output_dir.is_relative_to(base_root):
         raise RuntimeError(
             f"Output directory must reside within the allowed base directory. "
-            f"Allowed base: {_BASE_OUTPUT!s}, attempted path: {target!s}"
+            f"Allowed base: {base_root!s}, attempted path: {target!s}"
         )
+
     output_dir.mkdir(parents=True, exist_ok=True)
     return target
 
