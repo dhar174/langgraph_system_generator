@@ -1,0 +1,37 @@
+[
+  {
+    "filename": "docs_langchain_com_oss_python_langgraph_use-graph-api.txt",
+    "source": "https://docs.langchain.com/oss/python/langgraph/use-graph-api",
+    "title": "Use the graph API - Docs by LangChain",
+    "heading": "Use the graph API",
+    "size_bytes": 64391
+  },
+  {
+    "filename": "docs_langchain_com_oss_python_langchain_multi-agent_subagents.txt",
+    "source": "https://docs.langchain.com/oss/python/langchain/multi-agent/subagents",
+    "title": "Subagents - Docs by LangChain",
+    "heading": "Subagents",
+    "size_bytes": 14471
+  },
+  {
+    "filename": "docs_langchain_com_oss_python_langchain_agents.txt",
+    "source": "https://docs.langchain.com/oss/python/langchain/agents",
+    "title": "Agents - Docs by LangChain",
+    "heading": "Agents",
+    "size_bytes": 17601
+  },
+  {
+    "filename": "docs_langchain_com_oss_javascript_langchain_multi-agent_router.txt",
+    "source": "https://docs.langchain.com/oss/javascript/langchain/multi-agent/router",
+    "title": "Router - Docs by LangChain",
+    "heading": "Router",
+    "size_bytes": 6463
+  },
+  {
+    "filename": "docs_langchain_com_oss_javascript_langgraph_persistence.txt",
+    "source": "https://docs.langchain.com/oss/javascript/langgraph/persistence",
+    "title": "Persistence - Docs by LangChain",
+    "heading": "Persistence",
+    "size_bytes": 25674
+  }
+]
