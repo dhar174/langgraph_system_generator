@@ -129,21 +129,54 @@ class NotebookExporter:
         else:
             # Use webpdf method (more reliable, uses Chromium)
             try:
-                _ = subprocess.run(
-                    [
+                # Note: nbconvert appends .pdf extension if not present, and if present it might double it depending on version/config
+                # We specify output filename without extension if we want it to just append .pdf, or with extension.
+                # But nbconvert behavior with --output is tricky.
+                # If we pass --output /path/to/notebook.pdf, it might write to /path/to/notebook.pdf.pdf
+
+                # Let's try to let nbconvert determine the output filename by specifying output-dir and output base name
+                output_dir = target.parent
+                output_base = target.stem
+
+                # Check if target ends with .pdf
+                if target.suffix == '.pdf':
+                    # If we explicitly want .pdf, we should be careful.
+                    # nbconvert automatically adds the extension for the format.
+                    pass
+
+                cmd = [
                         "jupyter",
                         "nbconvert",
                         "--to",
                         "webpdf",
+                        "--output-dir",
+                        str(output_dir.resolve()),
                         "--output",
-                        str(target.resolve()),
+                        output_base,
                         str(source.resolve()),
-                    ],
+                    ]
+
+                _ = subprocess.run(
+                    cmd,
                     capture_output=True,
                     text=True,
                     check=True,
                 )
-                return str(target)
+
+                # Expected output file
+                expected_output = output_dir / f"{output_base}.pdf"
+
+                if expected_output.exists():
+                    if expected_output != target:
+                        # Rename if necessary (though if target was .pdf, expected_output should match)
+                        if target.exists():
+                            target.unlink()
+                        expected_output.rename(target)
+                    return str(target)
+                else:
+                    # Fallback check if it did something else
+                    raise RuntimeError(f"PDF export finished but file not found at {expected_output}")
+
             except subprocess.CalledProcessError as exc:
                 raise RuntimeError(
                     f"webpdf export failed: {exc.stderr}. "

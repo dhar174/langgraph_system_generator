@@ -199,8 +199,18 @@ async def test_generated_code_is_syntactically_valid(tmp_path: Path):
 
     for i, cell in enumerate(code_cells):
         try:
+            # Skip cells with magic commands
+            if cell.source.strip().startswith("!") or cell.source.strip().startswith("%"):
+                continue
+
+            # Filter out magic commands from within cells
+            clean_source = "\n".join(
+                line for line in cell.source.split("\n")
+                if not line.strip().startswith("!") and not line.strip().startswith("%")
+            )
+
             # Try to compile each cell
-            compile(cell.source, f"<cell-{i}>", "exec")
+            compile(clean_source, f"<cell-{i}>", "exec")
         except SyntaxError as e:
             pytest.fail(
                 f"Cell {i} has syntax error: {e}\nCell content:\n{cell.source[:500]}"
