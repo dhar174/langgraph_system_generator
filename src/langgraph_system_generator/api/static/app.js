@@ -216,7 +216,7 @@ outputDirInput?.addEventListener('input', (e) => {
 });
 
 // Trigger initial validation for default or pre-filled value
-if (outputDirInput.value && outputDirInput.value.length > 0) {
+if (outputDirInput && outputDirInput.value && outputDirInput.value.length > 0) {
     outputDirInput.dispatchEvent(new Event('input'));
 }
 
