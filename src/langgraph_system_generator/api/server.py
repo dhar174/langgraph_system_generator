@@ -150,13 +150,19 @@ async def generate_notebook(request: GenerationRequest) -> GenerationResponse:
     requested_output = Path(request.output_dir)
     output_path = (_BASE_OUTPUT / requested_output).resolve()
 
-    base_str = str(_BASE_OUTPUT)
-    output_str = str(output_path)
-    if not (
-        output_path == _BASE_OUTPUT
-        or output_str == base_str
-        or output_str.startswith(base_str + os.sep)
-    ):
+    # Ensure the resolved output path is within the configured base directory.
+    try:
+        # Python 3.9+: Path.is_relative_to is the most direct way to check
+        is_relative = output_path.is_relative_to(_BASE_OUTPUT)  # type: ignore[attr-defined]
+    except AttributeError:
+        # Fallback for Python < 3.9 using relative_to
+        try:
+            output_path.relative_to(_BASE_OUTPUT)
+            is_relative = True
+        except ValueError:
+            is_relative = False
+
+    if not is_relative and output_path != _BASE_OUTPUT:
         raise HTTPException(
             status_code=400,
             detail="output_dir must reside within the allowed base directory.",
