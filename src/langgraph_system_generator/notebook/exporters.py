@@ -153,12 +153,6 @@ class NotebookExporter:
                 # Let's try to let nbconvert determine the output filename by specifying output-dir and output base name
                 output_base = target.stem
 
-                # Check if target ends with .pdf
-                if target.suffix == '.pdf':
-                    # If we explicitly want .pdf, we should be careful.
-                    # nbconvert automatically adds the extension for the format.
-                    pass
-
                 cmd = [
                         "jupyter",
                         "nbconvert",
