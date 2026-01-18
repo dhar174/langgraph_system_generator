@@ -292,12 +292,23 @@ async def generate_artifacts(
     from langgraph_system_generator.notebook.exporters import NotebookExporter
 
     # Normalize and validate the requested output directory against the canonical base.
-    target = Path(output_dir).resolve()
-    if not target.is_relative_to(_BASE_OUTPUT):
+    # Always interpret the provided output_dir as a subdirectory of _BASE_OUTPUT to
+    # prevent path traversal or writing outside the allowed root.
+    requested_output = Path(output_dir)
+    target = (_BASE_OUTPUT / requested_output).resolve()
+
+    base_str = str(_BASE_OUTPUT)
+    target_str = str(target)
+    if not (
+        target == _BASE_OUTPUT
+        or target_str == base_str
+        or target_str.startswith(base_str + os.sep)
+    ):
         raise RuntimeError(
             f"output_dir must reside within the allowed base directory. "
             f"Allowed base: '{_BASE_OUTPUT}', attempted: '{target}'."
         )
+
     target.mkdir(parents=True, exist_ok=True)
 
     if mode == "live":

@@ -140,9 +140,23 @@ async def chrome_devtools_endpoint():
 async def generate_notebook(request: GenerationRequest) -> GenerationResponse:
     """Generate notebook artifacts via the generator pipeline."""
 
-    output_path = Path(request.output_dir).resolve()
-    if not output_path.is_relative_to(_BASE_OUTPUT):
-        raise HTTPException(status_code=400, detail="output_dir must reside within the allowed base directory.")
+    # Always interpret the requested output directory as a subdirectory of the
+    # canonical base output directory to prevent path traversal or escaping
+    # the allowed root. Normalize the resulting path before validating it.
+    requested_output = Path(request.output_dir)
+    output_path = (_BASE_OUTPUT / requested_output).resolve()
+
+    base_str = str(_BASE_OUTPUT)
+    output_str = str(output_path)
+    if not (
+        output_path == _BASE_OUTPUT
+        or output_str == base_str
+        or output_str.startswith(base_str + os.sep)
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail="output_dir must reside within the allowed base directory.",
+        )
 
     try:
         artifacts: GenerationArtifacts = await generate_artifacts(
