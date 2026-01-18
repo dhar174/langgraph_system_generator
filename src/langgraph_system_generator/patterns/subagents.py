@@ -23,17 +23,8 @@ Example Usage:
 
 from typing import Dict, List, Optional, Union
 
+from langgraph_system_generator.patterns.utils import build_llm_init
 from langgraph_system_generator.utils.config import ModelConfig
-
-
-def _build_llm_init(model: str, temperature: float, api_base: Optional[str] = None, max_tokens: Optional[int] = None) -> str:
-    """Build ChatOpenAI initialization string with optional parameters."""
-    params = [f'model="{model}"', f'temperature={temperature}']
-    if api_base:
-        params.append(f'base_url="{api_base}"')
-    if max_tokens:
-        params.append(f'max_tokens={max_tokens}')
-    return f"ChatOpenAI({', '.join(params)})"
 
 
 class SubagentsPattern:
@@ -106,11 +97,11 @@ class WorkflowState(MessagesState):
             config = model_config
         
         llm_model = config.model
-        # Supervisor decisions are deterministic
+        # Supervisor uses temperature=0 for deterministic routing decisions
         api_base = config.api_base
         max_tokens = config.max_tokens
         
-        llm_init = _build_llm_init(llm_model, 0, api_base, max_tokens)
+        llm_init = build_llm_init(llm_model, 0, api_base, max_tokens)
         
         if subagent_descriptions is None:
             subagent_descriptions = {
@@ -270,7 +261,7 @@ Example: researcher|Find information about X""")
         api_base = config.api_base
         max_tokens = config.max_tokens
         
-        llm_init = _build_llm_init(llm_model, temperature, api_base, max_tokens)
+        llm_init = build_llm_init(llm_model, temperature, api_base, max_tokens)
         
         node_name = agent_name.lower().replace(" ", "_").replace("-", "_")
 

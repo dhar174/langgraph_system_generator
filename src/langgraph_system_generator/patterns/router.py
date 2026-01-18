@@ -87,17 +87,8 @@ See Also:
 
 from typing import Dict, List, Optional, Union
 
+from langgraph_system_generator.patterns.utils import build_llm_init
 from langgraph_system_generator.utils.config import ModelConfig
-
-
-def _build_llm_init(model: str, temperature: float, api_base: Optional[str] = None, max_tokens: Optional[int] = None) -> str:
-    """Build ChatOpenAI initialization string with optional parameters."""
-    params = [f'model="{model}"', f'temperature={temperature}']
-    if api_base:
-        params.append(f'base_url="{api_base}"')
-    if max_tokens:
-        params.append(f'max_tokens={max_tokens}')
-    return f"ChatOpenAI({', '.join(params)})"
 
 
 class RouterPattern:
@@ -168,12 +159,12 @@ class WorkflowState(MessagesState):
             config = model_config
         
         llm_model = config.model
-        # Router decisions are classification-like; use deterministic temperature
+        # Router uses temperature=0 for deterministic classification
         temperature = 0
         api_base = config.api_base
         max_tokens = config.max_tokens
         
-        llm_init = _build_llm_init(llm_model, temperature, api_base, max_tokens)
+        llm_init = build_llm_init(llm_model, temperature, api_base, max_tokens)
         
         routes_str = ", ".join([f'"{r}"' for r in routes]) if routes else '"default"'
         routes_list_str = "\n".join(
@@ -292,7 +283,7 @@ Respond with ONLY the route name.""")
         api_base = config.api_base
         max_tokens = config.max_tokens
         
-        llm_init = _build_llm_init(llm_model, temperature, api_base, max_tokens)
+        llm_init = build_llm_init(llm_model, temperature, api_base, max_tokens)
         
         node_name = route_name.lower().replace(" ", "_").replace("-", "_")
 
