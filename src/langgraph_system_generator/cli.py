@@ -23,8 +23,6 @@ from langgraph_system_generator.utils.config import settings
 
 BASE_DIR = Path(__file__).resolve().parents[2]
 DEFAULT_CACHE_PATH = (BASE_DIR / "data" / "cached_docs").resolve()
-_BASE_OUTPUT = Path(os.environ.get("LNF_OUTPUT_BASE", "./output")).resolve()
-_BASE_OUTPUT = Path(os.environ.get("LNF_OUTPUT_BASE", ".")).resolve()
 
 GenerationMode = Literal["stub", "live"]
 
@@ -292,14 +290,7 @@ async def generate_artifacts(
     from langgraph_system_generator.notebook.composer import NotebookComposer
     from langgraph_system_generator.notebook.exporters import NotebookExporter
 
-    output_dir_path = Path(output_dir).resolve()
-    base_output = _BASE_OUTPUT.resolve()
-    try:
-        # Ensure the requested output directory is within the allowed base directory
-        output_dir_path.relative_to(base_output)
-    except ValueError:
-        raise ValueError("output_dir must reside within the allowed base directory.")
-    target = output_dir_path
+    target = Path(output_dir)
     target.mkdir(parents=True, exist_ok=True)
 
     if mode == "live":

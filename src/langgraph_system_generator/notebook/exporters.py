@@ -11,36 +11,6 @@ from typing import Sequence
 
 import nbformat
 
-# Base output directory for all notebook exports. This mirrors the API server's
-# restriction and ensures exporters cannot write outside the configured root.
-_safe_root = Path.cwd().resolve()
-_env_base = os.environ.get("LNF_OUTPUT_BASE")
-if _env_base:
-    # Interpret environment override as a subdirectory of the current working directory.
-    candidate_base = (_safe_root / _env_base).resolve()
-    if candidate_base.is_relative_to(_safe_root):
-        _BASE_OUTPUT = candidate_base
-    else:
-        # Fall back to the safe root if the override would escape the allowed root.
-        _BASE_OUTPUT = _safe_root
-else:
-    _BASE_OUTPUT = _safe_root
-
-
-def _safe_output_path(path: str | os.PathLike[str]) -> Path:
-    """Resolve an output path and ensure it stays within the allowed base directory.
-
-    This provides a defense-in-depth guard so that exporters cannot be used to
-    write files outside of the configured root directory, even when called
-    directly from external code.
-    """
-    target = Path(path).resolve()
-    output_dir = target.parent
-    if not output_dir.is_relative_to(_BASE_OUTPUT):
-        raise RuntimeError("Output directory must reside within the allowed base directory.")
-    output_dir.mkdir(parents=True, exist_ok=True)
-    return target
-
 
 class NotebookExporter:
     """Exports nbformat notebooks to files or bundles."""
@@ -48,7 +18,8 @@ class NotebookExporter:
     def export_ipynb(self, notebook: nbformat.NotebookNode, path: str | Path) -> str:
         """Write a validated notebook to disk."""
         nbformat.validate(notebook)
-        target = _safe_output_path(path)
+        target = Path(path)
+        target.parent.mkdir(parents=True, exist_ok=True)
         with target.open("w", encoding="utf-8") as handle:
             nbformat.write(notebook, handle)
         return str(target)
@@ -65,7 +36,8 @@ class NotebookExporter:
         buffer = io.StringIO()
         nbformat.write(notebook, buffer)
 
-        target = _safe_output_path(zip_path)
+        target = Path(zip_path)
+        target.parent.mkdir(parents=True, exist_ok=True)
         with zipfile.ZipFile(target, "w", compression=zipfile.ZIP_DEFLATED) as zf:
             zf.writestr(notebook_name, buffer.getvalue())
             for extra in extra_files or []:
@@ -98,7 +70,8 @@ class NotebookExporter:
             ) from exc
 
         nbformat.validate(notebook)
-        target = _safe_output_path(output_path)
+        target = Path(output_path)
+        target.parent.mkdir(parents=True, exist_ok=True)
 
         exporter = HTMLExporter()
         (body, resources) = exporter.from_notebook_node(notebook)
@@ -136,12 +109,8 @@ class NotebookExporter:
         if not source.exists():
             raise FileNotFoundError(f"Notebook not found: {source}")
 
-        # Ensure the source notebook resides within the allowed base directory.
-        if not source.resolve().is_relative_to(_BASE_OUTPUT):
-            raise RuntimeError("Notebook path must reside within the allowed base directory.")
-
-        # Resolve the output path and ensure it stays within the allowed base directory.
-        target = _safe_output_path(output_path)
+        target = Path(output_path)
+        target.parent.mkdir(parents=True, exist_ok=True)
 
         if method == "latex":
             # Use LaTeX-based PDF export (requires LaTeX installation)
@@ -169,13 +138,19 @@ class NotebookExporter:
                 output_dir = target.parent
                 output_base = target.stem
 
+                # Check if target ends with .pdf
+                if target.suffix == '.pdf':
+                    # If we explicitly want .pdf, we should be careful.
+                    # nbconvert automatically adds the extension for the format.
+                    pass
+
                 cmd = [
                         "jupyter",
                         "nbconvert",
                         "--to",
                         "webpdf",
                         "--output-dir",
-                        str(output_dir),
+                        str(output_dir.resolve()),
                         "--output",
                         output_base,
                         str(source.resolve()),
@@ -200,7 +175,7 @@ class NotebookExporter:
                     return str(target)
                 else:
                     # Fallback check if it did something else
-                     raise RuntimeError(f"PDF export finished but file not found at {expected_output}")
+                    raise RuntimeError(f"PDF export finished but file not found at {expected_output}")
 
             except subprocess.CalledProcessError as exc:
                 raise RuntimeError(
