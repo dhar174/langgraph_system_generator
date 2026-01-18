@@ -125,6 +125,10 @@ class NotebookExporter:
         if not source.exists():
             raise FileNotFoundError(f"Notebook not found: {source}")
 
+        # Ensure the source notebook resides within the allowed base directory.
+        if not source.resolve().is_relative_to(_BASE_OUTPUT):
+            raise RuntimeError("Notebook path must reside within the allowed base directory.")
+
         # Resolve the output path and ensure it stays within the allowed base directory.
         target = _safe_output_path(output_path)
 
@@ -151,6 +155,7 @@ class NotebookExporter:
                 # If we pass --output /path/to/notebook.pdf, it might write to /path/to/notebook.pdf.pdf
 
                 # Let's try to let nbconvert determine the output filename by specifying output-dir and output base name
+                output_dir = target.parent
                 output_base = target.stem
 
                 cmd = [
