@@ -158,7 +158,10 @@ class TestSubagentsPattern:
         )
 
         assert "def researcher_node(state: WorkflowState)" in code
-        assert "# Example: Bind tools" in code or "tools" in code.lower()
+        assert "llm_with_tools = llm.bind_tools(tools)" in code
+        assert "llm_with_tools.invoke(" in code
+        # Ensure it's not commented out
+        assert "# llm_with_tools = llm.bind_tools" not in code
 
     def test_generate_graph_code(self):
         """Test graph construction code generation."""
@@ -458,6 +461,9 @@ class TestSubagentsPatternEdgeCases:
         assert "def researcher_node(state: WorkflowState)" in code
         # Should not have tool binding code
         assert "bind_tools" not in code
+        # Should use regular llm, not llm_with_tools
+        assert "llm.invoke(" in code
+        assert "llm_with_tools" not in code
 
     def test_generate_graph_with_custom_max_iterations(self):
         """Test graph generation with different max_iterations."""
