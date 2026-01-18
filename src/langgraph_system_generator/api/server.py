@@ -16,6 +16,10 @@ from langgraph_system_generator.cli import GenerationArtifacts, GenerationMode, 
 
 app = FastAPI(title="LangGraph Notebook Foundry API", version="0.1.1")
 _BASE_OUTPUT = Path(os.environ.get("LNF_OUTPUT_BASE", ".")).resolve()
+# Ensure the configured base output path exists and is a directory. This does not
+# change where outputs may be written, but guarantees that the base root is
+# materialized before any subdirectories are created.
+_BASE_OUTPUT.mkdir(parents=True, exist_ok=True)
 
 # Canonical base directory for all generated artifacts and exports.
 # Other modules (CLI, notebook exporters) should import and reuse this constant

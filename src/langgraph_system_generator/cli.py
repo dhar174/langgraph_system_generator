@@ -299,6 +299,9 @@ async def generate_artifacts(
 
     base_str = str(_BASE_OUTPUT)
     target_str = str(target)
+    # Ensure the resolved target path is either exactly the base directory or a
+    # descendant of it (shares the base directory prefix followed by a path
+    # separator). This prevents directory traversal or escaping _BASE_OUTPUT.
     if not (
         target == _BASE_OUTPUT
         or target_str == base_str
