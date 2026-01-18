@@ -983,11 +983,9 @@ textarea:focus-visible {
 }
 
 /* Improved focus-visible for better keyboard navigation */
-*:focus-visible {
     outline: 2px solid var(--primary-color);
     outline-offset: 2px;
-    border-radius: var(--radius-sm);
-}
+    border-radius: var(--radius-md);
 
 /* Skip to main content link for accessibility */
 .skip-link {
