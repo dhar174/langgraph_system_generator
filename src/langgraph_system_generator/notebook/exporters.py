@@ -71,7 +71,8 @@ class NotebookExporter:
     def export_ipynb(self, notebook: nbformat.NotebookNode, path: str | Path) -> str:
         """Write a validated notebook to disk."""
         nbformat.validate(notebook)
-        target = _safe_output_path(path)
+        target = Path(path)
+        target.parent.mkdir(parents=True, exist_ok=True)
         with target.open("w", encoding="utf-8") as handle:
             nbformat.write(notebook, handle)
         return str(target)
@@ -88,7 +89,8 @@ class NotebookExporter:
         buffer = io.StringIO()
         nbformat.write(notebook, buffer)
 
-        target = _safe_output_path(zip_path)
+        target = Path(zip_path)
+        target.parent.mkdir(parents=True, exist_ok=True)
         with zipfile.ZipFile(target, "w", compression=zipfile.ZIP_DEFLATED) as zf:
             zf.writestr(notebook_name, buffer.getvalue())
             for extra in extra_files or []:
@@ -121,7 +123,8 @@ class NotebookExporter:
             ) from exc
 
         nbformat.validate(notebook)
-        target = _safe_output_path(output_path)
+        target = Path(output_path)
+        target.parent.mkdir(parents=True, exist_ok=True)
 
         exporter = HTMLExporter()
         (body, resources) = exporter.from_notebook_node(notebook)
