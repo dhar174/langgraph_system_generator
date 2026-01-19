@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-import os
 from pathlib import Path
 from typing import Any, Dict, Optional
 
@@ -12,10 +11,10 @@ from fastapi.responses import FileResponse, HTMLResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
+from langgraph_system_generator.constants import OUTPUT_BASE, is_relative_to_base
 from langgraph_system_generator.cli import GenerationArtifacts, GenerationMode, generate_artifacts
 
 app = FastAPI(title="LangGraph Notebook Foundry API", version="0.1.1")
-_BASE_OUTPUT = Path(os.environ.get("LNF_OUTPUT_BASE", ".")).resolve()
 
 # Mount static files
 _STATIC_DIR = Path(__file__).parent / "static"
@@ -137,7 +136,7 @@ async def generate_notebook(request: GenerationRequest) -> GenerationResponse:
     """Generate notebook artifacts via the generator pipeline."""
 
     output_path = Path(request.output_dir).resolve()
-    if not output_path.is_relative_to(_BASE_OUTPUT):
+    if not is_relative_to_base(output_path, OUTPUT_BASE):
         raise HTTPException(status_code=400, detail="output_dir must reside within the allowed base directory.")
 
     try:
