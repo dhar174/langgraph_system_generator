@@ -74,6 +74,7 @@ When to delegate:
 
 ## Working style:
 - Before edits: read relevant files, locate TODOs, confirm current behavior.
+- Always use Context7 MCP when user or task needs library/API documentation, code generation, setup or configuration steps without me having to explicitly ask.
 - Make minimal, surgical changes. Avoid drive-by refactors.
 - Always add or update tests when implementing new behavior.
 - Use `execute` to run unit tests and basic lint/format checks if available.
