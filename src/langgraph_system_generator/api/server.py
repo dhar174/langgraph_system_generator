@@ -26,6 +26,10 @@ _DEFAULT_API_OUTPUT = (_BASE_OUTPUT / "api").resolve()
 _BASE_OUTPUT_RESOLVED = _BASE_OUTPUT.resolve()
 
 
+def _default_api_output_dir() -> str:
+    return str((_BASE_OUTPUT_RESOLVED / "api").resolve())
+
+
 def _resolve_output_dir(path: str | os.PathLike[str]) -> Path:
     """Resolve and validate an output directory under the trusted base root."""
     base_root = _BASE_OUTPUT_RESOLVED  # cached absolute base path
@@ -63,7 +67,7 @@ class GenerationRequest(BaseModel):
         description="Generation mode. Use 'stub' to avoid external API calls.",
     )
     output_dir: str = Field(
-        default=str(_DEFAULT_API_OUTPUT),
+        default_factory=_default_api_output_dir,
         description=(
             "Directory to write generation artifacts. Defaults to the application's "
             "base output directory under 'output/api' (absolute path resolved at runtime)."
