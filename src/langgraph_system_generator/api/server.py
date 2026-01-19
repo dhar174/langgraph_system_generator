@@ -36,7 +36,7 @@ def _resolve_output_dir(path: str | os.PathLike[str]) -> Path:
         target = target.resolve()
 
     try:
-        is_relative = target.is_relative_to(base_root)  # type: ignore[attr-defined]
+        is_relative = target.is_relative_to(base_root)  # type: ignore[attr-defined]  # Python < 3.9 fallback below
     except AttributeError:
         try:
             target.relative_to(base_root)
@@ -64,7 +64,10 @@ class GenerationRequest(BaseModel):
     )
     output_dir: str = Field(
         default=str(_DEFAULT_API_OUTPUT),
-        description="Directory to write generation artifacts.",
+        description=(
+            "Directory to write generation artifacts. Defaults to the package output "
+            "root under 'output/api' (absolute path resolved at runtime)."
+        ),
     )
     formats: Optional[list[str]] = Field(
         default=None,
