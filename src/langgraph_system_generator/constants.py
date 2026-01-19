@@ -12,7 +12,7 @@ def _init_base_output() -> Path:
     The base directory may be configured via the LNF_OUTPUT_BASE environment
     variable, but is always constrained to reside within a trusted root
     directory under the application path. The resulting path is resolved to an
-    absolute location and must be a directory (it will be created if missing).
+    absolute location and must be a directory (created lazily by callers on first use).
     """
     # Trusted root for all output, anchored to the application directory.
     app_root = Path(__file__).parent.resolve()
@@ -41,7 +41,6 @@ def _init_base_output() -> Path:
             )
         base = candidate
 
-    base.mkdir(parents=True, exist_ok=True)
     return base
 
 

@@ -22,6 +22,8 @@ _STATIC_DIR = Path(__file__).parent / "static"
 if _STATIC_DIR.exists():
     app.mount("/static", StaticFiles(directory=str(_STATIC_DIR)), name="static")
 
+_DEFAULT_API_OUTPUT = (_BASE_OUTPUT / "api").resolve()
+
 
 class GenerationRequest(BaseModel):
     prompt: str = Field(
@@ -34,7 +36,7 @@ class GenerationRequest(BaseModel):
         description="Generation mode. Use 'stub' to avoid external API calls.",
     )
     output_dir: str = Field(
-        default="./output/api",
+        default=str(_DEFAULT_API_OUTPUT),
         description="Directory to write generation artifacts.",
     )
     formats: Optional[list[str]] = Field(
@@ -136,8 +138,15 @@ async def chrome_devtools_endpoint():
 async def generate_notebook(request: GenerationRequest) -> GenerationResponse:
     """Generate notebook artifacts via the generator pipeline."""
 
-    output_path = Path(request.output_dir).resolve()
-    if not output_path.is_relative_to(_BASE_OUTPUT):
+    base_root = _BASE_OUTPUT.resolve()
+    output_path = Path(request.output_dir)
+    if not output_path.is_absolute():
+        output_path = (base_root / output_path).resolve()
+    else:
+        output_path = output_path.resolve()
+    try:
+        output_path.relative_to(base_root)
+    except ValueError:
         raise HTTPException(status_code=400, detail="output_dir must reside within the allowed base directory.")
 
     try:
