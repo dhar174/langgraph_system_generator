@@ -23,21 +23,32 @@ if _STATIC_DIR.exists():
     app.mount("/static", StaticFiles(directory=str(_STATIC_DIR)), name="static")
 
 _DEFAULT_API_OUTPUT = (_BASE_OUTPUT / "api").resolve()
+_BASE_OUTPUT_RESOLVED = _BASE_OUTPUT.resolve()
 
 
 def _resolve_output_dir(path: str | os.PathLike[str]) -> Path:
     """Resolve and validate an output directory under the trusted base root."""
-    base_root = _BASE_OUTPUT.resolve()
+    base_root = _BASE_OUTPUT_RESOLVED
     target = Path(path)
     if not target.is_absolute():
         target = (base_root / target).resolve()
     else:
         target = target.resolve()
 
-    base_str = str(base_root)
-    target_str = str(target)
-    if not (target_str == base_str or target_str.startswith(base_str + os.sep)):
-        raise HTTPException(status_code=400, detail="output_dir must reside within the allowed base directory.")
+    try:
+        is_relative = target.is_relative_to(base_root)  # type: ignore[attr-defined]
+    except AttributeError:
+        try:
+            target.relative_to(base_root)
+            is_relative = True
+        except ValueError:
+            is_relative = False
+
+    if not is_relative:
+        raise HTTPException(
+            status_code=400,
+            detail="output_dir must reside within the allowed base directory.",
+        )
     return target
 
 
