@@ -13,9 +13,9 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from langgraph_system_generator.cli import GenerationArtifacts, GenerationMode, generate_artifacts
+from langgraph_system_generator.constants import _BASE_OUTPUT
 
 app = FastAPI(title="LangGraph Notebook Foundry API", version="0.1.1")
-_BASE_OUTPUT = Path(os.environ.get("LNF_OUTPUT_BASE", ".")).resolve()
 
 # Mount static files
 _STATIC_DIR = Path(__file__).parent / "static"

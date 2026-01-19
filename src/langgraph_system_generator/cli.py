@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Literal, TypedDict
 
 from langchain_community.embeddings import FakeEmbeddings
+from langgraph_system_generator.constants import _BASE_OUTPUT
 
 from langgraph_system_generator.generator.graph import create_generator_graph
 from langgraph_system_generator.generator.state import CellSpec, Constraint, NotebookPlan
