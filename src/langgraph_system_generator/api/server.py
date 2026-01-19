@@ -25,6 +25,22 @@ if _STATIC_DIR.exists():
 _DEFAULT_API_OUTPUT = (_BASE_OUTPUT / "api").resolve()
 
 
+def _resolve_output_dir(path: str | os.PathLike[str]) -> Path:
+    """Resolve and validate an output directory under the trusted base root."""
+    base_root = _BASE_OUTPUT.resolve()
+    target = Path(path)
+    if not target.is_absolute():
+        target = (base_root / target).resolve()
+    else:
+        target = target.resolve()
+
+    base_str = str(base_root)
+    target_str = str(target)
+    if not (target_str == base_str or target_str.startswith(base_str + os.sep)):
+        raise HTTPException(status_code=400, detail="output_dir must reside within the allowed base directory.")
+    return target
+
+
 class GenerationRequest(BaseModel):
     prompt: str = Field(
         ...,
@@ -138,16 +154,7 @@ async def chrome_devtools_endpoint():
 async def generate_notebook(request: GenerationRequest) -> GenerationResponse:
     """Generate notebook artifacts via the generator pipeline."""
 
-    base_root = _BASE_OUTPUT.resolve()
-    output_path = Path(request.output_dir)
-    if not output_path.is_absolute():
-        output_path = (base_root / output_path).resolve()
-    else:
-        output_path = output_path.resolve()
-    try:
-        output_path.relative_to(base_root)
-    except ValueError:
-        raise HTTPException(status_code=400, detail="output_dir must reside within the allowed base directory.")
+    output_path = _resolve_output_dir(request.output_dir)
 
     try:
         artifacts: GenerationArtifacts = await generate_artifacts(
