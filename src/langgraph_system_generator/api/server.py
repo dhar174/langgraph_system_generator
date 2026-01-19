@@ -28,7 +28,7 @@ _BASE_OUTPUT_RESOLVED = _BASE_OUTPUT.resolve()
 
 def _resolve_output_dir(path: str | os.PathLike[str]) -> Path:
     """Resolve and validate an output directory under the trusted base root."""
-    base_root = _BASE_OUTPUT_RESOLVED
+    base_root = _BASE_OUTPUT_RESOLVED  # cached absolute base path
     target = Path(path)
     if not target.is_absolute():
         target = (base_root / target).resolve()
@@ -36,7 +36,7 @@ def _resolve_output_dir(path: str | os.PathLike[str]) -> Path:
         target = target.resolve()
 
     try:
-        is_relative = target.is_relative_to(base_root)  # type: ignore[attr-defined]  # Python < 3.9 fallback below
+        is_relative = target.is_relative_to(base_root)  # type: ignore[attr-defined]  # Python 3.9+ only; fallback below
     except AttributeError:
         try:
             target.relative_to(base_root)
@@ -65,8 +65,8 @@ class GenerationRequest(BaseModel):
     output_dir: str = Field(
         default=str(_DEFAULT_API_OUTPUT),
         description=(
-            "Directory to write generation artifacts. Defaults to the package output "
-            "root under 'output/api' (absolute path resolved at runtime)."
+            "Directory to write generation artifacts. Defaults to the application's "
+            "base output directory under 'output/api' (absolute path resolved at runtime)."
         ),
     )
     formats: Optional[list[str]] = Field(
