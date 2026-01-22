@@ -29,14 +29,21 @@ This is a Python-based repository that generates complete multi-agent LangGraph 
 ## Repository Structure
 
 - `src/langgraph_system_generator/`: Main package source code
-  - `agents/`: LangGraph agent implementations (architecture selector, requirements analyst, etc.)
+  - `generator/`: Core generation logic and LangGraph workflows
+    - `agents/`: LangGraph agent implementations (architecture selector, requirements analyst, etc.)
+    - `graph.py`: Main generation graph definition
+    - `state.py`: State models and type definitions
+    - `nodes.py`: Graph node implementations
   - `api/`: FastAPI server for web interface
+    - `server.py`: API endpoints and application
+    - `static/`: HTML, CSS, JS for web UI
   - `cli.py`: Command-line interface
   - `patterns/`: Pattern library (Router, Subagents, Critique-Revise Loop)
   - `rag/`: RAG system for documentation retrieval
   - `notebook/`: Notebook generation, validation, and repair
-  - `config.py`: Configuration management with Pydantic Settings
-  - `models.py`: Pydantic models for data structures
+  - `qa/`: Quality assurance, validators, and repair agents
+  - `utils/`: Utility modules
+    - `config.py`: Configuration management with Pydantic Settings
 - `tests/`: Test suite
   - `unit/`: Unit tests for individual components
   - `integration/`: Integration tests for end-to-end workflows
@@ -72,13 +79,14 @@ This is a Python-based repository that generates complete multi-agent LangGraph 
    - Use the RAG system for retrieving relevant documentation snippets
 
 4. **Code organization**:
-   - Keep agent logic in `src/langgraph_system_generator/agents/`
+   - Keep agent logic in `src/langgraph_system_generator/generator/agents/`
    - Pattern implementations go in `src/langgraph_system_generator/patterns/`
    - API endpoints in `src/langgraph_system_generator/api/`
-   - Shared models in `src/langgraph_system_generator/models.py`
+   - Shared state models in `src/langgraph_system_generator/generator/state.py`
+   - Notebook-related code in `src/langgraph_system_generator/notebook/`
 
 5. **Configuration management**:
-   - Use Pydantic Settings for configuration (`config.py`)
+   - Use Pydantic Settings for configuration (`utils/config.py`)
    - Environment variables via `.env` file (see `.env.example`)
    - Required API keys: `OPENAI_API_KEY` for live mode
    - Optional: `ANTHROPIC_API_KEY`, `LANGSMITH_API_KEY`
@@ -126,11 +134,12 @@ When working on specific areas, consider using the relevant custom agent for dom
 - **Dev tools**: black, ruff, mypy
 
 When adding new dependencies:
-1. Add to `requirements.txt` for production dependencies
-2. Add to `setup.py` under appropriate `extras_require` section
-3. Document why the dependency is needed
-4. Check for security vulnerabilities
-5. Prefer well-maintained, popular packages
+1. Add core dependencies to `setup.py` in the `install_requires` list
+2. Add optional dependencies to `setup.py` under appropriate `extras_require` section (e.g., 'api', 'full', 'dev')
+3. Update `requirements.txt` for development/full installation (includes all extras)
+4. Document why the dependency is needed
+5. Check for security vulnerabilities
+6. Prefer well-maintained, popular packages
 
 ## Common Patterns
 
