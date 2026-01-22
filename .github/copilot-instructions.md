@@ -7,7 +7,7 @@ This is a Python-based repository that generates complete multi-agent LangGraph 
 ### Required Before Each Commit
 - Run `black .` to format Python code
 - Run `ruff check .` to lint code
-- Run `mypy src/` for type checking
+- Run `mypy src/langgraph_system_generator/` for type checking
 - These tools maintain consistent code style and catch issues early
 
 ### Development Flow
@@ -17,7 +17,7 @@ This is a Python-based repository that generates complete multi-agent LangGraph 
 - **Test with coverage**: `pytest --cov=src --cov-report=html`
 - **Format code**: `black .`
 - **Lint**: `ruff check .`
-- **Type check**: `mypy src/`
+- **Type check**: `mypy src/langgraph_system_generator/`
 - **Run web interface**: `uvicorn langgraph_system_generator.api.server:app --host 0.0.0.0 --port 8000`
 - **CLI usage**: `lnf generate "Create a chatbot" --output ./output/demo --mode stub`
 
