@@ -83,7 +83,7 @@ Required only for "live mode" (LLM-powered generation):
 # Run linter (EXPECT some warnings)
 .venv/bin/ruff check src/
 
-# Type checking (may take 30-60 seconds, can be slow)
+# Type checking (takes 30-60 seconds)
 .venv/bin/mypy src/ --ignore-missing-imports
 ```
 
@@ -121,7 +121,7 @@ The CLI is accessible via the `lnf` command after installation:
 # Available formats: ipynb, html, docx, pdf, zip
 ```
 
-**IMPORTANT**: Stub mode may fail with template errors (MODEL undefined) but this is a known issue. Generated artifacts should still be created in most cases.
+**IMPORTANT**: Stub mode may fail with template errors (`NameError: name 'MODEL' is not defined`) but this is a known issue. Generated artifacts should still be created in most cases.
 
 ### Build Vector Index
 
@@ -274,7 +274,7 @@ timeout 5 .venv/bin/uvicorn langgraph_system_generator.api.server:app --port 800
 **Solution**: ALWAYS create venv and install with `pip install -e .` before running any code.
 
 ### Issue: `NameError: name 'MODEL' is not defined`
-**Status**: Known bug in `notebook/templates.py` line 90
+**Status**: Known issue in `notebook/templates.py` line 90
 **Workaround**: Some tests and stub mode generation will fail. Not blocking for most development.
 
 ### Issue: Tests Timeout or Hang
