@@ -70,7 +70,7 @@ This is a Python-based repository that generates complete multi-agent LangGraph 
    - Place tests in appropriate subdirectories under `tests/`
    - Use pytest fixtures defined in `conftest.py`
    - Aim for high test coverage (≥90% for pattern modules)
-   - Use pytest marks for categorizing tests: `@pytest.mark.unit`, `@pytest.mark.integration`
+   - Use pytest marks for categorizing tests where helpful
 
 3. **LangGraph and LangChain usage**:
    - Use LangGraph StateGraph for workflow orchestration
