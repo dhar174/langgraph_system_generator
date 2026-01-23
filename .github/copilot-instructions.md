@@ -112,6 +112,7 @@ This is a Python-based repository that generates complete multi-agent LangGraph 
 
 This repository has specialized custom agents for different areas:
 - **lnf-lead**: Lead architect for overall system design
+- **lnf-foundation**: Core project foundations and shared architecture
 - **lnf-generator**: Core generation logic and workflow
 - **lnf-patterns**: Pattern library development
 - **lnf-notebook**: Notebook generation and export
@@ -134,8 +135,8 @@ When working on specific areas, consider using the relevant custom agent for dom
 - **Dev tools**: black, ruff, mypy
 
 When adding new dependencies:
-1. Add core dependencies to `setup.py` in the `install_requires` list
-2. Add optional dependencies to `setup.py` under appropriate `extras_require` section (e.g., 'api', 'full', 'dev')
+1. Add minimal core dependencies to `setup.py` in the `install_requires` list (only Pydantic and python-dotenv currently)
+2. Add runtime dependencies (LangGraph, LangChain, OpenAI) to `setup.py` under appropriate `extras_require` section (e.g., 'api', 'full', 'dev')
 3. Update `requirements.txt` for development/full installation (includes all extras)
 4. Document why the dependency is needed
 5. Check for security vulnerabilities
@@ -146,7 +147,7 @@ When adding new dependencies:
 1. **Agent implementation**: Extend base patterns, use StateGraph
 2. **Testing**: Use fixtures from `conftest.py`, mock external API calls
 3. **Error handling**: Use try-except blocks, log errors appropriately
-4. **Logging**: Use Python logging module, not print statements
+4. **Logging**: Use Python logging module for library/runtime code; `print()` is acceptable in CLI and generated notebook/example code
 5. **Configuration**: Load from `Settings` class, support environment variables
 
 ## Stub vs Live Mode
