@@ -23,7 +23,7 @@ This is a Python-based repository that generates complete multi-agent LangGraph 
 
 ### Python Version
 - **Minimum**: Python 3.9
-- **Recommended**: Python 3.10 or 3.11
+- **Recommended**: Python 3.10, 3.11, or 3.12
 - Use virtual environments: `python -m venv .venv`
 
 ## Repository Structure
