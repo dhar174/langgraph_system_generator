@@ -2,7 +2,7 @@
 name: lnf-webui
 description: Implements and maintains the web UI/frontend for LNF, including HTML, CSS, JavaScript/TypeScript, React components, accessibility, and UX patterns.
 target: github-copilot
-infer: false
+infer: true
 tools: ["read", "search", "edit", "web", "execute", "github/*", "playwright/*"]
 metadata:
   project: "LNF"
