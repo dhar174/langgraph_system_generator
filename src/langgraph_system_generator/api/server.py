@@ -27,7 +27,7 @@ _BASE_OUTPUT_RESOLVED = _BASE_OUTPUT.resolve()
 
 
 def _default_api_output_dir() -> str:
-    return str((_BASE_OUTPUT_RESOLVED / "api").resolve())
+    return str(_BASE_OUTPUT_RESOLVED / "api")
 
 
 def _resolve_output_dir(path: str | os.PathLike[str]) -> Path:
