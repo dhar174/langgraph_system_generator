@@ -33,11 +33,9 @@ def _default_api_output_dir() -> str:
 def _resolve_output_dir(path: str | os.PathLike[str]) -> Path:
     """Resolve and validate an output directory under the trusted base root."""
     base_root = _BASE_OUTPUT_RESOLVED  # cached absolute base path
-    target = Path(path)
-    if not target.is_absolute():
-        target = (base_root / target).resolve()
-    else:
-        target = target.resolve()
+    # Always interpret the requested path as relative to the trusted base root,
+    # matching the behavior used by the exporters.
+    target = (base_root / Path(path)).resolve()
 
     try:
         is_relative = target.is_relative_to(base_root)  # type: ignore[attr-defined]  # Python 3.9+ only; fallback below
