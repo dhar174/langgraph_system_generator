@@ -18,7 +18,20 @@ def _resolve_output_base() -> Path:
     """
     env_value = os.environ.get(OUTPUT_BASE_ENV)
     if env_value:
-        return Path(env_value).expanduser().resolve()
+        candidate = Path(env_value).expanduser().resolve()
+        home = Path.home().resolve()
+        # Ensure the environment override stays within the user's home directory.
+        try:
+            # Python 3.9+: use Path.is_relative_to if available
+            is_within_home = candidate.is_relative_to(home)  # type: ignore[attr-defined]
+        except AttributeError:
+            try:
+                candidate.relative_to(home)
+                is_within_home = True
+            except ValueError:
+                is_within_home = False
+        if is_within_home:
+            return candidate
     return DEFAULT_OUTPUT_BASE.resolve()
 
 
