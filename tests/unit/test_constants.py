@@ -14,7 +14,7 @@ def test_output_base_not_created_on_import(monkeypatch, tmp_path):
     try:
         assert constants.OUTPUT_BASE == base.resolve()
         assert not base.exists()
-        assert constants.is_relative_to_base(base / "child", constants.OUTPUT_BASE)
-        assert not constants.is_relative_to_base(tmp_path / "other", constants.OUTPUT_BASE)
+        assert constants.is_relative_to_base((base / "child").resolve(), constants.OUTPUT_BASE)
+        assert not constants.is_relative_to_base((tmp_path / "other").resolve(), constants.OUTPUT_BASE)
     finally:
         sys.modules.pop(module_name, None)  # clean up for later imports
