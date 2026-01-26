@@ -13,6 +13,7 @@ from pydantic import BaseModel, Field
 
 from langgraph_system_generator.constants import OUTPUT_BASE, is_relative_to_base
 from langgraph_system_generator.cli import GenerationArtifacts, GenerationMode, generate_artifacts
+from langgraph_system_generator.constants import _BASE_OUTPUT
 
 app = FastAPI(title="LangGraph Notebook Foundry API", version="0.1.1")
 

@@ -10,6 +10,59 @@ from pathlib import Path
 from typing import Sequence
 
 import nbformat
+from langgraph_system_generator.constants import _BASE_OUTPUT
+
+
+def _safe_output_path(path: str | os.PathLike[str]) -> Path:
+    """Resolve an output path and ensure it stays within the allowed base directory.
+
+    This provides a defense-in-depth guard so that exporters cannot be used to
+    write files outside of the configured root directory, even when called
+    directly from external code.
+
+    The provided *path* is always interpreted as a location within the
+    configured ``_BASE_OUTPUT`` directory. Absolute paths are not honored as
+    escape hatches; they are treated as relative names under ``_BASE_OUTPUT``.
+
+    Note:
+        The safety check is applied to the fully-resolved target path. The
+        target file itself must therefore reside within ``_BASE_OUTPUT``;
+        attempting to use the base directory itself as the output *file* path
+        is not supported and will raise a ``RuntimeError``.
+    """
+    # Resolve the canonical base directory once to avoid any ambiguity.
+    base_root = _BASE_OUTPUT.resolve()
+    base_str = str(base_root)
+
+    # Always interpret the requested path as a subpath of the base directory,
+    # then resolve to an absolute, normalized form.
+    requested = Path(path)
+    target = (base_root / requested).resolve()
+
+    # Disallow using the base directory itself as an output *file* path.
+    if target == base_root:
+        raise RuntimeError(
+            f"Output file path cannot be the base output directory itself: {base_root!s}"
+        )
+
+    target_str = str(target)
+    # Ensure the resolved target path is either exactly the base directory (already
+    # excluded above) or a descendant of it (shares the base directory prefix
+    # followed by a path separator). This prevents directory traversal or
+    # escaping ``_BASE_OUTPUT`` even if *path* contains ``..`` segments or is
+    # an absolute path.
+    if not (
+        target_str == base_str
+        or target_str.startswith(base_str + os.sep)
+    ):
+        raise RuntimeError(
+            f"Output path must reside within the allowed base directory. "
+            f"Allowed base: {base_root!s}, attempted path: {target!s}"
+        )
+
+    output_dir = target.parent
+    output_dir.mkdir(parents=True, exist_ok=True)
+    return target
 
 
 class NotebookExporter:
@@ -109,8 +162,20 @@ class NotebookExporter:
         if not source.exists():
             raise FileNotFoundError(f"Notebook not found: {source}")
 
-        target = Path(output_path)
-        target.parent.mkdir(parents=True, exist_ok=True)
+        # Ensure the source notebook resides within the allowed base directory.
+        resolved_source = source.resolve()
+        try:
+            # Python 3.8 compatibility: emulate Path.is_relative_to using relative_to.
+            resolved_source.relative_to(_BASE_OUTPUT)
+        except ValueError:
+            raise RuntimeError(
+                "Notebook path must reside within the allowed base directory. "
+                f"Resolved base directory: '{_BASE_OUTPUT}'. "
+                f"Resolved notebook path: '{resolved_source}'."
+            )
+
+        # Resolve the output path and ensure it stays within the allowed base directory.
+        target = _safe_output_path(output_path)
 
         if method == "latex":
             # Use LaTeX-based PDF export (requires LaTeX installation)
@@ -129,21 +194,54 @@ class NotebookExporter:
         else:
             # Use webpdf method (more reliable, uses Chromium)
             try:
-                _ = subprocess.run(
-                    [
+                # Note: nbconvert appends .pdf extension if not present, and if present it might double it depending on version/config
+                # We specify output filename without extension if we want it to just append .pdf, or with extension.
+                # But nbconvert behavior with --output is tricky.
+                # If we pass --output /path/to/notebook.pdf, it might write to /path/to/notebook.pdf.pdf
+
+                # Let's try to let nbconvert determine the output filename by specifying output-dir and output base name
+                output_dir = target.parent
+                output_base = target.stem
+
+                # Check if target ends with .pdf
+                if target.suffix == '.pdf':
+                    # If we explicitly want .pdf, we should be careful.
+                    # nbconvert automatically adds the extension for the format.
+                    pass
+
+                cmd = [
                         "jupyter",
                         "nbconvert",
                         "--to",
                         "webpdf",
+                        "--output-dir",
+                        str(output_dir.resolve()),
                         "--output",
-                        str(target.resolve()),
+                        output_base,
                         str(source.resolve()),
-                    ],
+                    ]
+
+                _ = subprocess.run(
+                    cmd,
                     capture_output=True,
                     text=True,
                     check=True,
                 )
-                return str(target)
+
+                # Expected output file
+                expected_output = output_dir / f"{output_base}.pdf"
+
+                if expected_output.exists():
+                    if expected_output != target:
+                        # Rename if necessary (though if target was .pdf, expected_output should match)
+                        if target.exists():
+                            target.unlink()
+                        expected_output.rename(target)
+                    return str(target)
+                else:
+                    # Fallback check if it did something else
+                    raise RuntimeError(f"PDF export finished but file not found at {expected_output}")
+
             except subprocess.CalledProcessError as exc:
                 raise RuntimeError(
                     f"webpdf export failed: {exc.stderr}. "
