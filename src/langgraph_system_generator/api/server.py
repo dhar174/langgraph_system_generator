@@ -22,6 +22,37 @@ _STATIC_DIR = Path(__file__).parent / "static"
 if _STATIC_DIR.exists():
     app.mount("/static", StaticFiles(directory=str(_STATIC_DIR)), name="static")
 
+_DEFAULT_API_OUTPUT = (_BASE_OUTPUT / "api").resolve()
+_BASE_OUTPUT_RESOLVED = _BASE_OUTPUT.resolve()
+
+
+def _default_api_output_dir() -> str:
+    return str(_BASE_OUTPUT_RESOLVED / "api")
+
+
+def _resolve_output_dir(path: str | os.PathLike[str]) -> Path:
+    """Resolve and validate an output directory under the trusted base root."""
+    base_root = _BASE_OUTPUT_RESOLVED  # cached absolute base path
+    # Always interpret the requested path as relative to the trusted base root,
+    # matching the behavior used by the exporters.
+    target = (base_root / Path(path)).resolve()
+
+    try:
+        is_relative = target.is_relative_to(base_root)  # type: ignore[attr-defined]  # Python 3.9+ only; fallback below
+    except AttributeError:
+        try:
+            target.relative_to(base_root)
+            is_relative = True
+        except ValueError:
+            is_relative = False
+
+    if not is_relative:
+        raise HTTPException(
+            status_code=400,
+            detail="output_dir must reside within the allowed base directory.",
+        )
+    return target
+
 
 class GenerationRequest(BaseModel):
     prompt: str = Field(
@@ -34,8 +65,11 @@ class GenerationRequest(BaseModel):
         description="Generation mode. Use 'stub' to avoid external API calls.",
     )
     output_dir: str = Field(
-        default="./output/api",
-        description="Directory to write generation artifacts.",
+        default_factory=_default_api_output_dir,
+        description=(
+            "Directory to write generation artifacts. Defaults to the application's "
+            "base output directory under 'output/api' (absolute path resolved at runtime)."
+        ),
     )
     formats: Optional[list[str]] = Field(
         default=None,
@@ -136,9 +170,7 @@ async def chrome_devtools_endpoint():
 async def generate_notebook(request: GenerationRequest) -> GenerationResponse:
     """Generate notebook artifacts via the generator pipeline."""
 
-    output_path = Path(request.output_dir).resolve()
-    if not output_path.is_relative_to(_BASE_OUTPUT):
-        raise HTTPException(status_code=400, detail="output_dir must reside within the allowed base directory.")
+    output_path = _resolve_output_dir(request.output_dir)
 
     try:
         artifacts: GenerationArtifacts = await generate_artifacts(
