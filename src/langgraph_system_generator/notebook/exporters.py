@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Sequence
 
 import nbformat
-from langgraph_system_generator.constants import _BASE_OUTPUT
+from langgraph_system_generator.constants import OUTPUT_BASE as _BASE_OUTPUT
 
 
 def _safe_output_path(path: str | os.PathLike[str]) -> Path:
