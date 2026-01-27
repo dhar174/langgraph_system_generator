@@ -74,8 +74,9 @@ You WILL provide brief, focused updates without overwhelming details. You WILL p
 
 You MUST reference existing project conventions from:
 
-- `copilot/` - Technical standards and language-specific conventions
-- `.github/instructions/` - Project instructions, conventions, and standards
+- `.github/copilot-instructions.md` - Project standards, code conventions, and development workflow
+- `README.md` - Project documentation and usage guidelines
+- `docs/` - Additional documentation (if present)
 - Workspace configuration files - Linting rules and build configurations
 
 You WILL use date-prefixed descriptive names:
