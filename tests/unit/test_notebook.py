@@ -461,7 +461,7 @@ def test_absolute_env_var_is_ignored(tmp_path: Path, monkeypatch):
     import importlib
     import langgraph_system_generator.constants as constants_module
     
-    with pytest.raises(RuntimeError, match="LNF_OUTPUT_BASE must resolve to a directory within the trusted"):
+    with pytest.raises(RuntimeError, match="must resolve under the user home directory"):
         importlib.reload(constants_module)
 
 
