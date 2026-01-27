@@ -17,6 +17,7 @@ from langchain_community.embeddings import FakeEmbeddings
 
 from langgraph_system_generator.generator.graph import create_generator_graph
 from langgraph_system_generator.generator.state import CellSpec, Constraint, NotebookPlan
+from langgraph_system_generator.patterns import RouterPattern, SubagentsPattern
 from langgraph_system_generator.rag.indexer import build_index_from_cache
 from langgraph_system_generator.utils.config import settings
 
@@ -138,12 +139,87 @@ def _build_stub_result(prompt: str) -> Dict[str, Any]:
             content="!pip install -q langgraph langchain-openai",
             section="setup",
         ),
-        CellSpec(
+    ]
+
+    if architecture_type == "router":
+        routes = ["search", "analyze", "summarize"]
+        route_purposes = {
+            "search": "Search for information",
+            "analyze": "Analyze data and identify patterns",
+            "summarize": "Condense content into summaries",
+        }
+
+        # State
+        cells.append(CellSpec(
+            cell_type="code",
+            content=RouterPattern.generate_state_code(),
+            section="state_definition"
+        ))
+
+        # Router node
+        cells.append(CellSpec(
+            cell_type="code",
+            content=RouterPattern.generate_router_node_code(routes),
+            section="nodes"
+        ))
+
+        # Route nodes
+        for route in routes:
+            cells.append(CellSpec(
+                cell_type="code",
+                content=RouterPattern.generate_route_node_code(route, route_purposes[route]),
+                section="nodes"
+            ))
+
+        # Graph
+        cells.append(CellSpec(
+            cell_type="code",
+            content=RouterPattern.generate_graph_code(routes),
+            section="graph"
+        ))
+
+    elif architecture_type == "subagents":
+        subagents = ["researcher", "writer", "reviewer"]
+        descriptions = {
+            "researcher": "Gathers information",
+            "writer": "Drafts content",
+            "reviewer": "Reviews content",
+        }
+
+        # State
+        cells.append(CellSpec(
+            cell_type="code",
+            content=SubagentsPattern.generate_state_code(),
+            section="state_definition"
+        ))
+
+        # Supervisor
+        cells.append(CellSpec(
+            cell_type="code",
+            content=SubagentsPattern.generate_supervisor_code(subagents, descriptions),
+            section="nodes"
+        ))
+
+        # Subagents
+        for agent in subagents:
+            cells.append(CellSpec(
+                cell_type="code",
+                content=SubagentsPattern.generate_subagent_code(agent, descriptions[agent]),
+                section="nodes"
+            ))
+
+        # Graph
+        cells.append(CellSpec(
+            cell_type="code",
+            content=SubagentsPattern.generate_graph_code(subagents),
+            section="graph"
+        ))
+    else:
+        cells.append(CellSpec(
             cell_type="code",
             content="from langgraph.graph import StateGraph\n\n# Define your workflow here",
             section="graph",
-        ),
-    ]
+        ))
 
     return {
         "constraints": constraints,

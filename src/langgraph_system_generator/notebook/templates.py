@@ -87,8 +87,8 @@ def configuration_cell(model: str = "gpt-5-mini") -> List[CellSpec]:
             elif not os.environ.get("OPENAI_API_KEY"):
                 os.environ["ANTHROPIC_API_KEY"] = getpass("Enter ANTHROPIC_API_KEY (optional): ")
         
-        print(f"Using model: {MODEL}")
-        print(f"Working directory: {WORKDIR}")
+        print(f"Using model: {{MODEL}}")
+        print(f"Working directory: {{WORKDIR}}")
         """
     ).strip()
 

@@ -13,7 +13,7 @@ from langgraph_system_generator.patterns import (
     RouterPattern,
     SubagentsPattern,
 )
-from langgraph_system_generator.utils.config import settings
+from langgraph_system_generator.utils.config import ModelConfig, settings
 
 
 class NotebookComposer:
@@ -512,6 +512,9 @@ Generate the complete Python function implementation."""
             List of CellSpec objects with pattern-based node implementations
         """
         cells = []
+        
+        # Create model config from settings
+        model_config = ModelConfig(model=settings.default_model)
 
         if architecture_type == "router":
             # Extract routes from nodes
@@ -520,7 +523,7 @@ Generate the complete Python function implementation."""
             ]
 
             # Generate router node
-            router_code = RouterPattern.generate_router_node_code(routes)
+            router_code = RouterPattern.generate_router_node_code(routes, model_config=model_config)
             cells.append(
                 CellSpec(cell_type="code", content=router_code, section="nodes")
             )
@@ -531,6 +534,7 @@ Generate the complete Python function implementation."""
                     route_code = RouterPattern.generate_route_node_code(
                         node.get("name"),
                         node.get("purpose", f"Handle {node.get('name')} requests"),
+                        model_config=model_config,
                     )
                     cells.append(
                         CellSpec(cell_type="code", content=route_code, section="nodes")
@@ -549,7 +553,7 @@ Generate the complete Python function implementation."""
 
             # Generate supervisor node
             supervisor_code = SubagentsPattern.generate_supervisor_code(
-                subagents, subagent_descriptions
+                subagents, subagent_descriptions, model_config=model_config
             )
             cells.append(
                 CellSpec(cell_type="code", content=supervisor_code, section="nodes")
@@ -561,6 +565,7 @@ Generate the complete Python function implementation."""
                     subagent_code = SubagentsPattern.generate_subagent_code(
                         node.get("name"),
                         node.get("purpose", f"{node.get('name')} specialist"),
+                        model_config=model_config,
                     )
                     cells.append(
                         CellSpec(
@@ -570,17 +575,17 @@ Generate the complete Python function implementation."""
 
         elif architecture_type == "critique_loop":
             # Generate critique loop nodes
-            generate_code = CritiqueLoopPattern.generate_generation_node_code()
+            generate_code = CritiqueLoopPattern.generate_generation_node_code(model_config=model_config)
             cells.append(
                 CellSpec(cell_type="code", content=generate_code, section="nodes")
             )
 
-            critique_code = CritiqueLoopPattern.generate_critique_node_code()
+            critique_code = CritiqueLoopPattern.generate_critique_node_code(model_config=model_config)
             cells.append(
                 CellSpec(cell_type="code", content=critique_code, section="nodes")
             )
 
-            revise_code = CritiqueLoopPattern.generate_revise_node_code()
+            revise_code = CritiqueLoopPattern.generate_revise_node_code(model_config=model_config)
             cells.append(
                 CellSpec(cell_type="code", content=revise_code, section="nodes")
             )

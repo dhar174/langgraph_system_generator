@@ -2,8 +2,8 @@
 name: lnf-lead
 description: Leads implementation of LangGraph Notebook Foundry (LNF); coordinates phases, delegates to specialist agents, and enforces repo standards.
 target: github-copilot
-infer: false
-tools: ["agent", "read", "search", "edit", "execute", "web", "github/*", "playwright/*"]
+infer: true
+tools: ["agent", "read", "search", "edit", "execute", "web", "github/*", "playwright/*", "todo"]
 metadata:
   project: "LNF"
   role: "lead"

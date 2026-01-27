@@ -22,3 +22,6 @@ data/vector_store/manifest.json
 data/vector_store/index.pkl
 data/vector_store/index.faiss
 data/cached_docs/documents.json
+
+# Test output directories
+test_*/

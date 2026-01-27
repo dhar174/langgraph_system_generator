@@ -3,8 +3,43 @@
 from functools import lru_cache
 from typing import Optional
 
-from pydantic import Field
+from pydantic import BaseModel, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+class ModelConfig(BaseModel):
+    """Configuration for LLM model parameters used in code generation.
+    
+    This class encapsulates all model-related configuration to make it easy
+    to inject different models, temperatures, and API settings into pattern
+    generators without modifying the generator source code.
+    """
+
+    model: str = Field(
+        default="gpt-5-mini",
+        description="LLM model identifier (e.g., gpt-5-mini, gpt-4, claude-3-opus)",
+    )
+    temperature: float = Field(
+        default=0.7,
+        ge=0.0,
+        le=2.0,
+        description="Temperature for LLM sampling (0.0-2.0)",
+    )
+    api_base: Optional[str] = Field(
+        default=None,
+        description="Custom API base URL for self-hosted or alternative providers",
+    )
+    max_tokens: Optional[int] = Field(
+        default=None,
+        description="Maximum tokens for LLM response",
+    )
+
+    @classmethod
+    def from_dict(cls, config: dict) -> "ModelConfig":
+        """Create ModelConfig from a dictionary, filtering unknown keys."""
+        known_fields = cls.model_fields.keys()
+        filtered = {k: v for k, v in config.items() if k in known_fields}
+        return cls(**filtered)
 
 
 class Settings(BaseSettings):
