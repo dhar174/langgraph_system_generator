@@ -34,8 +34,7 @@ def _compute_base_output() -> Path:
     return base_path
 
 
-_BASE_OUTPUT = _compute_base_output()
-
+OUTPUT_BASE = _compute_base_output()
 
 def resolve_under_base(path: Path) -> Path:
     """
@@ -48,3 +47,13 @@ def resolve_under_base(path: Path) -> Path:
     if not is_relative_to_base(full_path, _BASE_OUTPUT):
         raise ValueError(f"path {full_path} is not under base output {_BASE_OUTPUT}")
     return full_path
+
+_BASE_OUTPUT: Path = OUTPUT_BASE
+
+__all__ = [
+    "OUTPUT_BASE",
+    "_BASE_OUTPUT",
+    "OUTPUT_BASE_ENV",
+    "DEFAULT_OUTPUT_BASE",
+    "is_relative_to_base",
+]
