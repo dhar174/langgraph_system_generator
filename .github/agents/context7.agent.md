@@ -3,13 +3,12 @@ name: Context7-Expert
 infer: true
 description: 'Expert in latest library versions, best practices, and correct syntax using up-to-date documentation'
 argument-hint: 'Ask about specific libraries/frameworks (e.g., "Next.js routing", "React hooks", "Tailwind CSS")'
-tools: ["read", "search", "web", "context7/*", "agent/runSubagent", "execute", "todo"]
+tools: ["read", "search", "web", "context7/*", "agent/runSubagent", "execute", "todo", "agent"]
 mcp-servers:
   context7:
     type: http
     url: "https://mcp.context7.com/mcp"
     headers: {"CONTEXT7_API_KEY": "${{ secrets.COPILOT_MCP_CONTEXT7 }}"}
-tools: ["read", "search", "web", "context7/*", "agent/runSubagent", "execute", "todo"]
 handoffs:
   - label: Implement with Context7
     agent: agent
