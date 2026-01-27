@@ -81,7 +81,7 @@ class TestRouterPatternCodeGeneration:
         """Test router node generation with custom LLM model."""
         routes = ["test"]
         code = RouterPattern.generate_router_node_code(
-            routes, llm_model="gpt-4-turbo", use_structured_output=True
+            routes, model_config={"model": "gpt-4-turbo"}, use_structured_output=True
         )
 
         assert 'model="gpt-4-turbo"' in code
@@ -110,7 +110,7 @@ class TestRouterPatternCodeGeneration:
     def test_generate_route_node_code_custom_model(self):
         """Test route node with custom LLM model."""
         code = RouterPattern.generate_route_node_code(
-            "analyze", "Analyze data", llm_model="gpt-4o"
+            "analyze", "Analyze data", model_config={"model": "gpt-4o"}
         )
 
         assert 'model="gpt-4o"' in code
@@ -480,12 +480,12 @@ class TestRouterPatternIntegration:
 
         for model in models:
             router_code = RouterPattern.generate_router_node_code(
-                ["test"], llm_model=model
+                ["test"], model_config={"model": model}
             )
             assert f'model="{model}"' in router_code
 
             route_code = RouterPattern.generate_route_node_code(
-                "test", "Test", llm_model=model
+                "test", "Test", model_config={"model": model}
             )
             assert f'model="{model}"' in route_code
 

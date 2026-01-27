@@ -10,6 +10,77 @@ from pathlib import Path
 from typing import Sequence
 
 import nbformat
+from langgraph_system_generator.constants import is_relative_to_base
+
+
+def _get_base_output() -> Path:
+    """Get the current base output directory, respecting environment variable changes.
+    
+    This function dynamically computes the base directory to support test isolation
+    via the BASE_OUTPUT_DIR environment variable.
+    """
+    from langgraph_system_generator.constants import _compute_base_output
+    return _compute_base_output()
+
+
+def _safe_output_path(path: str | os.PathLike[str]) -> Path:
+    """Resolve an output path and ensure it stays within the allowed base directory.
+
+    This provides a defense-in-depth guard so that exporters cannot be used to
+    write files outside of the configured root directory, even when called
+    directly from external code.
+
+    The provided *path* is always interpreted as a location within the
+    configured base output directory. Absolute paths are not honored as
+    escape hatches; they are treated as relative names under the base directory.
+
+    Note:
+        The safety check is applied to the fully-resolved target path. The
+        target file itself must therefore reside within the base directory;
+        attempting to use the base directory itself as the output *file* path
+        is not supported and will raise a ``RuntimeError``.
+    """
+    # Resolve the canonical base directory once to avoid any ambiguity.
+    base_root = _get_base_output().resolve()
+    base_str = str(base_root)
+
+    # Always interpret the requested path as a subpath of the base directory,
+    # then resolve to an absolute, normalized form.
+    requested = Path(path)
+    target = (base_root / requested).resolve()
+
+    # Disallow using the base directory itself as an output *file* path.
+    if target == base_root:
+        raise RuntimeError(
+            f"Output file path cannot be the base output directory itself: {base_root!s}"
+        )
+
+    target_str = str(target)
+    # Ensure the resolved target path is either exactly the base directory (already
+    # excluded above) or a descendant of it (shares the base directory prefix
+    # followed by a path separator). This prevents directory traversal or
+    # escaping the base directory even if *path* contains ``..`` segments or is
+    # an absolute path.
+    if not (target_str == base_str or target_str.startswith(base_str + os.sep)):
+        raise RuntimeError(
+            f"Output path must reside within the allowed base directory. "
+            f"Allowed base: {base_root!s}, attempted path: {target!s}"
+        )
+
+    output_dir = target.parent
+    output_dir.mkdir(parents=True, exist_ok=True)
+    return target
+
+
+def _validate_output_path(output_path: Path) -> None:
+    """Validate that an output path resides within the allowed base directory.
+    
+    Dynamically checks the base directory to support test isolation.
+    """
+    resolved = output_path.expanduser().resolve()
+    base = _get_base_output().resolve()
+    if not is_relative_to_base(resolved, base):
+        raise RuntimeError("Output path must reside within the allowed base directory")
 
 
 class NotebookExporter:
@@ -17,9 +88,9 @@ class NotebookExporter:
 
     def export_ipynb(self, notebook: nbformat.NotebookNode, path: str | Path) -> str:
         """Write a validated notebook to disk."""
+        _validate_output_path(Path(path))
         nbformat.validate(notebook)
-        target = Path(path)
-        target.parent.mkdir(parents=True, exist_ok=True)
+        target = _safe_output_path(path)
         with target.open("w", encoding="utf-8") as handle:
             nbformat.write(notebook, handle)
         return str(target)
@@ -32,12 +103,12 @@ class NotebookExporter:
         notebook_name: str = "notebook.ipynb",
     ) -> str:
         """Create a zip bundle containing the notebook and optional artifacts."""
+        _validate_output_path(Path(zip_path))
         nbformat.validate(notebook)
         buffer = io.StringIO()
         nbformat.write(notebook, buffer)
 
-        target = Path(zip_path)
-        target.parent.mkdir(parents=True, exist_ok=True)
+        target = _safe_output_path(zip_path)
         with zipfile.ZipFile(target, "w", compression=zipfile.ZIP_DEFLATED) as zf:
             zf.writestr(notebook_name, buffer.getvalue())
             for extra in extra_files or []:
@@ -62,6 +133,7 @@ class NotebookExporter:
             ImportError: If nbconvert is not available.
             Exception: If export fails.
         """
+        _validate_output_path(Path(output_path))
         try:
             from nbconvert import HTMLExporter
         except ImportError as exc:
@@ -70,11 +142,10 @@ class NotebookExporter:
             ) from exc
 
         nbformat.validate(notebook)
-        target = Path(output_path)
-        target.parent.mkdir(parents=True, exist_ok=True)
+        target = _safe_output_path(output_path)
 
         exporter = HTMLExporter()
-        (body, resources) = exporter.from_notebook_node(notebook)
+        body, resources = exporter.from_notebook_node(notebook)
 
         with target.open("w", encoding="utf-8") as handle:
             handle.write(body)
@@ -98,6 +169,7 @@ class NotebookExporter:
             ImportError: If nbconvert is not available.
             RuntimeError: If export fails.
         """
+        _validate_output_path(Path(output_path))
         try:
             from nbconvert import PDFExporter
         except ImportError as exc:
@@ -116,7 +188,7 @@ class NotebookExporter:
             # Use LaTeX-based PDF export (requires LaTeX installation)
             try:
                 exporter = PDFExporter()
-                (body, resources) = exporter.from_filename(str(source))
+                body, resources = exporter.from_filename(str(source))
 
                 with target.open("wb") as handle:
                     handle.write(body)
@@ -129,21 +201,56 @@ class NotebookExporter:
         else:
             # Use webpdf method (more reliable, uses Chromium)
             try:
+                # Note: nbconvert appends .pdf extension if not present, and if present it might double it depending on version/config
+                # We specify output filename without extension if we want it to just append .pdf, or with extension.
+                # But nbconvert behavior with --output is tricky.
+                # If we pass --output /path/to/notebook.pdf, it might write to /path/to/notebook.pdf.pdf
+
+                # Let's try to let nbconvert determine the output filename by specifying output-dir and output base name
+                output_dir = target.parent
+                output_base = target.stem
+
+                # Check if target ends with .pdf
+                if target.suffix == ".pdf":
+                    # If we explicitly want .pdf, we should be careful.
+                    # nbconvert automatically adds the extension for the format.
+                    pass
+
+                cmd = [
+                    "jupyter",
+                    "nbconvert",
+                    "--to",
+                    "webpdf",
+                    "--output-dir",
+                    str(output_dir.resolve()),
+                    "--output",
+                    output_base,
+                    str(source.resolve()),
+                ]
+
                 _ = subprocess.run(
-                    [
-                        "jupyter",
-                        "nbconvert",
-                        "--to",
-                        "webpdf",
-                        "--output",
-                        str(target.resolve()),
-                        str(source.resolve()),
-                    ],
+                    cmd,
                     capture_output=True,
                     text=True,
                     check=True,
                 )
-                return str(target)
+
+                # Expected output file
+                expected_output = output_dir / f"{output_base}.pdf"
+
+                if expected_output.exists():
+                    if expected_output != target:
+                        # Rename if necessary (though if target was .pdf, expected_output should match)
+                        if target.exists():
+                            target.unlink()
+                        expected_output.rename(target)
+                    return str(target)
+                else:
+                    # Fallback check if it did something else
+                    raise RuntimeError(
+                        f"PDF export finished but file not found at {expected_output}"
+                    )
+
             except subprocess.CalledProcessError as exc:
                 raise RuntimeError(
                     f"webpdf export failed: {exc.stderr}. "
@@ -176,6 +283,7 @@ class NotebookExporter:
         Raises:
             ImportError: If python-docx is not available.
         """
+        _validate_output_path(Path(output_path))
         try:
             from docx import Document
         except ImportError as exc:
@@ -184,8 +292,7 @@ class NotebookExporter:
             ) from exc
 
         nbformat.validate(notebook)
-        target = Path(output_path)
-        target.parent.mkdir(parents=True, exist_ok=True)
+        target = _safe_output_path(output_path)
 
         doc = Document()
 

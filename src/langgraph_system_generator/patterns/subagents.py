@@ -274,6 +274,9 @@ Example: researcher|Find information about X""")
     tools = [DuckDuckGoSearchRun()]
     llm_with_tools = llm.bind_tools(tools)"""
 
+        if include_tools:
+            llm_var = "llm_with_tools"
+
         return f'''def {node_name}_node(state: WorkflowState) -> WorkflowState:
     """Subagent: {agent_name}.
     

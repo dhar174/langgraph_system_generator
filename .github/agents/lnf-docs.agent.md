@@ -2,7 +2,7 @@
 name: lnf-docs
 description: Writes and maintains docs, READMEs, examples, and contributor guidance for LNF without touching production code unless requested.
 target: github-copilot
-infer: true
+infer: false
 tools: ["read", "search", "web","execute","github/*", "edit"]
 metadata:
   project: "LNF"

@@ -2,7 +2,7 @@
 name: lnf-patterns
 description: Maintains the inner LangGraph pattern library (router/subagents/critique loops/etc) as reusable templates and code snippets.
 target: github-copilot
-infer: true
+infer: false
 tools: ["read", "search", "edit", "web","execute","github/*"]
 metadata:
   project: "LNF"
