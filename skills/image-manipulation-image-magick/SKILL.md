@@ -190,7 +190,7 @@ done
 #### Pattern: Store ImageMagick Path
 
 ```powershell
-$magick = (Get-Command magick).Source
+$magick = (Get-Command magick -ErrorAction SilentlyContinue)?.Source
 ```
 
 #### Pattern: Get Dimensions as Variables
