@@ -29,28 +29,25 @@ def _default_api_output_dir() -> str:
     return str(_DEFAULT_API_OUTPUT)
 
 
-def _resolve_output_dir(path: str | os.PathLike[str]) -> Path:
+def _resolve_output_dir(path: str | os.PathLike[str] | None) -> Path:
     """Resolve and validate an output directory under the trusted base root."""
     base = OUTPUT_BASE.resolve()
+
+    # If no path is provided, default to the API output directory under the base.
+    if not path:
+        return _DEFAULT_API_OUTPUT
+
     target = Path(path).expanduser().resolve()
 
     # Ensure the resolved target directory is within the resolved base directory.
-    is_within_base = is_relative_to_base(target, base)
-    if hasattr(target, "is_relative_to"):
-        # Python 3.9+ provides is_relative_to for pathlib.Path
-        is_within_base = is_within_base and target.is_relative_to(base)
-    else:
-        try:
-            target.relative_to(base)
-            is_within_base = is_within_base and True
-        except ValueError:
-            is_within_base = False
-
-    if not is_within_base:
+    try:
+        target.relative_to(base)
+    except ValueError:
         raise HTTPException(
             status_code=400,
             detail="output_dir must reside within the allowed base directory.",
         )
+
     return target
 
 
