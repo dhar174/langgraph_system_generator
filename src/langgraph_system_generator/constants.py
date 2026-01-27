@@ -56,5 +56,13 @@ def is_relative_to_base(path: Path, base: Path) -> bool:
 
 # Global, resolved output base. Directory creation is deferred.
 OUTPUT_BASE: Path = _resolve_output_base()
+# Backwards-compatible alias for older imports.
+_BASE_OUTPUT: Path = OUTPUT_BASE
 
-__all__ = ["OUTPUT_BASE", "OUTPUT_BASE_ENV", "DEFAULT_OUTPUT_BASE", "is_relative_to_base"]
+__all__ = [
+    "OUTPUT_BASE",
+    "_BASE_OUTPUT",
+    "OUTPUT_BASE_ENV",
+    "DEFAULT_OUTPUT_BASE",
+    "is_relative_to_base",
+]
