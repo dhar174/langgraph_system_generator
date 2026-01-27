@@ -166,7 +166,7 @@ class NotebookExporter:
         resolved_source = source.resolve()
         try:
             # Python 3.8 compatibility: emulate Path.is_relative_to using relative_to.
-            resolved_source.relative_to(_BASE_OUTPUT)
+            resolved_source.relative_to(_BASE_OUTPUT.resolve())
         except ValueError:
             raise RuntimeError(
                 "Notebook path must reside within the allowed base directory. "
