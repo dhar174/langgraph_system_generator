@@ -31,9 +31,22 @@ def _default_api_output_dir() -> str:
 
 def _resolve_output_dir(path: str | os.PathLike[str]) -> Path:
     """Resolve and validate an output directory under the trusted base root."""
+    base = OUTPUT_BASE.resolve()
     target = Path(path).expanduser().resolve()
 
-    if not is_relative_to_base(target, OUTPUT_BASE):
+    # Ensure the resolved target directory is within the resolved base directory.
+    is_within_base = is_relative_to_base(target, base)
+    if hasattr(target, "is_relative_to"):
+        # Python 3.9+ provides is_relative_to for pathlib.Path
+        is_within_base = is_within_base and target.is_relative_to(base)
+    else:
+        try:
+            target.relative_to(base)
+            is_within_base = is_within_base and True
+        except ValueError:
+            is_within_base = False
+
+    if not is_within_base:
         raise HTTPException(
             status_code=400,
             detail="output_dir must reside within the allowed base directory.",
