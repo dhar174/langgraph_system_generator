@@ -451,7 +451,7 @@ def test_base_output_env_var_enforced(tmp_path: Path, monkeypatch):
         exporter.export_ipynb(nb, bad_path)
 
 
-def test_absolute_env_var_is_ignored(tmp_path: Path, monkeypatch):
+def test_absolute_env_var_outside_home_is_rejected(tmp_path: Path, monkeypatch):
     """Test that absolute paths in LNF_OUTPUT_BASE cause an error."""
     
     # Try to set an absolute path as LNF_OUTPUT_BASE
