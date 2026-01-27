@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import zipfile
 from pathlib import Path
 
@@ -14,6 +15,10 @@ from langgraph_system_generator.cli import generate_artifacts
 @pytest.mark.asyncio
 async def test_end_to_end_notebook_generation(tmp_path: Path):
     """Test complete workflow from prompt to multiple output formats."""
+
+    # Set BASE_OUTPUT_DIR to allow test output in tmp_path
+    # This is necessary for pytest's tmp_path fixture which creates directories in /tmp
+    os.environ['BASE_OUTPUT_DIR'] = str(tmp_path.resolve())
 
     # Generate with all formats
     artifacts = await generate_artifacts(
@@ -119,6 +124,9 @@ async def test_end_to_end_notebook_generation(tmp_path: Path):
 async def test_workflow_with_selective_formats(tmp_path: Path):
     """Test workflow with only specific formats selected."""
 
+    # Set BASE_OUTPUT_DIR to allow test output in tmp_path
+    os.environ['BASE_OUTPUT_DIR'] = str(tmp_path.resolve())
+
     artifacts = await generate_artifacts(
         prompt="Create a simple chatbot",
         output_dir=tmp_path,
@@ -148,6 +156,9 @@ async def test_workflow_with_selective_formats(tmp_path: Path):
 async def test_workflow_robustness_with_errors(tmp_path: Path):
     """Test that workflow continues even if some formats fail."""
 
+    # Set BASE_OUTPUT_DIR to allow test output in tmp_path
+    os.environ['BASE_OUTPUT_DIR'] = str(tmp_path.resolve())
+
     # This tests error handling - even if PDF fails, other formats should work
     artifacts = await generate_artifacts(
         prompt="Create a test system",
@@ -175,6 +186,9 @@ async def test_workflow_robustness_with_errors(tmp_path: Path):
 @pytest.mark.asyncio
 async def test_manifest_completeness(tmp_path: Path):
     """Test that manifest contains all expected metadata."""
+
+    # Set BASE_OUTPUT_DIR to allow test output in tmp_path
+    os.environ['BASE_OUTPUT_DIR'] = str(tmp_path.resolve())
 
     test_prompt = "Build an AI assistant"
 

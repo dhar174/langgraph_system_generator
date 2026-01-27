@@ -20,14 +20,17 @@ async def test_generate_artifacts_stub(tmp_path: Path, monkeypatch: pytest.Monke
     # Force module reload to pick up new env var
     import importlib
     import langgraph_system_generator.constants as constants_module
+    import langgraph_system_generator.notebook.exporters as exporters_module
     import langgraph_system_generator.cli as cli_module
 
     importlib.reload(constants_module)
+    importlib.reload(exporters_module)
     importlib.reload(cli_module)
 
-    # Use relative path within OUTPUT_BASE
+    # Use path within OUTPUT_BASE
+    output_dir = constants_module._BASE_OUTPUT / "test_stub"
     artifacts: GenerationArtifacts = await cli_module.generate_artifacts(
-        "Test prompt", output_dir="test_stub", mode="stub"
+        "Test prompt", output_dir=str(output_dir), mode="stub"
     )
 
     assert artifacts["manifest"]["prompt"] == "Test prompt"
@@ -152,6 +155,8 @@ def test_root_endpoint_with_static_files():
 async def test_live_mode_requires_credentials(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):
+    # Set BASE_OUTPUT_DIR to allow test output in tmp_path
+    monkeypatch.setenv("BASE_OUTPUT_DIR", str(tmp_path.resolve()))
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     with pytest.raises(RuntimeError):
         await generate_artifacts("Live prompt", output_dir=tmp_path, mode="live")
