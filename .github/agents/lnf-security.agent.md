@@ -2,7 +2,7 @@
 name: lnf-security
 description: Reviews LNF for security, privacy, and secret-handling issues; hardens scraping, env usage, and output sanitization.
 target: github-copilot
-infer: true
+infer: false
 tools: ["read", "search", "edit", "web","execute","github/*"]
 metadata:
   project: "LNF"

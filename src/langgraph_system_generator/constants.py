@@ -1,59 +1,11 @@
-"""Global constants for LangGraph System Generator."""
-
-from __future__ import annotations
-
 import os
 from pathlib import Path
 
-OUTPUT_BASE_ENV = "LNF_OUTPUT_BASE"
-DEFAULT_OUTPUT_BASE = Path.home() / ".lnf_output"
-
-
-def _resolve_output_base() -> Path:
-    """Return the configured output base without creating directories.
-
-    The path is resolved eagerly for consistent comparisons, but directory
-    creation is intentionally deferred to avoid import-time permission errors
-    when the package is installed in read-only locations.
-    The base directory defaults to ``~/.lnf_output`` under the user's home
-    directory and may be overridden via the LNF_OUTPUT_BASE environment
-    variable, but any override must still resolve to a location within the
-    user's home directory. The resulting path is resolved to an absolute path;
-    callers are responsible for creating the directory on first use.
-    """
-    env_value = os.environ.get(OUTPUT_BASE_ENV)
-    if env_value:
-        candidate = Path(env_value).expanduser().resolve()
-        home = Path.home().resolve()
-        # Ensure the environment override stays within the user's home directory.
-        if is_relative_to_base(candidate, home):
-            return candidate
-        raise RuntimeError(
-            f"{OUTPUT_BASE_ENV} must resolve under the user home directory ({home})"
-        )
-    return DEFAULT_OUTPUT_BASE.resolve()
-
+_BASE_OUTPUT = Path(os.environ.get("LNF_OUTPUT_BASE", ".")).resolve()
 
 def is_relative_to_base(path: Path, base: Path) -> bool:
-    """Return True if ``path`` is under ``base``; assumes both are resolved paths."""
     try:
-        return path.is_relative_to(base)  # type: ignore[attr-defined]
-    except AttributeError:
-        try:
-            path.relative_to(base)
-            return True
-        except ValueError:
-            return False
-
-# Global, resolved output base. Directory creation is deferred.
-OUTPUT_BASE: Path = _resolve_output_base()
-# Backwards-compatible alias for older imports.
-_BASE_OUTPUT: Path = OUTPUT_BASE
-
-__all__ = [
-    "OUTPUT_BASE",
-    "_BASE_OUTPUT",
-    "OUTPUT_BASE_ENV",
-    "DEFAULT_OUTPUT_BASE",
-    "is_relative_to_base",
-]
+        path.relative_to(base)
+        return True
+    except ValueError:
+        return False

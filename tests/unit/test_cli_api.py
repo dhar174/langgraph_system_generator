@@ -10,7 +10,6 @@ from fastapi.testclient import TestClient
 
 from langgraph_system_generator.api.server import app
 from langgraph_system_generator.cli import GenerationArtifacts, generate_artifacts
-from langgraph_system_generator.constants import _BASE_OUTPUT
 
 
 @pytest.mark.asyncio
@@ -28,7 +27,7 @@ async def test_generate_artifacts_stub(tmp_path: Path):
 @pytest.mark.asyncio
 async def test_api_generate_stub(tmp_path: Path):
     transport = httpx.ASGITransport(app=app)
-    output_dir = _BASE_OUTPUT / tmp_path.name
+    output_dir = Path.cwd() / "output" / tmp_path.name
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
         response = await client.post(
             "/generate",
@@ -55,7 +54,7 @@ async def test_api_generate_stub(tmp_path: Path):
 async def test_api_generate_with_formats(tmp_path: Path):
     """Test API with format selection."""
     transport = httpx.ASGITransport(app=app)
-    output_dir = _BASE_OUTPUT / tmp_path.name
+    output_dir = Path.cwd() / "output" / tmp_path.name
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
         response = await client.post(
             "/generate",
