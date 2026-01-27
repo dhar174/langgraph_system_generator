@@ -27,7 +27,7 @@ async def test_generate_notebook_ipynb(tmp_path: Path, monkeypatch: pytest.Monke
 
     artifacts = await cli_module.generate_artifacts(
         "Create a test system",
-        output_dir="test_ipynb",
+        output_dir=str(constants_module._BASE_OUTPUT / "test_ipynb"),
         mode="stub",
         formats=["ipynb"],
     )
@@ -59,7 +59,7 @@ async def test_generate_html_export(tmp_path: Path, monkeypatch: pytest.MonkeyPa
 
     artifacts = await cli_module.generate_artifacts(
         "Create a test system",
-        output_dir="test_html",
+        output_dir=str(constants_module._BASE_OUTPUT / "test_html"),
         mode="stub",
         formats=["ipynb", "html"],
     )
@@ -93,7 +93,7 @@ async def test_generate_docx_export(tmp_path: Path, monkeypatch: pytest.MonkeyPa
 
     artifacts = await cli_module.generate_artifacts(
         "Create a test system",
-        output_dir="test_docx",
+        output_dir=str(constants_module._BASE_OUTPUT / "test_docx"),
         mode="stub",
         formats=["ipynb", "docx"],
     )
@@ -123,7 +123,7 @@ async def test_generate_zip_bundle(tmp_path: Path, monkeypatch: pytest.MonkeyPat
 
     artifacts = await cli_module.generate_artifacts(
         "Create a test system",
-        output_dir="test_zip",
+        output_dir=str(constants_module._BASE_OUTPUT / "test_zip"),
         mode="stub",
         formats=["ipynb", "zip"],
     )
@@ -160,7 +160,7 @@ async def test_generate_all_formats(tmp_path: Path, monkeypatch: pytest.MonkeyPa
 
     artifacts = await cli_module.generate_artifacts(
         "Create a test system",
-        output_dir="test_all",
+        output_dir=str(constants_module._BASE_OUTPUT / "test_all"),
         mode="stub",
         formats=None,  # Should generate all formats
     )
@@ -206,7 +206,7 @@ async def test_generate_selective_formats(
 
     artifacts = await cli_module.generate_artifacts(
         "Create a test system",
-        output_dir="test_selective",
+        output_dir=str(constants_module._BASE_OUTPUT / "test_selective"),
         mode="stub",
         formats=["ipynb", "html"],
     )
@@ -247,7 +247,7 @@ async def test_notebook_has_required_sections(
 
     artifacts = await cli_module.generate_artifacts(
         "Create a test system",
-        output_dir="test_sections",
+        output_dir=str(constants_module._BASE_OUTPUT / "test_sections"),
         mode="stub",
         formats=["ipynb"],
     )
@@ -297,7 +297,7 @@ async def test_manifest_includes_all_paths(
 
     artifacts = await cli_module.generate_artifacts(
         "Create a test system",
-        output_dir="test_manifest",
+        output_dir=str(constants_module._BASE_OUTPUT / "test_manifest"),
         mode="stub",
         formats=["ipynb", "html", "docx", "zip"],
     )
@@ -351,7 +351,7 @@ async def test_error_handling_pdf_missing_dependencies(
 
     artifacts = await cli_module.generate_artifacts(
         "Create a test system",
-        output_dir="test_pdf",
+        output_dir=str(constants_module._BASE_OUTPUT / "test_pdf"),
         mode="stub",
         formats=["ipynb", "pdf"],
     )

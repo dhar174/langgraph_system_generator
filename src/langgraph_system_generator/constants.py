@@ -69,4 +69,5 @@ __all__ = [
     "OUTPUT_BASE",
     "_BASE_OUTPUT",
     "is_relative_to_base",
+    "_compute_base_output",
 ]

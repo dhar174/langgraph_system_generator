@@ -57,9 +57,9 @@ def test_exporters_write_files(tmp_path: Path, monkeypatch):
         ensure_minimum_sections=False,
     )
 
-    # Use relative paths that will be created under _BASE_OUTPUT
-    ipynb_path = "test.ipynb"
-    zip_path = "bundle.zip"
+    # Use paths under _BASE_OUTPUT
+    ipynb_path = constants_module._BASE_OUTPUT / "test.ipynb"
+    zip_path = constants_module._BASE_OUTPUT / "bundle.zip"
     extra_file_path = constants_module._BASE_OUTPUT / "extra.json"
     # Create base directory if needed
     constants_module._BASE_OUTPUT.mkdir(parents=True, exist_ok=True)
@@ -123,8 +123,8 @@ def test_export_to_html(tmp_path: Path, monkeypatch):
         ensure_minimum_sections=False,
     )
 
-    # Use relative path
-    html_path = "test.html"
+    # Use path under _BASE_OUTPUT
+    html_path = constants_module._BASE_OUTPUT / "test.html"
     result = exporter.export_to_html(nb, html_path)
 
     assert Path(result).exists()
@@ -159,12 +159,12 @@ def test_export_to_pdf(tmp_path: Path, monkeypatch):
         ensure_minimum_sections=False,
     )
 
-    # First write the notebook to a file (use relative path)
-    ipynb_path = "test.ipynb"
+    # First write the notebook to a file (use path under base)
+    ipynb_path = constants_module._BASE_OUTPUT / "test.ipynb"
     written_path = exporter.export_ipynb(nb, ipynb_path)
 
     # Try to export to PDF - this may fail if dependencies are missing
-    pdf_path = "test.pdf"
+    pdf_path = constants_module._BASE_OUTPUT / "test.pdf"
     try:
         result = exporter.export_to_pdf(written_path, pdf_path, method="webpdf")
         assert Path(result).exists()
@@ -201,8 +201,8 @@ def test_export_notebook_to_docx(tmp_path: Path, monkeypatch):
         ensure_minimum_sections=False,
     )
 
-    # Use relative path
-    docx_path = "test.docx"
+    # Use path under _BASE_OUTPUT
+    docx_path = constants_module._BASE_OUTPUT / "test.docx"
     result = exporter.export_notebook_to_docx(nb, docx_path, title="Test Document")
 
     assert Path(result).exists()
@@ -464,8 +464,8 @@ def test_base_output_env_var_enforced(tmp_path: Path, monkeypatch):
         ensure_minimum_sections=False,
     )
 
-    # This should work - within allowed base (use a relative path)
-    good_path = "good.ipynb"
+    # This should work - within allowed base (use path under base)
+    good_path = constants_module._BASE_OUTPUT / "good.ipynb"
     result = exporter.export_ipynb(nb, good_path)
     assert Path(result).exists()
 
@@ -478,23 +478,26 @@ def test_base_output_env_var_enforced(tmp_path: Path, monkeypatch):
 
 
 def test_absolute_env_var_outside_home_is_rejected(tmp_path: Path, monkeypatch):
-    """Test behavior when LNF_OUTPUT_BASE is set to an absolute path.
-
-    The current implementation allows absolute paths in LNF_OUTPUT_BASE.
-    This test verifies that the module loads successfully with such a path.
+    """Test behavior when LNF_OUTPUT_BASE is set to an absolute path outside the project root.
+    
+    The implementation requires that LNF_OUTPUT_BASE paths remain under the trusted root.
+    This test verifies that setting an absolute path outside that root raises an error.
+    However, BASE_OUTPUT_DIR can override this for test scenarios.
     """
 
-    # Set an absolute path as LNF_OUTPUT_BASE
+    # Ensure BASE_OUTPUT_DIR is not set so we test LNF_OUTPUT_BASE validation
+    monkeypatch.delenv("BASE_OUTPUT_DIR", raising=False)
+    
+    # Set an absolute path outside the project root as LNF_OUTPUT_BASE
+    # This should be rejected by the validation
     monkeypatch.setenv("LNF_OUTPUT_BASE", "/tmp/absolute_path")
 
-    # Force module reload to pick up new env var - this should succeed
+    # Force module reload to pick up new env var - this should fail validation
     import importlib
     import langgraph_system_generator.constants as constants_module
 
-    importlib.reload(constants_module)
-
-    # Verify the absolute path was used
-    assert str(constants_module._BASE_OUTPUT) == "/tmp/absolute_path"
+    with pytest.raises(ValueError, match="is not under trusted root"):
+        importlib.reload(constants_module)
 
 
 def test_pdf_export_source_path_validation(tmp_path: Path, monkeypatch):
@@ -519,16 +522,15 @@ def test_pdf_export_source_path_validation(tmp_path: Path, monkeypatch):
         ensure_minimum_sections=False,
     )
 
-    # Write it to a valid location (use relative path)
-    source_path = "source.ipynb"
+    # Write it to a valid location (use path under base)
+    source_path = constants_module._BASE_OUTPUT / "source.ipynb"
     exporter.export_ipynb(nb, source_path)
 
     # This test would need nbconvert with webpdf support, so we just check
     # that the path validation happens before attempting the export
     # We can't fully test this without the dependencies, but the path
     # validation code is exercised in other tests
-    full_source_path = constants_module._BASE_OUTPUT / source_path
-    assert full_source_path.exists()
+    assert source_path.exists()
 
 
 def test_all_export_methods_use_safe_paths(tmp_path: Path):
