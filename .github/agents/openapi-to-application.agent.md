@@ -1,8 +1,9 @@
 ---
 description: 'Expert assistant for generating working applications from OpenAPI specifications'
+infer: true
 name: 'OpenAPI to Application Generator'
 model: 'GPT-4.1'
-tools: ['codebase', 'edit/editFiles', 'search/codebase']
+tools: ["codebase", "edit/editFiles", "search/codebase", "execute", "read", "agent", "todo"]
 ---
 
 # OpenAPI to Application Generator

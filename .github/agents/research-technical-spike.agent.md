@@ -1,5 +1,6 @@
 ---
 description: "Systematically research and validate technical spike documents through exhaustive investigation and controlled experimentation."
+infer: true
 name: "Technical spike research mode"
 tools: ['vscode', 'execute', 'read', 'edit', 'search', 'web', 'agent', 'todo']
 ---

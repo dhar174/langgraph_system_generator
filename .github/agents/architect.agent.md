@@ -1,6 +1,7 @@
 ---
 description: An agent for architects to design and plan software systems, including defining components, interactions, and technologies.
-tools: ['codebase']
+infer: true
+tools: ["codebase", "execute", "read", "search", "agent", "todo"]
 ---
 
 ## Purpose

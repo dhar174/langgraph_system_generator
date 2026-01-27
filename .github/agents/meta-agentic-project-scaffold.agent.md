@@ -1,7 +1,8 @@
 ---
 description: "Meta agentic project creation assistant to help users create and manage project workflows effectively."
+infer: true
 name: "Meta Agentic Project Scaffold"
-tools: ["changes", "codebase", "edit/editFiles", "extensions", "fetch", "findTestFiles", "githubRepo", "new", "openSimpleBrowser", "problems", "readCellOutput", "runCommands", "runNotebooks", "runTasks", "runTests", "search", "searchResults", "terminalLastCommand", "terminalSelection", "testFailure", "updateUserPreferences", "usages", "vscodeAPI", "activePullRequest", "copilotCodingAgent"]
+tools: ["changes", "codebase", "edit/editFiles", "extensions", "fetch", "findTestFiles", "githubRepo", "new", "openSimpleBrowser", "problems", "readCellOutput", "runCommands", "runNotebooks", "runTasks", "runTests", "search", "searchResults", "terminalLastCommand", "terminalSelection", "testFailure", "updateUserPreferences", "usages", "vscodeAPI", "activePullRequest", "copilotCodingAgent", "execute", "read", "agent", "todo"]
 model: "GPT-4.1"
 ---
 

@@ -1,8 +1,9 @@
 ---
 name: 'SE: Architect'
+infer: true
 description: 'System architecture review specialist with Well-Architected frameworks, design validation, and scalability analysis for AI and distributed systems'
 model: GPT-5
-tools: ['codebase', 'edit/editFiles', 'search', 'web/fetch']
+tools: ["codebase", "edit/editFiles", "search", "web/fetch", "execute", "read", "agent", "todo"]
 ---
 
 # System Architecture Reviewer

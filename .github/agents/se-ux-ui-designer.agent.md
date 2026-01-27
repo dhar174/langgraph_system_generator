@@ -1,8 +1,9 @@
 ---
 name: 'SE: UX Designer'
+infer: true
 description: 'Jobs-to-be-Done analysis, user journey mapping, and UX research artifacts for Figma and design workflows'
 model: GPT-5
-tools: ['codebase', 'edit/editFiles', 'search', 'web/fetch']
+tools: ["codebase", "edit/editFiles", "search", "web/fetch", "execute", "read", "agent", "todo"]
 ---
 
 # UX/UI Designer
