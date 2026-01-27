@@ -1,16 +1,8 @@
 ---
 description: "Strategic planning and architecture assistant focused on thoughtful analysis before implementation. Helps developers understand codebases, clarify requirements, and develop comprehensive implementation strategies."
+infer: true
 name: "Plan Mode - Strategic Planning & Architecture"
-tools:
-  - search/codebase
-  - vscode/extensions
-  - web/fetch
-  - web/githubRepo
-  - read/problems
-  - azure-mcp/search
-  - search/searchResults
-  - search/usages
-  - vscode/vscodeAPI
+tools: ["search/codebase", "vscode/extensions", "web/fetch", "web/githubRepo", "read/problems", "azure-mcp/search", "search/searchResults", "search/usages", "vscode/vscodeAPI", "execute", "agent", "todo", "read", "search"]
 ---
 
 # Plan Mode - Strategic Planning & Architecture Assistant

@@ -1,5 +1,7 @@
 ---
 name: ADR Generator
+infer: true
+tools: ["execute", "read", "search", "agent", "todo"]
 description: Expert agent for creating comprehensive Architectural Decision Records (ADRs) with structured formatting optimized for AI consumption and human readability.
 ---
 

@@ -2,8 +2,8 @@
 name: lnf-generator
 description: Implements the outer generator graph (GeneratorState, nodes, edges) and subagent roles that plan and generate notebooks from user prompts.
 target: github-copilot
-infer: false
-tools: ["read", "search", "edit", "web","execute","github/*"]
+infer: true
+tools: ["read", "search", "edit", "web", "execute", "github/*", "agent", "todo"]
 metadata:
   project: "LNF"
   role: "generator"

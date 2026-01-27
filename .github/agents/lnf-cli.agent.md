@@ -2,8 +2,8 @@
 name: lnf-cli
 description: Implements the CLI and packaging for LNF build-index and generate commands, output folder conventions, and release-ready packaging.
 target: github-copilot
-infer: false
-tools: ["read", "search", "edit", "web", "execute", "github/*"]
+infer: true
+tools: ["read", "search", "edit", "web", "execute", "github/*", "agent", "todo"]
 metadata:
   project: "LNF"
   role: "cli"
