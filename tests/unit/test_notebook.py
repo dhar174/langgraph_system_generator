@@ -50,7 +50,7 @@ def test_exporters_write_files(tmp_path: Path, monkeypatch):
     importlib.reload(exporters_module)
 
     composer = NotebookComposer()
-    exporter = exporters_module.NotebookExporter()
+    exporter = NotebookExporter()
 
     nb = composer.build_notebook(
         [CellSpec(cell_type="code", content="x = 1\nprint(x)", section="execution")],
@@ -68,7 +68,7 @@ def test_exporters_write_files(tmp_path: Path, monkeypatch):
     written = exporter.export_ipynb(nb, ipynb_path)
     assert Path(written).exists()
 
-    bundle = exporter.export_zip(nb, zip_path, extra_files=[extra_file_path])
+    bundle = exporter.export_zip(nb, zip_path, extra_files=[extra_file])
     assert Path(bundle).exists()
     with zipfile.ZipFile(bundle, "r") as zf:
         assert "notebook.ipynb" in zf.namelist()
@@ -99,7 +99,7 @@ def test_smoke_execute_simple_notebook(tmp_path: Path):
     assert any(cell.get("outputs") for cell in output_cells)
 
 
-def test_export_to_html(tmp_path: Path, monkeypatch):
+def test_export_to_html(tmp_path: Path):
     """Test HTML export functionality."""
     # Set a test output base
     monkeypatch.setenv("LNF_OUTPUT_BASE", "test_html_export")
@@ -113,7 +113,7 @@ def test_export_to_html(tmp_path: Path, monkeypatch):
     importlib.reload(exporters_module)
 
     composer = NotebookComposer()
-    exporter = exporters_module.NotebookExporter()
+    exporter = NotebookExporter()
 
     nb = composer.build_notebook(
         [
@@ -123,8 +123,7 @@ def test_export_to_html(tmp_path: Path, monkeypatch):
         ensure_minimum_sections=False,
     )
 
-    # Use relative path
-    html_path = "test.html"
+    html_path = tmp_path / "test.html"
     result = exporter.export_to_html(nb, html_path)
 
     assert Path(result).exists()
@@ -133,7 +132,7 @@ def test_export_to_html(tmp_path: Path, monkeypatch):
     assert "hello" in content
 
 
-def test_export_to_pdf(tmp_path: Path, monkeypatch):
+def test_export_to_pdf(tmp_path: Path):
     """Test PDF export functionality."""
     # Set a test output base
     monkeypatch.setenv("LNF_OUTPUT_BASE", "test_pdf_export")
@@ -147,7 +146,7 @@ def test_export_to_pdf(tmp_path: Path, monkeypatch):
     importlib.reload(exporters_module)
 
     composer = NotebookComposer()
-    exporter = exporters_module.NotebookExporter()
+    exporter = NotebookExporter()
 
     nb = composer.build_notebook(
         [
@@ -159,16 +158,14 @@ def test_export_to_pdf(tmp_path: Path, monkeypatch):
         ensure_minimum_sections=False,
     )
 
-    # First write the notebook to a file (use relative path)
-    ipynb_path = "test.ipynb"
+    # First write the notebook to a file
+    ipynb_path = tmp_path / "test.ipynb"
     exporter.export_ipynb(nb, ipynb_path)
 
     # Try to export to PDF - this may fail if dependencies are missing
-    pdf_path = "test.pdf"
+    pdf_path = tmp_path / "test.pdf"
     try:
-        # Get the full path to pass to export_to_pdf
-        full_ipynb_path = constants_module._BASE_OUTPUT / ipynb_path
-        result = exporter.export_to_pdf(full_ipynb_path, pdf_path, method="webpdf")
+        result = exporter.export_to_pdf(ipynb_path, pdf_path, method="webpdf")
         assert Path(result).exists()
     except (RuntimeError, FileNotFoundError) as e:
         # Skip if Jupyter or required dependencies are not available

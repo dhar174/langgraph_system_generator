@@ -20,6 +20,7 @@ from langgraph_system_generator.cli import (
 )
 
 app = FastAPI(title="LangGraph Notebook Foundry API", version="0.1.1")
+_BASE_OUTPUT = Path(os.environ.get("LNF_OUTPUT_BASE", ".")).resolve()
 
 # Mount static files
 _STATIC_DIR = Path(__file__).parent / "static"
@@ -71,13 +72,8 @@ class GenerationRequest(BaseModel):
         description="Generation mode. Use 'stub' to avoid external API calls.",
     )
     output_dir: str = Field(
-        default_factory=_default_api_output_dir,
-        description=(
-            "Directory to write generation artifacts. Defaults to the application's "
-            "API output directory under OUTPUT_BASE/api "
-            "(typically ~/.lnf_output/api, or $LNF_OUTPUT_BASE/api if configured; "
-            "absolute path resolved at runtime)."
-        ),
+        default="./output/api",
+        description="Directory to write generation artifacts.",
     )
     formats: Optional[list[str]] = Field(
         default=None,
@@ -182,7 +178,13 @@ async def chrome_devtools_endpoint():
 async def generate_notebook(request: GenerationRequest) -> GenerationResponse:
     """Generate notebook artifacts via the generator pipeline."""
 
-    output_path = _resolve_output_dir(request.output_dir)
+    # Use safe path joining to prevent traversal attacks
+    # Treat the request.output_dir as relative to the base output directory
+    output_path = (_BASE_OUTPUT / request.output_dir).resolve()
+
+    # Verify the resolved path is still within the base directory
+    if not output_path.is_relative_to(_BASE_OUTPUT):
+        raise HTTPException(status_code=400, detail="output_dir must reside within the allowed base directory.")
 
     try:
         artifacts: GenerationArtifacts = await generate_artifacts(
