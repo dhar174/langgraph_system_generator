@@ -26,16 +26,7 @@ def _resolve_output_base() -> Path:
         candidate = Path(env_value).expanduser().resolve()
         home = Path.home().resolve()
         # Ensure the environment override stays within the user's home directory.
-        try:
-            # Python 3.9+: use Path.is_relative_to if available
-            is_within_home = candidate.is_relative_to(home)  # type: ignore[attr-defined]
-        except AttributeError:
-            try:
-                candidate.relative_to(home)
-                is_within_home = True
-            except ValueError:
-                is_within_home = False
-        if is_within_home:
+        if is_relative_to_base(candidate, home):
             return candidate
         raise RuntimeError(
             f"{OUTPUT_BASE_ENV} must resolve under the user home directory ({home})"
