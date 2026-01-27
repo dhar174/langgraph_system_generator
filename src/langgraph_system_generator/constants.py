@@ -15,10 +15,11 @@ def _resolve_output_base() -> Path:
     The path is resolved eagerly for consistent comparisons, but directory
     creation is intentionally deferred to avoid import-time permission errors
     when the package is installed in read-only locations.
-    The base directory may be configured via the LNF_OUTPUT_BASE environment
-    variable, but is always constrained to reside within a trusted root
-    directory under the application path. The resulting path is resolved to an
-    absolute location and must be a directory (created lazily by callers on first use).
+    The base directory defaults to ``~/.lnf_output`` under the user's home
+    directory and may be overridden via the LNF_OUTPUT_BASE environment
+    variable, but any override must still resolve to a location within the
+    user's home directory. The resulting path is resolved to an absolute path;
+    callers are responsible for creating the directory on first use.
     """
     env_value = os.environ.get(OUTPUT_BASE_ENV)
     if env_value:
