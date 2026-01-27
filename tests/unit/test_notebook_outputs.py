@@ -33,8 +33,8 @@ async def test_generate_notebook_ipynb(tmp_path: Path, monkeypatch: pytest.Monke
     )
 
     assert "notebook_path" in artifacts["manifest"]
-    notebook_path = (
-        constants_module._BASE_OUTPUT / artifacts["manifest"]["notebook_path"]
+    notebook_path = constants_module.resolve_under_base(
+        Path(artifacts["manifest"]["notebook_path"])
     )
     assert notebook_path.exists()
     assert notebook_path.suffix == ".ipynb"
@@ -172,12 +172,18 @@ async def test_generate_all_formats(tmp_path: Path, monkeypatch: pytest.MonkeyPa
     assert "zip_path" in artifacts["manifest"]
 
     # Verify all files exist
-    assert (
-        constants_module._BASE_OUTPUT / artifacts["manifest"]["notebook_path"]
+    assert constants_module.resolve_under_base(
+        Path(artifacts["manifest"]["notebook_path"])
     ).exists()
-    assert (constants_module._BASE_OUTPUT / artifacts["manifest"]["html_path"]).exists()
-    assert (constants_module._BASE_OUTPUT / artifacts["manifest"]["docx_path"]).exists()
-    assert (constants_module._BASE_OUTPUT / artifacts["manifest"]["zip_path"]).exists()
+    assert constants_module.resolve_under_base(
+        Path(artifacts["manifest"]["html_path"])
+    ).exists()
+    assert constants_module.resolve_under_base(
+        Path(artifacts["manifest"]["docx_path"])
+    ).exists()
+    assert constants_module.resolve_under_base(
+        Path(artifacts["manifest"]["zip_path"])
+    ).exists()
 
 
 @pytest.mark.asyncio
@@ -207,6 +213,12 @@ async def test_generate_selective_formats(
 
     # Should have selected formats
     assert "notebook_path" in artifacts["manifest"]
+    assert constants_module.resolve_under_base(
+        Path(artifacts["manifest"]["notebook_path"])
+    ).exists()
+    assert constants_module.resolve_under_base(
+        Path(artifacts["manifest"]["html_path"])
+    ).exists()
     assert "html_path" in artifacts["manifest"]
 
     # Should NOT have other formats
