@@ -1,5 +1,6 @@
 import importlib
 import sys
+import pytest
 
 
 def test_output_base_not_created_on_import(monkeypatch, tmp_path):
@@ -51,3 +52,13 @@ def test_expanduser(monkeypatch, tmp_path):
         assert not expected.exists()
     finally:
         sys.modules.pop(module_name, None)
+
+
+def test_env_outside_home_rejected(monkeypatch, tmp_path):
+    module_name = "langgraph_system_generator.constants"
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    monkeypatch.setenv("LNF_OUTPUT_BASE", "/tmp/outside")
+    sys.modules.pop(module_name, None)
+
+    with pytest.raises(RuntimeError):
+        importlib.import_module(module_name)
