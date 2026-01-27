@@ -44,7 +44,7 @@ def _resolve_output_base() -> Path:
 
 
 def is_relative_to_base(path: Path, base: Path) -> bool:
-    """Return True if *path* is under *base*; assumes both are resolved paths."""
+    """Return True if ``path`` is under ``base``; assumes both are resolved paths."""
     try:
         return path.is_relative_to(base)  # type: ignore[attr-defined]
     except AttributeError:
