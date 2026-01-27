@@ -12,15 +12,33 @@ from fastapi.responses import FileResponse, HTMLResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
+from langgraph_system_generator.constants import OUTPUT_BASE, is_relative_to_base
 from langgraph_system_generator.cli import GenerationArtifacts, GenerationMode, generate_artifacts
 
 app = FastAPI(title="LangGraph Notebook Foundry API", version="0.1.1")
-_BASE_OUTPUT = Path(os.environ.get("LNF_OUTPUT_BASE", ".")).resolve()
 
 # Mount static files
 _STATIC_DIR = Path(__file__).parent / "static"
 if _STATIC_DIR.exists():
     app.mount("/static", StaticFiles(directory=str(_STATIC_DIR)), name="static")
+
+_DEFAULT_API_OUTPUT = (OUTPUT_BASE / "api").resolve()
+
+
+def _default_api_output_dir() -> str:
+    return str(_DEFAULT_API_OUTPUT)
+
+
+def _resolve_output_dir(path: str | os.PathLike[str]) -> Path:
+    """Resolve and validate an output directory under the trusted base root."""
+    target = Path(path).expanduser().resolve()
+
+    if not is_relative_to_base(target, OUTPUT_BASE):
+        raise HTTPException(
+            status_code=400,
+            detail="output_dir must reside within the allowed base directory.",
+        )
+    return target
 
 
 class GenerationRequest(BaseModel):
@@ -34,8 +52,13 @@ class GenerationRequest(BaseModel):
         description="Generation mode. Use 'stub' to avoid external API calls.",
     )
     output_dir: str = Field(
-        default="./output/api",
-        description="Directory to write generation artifacts.",
+        default_factory=_default_api_output_dir,
+        description=(
+            "Directory to write generation artifacts. Defaults to the application's "
+            "API output directory under OUTPUT_BASE/api "
+            "(typically ~/.lnf_output/api, or $LNF_OUTPUT_BASE/api if configured; "
+            "absolute path resolved at runtime)."
+        ),
     )
     formats: Optional[list[str]] = Field(
         default=None,
@@ -136,9 +159,7 @@ async def chrome_devtools_endpoint():
 async def generate_notebook(request: GenerationRequest) -> GenerationResponse:
     """Generate notebook artifacts via the generator pipeline."""
 
-    output_path = Path(request.output_dir).resolve()
-    if not output_path.is_relative_to(_BASE_OUTPUT):
-        raise HTTPException(status_code=400, detail="output_dir must reside within the allowed base directory.")
+    output_path = _resolve_output_dir(request.output_dir)
 
     try:
         artifacts: GenerationArtifacts = await generate_artifacts(
