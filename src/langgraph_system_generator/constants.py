@@ -53,7 +53,5 @@ _BASE_OUTPUT: Path = OUTPUT_BASE
 __all__ = [
     "OUTPUT_BASE",
     "_BASE_OUTPUT",
-    "OUTPUT_BASE_ENV",
-    "DEFAULT_OUTPUT_BASE",
     "is_relative_to_base",
 ]
