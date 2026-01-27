@@ -10,13 +10,24 @@ from fastapi.testclient import TestClient
 
 from langgraph_system_generator.api.server import app
 from langgraph_system_generator.cli import GenerationArtifacts, generate_artifacts
-from langgraph_system_generator.constants import _BASE_OUTPUT
 
 
 @pytest.mark.asyncio
-async def test_generate_artifacts_stub(tmp_path: Path):
-    artifacts: GenerationArtifacts = await generate_artifacts(
-        "Test prompt", output_dir=tmp_path, mode="stub"
+async def test_generate_artifacts_stub(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    # Set a test output base
+    monkeypatch.setenv("LNF_OUTPUT_BASE", "test_generate_artifacts_stub")
+
+    # Force module reload to pick up new env var
+    import importlib
+    import langgraph_system_generator.constants as constants_module
+    import langgraph_system_generator.cli as cli_module
+
+    importlib.reload(constants_module)
+    importlib.reload(cli_module)
+
+    # Use relative path within OUTPUT_BASE
+    artifacts: GenerationArtifacts = await cli_module.generate_artifacts(
+        "Test prompt", output_dir="test_stub", mode="stub"
     )
 
     assert artifacts["manifest"]["prompt"] == "Test prompt"
@@ -26,9 +37,22 @@ async def test_generate_artifacts_stub(tmp_path: Path):
 
 
 @pytest.mark.asyncio
-async def test_api_generate_stub(tmp_path: Path):
-    transport = httpx.ASGITransport(app=app)
-    output_dir = _BASE_OUTPUT / tmp_path.name
+async def test_api_generate_stub(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    # Set a test output base
+    monkeypatch.setenv("LNF_OUTPUT_BASE", "test_api_stub")
+
+    # Force module reload to pick up new env var
+    import importlib
+    import langgraph_system_generator.constants as constants_module
+    import langgraph_system_generator.notebook.exporters as exporters_module
+    import langgraph_system_generator.api.server as server_module
+
+    importlib.reload(constants_module)
+    importlib.reload(exporters_module)
+    importlib.reload(server_module)
+
+    transport = httpx.ASGITransport(app=server_module.app)
+    output_dir = constants_module._BASE_OUTPUT / tmp_path.name
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
         response = await client.post(
             "/generate",
@@ -52,10 +76,25 @@ async def test_api_generate_stub(tmp_path: Path):
 
 
 @pytest.mark.asyncio
-async def test_api_generate_with_formats(tmp_path: Path):
+async def test_api_generate_with_formats(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
     """Test API with format selection."""
-    transport = httpx.ASGITransport(app=app)
-    output_dir = _BASE_OUTPUT / tmp_path.name
+    # Set a test output base
+    monkeypatch.setenv("LNF_OUTPUT_BASE", "test_api_formats")
+
+    # Force module reload to pick up new env var
+    import importlib
+    import langgraph_system_generator.constants as constants_module
+    import langgraph_system_generator.notebook.exporters as exporters_module
+    import langgraph_system_generator.api.server as server_module
+
+    importlib.reload(constants_module)
+    importlib.reload(exporters_module)
+    importlib.reload(server_module)
+
+    transport = httpx.ASGITransport(app=server_module.app)
+    output_dir = constants_module._BASE_OUTPUT / tmp_path.name
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
         response = await client.post(
             "/generate",
