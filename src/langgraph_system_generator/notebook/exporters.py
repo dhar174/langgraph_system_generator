@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Sequence
 
 import nbformat
-from langgraph_system_generator.constants import _BASE_OUTPUT
+from langgraph_system_generator.constants import OUTPUT_BASE as _BASE_OUTPUT
 
 
 def _safe_output_path(path: str | os.PathLike[str]) -> Path:
@@ -62,11 +62,19 @@ def _safe_output_path(path: str | os.PathLike[str]) -> Path:
     return target
 
 
+def _validate_output_path(output_path: Path) -> None:
+    resolved = output_path.expanduser().resolve()
+    base = _BASE_OUTPUT.resolve()
+    if not is_relative_to_base(resolved, base):
+        raise RuntimeError("Output path must reside within the allowed base directory")
+
+
 class NotebookExporter:
     """Exports nbformat notebooks to files or bundles."""
 
     def export_ipynb(self, notebook: nbformat.NotebookNode, path: str | Path) -> str:
         """Write a validated notebook to disk."""
+        _validate_output_path(Path(path))
         nbformat.validate(notebook)
         target = _safe_output_path(path)
         with target.open("w", encoding="utf-8") as handle:
@@ -81,6 +89,7 @@ class NotebookExporter:
         notebook_name: str = "notebook.ipynb",
     ) -> str:
         """Create a zip bundle containing the notebook and optional artifacts."""
+        _validate_output_path(Path(zip_path))
         nbformat.validate(notebook)
         buffer = io.StringIO()
         nbformat.write(notebook, buffer)
@@ -110,6 +119,7 @@ class NotebookExporter:
             ImportError: If nbconvert is not available.
             Exception: If export fails.
         """
+        _validate_output_path(Path(output_path))
         try:
             from nbconvert import HTMLExporter
         except ImportError as exc:
@@ -145,6 +155,7 @@ class NotebookExporter:
             ImportError: If nbconvert is not available.
             RuntimeError: If export fails.
         """
+        _validate_output_path(Path(output_path))
         try:
             from nbconvert import PDFExporter
         except ImportError as exc:
@@ -156,8 +167,8 @@ class NotebookExporter:
         if not source.exists():
             raise FileNotFoundError(f"Notebook not found: {source}")
 
-        # Resolve and validate output path
-        target = _safe_output_path(output_path)
+        target = Path(output_path)
+        target.parent.mkdir(parents=True, exist_ok=True)
 
         if method == "latex":
             # Use LaTeX-based PDF export (requires LaTeX installation)
@@ -258,6 +269,7 @@ class NotebookExporter:
         Raises:
             ImportError: If python-docx is not available.
         """
+        _validate_output_path(Path(output_path))
         try:
             from docx import Document
         except ImportError as exc:
