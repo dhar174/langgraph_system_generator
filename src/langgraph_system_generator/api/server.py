@@ -55,7 +55,9 @@ class GenerationRequest(BaseModel):
         default_factory=_default_api_output_dir,
         description=(
             "Directory to write generation artifacts. Defaults to the application's "
-            "base output directory under 'output/api' (absolute path resolved at runtime)."
+            "API output directory under OUTPUT_BASE/api "
+            "(typically ~/.lnf_output/api, or $LNF_OUTPUT_BASE/api if configured; "
+            "absolute path resolved at runtime)."
         ),
     )
     formats: Optional[list[str]] = Field(
