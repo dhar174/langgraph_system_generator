@@ -54,8 +54,6 @@ def is_relative_to_base(path: Path, base: Path) -> bool:
         except ValueError:
             return False
 
-    return base
-
 # Global, resolved output base. Directory creation is deferred.
 OUTPUT_BASE: Path = _resolve_output_base()
 
