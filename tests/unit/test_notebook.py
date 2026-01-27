@@ -159,14 +159,14 @@ def test_export_to_pdf(tmp_path: Path, monkeypatch):
         ensure_minimum_sections=False,
     )
 
-    # First write the notebook to a file
-    ipynb_path = tmp_path / "test.ipynb"
-    exporter.export_ipynb(nb, ipynb_path)
+    # First write the notebook to a file (use relative path)
+    ipynb_path = "test.ipynb"
+    written_path = exporter.export_ipynb(nb, ipynb_path)
 
     # Try to export to PDF - this may fail if dependencies are missing
-    pdf_path = tmp_path / "test.pdf"
+    pdf_path = "test.pdf"
     try:
-        result = exporter.export_to_pdf(ipynb_path, pdf_path, method="webpdf")
+        result = exporter.export_to_pdf(written_path, pdf_path, method="webpdf")
         assert Path(result).exists()
     except (RuntimeError, FileNotFoundError) as e:
         # Skip if Jupyter or required dependencies are not available
