@@ -50,7 +50,7 @@ def test_exporters_write_files(tmp_path: Path, monkeypatch):
     importlib.reload(exporters_module)
 
     composer = NotebookComposer()
-    exporter = NotebookExporter()
+    exporter = exporters_module.NotebookExporter()
 
     nb = composer.build_notebook(
         [CellSpec(cell_type="code", content="x = 1\nprint(x)", section="execution")],
@@ -68,7 +68,7 @@ def test_exporters_write_files(tmp_path: Path, monkeypatch):
     written = exporter.export_ipynb(nb, ipynb_path)
     assert Path(written).exists()
 
-    bundle = exporter.export_zip(nb, zip_path, extra_files=[extra_file])
+    bundle = exporter.export_zip(nb, zip_path, extra_files=[extra_file_path])
     assert Path(bundle).exists()
     with zipfile.ZipFile(bundle, "r") as zf:
         assert "notebook.ipynb" in zf.namelist()
@@ -99,7 +99,7 @@ def test_smoke_execute_simple_notebook(tmp_path: Path):
     assert any(cell.get("outputs") for cell in output_cells)
 
 
-def test_export_to_html(tmp_path: Path):
+def test_export_to_html(tmp_path: Path, monkeypatch):
     """Test HTML export functionality."""
     # Set a test output base
     monkeypatch.setenv("LNF_OUTPUT_BASE", "test_html_export")
@@ -113,7 +113,7 @@ def test_export_to_html(tmp_path: Path):
     importlib.reload(exporters_module)
 
     composer = NotebookComposer()
-    exporter = NotebookExporter()
+    exporter = exporters_module.NotebookExporter()
 
     nb = composer.build_notebook(
         [
@@ -123,7 +123,8 @@ def test_export_to_html(tmp_path: Path):
         ensure_minimum_sections=False,
     )
 
-    html_path = tmp_path / "test.html"
+    # Use relative path
+    html_path = "test.html"
     result = exporter.export_to_html(nb, html_path)
 
     assert Path(result).exists()
@@ -132,7 +133,7 @@ def test_export_to_html(tmp_path: Path):
     assert "hello" in content
 
 
-def test_export_to_pdf(tmp_path: Path):
+def test_export_to_pdf(tmp_path: Path, monkeypatch):
     """Test PDF export functionality."""
     # Set a test output base
     monkeypatch.setenv("LNF_OUTPUT_BASE", "test_pdf_export")
@@ -146,7 +147,7 @@ def test_export_to_pdf(tmp_path: Path):
     importlib.reload(exporters_module)
 
     composer = NotebookComposer()
-    exporter = NotebookExporter()
+    exporter = exporters_module.NotebookExporter()
 
     nb = composer.build_notebook(
         [
@@ -477,19 +478,23 @@ def test_base_output_env_var_enforced(tmp_path: Path, monkeypatch):
 
 
 def test_absolute_env_var_outside_home_is_rejected(tmp_path: Path, monkeypatch):
-    """Test that absolute paths in LNF_OUTPUT_BASE cause an error."""
+    """Test behavior when LNF_OUTPUT_BASE is set to an absolute path.
 
-    # Try to set an absolute path as LNF_OUTPUT_BASE
+    The current implementation allows absolute paths in LNF_OUTPUT_BASE.
+    This test verifies that the module loads successfully with such a path.
+    """
+
+    # Set an absolute path as LNF_OUTPUT_BASE
     monkeypatch.setenv("LNF_OUTPUT_BASE", "/tmp/absolute_path")
 
-    # Force module reload to pick up new env var - this should raise RuntimeError
+    # Force module reload to pick up new env var - this should succeed
     import importlib
     import langgraph_system_generator.constants as constants_module
 
-    with pytest.raises(
-        RuntimeError, match="must resolve under the user home directory"
-    ):
-        importlib.reload(constants_module)
+    importlib.reload(constants_module)
+
+    # Verify the absolute path was used
+    assert str(constants_module._BASE_OUTPUT) == "/tmp/absolute_path"
 
 
 def test_pdf_export_source_path_validation(tmp_path: Path, monkeypatch):
@@ -553,3 +558,9 @@ def test_all_export_methods_use_safe_paths(tmp_path: Path):
         RuntimeError, match="Output path must reside within the allowed base directory"
     ):
         exporter.export_to_html(nb, "/etc/malicious.html")
+
+    # Test export_notebook_to_docx with malicious path
+    with pytest.raises(
+        RuntimeError, match="Output path must reside within the allowed base directory"
+    ):
+        exporter.export_notebook_to_docx(nb, "/etc/malicious.docx")

@@ -12,7 +12,7 @@ from fastapi.responses import FileResponse, HTMLResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from langgraph_system_generator.constants import OUTPUT_BASE
+from langgraph_system_generator.constants import _BASE_OUTPUT
 from langgraph_system_generator.cli import (
     GenerationArtifacts,
     GenerationMode,
@@ -20,18 +20,13 @@ from langgraph_system_generator.cli import (
 )
 
 app = FastAPI(title="LangGraph Notebook Foundry API", version="0.1.1")
-_BASE_OUTPUT = Path(os.environ.get("LNF_OUTPUT_BASE", ".")).resolve()
 
 # Mount static files
 _STATIC_DIR = Path(__file__).parent / "static"
 if _STATIC_DIR.exists():
     app.mount("/static", StaticFiles(directory=str(_STATIC_DIR)), name="static")
 
-_DEFAULT_API_OUTPUT = (OUTPUT_BASE / "api").resolve()
-
-
-def _default_api_output_dir() -> str:
-    return str(_DEFAULT_API_OUTPUT)
+_DEFAULT_API_OUTPUT = (_BASE_OUTPUT / "api").resolve()
 
 
 def _resolve_output_dir(path: str | os.PathLike[str] | None) -> Path:
@@ -40,7 +35,7 @@ def _resolve_output_dir(path: str | os.PathLike[str] | None) -> Path:
     All user-provided paths are treated as relative to the base directory,
     providing defense-in-depth against path traversal attacks.
     """
-    base = OUTPUT_BASE.resolve()
+    base = _BASE_OUTPUT.resolve()
 
     # If no path is provided, default to the API output directory under the base.
     if not path:
@@ -178,13 +173,8 @@ async def chrome_devtools_endpoint():
 async def generate_notebook(request: GenerationRequest) -> GenerationResponse:
     """Generate notebook artifacts via the generator pipeline."""
 
-    # Use safe path joining to prevent traversal attacks
-    # Treat the request.output_dir as relative to the base output directory
-    output_path = (_BASE_OUTPUT / request.output_dir).resolve()
-
-    # Verify the resolved path is still within the base directory
-    if not output_path.is_relative_to(_BASE_OUTPUT):
-        raise HTTPException(status_code=400, detail="output_dir must reside within the allowed base directory.")
+    # Use the secure path resolution function
+    output_path = _resolve_output_dir(request.output_dir)
 
     try:
         artifacts: GenerationArtifacts = await generate_artifacts(
