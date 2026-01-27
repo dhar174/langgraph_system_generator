@@ -40,14 +40,15 @@ def test_composer_adds_required_sections():
 def test_exporters_write_files(tmp_path: Path, monkeypatch):
     # Set a test output base
     monkeypatch.setenv("LNF_OUTPUT_BASE", "test_exporters")
-    
+
     # Force module reload to pick up new env var
     import importlib
     import langgraph_system_generator.constants as constants_module
     import langgraph_system_generator.notebook.exporters as exporters_module
+
     importlib.reload(constants_module)
     importlib.reload(exporters_module)
-    
+
     composer = NotebookComposer()
     exporter = exporters_module.NotebookExporter()
 
@@ -60,6 +61,8 @@ def test_exporters_write_files(tmp_path: Path, monkeypatch):
     ipynb_path = "test.ipynb"
     zip_path = "bundle.zip"
     extra_file_path = constants_module._BASE_OUTPUT / "extra.json"
+    # Create base directory if needed
+    constants_module._BASE_OUTPUT.mkdir(parents=True, exist_ok=True)
     extra_file_path.write_text(json.dumps({"ok": True}), encoding="utf-8")
 
     written = exporter.export_ipynb(nb, ipynb_path)
@@ -100,14 +103,15 @@ def test_export_to_html(tmp_path: Path, monkeypatch):
     """Test HTML export functionality."""
     # Set a test output base
     monkeypatch.setenv("LNF_OUTPUT_BASE", "test_html_export")
-    
+
     # Force module reload to pick up new env var
     import importlib
     import langgraph_system_generator.constants as constants_module
     import langgraph_system_generator.notebook.exporters as exporters_module
+
     importlib.reload(constants_module)
     importlib.reload(exporters_module)
-    
+
     composer = NotebookComposer()
     exporter = exporters_module.NotebookExporter()
 
@@ -133,14 +137,15 @@ def test_export_to_pdf(tmp_path: Path, monkeypatch):
     """Test PDF export functionality."""
     # Set a test output base
     monkeypatch.setenv("LNF_OUTPUT_BASE", "test_pdf_export")
-    
+
     # Force module reload to pick up new env var
     import importlib
     import langgraph_system_generator.constants as constants_module
     import langgraph_system_generator.notebook.exporters as exporters_module
+
     importlib.reload(constants_module)
     importlib.reload(exporters_module)
-    
+
     composer = NotebookComposer()
     exporter = exporters_module.NotebookExporter()
 
@@ -170,10 +175,21 @@ def test_export_to_pdf(tmp_path: Path, monkeypatch):
         pytest.skip(f"PDF export dependencies not available: {e}")
 
 
-def test_export_notebook_to_docx(tmp_path: Path):
+def test_export_notebook_to_docx(tmp_path: Path, monkeypatch):
     """Test basic DOCX export functionality."""
+    # Set a test output base
+    monkeypatch.setenv("LNF_OUTPUT_BASE", "test_docx_export")
+
+    # Force module reload to pick up new env var
+    import importlib
+    import langgraph_system_generator.constants as constants_module
+    import langgraph_system_generator.notebook.exporters as exporters_module
+
+    importlib.reload(constants_module)
+    importlib.reload(exporters_module)
+
     composer = NotebookComposer()
-    exporter = NotebookExporter()
+    exporter = exporters_module.NotebookExporter()
 
     nb = composer.build_notebook(
         [
@@ -187,7 +203,8 @@ def test_export_notebook_to_docx(tmp_path: Path):
         ensure_minimum_sections=False,
     )
 
-    docx_path = tmp_path / "test.docx"
+    # Use relative path
+    docx_path = "test.docx"
     result = exporter.export_notebook_to_docx(nb, docx_path, title="Test Document")
 
     assert Path(result).exists()
@@ -363,105 +380,118 @@ def test_manuscript_pdf_without_title_page(tmp_path: Path):
 # Security tests for path traversal protection
 
 
-def test_safe_output_path_rejects_parent_directory_traversal(tmp_path: Path, monkeypatch):
+def test_safe_output_path_rejects_parent_directory_traversal(
+    tmp_path: Path, monkeypatch
+):
     """Test that paths with .. are rejected."""
-    from langgraph_system_generator.notebook.exporters import NotebookExporter
-    
+
     # Set the base output to a subdirectory name (will be created under default_root)
     monkeypatch.setenv("LNF_OUTPUT_BASE", "test_output")
-    
+
     # Force module reload to pick up new env var
     import importlib
     import langgraph_system_generator.constants as constants_module
     import langgraph_system_generator.notebook.exporters as exporters_module
+
     importlib.reload(constants_module)
     importlib.reload(exporters_module)
-    
+
     exporter = exporters_module.NotebookExporter()
     composer = NotebookComposer()
     nb = composer.build_notebook(
         [CellSpec(cell_type="code", content="x = 1", section="execution")],
         ensure_minimum_sections=False,
     )
-    
+
     # Try to write to parent directory using .. - this should try to escape the base
     # Since all paths are relative to _BASE_OUTPUT, we need enough .. to go outside
     malicious_path = "../../../etc/malicious.ipynb"
-    
-    with pytest.raises(RuntimeError, match="Output path must reside within the allowed base directory"):
+
+    with pytest.raises(
+        RuntimeError, match="Output path must reside within the allowed base directory"
+    ):
         exporter.export_ipynb(nb, malicious_path)
 
 
-def test_safe_output_path_rejects_absolute_paths_outside_base(tmp_path: Path, monkeypatch):
+def test_safe_output_path_rejects_absolute_paths_outside_base(
+    tmp_path: Path, monkeypatch
+):
     """Test that absolute paths outside the base directory are rejected."""
-    from langgraph_system_generator.notebook.exporters import NotebookExporter
-    
+
     # Set the base output to a subdirectory name (will be created under default_root)
     monkeypatch.setenv("LNF_OUTPUT_BASE", "test_output")
-    
+
     # Force module reload to pick up new env var
     import importlib
     import langgraph_system_generator.constants as constants_module
     import langgraph_system_generator.notebook.exporters as exporters_module
+
     importlib.reload(constants_module)
     importlib.reload(exporters_module)
-    
+
     exporter = exporters_module.NotebookExporter()
     composer = NotebookComposer()
     nb = composer.build_notebook(
         [CellSpec(cell_type="code", content="x = 1", section="execution")],
         ensure_minimum_sections=False,
     )
-    
+
     # Try to write to /tmp which is outside the base directory
     malicious_path = "/tmp/malicious.ipynb"
-    
-    with pytest.raises(RuntimeError, match="Output path must reside within the allowed base directory"):
+
+    with pytest.raises(
+        RuntimeError, match="Output path must reside within the allowed base directory"
+    ):
         exporter.export_ipynb(nb, malicious_path)
 
 
 def test_base_output_env_var_enforced(tmp_path: Path, monkeypatch):
     """Test that LNF_OUTPUT_BASE environment variable is properly enforced."""
-    
+
     # Set the base output to a subdirectory name (will be created under default_root)
     monkeypatch.setenv("LNF_OUTPUT_BASE", "test_output_enforced")
-    
+
     # Force module reload to pick up new env var
     import importlib
     import langgraph_system_generator.constants as constants_module
     import langgraph_system_generator.notebook.exporters as exporters_module
+
     importlib.reload(constants_module)
     importlib.reload(exporters_module)
-    
+
     exporter = exporters_module.NotebookExporter()
     composer = NotebookComposer()
     nb = composer.build_notebook(
         [CellSpec(cell_type="code", content="x = 1", section="execution")],
         ensure_minimum_sections=False,
     )
-    
+
     # This should work - within allowed base (use a relative path)
     good_path = "good.ipynb"
     result = exporter.export_ipynb(nb, good_path)
     assert Path(result).exists()
-    
+
     # This should fail - absolute path outside allowed base
     bad_path = "/etc/passwd"
-    with pytest.raises(RuntimeError, match="Output path must reside within the allowed base directory"):
+    with pytest.raises(
+        RuntimeError, match="Output path must reside within the allowed base directory"
+    ):
         exporter.export_ipynb(nb, bad_path)
 
 
 def test_absolute_env_var_outside_home_is_rejected(tmp_path: Path, monkeypatch):
     """Test that absolute paths in LNF_OUTPUT_BASE cause an error."""
-    
+
     # Try to set an absolute path as LNF_OUTPUT_BASE
     monkeypatch.setenv("LNF_OUTPUT_BASE", "/tmp/absolute_path")
-    
+
     # Force module reload to pick up new env var - this should raise RuntimeError
     import importlib
     import langgraph_system_generator.constants as constants_module
-    
-    with pytest.raises(RuntimeError, match="must resolve under the user home directory"):
+
+    with pytest.raises(
+        RuntimeError, match="must resolve under the user home directory"
+    ):
         importlib.reload(constants_module)
 
 
@@ -469,27 +499,28 @@ def test_pdf_export_source_path_validation(tmp_path: Path, monkeypatch):
     """Test that export_to_pdf validates source notebook path is within base directory."""
     # Set a test output base
     monkeypatch.setenv("LNF_OUTPUT_BASE", "test_pdf_validation")
-    
+
     # Force module reload to pick up new env var
     import importlib
     import langgraph_system_generator.constants as constants_module
     import langgraph_system_generator.notebook.exporters as exporters_module
+
     importlib.reload(constants_module)
     importlib.reload(exporters_module)
-    
+
     exporter = exporters_module.NotebookExporter()
     composer = NotebookComposer()
-    
+
     # Create a valid notebook
     nb = composer.build_notebook(
         [CellSpec(cell_type="code", content="x = 1", section="execution")],
         ensure_minimum_sections=False,
     )
-    
+
     # Write it to a valid location (use relative path)
     source_path = "source.ipynb"
     exporter.export_ipynb(nb, source_path)
-    
+
     # This test would need nbconvert with webpdf support, so we just check
     # that the path validation happens before attempting the export
     # We can't fully test this without the dependencies, but the path
@@ -502,20 +533,26 @@ def test_all_export_methods_use_safe_paths(tmp_path: Path):
     """Test that all export methods use path validation."""
     exporter = NotebookExporter()
     composer = NotebookComposer()
-    
+
     nb = composer.build_notebook(
         [CellSpec(cell_type="code", content="x = 1", section="execution")],
         ensure_minimum_sections=False,
     )
-    
+
     # Test export_ipynb with malicious path
-    with pytest.raises(RuntimeError, match="Output path must reside within the allowed base directory"):
+    with pytest.raises(
+        RuntimeError, match="Output path must reside within the allowed base directory"
+    ):
         exporter.export_ipynb(nb, "/etc/passwd")
-    
+
     # Test export_zip with malicious path
-    with pytest.raises(RuntimeError, match="Output path must reside within the allowed base directory"):
+    with pytest.raises(
+        RuntimeError, match="Output path must reside within the allowed base directory"
+    ):
         exporter.export_zip(nb, "/etc/malicious.zip")
-    
+
     # Test export_to_html with malicious path
-    with pytest.raises(RuntimeError, match="Output path must reside within the allowed base directory"):
+    with pytest.raises(
+        RuntimeError, match="Output path must reside within the allowed base directory"
+    ):
         exporter.export_to_html(nb, "/etc/malicious.html")
