@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import nbformat
@@ -13,6 +14,9 @@ from langgraph_system_generator.cli import generate_artifacts
 @pytest.mark.asyncio
 async def test_router_pattern_notebook_generation(tmp_path: Path):
     """Test notebook generation with router pattern."""
+
+    # Set BASE_OUTPUT_DIR to allow test output in tmp_path
+    os.environ['BASE_OUTPUT_DIR'] = str(tmp_path.resolve())
 
     # Generate notebook for router pattern
     artifacts = await generate_artifacts(
@@ -59,6 +63,9 @@ async def test_router_pattern_notebook_generation(tmp_path: Path):
 async def test_subagents_pattern_notebook_generation(tmp_path: Path):
     """Test notebook generation with subagents pattern."""
 
+    # Set BASE_OUTPUT_DIR to allow test output in tmp_path
+    os.environ['BASE_OUTPUT_DIR'] = str(tmp_path.resolve())
+
     # Generate notebook for subagents pattern
     artifacts = await generate_artifacts(
         prompt="Create a supervisor-based multi-agent system with researcher, writer, and reviewer agents",
@@ -91,6 +98,9 @@ async def test_subagents_pattern_notebook_generation(tmp_path: Path):
 @pytest.mark.asyncio
 async def test_tool_code_generation_not_empty(tmp_path: Path):
     """Test that tools have real implementations, not just 'pass' statements."""
+
+    # Set BASE_OUTPUT_DIR to allow test output in tmp_path
+    os.environ['BASE_OUTPUT_DIR'] = str(tmp_path.resolve())
 
     # Generate notebook that should have tools
     artifacts = await generate_artifacts(
@@ -138,6 +148,9 @@ async def test_tool_code_generation_not_empty(tmp_path: Path):
 async def test_node_code_generation_not_empty(tmp_path: Path):
     """Test that nodes have real implementations or meaningful templates."""
 
+    # Set BASE_OUTPUT_DIR to allow test output in tmp_path
+    os.environ['BASE_OUTPUT_DIR'] = str(tmp_path.resolve())
+
     # Generate notebook
     artifacts = await generate_artifacts(
         prompt="Create a chatbot that can route between search and analysis",
@@ -181,6 +194,9 @@ async def test_node_code_generation_not_empty(tmp_path: Path):
 async def test_generated_code_is_syntactically_valid(tmp_path: Path):
     """Test that all generated Python code is syntactically valid."""
 
+    # Set BASE_OUTPUT_DIR to allow test output in tmp_path
+    os.environ['BASE_OUTPUT_DIR'] = str(tmp_path.resolve())
+
     # Generate notebook
     artifacts = await generate_artifacts(
         prompt="Create a simple multi-agent workflow",
@@ -221,6 +237,9 @@ async def test_generated_code_is_syntactically_valid(tmp_path: Path):
 async def test_pattern_selection_based_on_prompt(tmp_path: Path):
     """Test that different prompts result in appropriate pattern selection."""
 
+    # Set BASE_OUTPUT_DIR to allow test output in tmp_path
+    os.environ['BASE_OUTPUT_DIR'] = str(tmp_path.resolve())
+
     # Test router pattern selection
     artifacts_router = await generate_artifacts(
         prompt="Create a routing system that directs queries to specialized agents",
@@ -244,6 +263,9 @@ async def test_pattern_selection_based_on_prompt(tmp_path: Path):
 @pytest.mark.asyncio
 async def test_complete_workflow_has_no_broken_references(tmp_path: Path):
     """Test that generated notebooks have no undefined variable references."""
+
+    # Set BASE_OUTPUT_DIR to allow test output in tmp_path
+    os.environ['BASE_OUTPUT_DIR'] = str(tmp_path.resolve())
 
     # Generate notebook
     artifacts = await generate_artifacts(
@@ -284,6 +306,9 @@ async def test_complete_workflow_has_no_broken_references(tmp_path: Path):
 @pytest.mark.asyncio
 async def test_notebooks_include_execution_section(tmp_path: Path):
     """Test that generated notebooks include complete execution sections."""
+
+    # Set BASE_OUTPUT_DIR to allow test output in tmp_path
+    os.environ['BASE_OUTPUT_DIR'] = str(tmp_path.resolve())
 
     # Generate notebook
     artifacts = await generate_artifacts(

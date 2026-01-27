@@ -10,8 +10,17 @@ from pathlib import Path
 from typing import Sequence
 
 import nbformat
-from langgraph_system_generator.constants import OUTPUT_BASE as _BASE_OUTPUT
 from langgraph_system_generator.constants import is_relative_to_base
+
+
+def _get_base_output() -> Path:
+    """Get the current base output directory, respecting environment variable changes.
+    
+    This function dynamically computes the base directory to support test isolation
+    via the BASE_OUTPUT_DIR environment variable.
+    """
+    from langgraph_system_generator.constants import _compute_base_output
+    return _compute_base_output()
 
 
 def _safe_output_path(path: str | os.PathLike[str]) -> Path:
@@ -22,17 +31,17 @@ def _safe_output_path(path: str | os.PathLike[str]) -> Path:
     directly from external code.
 
     The provided *path* is always interpreted as a location within the
-    configured ``_BASE_OUTPUT`` directory. Absolute paths are not honored as
-    escape hatches; they are treated as relative names under ``_BASE_OUTPUT``.
+    configured base output directory. Absolute paths are not honored as
+    escape hatches; they are treated as relative names under the base directory.
 
     Note:
         The safety check is applied to the fully-resolved target path. The
-        target file itself must therefore reside within ``_BASE_OUTPUT``;
+        target file itself must therefore reside within the base directory;
         attempting to use the base directory itself as the output *file* path
         is not supported and will raise a ``RuntimeError``.
     """
     # Resolve the canonical base directory once to avoid any ambiguity.
-    base_root = _BASE_OUTPUT.resolve()
+    base_root = _get_base_output().resolve()
     base_str = str(base_root)
 
     # Always interpret the requested path as a subpath of the base directory,
@@ -50,7 +59,7 @@ def _safe_output_path(path: str | os.PathLike[str]) -> Path:
     # Ensure the resolved target path is either exactly the base directory (already
     # excluded above) or a descendant of it (shares the base directory prefix
     # followed by a path separator). This prevents directory traversal or
-    # escaping ``_BASE_OUTPUT`` even if *path* contains ``..`` segments or is
+    # escaping the base directory even if *path* contains ``..`` segments or is
     # an absolute path.
     if not (target_str == base_str or target_str.startswith(base_str + os.sep)):
         raise RuntimeError(
@@ -64,8 +73,12 @@ def _safe_output_path(path: str | os.PathLike[str]) -> Path:
 
 
 def _validate_output_path(output_path: Path) -> None:
+    """Validate that an output path resides within the allowed base directory.
+    
+    Dynamically checks the base directory to support test isolation.
+    """
     resolved = output_path.expanduser().resolve()
-    base = _BASE_OUTPUT.resolve()
+    base = _get_base_output().resolve()
     if not is_relative_to_base(resolved, base):
         raise RuntimeError("Output path must reside within the allowed base directory")
 
