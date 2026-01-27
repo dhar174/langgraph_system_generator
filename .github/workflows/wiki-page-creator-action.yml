@@ -5,6 +5,10 @@ name: Milestone Closure
 jobs:
   release-notes:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      issues: read
+      pull-requests: read
     steps:
     - uses: actions/checkout@master
     - name: Create Release Notes
