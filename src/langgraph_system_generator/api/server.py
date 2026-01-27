@@ -12,15 +12,48 @@ from fastapi.responses import FileResponse, HTMLResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from langgraph_system_generator.cli import GenerationArtifacts, GenerationMode, generate_artifacts
+from langgraph_system_generator.constants import _BASE_OUTPUT
+from langgraph_system_generator.cli import (
+    GenerationArtifacts,
+    GenerationMode,
+    generate_artifacts,
+)
 
 app = FastAPI(title="LangGraph Notebook Foundry API", version="0.1.1")
-_BASE_OUTPUT = Path(os.environ.get("LNF_OUTPUT_BASE", ".")).resolve()
 
 # Mount static files
 _STATIC_DIR = Path(__file__).parent / "static"
 if _STATIC_DIR.exists():
     app.mount("/static", StaticFiles(directory=str(_STATIC_DIR)), name="static")
+
+_DEFAULT_API_OUTPUT = (_BASE_OUTPUT / "api").resolve()
+
+
+def _resolve_output_dir(path: str | os.PathLike[str] | None) -> Path:
+    """Resolve and validate an output directory under the trusted base root.
+
+    All user-provided paths are treated as relative to the base directory,
+    providing defense-in-depth against path traversal attacks.
+    """
+    base = _BASE_OUTPUT.resolve()
+
+    # If no path is provided, default to the API output directory under the base.
+    if not path:
+        return _DEFAULT_API_OUTPUT
+
+    # Treat path as relative to base (safer approach that prevents absolute path injection)
+    target = (base / path).resolve()
+
+    # Ensure the resolved target is still within base (prevents .. escapes)
+    try:
+        target.relative_to(base)
+    except ValueError:
+        raise HTTPException(
+            status_code=400,
+            detail="output_dir must reside within the allowed base directory.",
+        )
+
+    return target
 
 
 class GenerationRequest(BaseModel):
@@ -97,7 +130,9 @@ class GenerationRequest(BaseModel):
 class GenerationResponse(BaseModel):
     success: bool
     mode: Optional[str] = None
-    prompt: Optional[str] = None  # Note: User prompt echoed back for confirmation; may contain sensitive data if logged
+    prompt: Optional[str] = (
+        None  # Note: User prompt echoed back for confirmation; may contain sensitive data if logged
+    )
     manifest: Optional[Dict[str, Any]] = None
     manifest_path: Optional[str] = None
     output_dir: Optional[str] = None
@@ -111,7 +146,9 @@ async def root():
         index_path = _STATIC_DIR / "index.html"
         if index_path.exists():
             return FileResponse(index_path)
-    return HTMLResponse(content="<h1>LangGraph System Generator API</h1><p>Web interface not found. Use POST /generate to create systems.</p>")
+    return HTMLResponse(
+        content="<h1>LangGraph System Generator API</h1><p>Web interface not found. Use POST /generate to create systems.</p>"
+    )
 
 
 @app.get("/health")
@@ -124,7 +161,7 @@ async def health() -> Dict[str, str]:
 @app.get("/.well-known/appspecific/com.chrome.devtools.json")
 async def chrome_devtools_endpoint():
     """Handle Chrome DevTools endpoint request.
-    
+
     Chrome automatically requests this endpoint to check for DevTools support.
     Return 204 No Content to indicate the endpoint is recognized but we don't
     provide DevTools-specific features.
@@ -136,13 +173,8 @@ async def chrome_devtools_endpoint():
 async def generate_notebook(request: GenerationRequest) -> GenerationResponse:
     """Generate notebook artifacts via the generator pipeline."""
 
-    # Use safe path joining to prevent traversal attacks
-    # Treat the request.output_dir as relative to the base output directory
-    output_path = (_BASE_OUTPUT / request.output_dir).resolve()
-
-    # Verify the resolved path is still within the base directory
-    if not output_path.is_relative_to(_BASE_OUTPUT):
-        raise HTTPException(status_code=400, detail="output_dir must reside within the allowed base directory.")
+    # Use the secure path resolution function
+    output_path = _resolve_output_dir(request.output_dir)
 
     try:
         artifacts: GenerationArtifacts = await generate_artifacts(
@@ -169,6 +201,9 @@ async def generate_notebook(request: GenerationRequest) -> GenerationResponse:
             manifest_path=artifacts["manifest_path"],
             output_dir=artifacts["output_dir"],
         )
-    except (RuntimeError, ValueError) as exc:  # pragma: no cover - surfaced via HTTPException
+    except (
+        RuntimeError,
+        ValueError,
+    ) as exc:  # pragma: no cover - surfaced via HTTPException
         logging.exception("Generation request failed")
         raise HTTPException(status_code=400, detail=str(exc))
