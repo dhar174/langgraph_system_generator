@@ -25,3 +25,6 @@ data/cached_docs/documents.json
 
 # Test output directories
 test_*/
+
+# Copilot process tracking files
+Copilot-Processing.md
