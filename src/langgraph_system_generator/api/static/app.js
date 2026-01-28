@@ -127,7 +127,8 @@ promptTextarea.addEventListener('input', () => {
 
 // Output directory validation
 const outputDirInput = document.getElementById('outputDir');
-outputDirInput?.addEventListener('input', (e) => {
+if (outputDirInput) {
+    outputDirInput.addEventListener('input', (e) => {
     const value = e.target.value.trim();
     
     // Basic path validation
@@ -214,6 +215,7 @@ outputDirInput?.addEventListener('input', (e) => {
         outputDirInput.removeAttribute('title');
     }
 });
+}
 
 // Trigger initial validation for default or pre-filled value
 if (outputDirInput && outputDirInput.value && outputDirInput.value.length > 0) {
