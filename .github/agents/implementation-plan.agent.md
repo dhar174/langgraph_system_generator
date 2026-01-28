@@ -1,8 +1,8 @@
 ---
-description: "Generate an implementation plan for new features or refactoring existing code."
+name: Implementation Plan Generation Mode
+description: Generate an implementation plan for new features or refactoring existing code.
 infer: true
-name: "Implementation Plan Generation Mode"
-tools: ["search/codebase", "search/usages", "vscode/vscodeAPI", "think", "read/problems", "search/changes", "execute/testFailure", "read/terminalSelection", "read/terminalLastCommand", "vscode/openSimpleBrowser", "web/fetch", "findTestFiles", "search/searchResults", "web/githubRepo", "vscode/extensions", "edit/editFiles", "execute/runNotebookCell", "read/getNotebookSummary", "read/readNotebookCellOutput", "search", "vscode/getProjectSetupInfo", "vscode/installExtension", "vscode/newWorkspace", "vscode/runCommand", "execute/getTerminalOutput", "execute/runInTerminal", "execute/createAndRunTask", "execute/getTaskOutput", "execute/runTask", "agent", "todo", "execute", "read"]
+tools: ['execute/testFailure', 'execute/getTerminalOutput', 'execute/runTask', 'execute/createAndRunTask', 'execute/runInTerminal', 'execute/runTests', 'read/problems', 'read/readFile', 'read/terminalSelection', 'read/terminalLastCommand', 'read/getTaskOutput', 'edit/createFile', 'edit/editFiles', 'search', 'web', 'azure-mcp/search', 'cognitionai/deepwiki/*', 'mcp_docker/add_observations', 'mcp_docker/create_entities', 'mcp_docker/create_relations', 'mcp_docker/delete_entities', 'mcp_docker/delete_observations', 'mcp_docker/delete_relations', 'mcp_docker/open_nodes', 'mcp_docker/read_graph', 'mcp_docker/sequentialthinking', 'agent', 'github.vscode-pull-request-github/searchSyntax', 'github.vscode-pull-request-github/doSearch', 'mermaidchart.vscode-mermaid-chart/get_syntax_docs', 'mermaidchart.vscode-mermaid-chart/mermaid-diagram-validator', 'mermaidchart.vscode-mermaid-chart/mermaid-diagram-preview', 'todo']
 ---
 
 # Implementation Plan Generation Mode
