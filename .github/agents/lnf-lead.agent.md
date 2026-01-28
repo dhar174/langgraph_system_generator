@@ -1,9 +1,8 @@
 ---
 name: lnf-lead
 description: Leads implementation of LangGraph Notebook Foundry (LNF); coordinates phases, delegates to specialist agents, and enforces repo standards.
-target: github-copilot
 infer: true
-tools: ["agent", "read", "search", "edit", "execute", "web", "github/*", "playwright/*", "todo"]
+tools: ['execute', 'read', 'edit', 'search', 'web', 'cognitionai/deepwiki/*', 'github/add_comment_to_pending_review', 'github/add_issue_comment', 'github/create_branch', 'github/create_pull_request', 'github/fork_repository', 'github/get_commit', 'github/get_file_contents', 'github/get_label', 'github/get_latest_release', 'github/get_me', 'github/get_release_by_tag', 'github/get_tag', 'github/get_team_members', 'github/issue_read', 'github/issue_write', 'github/list_branches', 'github/list_commits', 'github/list_issue_types', 'github/list_issues', 'github/list_pull_requests', 'github/list_releases', 'github/list_tags', 'github/pull_request_read', 'github/pull_request_review_write', 'github/search_code', 'github/search_issues', 'github/search_pull_requests', 'github/search_repositories', 'github/sub_issue_write', 'github/update_pull_request', 'github/update_pull_request_branch', 'io.github.upstash/context7/*', 'mcp_docker/sequentialthinking', 'agent', 'azure-mcp/search', 'ms-vscode.vscode-websearchforcopilot/websearch', 'todo']
 metadata:
   project: "LNF"
   role: "lead"

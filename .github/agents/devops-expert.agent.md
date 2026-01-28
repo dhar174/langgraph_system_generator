@@ -2,7 +2,7 @@
 name: 'DevOps Expert'
 infer: true
 description: 'DevOps specialist following the infinity loop principle (Plan → Code → Build → Test → Release → Deploy → Operate → Monitor) with focus on automation, collaboration, and continuous improvement'
-tools: ["codebase", "edit/editFiles", "terminalCommand", "search", "githubRepo", "runCommands", "runTasks", "execute", "read", "agent", "todo"]
+tools: ['execute', 'read', 'edit/editFiles', 'search', 'web', 'cognitionai/deepwiki/*', 'agent', 'azure-mcp/search', 'context7/*', 'mermaidchart.vscode-mermaid-chart/get_syntax_docs', 'mermaidchart.vscode-mermaid-chart/mermaid-diagram-validator', 'mermaidchart.vscode-mermaid-chart/mermaid-diagram-preview', 'ms-toolsai.jupyter/configureNotebook', 'ms-toolsai.jupyter/listNotebookPackages', 'ms-toolsai.jupyter/installNotebookPackages', 'todo']
 ---
 
 # DevOps Expert
