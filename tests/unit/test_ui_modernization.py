@@ -441,10 +441,12 @@ class TestAccessibility:
         assert len(status_elements) > 0, "No aria-live regions found"
     
     def test_focus_visible_styles(self, css_content):
-        """Verify enhanced focus-visible styles."""
-        assert ':focus-visible' in css_content, "Missing :focus-visible selector"
-        assert 'outline:' in css_content or 'outline-width:' in css_content, \
-               "Missing outline styles for focus"
+        """Verify enhanced focus-visible styles with proper selector."""
+        import re
+        # Check for a properly formatted :focus-visible rule with a selector
+        focus_visible_rule = re.search(r'(\*|\w+)?:focus-visible\s*\{[^}]+outline', css_content, re.DOTALL)
+        assert focus_visible_rule is not None, \
+               "Missing properly formatted :focus-visible rule with outline property"
     
     def test_minimum_touch_targets(self, css_content):
         """Verify buttons meet 44x44px minimum touch target."""
