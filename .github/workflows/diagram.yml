@@ -1,5 +1,11 @@
 name: Create diagram
 
+# NOTE: This workflow generates a commit that is pushed directly to main.
+# The CodeQL job runs against the triggering commit, but the newly generated
+# diagram commit will not have CodeQL results at push time. This is acceptable
+# for automated diagram updates containing only generated SVG content.
+# If stricter controls are needed, consider switching to a PR-based flow.
+
 on:
   workflow_dispatch: {}
   push:

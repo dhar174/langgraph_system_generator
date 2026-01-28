@@ -28,7 +28,7 @@ All workflows follow security best practices:
 - Static Application Security Testing (SAST)
 - Extended security queries
 - Security and quality analysis
-- Weekly scheduled scans for dependency vulnerabilities
+- Weekly scheduled CodeQL static code analysis
 
 **Permissions**:
 - `contents: read` - Repository checkout
@@ -86,7 +86,7 @@ All workflows follow security best practices:
 **Security Controls**:
 - **Depends on CodeQL**: Job waits for security scan to pass
 - Scoped permissions for API calls
-- Uses OIDC-style authentication where possible
+- Uses GitHub token authentication
 
 **Workflow**:
 1. Run CodeQL security analysis (only on relevant events)

@@ -19,7 +19,7 @@ Created comprehensive security scanning workflow with:
 - Python static analysis with extended security queries
 - Triggers on push, PR, and weekly schedule (Mondays 6 AM UTC)
 - Proper permission scoping: `security-events: write`, `actions: read`, `contents: read`
-- Reusable workflow design for easy integration
+- Reusable workflow capability via `workflow_call` trigger
 
 ### 2. Updated diagram.yml
 
@@ -85,8 +85,8 @@ All actions now use specific versions instead of `main`, `master`, or `latest`:
 
 ### ✅ Security Scanning Integration
 - CodeQL runs on all pushes and PRs to main
-- Weekly scheduled scans for dependency vulnerabilities
-- Jobs that modify repository wait for security scan to pass
+- Weekly scheduled CodeQL code scans
+- Jobs that modify the repository wait for the CodeQL security scan to pass
 
 ### ✅ Workflow Dependencies
 ```
