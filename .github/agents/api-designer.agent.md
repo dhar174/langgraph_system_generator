@@ -509,6 +509,28 @@ type UserError {
   message: String!
   code: String!
 }
+type Profile {
+  id: ID!
+  bio: String
+  location: String
+}
+
+type Post {
+  id: ID!
+  title: String!
+  content: String!
+}
+
+type PostConnection {
+  edges: [PostEdge!]!
+  pageInfo: PageInfo!
+  totalCount: Int!
+}
+
+type PostEdge {
+  node: Post!
+  cursor: String!
+}
 ```
 
 ### GraphQL Best Practices
