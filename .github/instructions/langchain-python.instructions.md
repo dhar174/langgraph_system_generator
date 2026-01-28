@@ -227,3 +227,12 @@ Models have a finite context window measured in tokens. When designing conversat
 - Validate any user-supplied URLs and inputs to avoid SSRF and injection attacks.
 - Document data retention and add an API to erase user data on request.
 - Limit stored PII and encrypt sensitive fields at rest.
+
+## References
+- [LangChain AI GitHub Profile](https://github.com/langchain-ai)
+- [LangChain Python API Reference](https://python.langchain.com/docs/api-reference/)
+- [LangChain GitHub Repo](https://github.com/langchain-ai/langchain)
+- [LangGraph Docs](https://langgraph.com/docs/)
+- [LangGraph GitHub Repo](https://github.com/langgraph-ai/langgraph)
+- [LangChain Docs on the Web](https://python.langchain.com/docs/)
+- [LangChain Docs on GitHub](https://github.com/langchain-ai/docs)

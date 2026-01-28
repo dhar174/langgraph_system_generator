@@ -1,7 +1,7 @@
 ---
 description: 'Refine the requirement or issue with Acceptance Criteria, Technical Considerations, Edge Cases, and NFRs'
 infer: true
-tools: ["list_issues", "githubRepo", "search", "add_issue_comment", "create_issue", "create_issue_comment", "update_issue", "delete_issue", "get_issue", "search_issues", "execute", "read", "agent", "todo"]
+tools: ['read', 'search', 'web', 'cognitionai/deepwiki/*', 'github/add_issue_comment', 'github/issue_read', 'github/issue_write', 'github/list_issues', 'github/search_issues', 'mcp_docker/add_issue_comment', 'mcp_docker/fetch_generic_documentation', 'mcp_docker/get-library-docs', 'mcp_docker/issue_read', 'mcp_docker/issue_write', 'mcp_docker/list_issue_types', 'mcp_docker/list_issues', 'mcp_docker/read_wiki_contents', 'mcp_docker/read_wiki_structure', 'mcp_docker/search_generic_documentation', 'mcp_docker/search_issues', 'mcp_docker/sequentialthinking', 'mcp_docker/tavily-crawl', 'mcp_docker/tavily-extract', 'mcp_docker/tavily-map', 'mcp_docker/tavily-search', 'agent', 'github/add_issue_comment', 'github/list_issues', 'github/search_issues', 'github/sub_issue_write', 'azure-mcp/search', 'context7/*', 'github.vscode-pull-request-github/copilotCodingAgent', 'github.vscode-pull-request-github/issue_fetch', 'github.vscode-pull-request-github/suggest-fix', 'github.vscode-pull-request-github/searchSyntax', 'github.vscode-pull-request-github/doSearch', 'github.vscode-pull-request-github/renderIssues', 'github.vscode-pull-request-github/activePullRequest', 'github.vscode-pull-request-github/openPullRequest', 'ms-vscode.vscode-websearchforcopilot/websearch', 'todo']
 ---
 
 # Refine Requirement or Issue Chat Mode
