@@ -90,7 +90,7 @@ class GeneratorState(TypedDict):
     tools_plan: Optional[List[Dict[str, Any]]]
 
     # Generation
-    generated_cells: Annotated[List[CellSpec], operator.add]
+    generated_cells: List[CellSpec]
 
     # QA & Repair
     qa_reports: List[QAReport]
