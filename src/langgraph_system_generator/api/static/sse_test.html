@@ -1,0 +1,373 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SSE Progress Test - LangGraph Notebook Foundry</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            padding: 2rem;
+            background: #1a1a2e;
+            color: #eee;
+            line-height: 1.6;
+        }
+        
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+        }
+        
+        h1 {
+            margin-bottom: 1rem;
+            color: #00d9ff;
+        }
+        
+        .description {
+            margin-bottom: 2rem;
+            color: #aaa;
+        }
+        
+        .test-controls {
+            background: #16213e;
+            padding: 1.5rem;
+            border-radius: 8px;
+            margin-bottom: 2rem;
+        }
+        
+        button {
+            background: #00d9ff;
+            color: #1a1a2e;
+            border: none;
+            padding: 0.75rem 1.5rem;
+            border-radius: 4px;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        
+        button:hover:not(:disabled) {
+            background: #00b8d9;
+        }
+        
+        button:disabled {
+            background: #555;
+            cursor: not-allowed;
+        }
+        
+        .status {
+            margin-top: 1rem;
+            padding: 0.75rem;
+            border-radius: 4px;
+            background: #0f1729;
+        }
+        
+        .status.success {
+            background: #1b4332;
+            border-left: 4px solid #52b788;
+        }
+        
+        .status.error {
+            background: #4a1616;
+            border-left: 4px solid #e76f51;
+        }
+        
+        .progress-section {
+            background: #16213e;
+            padding: 1.5rem;
+            border-radius: 8px;
+            margin-bottom: 2rem;
+        }
+        
+        .progress-bar-container {
+            background: #0f1729;
+            height: 30px;
+            border-radius: 15px;
+            overflow: hidden;
+            margin: 1rem 0;
+        }
+        
+        .progress-bar {
+            background: linear-gradient(90deg, #00d9ff, #0099cc);
+            height: 100%;
+            width: 0%;
+            transition: width 0.3s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #fff;
+            font-weight: 600;
+            font-size: 0.875rem;
+        }
+        
+        .progress-text {
+            color: #aaa;
+            font-size: 0.9rem;
+        }
+        
+        .events-section {
+            background: #16213e;
+            padding: 1.5rem;
+            border-radius: 8px;
+        }
+        
+        h2 {
+            margin-bottom: 1rem;
+            color: #00d9ff;
+            font-size: 1.2rem;
+        }
+        
+        .events-log {
+            background: #0f1729;
+            border: 1px solid #2a2a3e;
+            border-radius: 4px;
+            padding: 1rem;
+            max-height: 400px;
+            overflow-y: auto;
+            font-family: 'Courier New', monospace;
+            font-size: 0.875rem;
+        }
+        
+        .event-entry {
+            margin-bottom: 0.5rem;
+            padding: 0.5rem;
+            border-radius: 3px;
+            background: rgba(0, 217, 255, 0.05);
+        }
+        
+        .event-entry.progress {
+            border-left: 3px solid #00d9ff;
+        }
+        
+        .event-entry.log {
+            border-left: 3px solid #ffd700;
+        }
+        
+        .event-entry.complete {
+            border-left: 3px solid #52b788;
+        }
+        
+        .event-entry.error {
+            border-left: 3px solid #e76f51;
+        }
+        
+        .event-time {
+            color: #666;
+            margin-right: 0.5rem;
+        }
+        
+        .event-type {
+            color: #00d9ff;
+            margin-right: 0.5rem;
+            font-weight: 600;
+        }
+        
+        .event-data {
+            color: #eee;
+        }
+        
+        .job-info {
+            background: #0f1729;
+            padding: 1rem;
+            border-radius: 4px;
+            margin-top: 1rem;
+            font-family: 'Courier New', monospace;
+            font-size: 0.875rem;
+        }
+        
+        .job-info span {
+            color: #00d9ff;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🧪 SSE Progress Streaming Test</h1>
+        <p class="description">
+            Test the new Server-Sent Events (SSE) progress streaming functionality for async generation.
+        </p>
+        
+        <div class="test-controls">
+            <h2>Test Controls</h2>
+            <button id="startBtn" onclick="startTest()">Start Generation Test</button>
+            <button id="stopBtn" onclick="stopTest()" disabled>Stop Stream</button>
+            
+            <div id="statusMessage"></div>
+        </div>
+        
+        <div class="progress-section">
+            <h2>Progress</h2>
+            <div class="progress-bar-container">
+                <div class="progress-bar" id="progressBar">0%</div>
+            </div>
+            <div class="progress-text" id="progressText">Ready to start...</div>
+            
+            <div id="jobInfo" style="display: none;" class="job-info">
+                <strong>Job ID:</strong> <span id="jobId">-</span><br>
+                <strong>Stream URL:</strong> <span id="streamUrl">-</span>
+            </div>
+        </div>
+        
+        <div class="events-section">
+            <h2>Event Stream</h2>
+            <div class="events-log" id="eventsLog">
+                <div style="color: #666;">Waiting for events...</div>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        let eventSource = null;
+        let startTime = null;
+        
+        function log(type, message, data = null) {
+            const eventsLog = document.getElementById('eventsLog');
+            const timestamp = new Date().toLocaleTimeString('en-US', {hour12: false, fractionalSecondDigits: 3});
+            
+            const entry = document.createElement('div');
+            entry.className = `event-entry ${type}`;
+            
+            let html = `<span class="event-time">[${timestamp}]</span>`;
+            html += `<span class="event-type">${type.toUpperCase()}</span>`;
+            html += `<span class="event-data">${message}</span>`;
+            
+            if (data) {
+                html += `<br><span class="event-time">└─</span><span class="event-data" style="color: #aaa;">${JSON.stringify(data, null, 2)}</span>`;
+            }
+            
+            entry.innerHTML = html;
+            eventsLog.appendChild(entry);
+            eventsLog.scrollTop = eventsLog.scrollHeight;
+        }
+        
+        function updateProgress(percentage, message) {
+            const progressBar = document.getElementById('progressBar');
+            const progressText = document.getElementById('progressText');
+            
+            progressBar.style.width = percentage + '%';
+            progressBar.textContent = percentage + '%';
+            progressText.textContent = message;
+        }
+        
+        function showStatus(message, isError = false) {
+            const statusDiv = document.getElementById('statusMessage');
+            statusDiv.className = `status ${isError ? 'error' : 'success'}`;
+            statusDiv.textContent = message;
+            statusDiv.style.display = 'block';
+        }
+        
+        async function startTest() {
+            const startBtn = document.getElementById('startBtn');
+            const stopBtn = document.getElementById('stopBtn');
+            
+            startBtn.disabled = true;
+            stopBtn.disabled = false;
+            
+            // Clear previous logs
+            document.getElementById('eventsLog').innerHTML = '';
+            updateProgress(0, 'Starting...');
+            startTime = Date.now();
+            
+            try {
+                // Step 1: Start generation
+                log('info', 'Starting async generation...');
+                
+                const response = await fetch('/generate-async', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        prompt: 'Build a customer support chatbot with sentiment analysis',
+                        mode: 'stub',
+                        output_dir: './output/test_sse_ui',
+                        formats: ['ipynb', 'html']
+                    })
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${await response.text()}`);
+                }
+                
+                const result = await response.json();
+                log('info', 'Generation started', result);
+                
+                // Show job info
+                document.getElementById('jobId').textContent = result.job_id;
+                document.getElementById('streamUrl').textContent = result.stream_url;
+                document.getElementById('jobInfo').style.display = 'block';
+                
+                // Step 2: Connect to SSE stream
+                log('info', 'Connecting to SSE stream...');
+                eventSource = new EventSource(result.stream_url);
+                
+                eventSource.addEventListener('progress', (e) => {
+                    const data = JSON.parse(e.data);
+                    updateProgress(data.percentage, data.message);
+                    log('progress', `[${data.node}] ${data.message}`, {percentage: data.percentage});
+                });
+                
+                eventSource.addEventListener('log', (e) => {
+                    const data = JSON.parse(e.data);
+                    log('log', `[${data.level}] ${data.message}`);
+                });
+                
+                eventSource.addEventListener('complete', (e) => {
+                    const data = JSON.parse(e.data);
+                    const elapsed = ((Date.now() - startTime) / 1000).toFixed(2);
+                    log('complete', `Generation completed in ${elapsed}s`, data);
+                    updateProgress(100, 'Complete!');
+                    showStatus(`✓ Generation completed successfully in ${elapsed}s`);
+                    stopTest();
+                });
+                
+                eventSource.addEventListener('error', (e) => {
+                    if (e.data) {
+                        const data = JSON.parse(e.data);
+                        log('error', data.error, data.details);
+                        showStatus(`✗ Error: ${data.error}`, true);
+                    } else {
+                        log('error', 'SSE connection error');
+                        showStatus('✗ SSE connection error', true);
+                    }
+                    stopTest();
+                });
+                
+                eventSource.onerror = (e) => {
+                    if (eventSource.readyState === EventSource.CLOSED) {
+                        log('info', 'SSE stream closed');
+                    } else {
+                        log('error', 'SSE connection lost');
+                        showStatus('✗ SSE connection lost', true);
+                    }
+                };
+                
+            } catch (error) {
+                log('error', error.message);
+                showStatus(`✗ Failed: ${error.message}`, true);
+                startBtn.disabled = false;
+                stopBtn.disabled = true;
+            }
+        }
+        
+        function stopTest() {
+            const startBtn = document.getElementById('startBtn');
+            const stopBtn = document.getElementById('stopBtn');
+            
+            if (eventSource) {
+                eventSource.close();
+                eventSource = null;
+                log('info', 'SSE stream closed by user');
+            }
+            
+            startBtn.disabled = false;
+            stopBtn.disabled = true;
+        }
+    </script>
+</body>
+</html>
