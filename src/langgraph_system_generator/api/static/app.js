@@ -141,7 +141,7 @@ if (outputDirInput) {
         // This is a conservative check to avoid obviously invalid or problematic paths;
         // the server should still perform authoritative validation.
         // Note: Do not treat ":" as universally invalid; it is allowed on Unix/Mac filesystems.
-        const invalidChars = /[<>"|?*\x00-\x1F]/;
+        const invalidChars = /[<>"|?*\u0000-\u001F]/;
         // Windows reserved names are case-insensitive and forbidden at any directory level.
         // Regex checks each path component separately via split. Filter empty parts from split.
         const windowsReservedNames = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(\..*)?$/i;
