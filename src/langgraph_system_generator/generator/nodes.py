@@ -32,6 +32,8 @@ from langgraph_system_generator.rag.embeddings import VectorStoreManager
 from langgraph_system_generator.rag.retriever import DocsRetriever
 from langgraph_system_generator.utils.config import settings
 
+logger = logging.getLogger(__name__)
+
 
 async def intake_node(state: GeneratorState) -> Dict[str, Any]:
     """Initial intake and constraint extraction.
@@ -258,7 +260,6 @@ async def static_qa_node(state: GeneratorState) -> Dict[str, Any]:
     Returns:
         Updated state with QA reports
     """
-    logger = logging.getLogger(__name__)
     notebook_builder = NotebookFileComposer()
     validator = NotebookValidator()
 
@@ -273,11 +274,12 @@ async def static_qa_node(state: GeneratorState) -> Dict[str, Any]:
         
         reports = validator.validate_all(notebook_path)
         
-        # If validation fails, log the path so developers can inspect the notebook
+        # If validation fails, log details for debugging
         if any(not r.passed for r in reports):
             logger.info(
-                f"Validation failed. Temporary notebook preserved at: {notebook_path}. "
-                f"Note: This file will be cleaned up when the context manager exits."
+                "Validation failed for temporary notebook at %s "
+                "(stored in a TemporaryDirectory that will be removed after this step).",
+                notebook_path,
             )
     
     existing_reports = state.get("qa_reports") or []
@@ -322,7 +324,6 @@ async def repair_node(state: GeneratorState) -> Dict[str, Any]:
     Returns:
         Updated state with incremented repair attempts and repaired notebook data.
     """
-    logger = logging.getLogger(__name__)
     repair_agent = NotebookRepairAgent()
     notebook_builder = NotebookFileComposer()
 
