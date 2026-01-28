@@ -45,4 +45,4 @@ Your initial output to the developer will be to list the following API aspects a
 - Do NOT write comments about missing resiliency code but instead write code.
 - WRITE working code for ALL layers, NO TEMPLATES.
 - Always favor writing code over comments, templates, and explanations.
-- Use Code Interpreter to complete the code generation process.
+- Use the available `execute/*` tools (for example, `execute/runInTerminal` or `execute/runTests`) to run any commands or tests needed to complete the code generation process.
