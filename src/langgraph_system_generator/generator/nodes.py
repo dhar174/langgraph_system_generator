@@ -223,7 +223,7 @@ def _cells_from_notebook(path: Path) -> List[CellSpec]:
         with path.open("r", encoding="utf-8") as handle:
             notebook = nbformat.read(handle, as_version=4)
     except Exception as e:
-        raise ValueError(f"Failed to read notebook from {path}: {e}") from e
+        raise type(e)(f"Failed to read notebook from {path}: {type(e).__name__}: {e}") from e
 
     regenerated_cells: List[CellSpec] = []
     for cell in notebook.cells:
