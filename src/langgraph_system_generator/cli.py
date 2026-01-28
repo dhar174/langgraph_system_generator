@@ -297,8 +297,12 @@ async def generate_artifacts(
         if progress_callback:
             try:
                 progress_callback(node, percentage, message)
-            except Exception:
-                pass  # Don't fail generation if progress reporting fails
+            except Exception as e:
+                # Log progress callback failures instead of silently swallowing
+                logging.warning(
+                    f"Progress callback failed for node={node}, percentage={percentage}: {e}",
+                    exc_info=True
+                )
 
     target = Path(output_dir)
     target.mkdir(parents=True, exist_ok=True)

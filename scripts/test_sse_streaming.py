@@ -54,7 +54,6 @@ async def test_sse_generation():
         assert "job_id" in result
         assert "stream_url" in result
         
-        job_id = result["job_id"]
         stream_url = result["stream_url"]
     print("    ✓ Generation started\n")
     

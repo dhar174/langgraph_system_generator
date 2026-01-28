@@ -36,6 +36,10 @@ if _STATIC_DIR.exists():
 
 _DEFAULT_API_OUTPUT = (_BASE_OUTPUT / "api").resolve()
 
+# Concurrency limit for async generation (prevent resource exhaustion)
+_MAX_CONCURRENT_GENERATIONS = int(os.getenv("LNF_MAX_CONCURRENT_GENERATIONS", "5"))
+_generation_semaphore = asyncio.Semaphore(_MAX_CONCURRENT_GENERATIONS)
+
 
 def _resolve_output_dir(path: str | os.PathLike[str] | None) -> Path:
     """Resolve and validate an output directory under the trusted base root.
@@ -238,12 +242,25 @@ async def start_async_generation(
     This endpoint starts generation in the background and returns immediately with
     a job ID. Clients can then connect to the SSE stream endpoint to receive
     real-time progress updates, logs, and the final result.
+    
+    Concurrency is limited to prevent resource exhaustion. If the limit is reached,
+    returns 503 Service Unavailable.
 
     Returns:
         GenerationStartResponse with job_id and stream_url
+        
+    Raises:
+        HTTPException 503: When concurrent generation limit is reached
     """
     # Validate output directory
     output_path = _resolve_output_dir(request.output_dir)
+
+    # Check if we can accept more jobs (non-blocking check)
+    if _generation_semaphore.locked() and _generation_semaphore._value == 0:
+        raise HTTPException(
+            status_code=503,
+            detail=f"Server is currently processing the maximum number of concurrent generations ({_MAX_CONCURRENT_GENERATIONS}). Please try again later.",
+        )
 
     # Create job and start generation task
     job_id = create_job()
@@ -286,63 +303,67 @@ async def _run_generation_with_progress(
 
     This function orchestrates the generation process and emits progress events
     to the SSE stream. It wraps generate_artifacts() and adds instrumentation.
+    
+    Uses a semaphore to limit concurrent generations and prevent resource exhaustion.
 
     Args:
         job_id: Job identifier for progress tracking
         request: Generation request parameters
         output_path: Resolved output directory path
     """
-    try:
-        # Emit start event
-        emit_node_progress(job_id, "start", 0, "Starting generation...")
+    # Acquire semaphore to limit concurrency
+    async with _generation_semaphore:
+        try:
+            # Emit start event
+            emit_node_progress(job_id, "start", 0, "Starting generation...")
 
-        # Emit validation progress
-        emit_node_progress(job_id, "validation", 5, "Validating request...")
+            # Emit validation progress
+            emit_node_progress(job_id, "validation", 5, "Validating request...")
 
-        # Run generation
-        # TODO: Pass job_id to generate_artifacts for node-level progress
-        emit_node_progress(job_id, "generation", 10, "Initializing generator...")
+            # Run generation
+            # TODO: Pass job_id to generate_artifacts for node-level progress
+            emit_node_progress(job_id, "generation", 10, "Initializing generator...")
 
-        # Define progress callback for generate_artifacts
-        def progress_callback(node: str, percentage: int, message: str) -> None:
-            """Forward progress to SSE stream."""
-            emit_node_progress(job_id, node, percentage, message)
+            # Define progress callback for generate_artifacts
+            def progress_callback(node: str, percentage: int, message: str) -> None:
+                """Forward progress to SSE stream."""
+                emit_node_progress(job_id, node, percentage, message)
 
-        artifacts: GenerationArtifacts = await generate_artifacts(
-            request.prompt,
-            output_dir=str(output_path),
-            mode=request.mode,
-            formats=request.formats,
-            model=request.model,
-            temperature=request.temperature,
-            max_tokens=request.max_tokens,
-            agent_type=request.agent_type,
-            memory_config=request.memory_config,
-            custom_endpoint=request.custom_endpoint,
-            preset=request.preset,
-            graph_style=request.graph_style,
-            retriever_type=request.retriever_type,
-            document_loader=request.document_loader,
-            progress_callback=progress_callback,
-        )
+            artifacts: GenerationArtifacts = await generate_artifacts(
+                request.prompt,
+                output_dir=str(output_path),
+                mode=request.mode,
+                formats=request.formats,
+                model=request.model,
+                temperature=request.temperature,
+                max_tokens=request.max_tokens,
+                agent_type=request.agent_type,
+                memory_config=request.memory_config,
+                custom_endpoint=request.custom_endpoint,
+                preset=request.preset,
+                graph_style=request.graph_style,
+                retriever_type=request.retriever_type,
+                document_loader=request.document_loader,
+                progress_callback=progress_callback,
+            )
 
-        # Emit completion with result
-        emit_complete(
-            job_id,
-            {
-                "success": True,
-                "mode": artifacts["mode"],
-                "prompt": artifacts["prompt"],
-                "manifest": artifacts["manifest"],
-                "manifest_path": artifacts["manifest_path"],
-                "output_dir": artifacts["output_dir"],
-            },
-        )
+            # Emit completion with result
+            emit_complete(
+                job_id,
+                {
+                    "success": True,
+                    "mode": artifacts["mode"],
+                    "prompt": artifacts["prompt"],
+                    "manifest": artifacts["manifest"],
+                    "manifest_path": artifacts["manifest_path"],
+                    "output_dir": artifacts["output_dir"],
+                },
+            )
 
-    except Exception as exc:
-        logging.exception(f"Generation failed for job {job_id}")
-        emit_error(
-            job_id,
-            str(exc),
-            {"type": type(exc).__name__},
-        )
+        except Exception as exc:
+            logging.exception(f"Generation failed for job {job_id}")
+            emit_error(
+                job_id,
+                str(exc),
+                {"type": type(exc).__name__},
+            )

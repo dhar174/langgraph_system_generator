@@ -350,7 +350,7 @@ async function handleGenerate(data) {
 
 ### Python Packages
 ```txt
-sse-starlette==1.8.2  # SSE support for FastAPI
+sse-starlette>=2.0.0  # SSE support for FastAPI
 ```
 
 ### No Changes Needed
