@@ -12,6 +12,7 @@ from langgraph_system_generator.generator.agents import (
     ArchitectureSelector,
     GraphDesigner,
     NotebookComposer,
+    QARepairAgent,
     RequirementsAnalyst,
     ToolchainEngineer,
 )
