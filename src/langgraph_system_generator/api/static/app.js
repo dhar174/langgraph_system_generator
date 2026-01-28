@@ -129,92 +129,92 @@ promptTextarea.addEventListener('input', () => {
 const outputDirInput = document.getElementById('outputDir');
 if (outputDirInput) {
     outputDirInput.addEventListener('input', (e) => {
-    const value = e.target.value.trim();
-    
-    // Basic path validation
-    if (value.length === 0) {
-        outputDirInput.classList.remove('valid', 'invalid');
-        return;
-    }
-    
-    // Check for invalid characters and common Windows path restrictions.
-    // This is a conservative check to avoid obviously invalid or problematic paths;
-    // the server should still perform authoritative validation.
-    // Note: Do not treat ":" as universally invalid; it is allowed on Unix/Mac filesystems.
-    const invalidChars = /[<>"|?*\x00-\x1F]/;
-    // Windows reserved names are case-insensitive and forbidden at any directory level.
-    // Regex checks each path component separately via split. Filter empty parts from split.
-    const windowsReservedNames = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(\..*)?$/i;
-    const hasReservedName = value
-        .split(/[\\/]/)
-        .filter((part) => part.length > 0)
-        .some((part) => windowsReservedNames.test(part));
-    
-    // Robust platform detection (using modern API with fallbacks)
-    let isWindowsPlatform = false;
-    if (typeof navigator !== 'undefined') {
-        const uaDataPlatform =
-            navigator.userAgentData && navigator.userAgentData.platform;
-        const legacyPlatform = navigator.platform;
-        const ua = navigator.userAgent;
+        const value = e.target.value.trim();
         
-        // Prefer explicit platform information when available; only fall back to userAgent
-        // if neither userAgentData.platform nor navigator.platform provide a usable value.
-        const primaryPlatform =
-            (typeof uaDataPlatform === 'string' && uaDataPlatform.trim() !== '')
-                ? uaDataPlatform
-                : (typeof legacyPlatform === 'string' && legacyPlatform.trim() !== '')
-                    ? legacyPlatform
-                    : null;
+        // Basic path validation
+        if (value.length === 0) {
+            outputDirInput.classList.remove('valid', 'invalid');
+            return;
+        }
+        
+        // Check for invalid characters and common Windows path restrictions.
+        // This is a conservative check to avoid obviously invalid or problematic paths;
+        // the server should still perform authoritative validation.
+        // Note: Do not treat ":" as universally invalid; it is allowed on Unix/Mac filesystems.
+        const invalidChars = /[<>"|?*\x00-\x1F]/;
+        // Windows reserved names are case-insensitive and forbidden at any directory level.
+        // Regex checks each path component separately via split. Filter empty parts from split.
+        const windowsReservedNames = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(\..*)?$/i;
+        const hasReservedName = value
+            .split(/[\\/]/)
+            .filter((part) => part.length > 0)
+            .some((part) => windowsReservedNames.test(part));
+        
+        // Robust platform detection (using modern API with fallbacks)
+        let isWindowsPlatform = false;
+        if (typeof navigator !== 'undefined') {
+            const uaDataPlatform =
+                navigator.userAgentData && navigator.userAgentData.platform;
+            const legacyPlatform = navigator.platform;
+            const ua = navigator.userAgent;
+            
+            // Prefer explicit platform information when available; only fall back to userAgent
+            // if neither userAgentData.platform nor navigator.platform provide a usable value.
+            const primaryPlatform =
+                (typeof uaDataPlatform === 'string' && uaDataPlatform.trim() !== '')
+                    ? uaDataPlatform
+                    : (typeof legacyPlatform === 'string' && legacyPlatform.trim() !== '')
+                        ? legacyPlatform
+                        : null;
 
-        if (typeof primaryPlatform === 'string') {
-            isWindowsPlatform = primaryPlatform.toLowerCase().includes('win');
-        } else if (typeof ua === 'string') {
-            const uaTrimmed = ua.trim();
-            if (uaTrimmed.length > 0) {
-                // Note: userAgent is used as a final fallback compatibility signal for Windows detection
-                // when explicit platform information is unavailable.
-                isWindowsPlatform = uaTrimmed.toLowerCase().includes('win');
+            if (typeof primaryPlatform === 'string') {
+                isWindowsPlatform = primaryPlatform.toLowerCase().includes('win');
+            } else if (typeof ua === 'string') {
+                const uaTrimmed = ua.trim();
+                if (uaTrimmed.length > 0) {
+                    // Note: userAgent is used as a final fallback compatibility signal for Windows detection
+                    // when explicit platform information is unavailable.
+                    isWindowsPlatform = uaTrimmed.toLowerCase().includes('win');
+                }
             }
         }
-    }
-    
-    // Disallow colons that are not used as a drive letter designator (e.g. "C:\" or "C:file.txt")
-    // on Windows platforms.
-    let hasInvalidColonUsage = false;
-    if (isWindowsPlatform) {
-        const firstColonIndex = value.indexOf(':');
-        if (firstColonIndex !== -1) {
-            // Accept a single leading "<letter>:" as a valid drive designator.
-            const hasDriveLetterPrefix =
-                firstColonIndex === 1 && /^[a-zA-Z]$/.test(value[0]);
-            const hasExtraColon = value.indexOf(':', firstColonIndex + 1) !== -1;
-            hasInvalidColonUsage = !hasDriveLetterPrefix || hasExtraColon;
+        
+        // Disallow colons that are not used as a drive letter designator (e.g. "C:\" or "C:file.txt")
+        // on Windows platforms.
+        let hasInvalidColonUsage = false;
+        if (isWindowsPlatform) {
+            const firstColonIndex = value.indexOf(':');
+            if (firstColonIndex !== -1) {
+                // Accept a single leading "<letter>:" as a valid drive designator.
+                const hasDriveLetterPrefix =
+                    firstColonIndex === 1 && /^[a-zA-Z]$/.test(value[0]);
+                const hasExtraColon = value.indexOf(':', firstColonIndex + 1) !== -1;
+                hasInvalidColonUsage = !hasDriveLetterPrefix || hasExtraColon;
+            }
         }
-    }
 
-    // Determine validation result and provide user feedback
-    let validationMessage = '';
-    if (invalidChars.test(value)) {
-        validationMessage = 'Path contains invalid characters';
-    } else if (hasReservedName) {
-        validationMessage = 'Path contains reserved Windows filename';
-    } else if (hasInvalidColonUsage) {
-        validationMessage = 'Invalid colon placement in path';
-    }
-    
-    if (validationMessage) {
-        outputDirInput.classList.add('invalid');
-        outputDirInput.classList.remove('valid');
-        outputDirInput.setAttribute('aria-invalid', 'true');
-        outputDirInput.setAttribute('title', validationMessage);
-    } else {
-        outputDirInput.classList.add('valid');
-        outputDirInput.classList.remove('invalid');
-        outputDirInput.setAttribute('aria-invalid', 'false');
-        outputDirInput.removeAttribute('title');
-    }
-});
+        // Determine validation result and provide user feedback
+        let validationMessage = '';
+        if (invalidChars.test(value)) {
+            validationMessage = 'Path contains invalid characters';
+        } else if (hasReservedName) {
+            validationMessage = 'Path contains reserved Windows filename';
+        } else if (hasInvalidColonUsage) {
+            validationMessage = 'Invalid colon placement in path';
+        }
+        
+        if (validationMessage) {
+            outputDirInput.classList.add('invalid');
+            outputDirInput.classList.remove('valid');
+            outputDirInput.setAttribute('aria-invalid', 'true');
+            outputDirInput.setAttribute('title', validationMessage);
+        } else {
+            outputDirInput.classList.add('valid');
+            outputDirInput.classList.remove('invalid');
+            outputDirInput.setAttribute('aria-invalid', 'false');
+            outputDirInput.removeAttribute('title');
+        }
+    });
 }
 
 // Trigger initial validation for default or pre-filled value
