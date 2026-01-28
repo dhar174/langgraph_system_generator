@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Any, Dict, List
@@ -30,6 +31,8 @@ from langgraph_system_generator.qa import NotebookRepairAgent, NotebookValidator
 from langgraph_system_generator.rag.embeddings import VectorStoreManager
 from langgraph_system_generator.rag.retriever import DocsRetriever
 from langgraph_system_generator.utils.config import settings
+
+logger = logging.getLogger(__name__)
 
 
 async def intake_node(state: GeneratorState) -> Dict[str, Any]:
@@ -207,8 +210,22 @@ async def notebook_assembly_node(state: GeneratorState) -> Dict[str, Any]:
 
 
 def _cells_from_notebook(path: Path) -> List[CellSpec]:
-    with path.open("r", encoding="utf-8") as handle:
-        notebook = nbformat.read(handle, as_version=4)
+    """Read cells from a notebook file and convert to CellSpec list.
+    
+    Args:
+        path: Path to the notebook file
+        
+    Returns:
+        List of CellSpec objects parsed from the notebook
+        
+    Raises:
+        ValueError: If the notebook cannot be read or parsed
+    """
+    try:
+        with path.open("r", encoding="utf-8") as handle:
+            notebook = nbformat.read(handle, as_version=4)
+    except Exception as e:
+        raise type(e)(f"Failed to read notebook from {path}: {type(e).__name__}: {e}") from e
 
     regenerated_cells: List[CellSpec] = []
     for cell in notebook.cells:
@@ -251,7 +268,20 @@ async def static_qa_node(state: GeneratorState) -> Dict[str, Any]:
         notebook = notebook_builder.build_notebook(cells)
         notebook_path = Path(temp_dir) / "generated.ipynb"
         notebook_builder.write(notebook, notebook_path)
+        
+        # Log temp path for debugging failed validations
+        logger.debug(f"Running validation on temporary notebook: {notebook_path}")
+        
         reports = validator.validate_all(notebook_path)
+        
+        # If validation fails, log details for debugging
+        if any(not r.passed for r in reports):
+            logger.info(
+                "Validation failed for temporary notebook at %s "
+                "(stored in a TemporaryDirectory that will be removed after this step).",
+                notebook_path,
+            )
+    
     existing_reports = state.get("qa_reports") or []
 
     return {"qa_reports": [*existing_reports, *reports]}
@@ -305,12 +335,27 @@ async def repair_node(state: GeneratorState) -> Dict[str, Any]:
         notebook_path = Path(temp_dir) / "generated.ipynb"
         notebook_builder.write(notebook, notebook_path)
 
-        _, updated_reports = repair_agent.repair_notebook(
+        repair_success, updated_reports = repair_agent.repair_notebook(
             notebook_path,
             qa_reports,
             attempt=state["repair_attempts"],
         )
-        regenerated_cells = _cells_from_notebook(notebook_path)
+        
+        # Only reload cells if repair was successful
+        if repair_success:
+            try:
+                regenerated_cells = _cells_from_notebook(notebook_path)
+            except ValueError as e:
+                # If cell rehydration fails after successful repair, log and keep original cells
+                logger.warning(f"Failed to reload cells after repair: {e}")
+                regenerated_cells = cells
+        else:
+            # If repair failed (e.g., notebook not safely written), keep original cells
+            logger.info(
+                f"Repair attempt {state['repair_attempts']} failed. "
+                "Keeping original cells for potential retry."
+            )
+            regenerated_cells = cells
 
     return {
         "generated_cells": regenerated_cells,
