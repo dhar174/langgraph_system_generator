@@ -90,7 +90,12 @@ class GeneratorState(TypedDict):
     tools_plan: Optional[List[Dict[str, Any]]]
 
     # Generation
-    generated_cells: Annotated[List[CellSpec], operator.add]
+    # NOTE: `generated_cells` is intentionally *not* annotated with `operator.add`.
+    # When multiple nodes set this field, the last value will replace any previous ones
+    # instead of being concatenated. This differs from earlier behavior where
+    # `generated_cells` updates were accumulated, and it is relied on by the repair loop
+    # semantics (e.g., retry flows) to treat each iteration's cells as authoritative.
+    generated_cells: List[CellSpec]
 
     # QA & Repair
     qa_reports: List[QAReport]

@@ -2,7 +2,12 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict
+import logging
+from pathlib import Path
+from tempfile import TemporaryDirectory
+from typing import Any, Dict, List
+
+import nbformat
 
 from langgraph_system_generator.generator.agents import (
     ArchitectureSelector,
@@ -13,14 +18,21 @@ from langgraph_system_generator.generator.agents import (
     ToolchainEngineer,
 )
 from langgraph_system_generator.generator.state import (
+    CellSpec,
     DocSnippet,
     GeneratorState,
     NotebookPlan,
     QAReport,
 )
+from langgraph_system_generator.notebook.composer import (
+    NotebookComposer as NotebookFileComposer,
+)
+from langgraph_system_generator.qa import NotebookRepairAgent, NotebookValidator
 from langgraph_system_generator.rag.embeddings import VectorStoreManager
 from langgraph_system_generator.rag.retriever import DocsRetriever
 from langgraph_system_generator.utils.config import settings
+
+logger = logging.getLogger(__name__)
 
 
 async def intake_node(state: GeneratorState) -> Dict[str, Any]:
@@ -197,6 +209,48 @@ async def notebook_assembly_node(state: GeneratorState) -> Dict[str, Any]:
     return {"generated_cells": cells}
 
 
+def _cells_from_notebook(path: Path) -> List[CellSpec]:
+    """Read cells from a notebook file and convert to CellSpec list.
+    
+    Args:
+        path: Path to the notebook file
+        
+    Returns:
+        List of CellSpec objects parsed from the notebook
+        
+    Raises:
+        ValueError: If the notebook cannot be read or parsed
+    """
+    try:
+        with path.open("r", encoding="utf-8") as handle:
+            notebook = nbformat.read(handle, as_version=4)
+    except Exception as e:
+        raise type(e)(f"Failed to read notebook from {path}: {type(e).__name__}: {e}") from e
+
+    regenerated_cells: List[CellSpec] = []
+    for cell in notebook.cells:
+        metadata = dict(cell.metadata or {})
+        section = metadata.pop("section", None)
+        if isinstance(cell.source, str):
+            content = cell.source
+        else:
+            # In nbformat, list elements represent lines and may not include trailing newlines.
+            # If elements already contain newlines, preserve them; otherwise, join with "\n".
+            if any("\n" in part for part in cell.source):
+                content = "".join(cell.source)
+            else:
+                content = "\n".join(cell.source)
+        regenerated_cells.append(
+            CellSpec(
+                cell_type=cell.cell_type,
+                content=content,
+                metadata=metadata,
+                section=section,
+            )
+        )
+    return regenerated_cells
+
+
 async def static_qa_node(state: GeneratorState) -> Dict[str, Any]:
     """Run static quality checks.
 
@@ -206,10 +260,28 @@ async def static_qa_node(state: GeneratorState) -> Dict[str, Any]:
     Returns:
         Updated state with QA reports
     """
-    qa_agent = QARepairAgent()
+    notebook_builder = NotebookFileComposer()
+    validator = NotebookValidator()
 
     cells = state.get("generated_cells", [])
-    reports = await qa_agent.validate(cells)
+    with TemporaryDirectory() as temp_dir:
+        notebook = notebook_builder.build_notebook(cells)
+        notebook_path = Path(temp_dir) / "generated.ipynb"
+        notebook_builder.write(notebook, notebook_path)
+        
+        # Log temp path for debugging failed validations
+        logger.debug(f"Running validation on temporary notebook: {notebook_path}")
+        
+        reports = validator.validate_all(notebook_path)
+        
+        # If validation fails, log details for debugging
+        if any(not r.passed for r in reports):
+            logger.info(
+                "Validation failed for temporary notebook at %s "
+                "(stored in a TemporaryDirectory that will be removed after this step).",
+                notebook_path,
+            )
+    
     existing_reports = state.get("qa_reports") or []
 
     return {"qa_reports": [*existing_reports, *reports]}
@@ -225,11 +297,18 @@ async def runtime_qa_node(state: GeneratorState) -> Dict[str, Any]:
         Updated state with additional QA reports
     """
     # Placeholder: In a full implementation, this would execute the notebook
-    # and check for runtime errors
+    # and check for runtime errors. For now, explicitly skip execution checks.
+    if not state.get("generated_cells"):
+        message = "Runtime checks skipped: no generated cells to execute."
+    else:
+        message = (
+            "Runtime checks skipped: notebook execution validation "
+            "is not yet implemented."
+        )
     report = QAReport(
         check_name="Runtime Check",
         passed=True,
-        message="Runtime checks placeholder (not yet implemented)",
+        message=message,
     )
 
     existing_reports = state.get("qa_reports") or []
@@ -243,24 +322,44 @@ async def repair_node(state: GeneratorState) -> Dict[str, Any]:
         state: Current generator state
 
     Returns:
-        Updated state with incremented repair attempts
-
-    Note:
-        Currently, this is a placeholder that increments repair_attempts.
-        Full repair implementation would parse LLM suggestions and apply fixes.
-        Due to operator.add on generated_cells, we only return repair_attempts.
+        Updated state with incremented repair attempts and repaired notebook data.
     """
-    qa_agent = QARepairAgent()
+    repair_agent = NotebookRepairAgent()
+    notebook_builder = NotebookFileComposer()
 
     cells = state.get("generated_cells", [])
     qa_reports = state.get("qa_reports", [])
 
-    # Attempt repair (currently returns original cells as placeholder)
-    await qa_agent.repair(cells, qa_reports)
+    with TemporaryDirectory() as temp_dir:
+        notebook = notebook_builder.build_notebook(cells)
+        notebook_path = Path(temp_dir) / "generated.ipynb"
+        notebook_builder.write(notebook, notebook_path)
 
-    # Only increment repair attempts; don't return generated_cells to avoid
-    # unwanted accumulation due to operator.add in state definition
+        repair_success, updated_reports = repair_agent.repair_notebook(
+            notebook_path,
+            qa_reports,
+            attempt=state["repair_attempts"],
+        )
+        
+        # Only reload cells if repair was successful
+        if repair_success:
+            try:
+                regenerated_cells = _cells_from_notebook(notebook_path)
+            except ValueError as e:
+                # If cell rehydration fails after successful repair, log and keep original cells
+                logger.warning(f"Failed to reload cells after repair: {e}")
+                regenerated_cells = cells
+        else:
+            # If repair failed (e.g., notebook not safely written), keep original cells
+            logger.info(
+                f"Repair attempt {state['repair_attempts']} failed. "
+                "Keeping original cells for potential retry."
+            )
+            regenerated_cells = cells
+
     return {
+        "generated_cells": regenerated_cells,
+        "qa_reports": updated_reports,
         "repair_attempts": state["repair_attempts"] + 1,
     }
 
