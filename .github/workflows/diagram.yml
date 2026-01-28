@@ -1,12 +1,27 @@
 name: Create diagram
+
 on:
   workflow_dispatch: {}
   push:
     branches:
       - main
+
+permissions:
+  contents: read
+
 jobs:
+  codeql:
+    uses: ./.github/workflows/codeql.yml
+    permissions:
+      contents: read
+      security-events: write
+      actions: read
+
   get_data:
     runs-on: ubuntu-latest
+    needs: codeql
+    permissions:
+      contents: write  # Required to push diagram updates
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -14,7 +29,7 @@ jobs:
           ref: main
           fetch-depth: 0
       - name: Update diagram
-        uses: githubocto/repo-visualizer@main
+        uses: githubocto/repo-visualizer@0.11.0
         with:
           excluded_paths: "ignore,.github"
           root_path: "src/"
