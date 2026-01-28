@@ -213,7 +213,7 @@ on:
     branches: [ "main" ]
   schedule:
     - cron: '0 6 * * 1'
-  workflow_call:  # ← Implicit - allows reuse
+  workflow_call:  # Explicit trigger required to allow reuse
 
 permissions:
   contents: read
