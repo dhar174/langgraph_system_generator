@@ -16,7 +16,7 @@ handoffs:
     prompt: "Create comprehensive tests for this API including contract tests and integration tests"
     send: false
   - label: "🔒 Security Review"
-    agent: security-reviewer
+    agent: se-security-reviewer
     prompt: "Review this API design for security vulnerabilities"
     send: false
 ---
