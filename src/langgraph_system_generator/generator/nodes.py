@@ -214,7 +214,15 @@ def _cells_from_notebook(path: Path) -> List[CellSpec]:
     for cell in notebook.cells:
         metadata = dict(cell.metadata or {})
         section = metadata.pop("section", None)
-        content = cell.source if isinstance(cell.source, str) else "".join(cell.source)
+        if isinstance(cell.source, str):
+            content = cell.source
+        else:
+            # In nbformat, list elements represent lines and may not include trailing newlines.
+            # If elements already contain newlines, preserve them; otherwise, join with "\n".
+            if any("\n" in part for part in cell.source):
+                content = "".join(cell.source)
+            else:
+                content = "\n".join(cell.source)
         regenerated_cells.append(
             CellSpec(
                 cell_type=cell.cell_type,
