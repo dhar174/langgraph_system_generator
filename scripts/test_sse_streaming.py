@@ -9,9 +9,11 @@ import sys
 from datetime import datetime
 
 import httpx
+import pytest
 from httpx_sse import aconnect_sse
 
 
+@pytest.mark.asyncio
 async def test_sse_generation():
     """Test async generation with SSE progress tracking."""
     base_url = "http://localhost:8000"
