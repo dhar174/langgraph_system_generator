@@ -18,6 +18,13 @@ async def test_sse_generation():
     """Test async generation with SSE progress tracking."""
     base_url = "http://localhost:8000"
     
+    # Check if server is running before proceeding
+    try:
+        async with httpx.AsyncClient(timeout=2.0) as client:
+            await client.get(f"{base_url}/health")
+    except (httpx.ConnectError, httpx.TimeoutException):
+        pytest.skip("SSE server is not running at http://localhost:8000")
+    
     print("=" * 70)
     print("Testing LangGraph Notebook Foundry SSE Progress Streaming")
     print("=" * 70)
