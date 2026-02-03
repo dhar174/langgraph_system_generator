@@ -50,11 +50,12 @@ def test_should_repair_all_passing(passing_report):
     assert should_repair(state) == "package"
 
 
+@pytest.mark.skipif(settings.max_repair_attempts == 0, reason="No repair attempts configured")
 def test_should_repair_attempts_remaining(failing_report):
     """Failures with attempts remaining should repair."""
     state = build_state(
         qa_reports=[failing_report],
-        repair_attempts=max(settings.max_repair_attempts - 1, 0),
+        repair_attempts=settings.max_repair_attempts - 1,
     )
 
     assert should_repair(state) == "repair"
