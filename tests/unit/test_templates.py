@@ -35,4 +35,4 @@ def test_configuration_cell_includes_keys_and_model():
     assert "OPENAI_API_KEY" in code
     assert "ANTHROPIC_API_KEY" in code
     assert "getpass" in code
-    assert "MODEL = os.getenv(\"MODEL\", \"gpt-test\")" in code
+    assert f'MODEL = os.getenv("MODEL", {repr("gpt-test")})' in code
