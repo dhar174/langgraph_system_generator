@@ -71,9 +71,10 @@ def test_should_repair_attempts_exhausted(failing_report):
     assert should_repair(state) == "fail"
 
 
+@pytest.mark.skipif(settings.max_repair_attempts == 0, reason="No repair attempts configured")
 def test_should_retry_after_repair_attempts_remaining():
     """Post-repair with attempts remaining should retry QA."""
-    state = build_state(repair_attempts=max(settings.max_repair_attempts - 1, 0))
+    state = build_state(repair_attempts=settings.max_repair_attempts - 1)
 
     assert should_retry_after_repair(state) == "retry_qa"
 
