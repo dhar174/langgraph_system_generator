@@ -81,11 +81,11 @@ async def test_compose_notebook_sections_and_packages(
         architecture=architecture,
     )
 
-    intro_cells = [cell for cell in cells if cell.section == "intro"]
-    assert any(plan.title in cell.content for cell in intro_cells)
-    assert any(plan.architecture_type in cell.content for cell in intro_cells)
+    intro_content = "".join(cell.content for cell in cells if cell.section == "intro")
+    assert plan.title in intro_content
+    assert plan.architecture_type in intro_content
     for section in plan.sections:
-        assert any(section in cell.content for cell in intro_cells)
+        assert section in intro_content
 
     install_cell = next(
         cell
