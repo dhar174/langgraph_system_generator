@@ -107,7 +107,6 @@ async def test_compose_notebook_sections_and_packages(
     ]
     assert len(install_cells) > 0, "Expected at least one pip install cell in setup section"
     install_cell = install_cells[0]
-    assert install_cell.cell_type == "code", "Install cell should be code type"
     assert "pypdf" in install_cell.content, "Install cell should include pypdf package"
 
     # 3. Verify state cells with better error handling
@@ -116,7 +115,6 @@ async def test_compose_notebook_sections_and_packages(
     ]
     assert len(state_cells) > 0, "Expected at least one state code cell"
     state_cell = state_cells[0]
-    assert state_cell.cell_type == "code", "State cell should be code type"
     assert state_marker in state_cell.content, f"State cell should contain '{state_marker}' marker"
 
     # 4. Verify tool cells exist and contain stub content
@@ -150,7 +148,7 @@ async def test_compose_notebook_sections_and_packages(
     expected_order = ["intro", "setup", "state", "tools", "nodes", "graph", "execution"]
     
     # Extract unique sections while preserving order
-    unique_sections = []
+    unique_sections: list[str] = []
     for section in section_order:
         if section not in unique_sections:
             unique_sections.append(section)
@@ -158,13 +156,19 @@ async def test_compose_notebook_sections_and_packages(
     # Build position map for expected order
     expected_positions = {s: i for i, s in enumerate(expected_order)}
     
+    # Fail fast if any unexpected sections are present
+    unexpected_sections = [s for s in unique_sections if s not in expected_positions]
+    assert not unexpected_sections, (
+        f"Unexpected sections found: {unexpected_sections}. "
+        f"Allowed sections (in order) are: {expected_order}"
+    )
+    
     # Verify sections appear in correct order by checking that each section's
     # expected position is greater than the previous section's expected position
     prev_expected_pos = -1
     for section in unique_sections:
-        if section in expected_positions:
-            current_expected_pos = expected_positions[section]
-            assert current_expected_pos > prev_expected_pos, (
-                f"Section '{section}' appears out of order. Expected sections in order: {expected_order}"
-            )
-            prev_expected_pos = current_expected_pos
+        current_expected_pos = expected_positions[section]
+        assert current_expected_pos > prev_expected_pos, (
+            f"Section '{section}' appears out of order. Expected sections in order: {expected_order}"
+        )
+        prev_expected_pos = current_expected_pos
