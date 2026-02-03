@@ -1,0 +1,253 @@
+"""Additional tests for generator graph nodes with synthetic state inputs."""
+
+from unittest.mock import AsyncMock
+
+import pytest
+
+from langgraph_system_generator.generator.nodes import (
+    architecture_selection_node,
+    graph_design_node,
+    intake_node,
+    notebook_assembly_node,
+    package_outputs_node,
+    rag_retrieval_node,
+    repair_node,
+    runtime_qa_node,
+    static_qa_node,
+    tooling_plan_node,
+)
+from langgraph_system_generator.generator.state import CellSpec, Constraint, QAReport
+
+
+@pytest.mark.asyncio
+async def test_intake_node_sets_constraints(monkeypatch):
+    constraints = [Constraint(type="goal", value="Test", priority=5)]
+
+    async def fake_analyze(prompt):
+        assert prompt == "Build a test workflow"
+        return constraints
+
+    monkeypatch.setattr(
+        "langgraph_system_generator.generator.nodes.RequirementsAnalyst.analyze",
+        fake_analyze,
+    )
+
+    result = await intake_node({"user_prompt": "Build a test workflow"})
+
+    assert result["constraints"] == constraints
+
+
+@pytest.mark.asyncio
+async def test_rag_retrieval_node_falls_back_on_failure(monkeypatch):
+    def fake_retrieve(*_args, **_kwargs):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(
+        "langgraph_system_generator.generator.nodes.DocsRetriever.retrieve",
+        fake_retrieve,
+    )
+
+    result = await rag_retrieval_node({"user_prompt": "Need docs"})
+
+    assert result["docs_context"] == []
+
+
+@pytest.mark.asyncio
+async def test_architecture_selection_node_defaults_when_missing(monkeypatch):
+    async def fake_select_architecture(*_args, **_kwargs):
+        return {"patterns": None, "justification": "Because"}
+
+    monkeypatch.setattr(
+        "langgraph_system_generator.generator.nodes.ArchitectureSelector.select_architecture",
+        fake_select_architecture,
+    )
+
+    result = await architecture_selection_node(
+        {"constraints": [], "docs_context": []}
+    )
+
+    assert result["selected_patterns"] == {}
+    assert result["architecture_type"] == "router"
+    assert result["architecture_justification"] == "Because"
+
+
+@pytest.mark.asyncio
+async def test_graph_design_node_defaults_architecture_type(monkeypatch):
+    async def fake_design_workflow(architecture, constraints):
+        assert architecture["architecture_type"] == "subagents"
+        assert constraints == [Constraint(type="goal", value="Test", priority=1)]
+        return {"nodes": ["a", "b"]}
+
+    monkeypatch.setattr(
+        "langgraph_system_generator.generator.nodes.GraphDesigner.design_workflow",
+        fake_design_workflow,
+    )
+
+    state = {
+        "user_prompt": "Test workflow",
+        "constraints": [Constraint(type="goal", value="Test", priority=1)],
+        "selected_patterns": {"primary": "subagents"},
+        "architecture_justification": "Reason",
+    }
+    result = await graph_design_node(state)
+
+    notebook_plan = result["notebook_plan"]
+    assert notebook_plan.title.startswith("LangGraph Workflow: Test workflow")
+    assert notebook_plan.sections == [
+        "Setup",
+        "State Definition",
+        "Tools",
+        "Nodes",
+        "Graph Construction",
+        "Execution",
+    ]
+    assert notebook_plan.patterns_used == ["subagents"]
+    assert notebook_plan.architecture_type == "subagents"
+    assert result["workflow_design"] == {"nodes": ["a", "b"]}
+
+
+@pytest.mark.asyncio
+async def test_tooling_plan_node_returns_tools_plan(monkeypatch):
+    async def fake_plan_tools(workflow_design, constraints):
+        assert workflow_design == {"nodes": []}
+        assert constraints == []
+        return [{"name": "tool"}]
+
+    monkeypatch.setattr(
+        "langgraph_system_generator.generator.nodes.ToolchainEngineer.plan_tools",
+        fake_plan_tools,
+    )
+
+    result = await tooling_plan_node({"workflow_design": {"nodes": []}, "constraints": []})
+
+    assert result["tools_plan"] == [{"name": "tool"}]
+
+
+@pytest.mark.asyncio
+async def test_notebook_assembly_node_returns_generated_cells(monkeypatch):
+    cells = [CellSpec(cell_type="markdown", content="Hi", metadata={})]
+
+    async def fake_compose_notebook(*_args, **_kwargs):
+        return cells
+
+    monkeypatch.setattr(
+        "langgraph_system_generator.generator.nodes.NotebookComposer.compose_notebook",
+        fake_compose_notebook,
+    )
+
+    state = {
+        "notebook_plan": None,
+        "workflow_design": {},
+        "tools_plan": [],
+        "selected_patterns": {"primary": "router"},
+        "architecture_justification": "Reason",
+    }
+    result = await notebook_assembly_node(state)
+
+    assert result["generated_cells"] == cells
+
+
+@pytest.mark.asyncio
+async def test_static_qa_node_appends_reports(monkeypatch):
+    existing = [QAReport(check_name="Existing", passed=True, message="ok")]
+    new_reports = [QAReport(check_name="New", passed=True, message="fine")]
+
+    monkeypatch.setattr(
+        "langgraph_system_generator.generator.nodes.NotebookValidator.validate_all",
+        lambda *_args, **_kwargs: new_reports,
+    )
+
+    state = {
+        "generated_cells": [CellSpec(cell_type="markdown", content="Hi", metadata={})],
+        "qa_reports": existing,
+    }
+    result = await static_qa_node(state)
+
+    assert result["qa_reports"] == [*existing, *new_reports]
+
+
+@pytest.mark.asyncio
+async def test_runtime_qa_node_message_empty_cells():
+    result = await runtime_qa_node({"generated_cells": [], "qa_reports": []})
+
+    report = result["qa_reports"][-1]
+    assert "no generated cells" in report.message
+
+
+@pytest.mark.asyncio
+async def test_runtime_qa_node_message_with_cells():
+    state = {
+        "generated_cells": [CellSpec(cell_type="markdown", content="Hi", metadata={})],
+        "qa_reports": [],
+    }
+    result = await runtime_qa_node(state)
+
+    report = result["qa_reports"][-1]
+    assert "not yet implemented" in report.message
+
+
+@pytest.mark.asyncio
+async def test_repair_node_success_refreshes_cells(monkeypatch):
+    initial_cells = [CellSpec(cell_type="markdown", content="Hi", metadata={})]
+    updated_cells = [CellSpec(cell_type="markdown", content="Updated", metadata={})]
+    updated_reports = [QAReport(check_name="Fix", passed=True, message="done")]
+
+    monkeypatch.setattr(
+        "langgraph_system_generator.generator.nodes.NotebookRepairAgent.repair_notebook",
+        lambda *_args, **_kwargs: (True, updated_reports),
+    )
+    monkeypatch.setattr(
+        "langgraph_system_generator.generator.nodes._cells_from_notebook",
+        lambda *_args, **_kwargs: updated_cells,
+    )
+
+    state = {
+        "generated_cells": initial_cells,
+        "qa_reports": [],
+        "repair_attempts": 1,
+    }
+    result = await repair_node(state)
+
+    assert result["generated_cells"] == updated_cells
+    assert result["qa_reports"] == updated_reports
+    assert result["repair_attempts"] == 2
+
+
+@pytest.mark.asyncio
+async def test_repair_node_failure_keeps_cells(monkeypatch):
+    initial_cells = [CellSpec(cell_type="markdown", content="Hi", metadata={})]
+    updated_reports = [QAReport(check_name="Fix", passed=False, message="fail")]
+
+    monkeypatch.setattr(
+        "langgraph_system_generator.generator.nodes.NotebookRepairAgent.repair_notebook",
+        lambda *_args, **_kwargs: (False, updated_reports),
+    )
+
+    state = {
+        "generated_cells": initial_cells,
+        "qa_reports": [],
+        "repair_attempts": 3,
+    }
+    result = await repair_node(state)
+
+    assert result["generated_cells"] == initial_cells
+    assert result["qa_reports"] == updated_reports
+    assert result["repair_attempts"] == 4
+
+
+@pytest.mark.asyncio
+async def test_package_outputs_node_manifest_fields():
+    state = {
+        "notebook_plan": "Plan",
+        "generated_cells": [CellSpec(cell_type="markdown", content="Hi", metadata={})],
+        "constraints": [Constraint(type="goal", value="Test", priority=1)],
+        "selected_patterns": {"primary": "hybrid"},
+        "architecture_type": None,
+    }
+    result = await package_outputs_node(state)
+
+    manifest = result["artifacts_manifest"]
+    assert manifest["cell_count"] == "1"
+    assert manifest["constraints_count"] == "1"
+    assert manifest["architecture_type"] == "hybrid"
+    assert result["generation_complete"] is True
