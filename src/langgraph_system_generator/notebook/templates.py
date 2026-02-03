@@ -70,7 +70,7 @@ def configuration_cell(model: str = "gpt-5-mini") -> List[CellSpec]:
         
         WORKDIR = Path(os.getenv("WORKDIR", ".")).resolve()
         WORKDIR.mkdir(parents=True, exist_ok=True)
-        MODEL = os.getenv("MODEL", "gpt-5-mini")
+        MODEL = os.getenv("MODEL", "{model}")
         
         if not os.environ.get("OPENAI_API_KEY"):
           if userdata.get('OPENAI_API_KEY'):
