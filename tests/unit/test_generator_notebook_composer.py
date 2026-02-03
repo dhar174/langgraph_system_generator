@@ -14,7 +14,13 @@ class DummyLLM:
     def __init__(self, *args, **kwargs) -> None:
         pass
 
+    def invoke(self, *args, **kwargs):
+        """Minimal invoke stub returning an object with a `content` attribute."""
+        class Response:
+            def __init__(self, content: str) -> None:
+                self.content = content
 
+        return Response("")
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "architecture_type, state_marker",
