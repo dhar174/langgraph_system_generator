@@ -155,16 +155,16 @@ async def test_compose_notebook_sections_and_packages(
         if section not in unique_sections:
             unique_sections.append(section)
     
-    # Build position map for O(1) lookups
-    section_positions = {s: i for i, s in enumerate(unique_sections)}
+    # Build position map for expected order
+    expected_positions = {s: i for i, s in enumerate(expected_order)}
     
-    # Verify sections appear in correct order
-    for i, expected_section in enumerate(expected_order):
-        if expected_section in section_positions:
-            actual_idx = section_positions[expected_section]
-            # Check that this section doesn't appear before earlier expected sections
-            for j in range(i):
-                earlier_section = expected_order[j]
-                if earlier_section in section_positions:
-                    earlier_actual_idx = section_positions[earlier_section]
-                    assert earlier_actual_idx < actual_idx, f"Section '{earlier_section}' should appear before '{expected_section}'"
+    # Verify sections appear in correct order by checking that each section's
+    # expected position is greater than the previous section's expected position
+    prev_expected_pos = -1
+    for section in unique_sections:
+        if section in expected_positions:
+            current_expected_pos = expected_positions[section]
+            assert current_expected_pos > prev_expected_pos, (
+                f"Section '{section}' appears out of order. Expected sections in order: {expected_order}"
+            )
+            prev_expected_pos = current_expected_pos
