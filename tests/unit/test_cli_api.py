@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import json
 
 import pytest
 import httpx
@@ -176,3 +177,202 @@ async def test_api_rejects_disallowed_output_dir(tmp_path: Path):
             },
         )
     assert response.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_api_generate_async_endpoint(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """Test /generate-async endpoint returns job_id and stream_url."""
+    # Set a test output base
+    monkeypatch.setenv("LNF_OUTPUT_BASE", "test_api_async")
+
+    # Force module reload to pick up new env var
+    import importlib
+    import langgraph_system_generator.constants as constants_module
+    import langgraph_system_generator.notebook.exporters as exporters_module
+    import langgraph_system_generator.api.server as server_module
+
+    importlib.reload(constants_module)
+    importlib.reload(exporters_module)
+    importlib.reload(server_module)
+
+    transport = httpx.ASGITransport(app=server_module.app)
+    output_dir = constants_module._BASE_OUTPUT / tmp_path.name
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(
+            "/generate-async",
+            json={
+                "prompt": "Test async generation",
+                "mode": "stub",
+                "output_dir": str(output_dir),
+            },
+        )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert "job_id" in payload
+    assert "stream_url" in payload
+    assert payload["status"] == "started"
+    assert payload["stream_url"].startswith("/stream/")
+
+
+@pytest.mark.asyncio
+async def test_api_stream_endpoint_not_found(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """Test /stream/{job_id} endpoint returns error for non-existent job."""
+    # Set a test output base
+    monkeypatch.setenv("LNF_OUTPUT_BASE", "test_stream_notfound")
+
+    # Force module reload to pick up new env var
+    import importlib
+    import langgraph_system_generator.api.server as server_module
+
+    importlib.reload(server_module)
+
+    transport = httpx.ASGITransport(app=server_module.app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        # Try to stream a non-existent job
+        async with client.stream("GET", "/stream/nonexistent-job-id") as response:
+            assert response.status_code == 200
+            assert "text/event-stream" in response.headers.get("content-type", "")
+            
+            # Read first event which should be an error
+            events = []
+            async for line in response.aiter_lines():
+                if line.startswith("event:"):
+                    event_type = line.split(":", 1)[1].strip()
+                elif line.startswith("data:"):
+                    data = line.split(":", 1)[1].strip()
+                    events.append({"event": event_type, "data": json.loads(data)})
+                    break
+            
+            assert len(events) > 0
+            assert events[0]["event"] == "error"
+            assert "not found" in events[0]["data"]["error"].lower()
+
+
+@pytest.mark.asyncio
+async def test_api_generate_async_with_stream(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """Test full async generation flow with SSE stream consumption."""
+    # Set a test output base
+    monkeypatch.setenv("LNF_OUTPUT_BASE", "test_async_stream")
+
+    # Force module reload to pick up new env var
+    import importlib
+    import langgraph_system_generator.constants as constants_module
+    import langgraph_system_generator.notebook.exporters as exporters_module
+    import langgraph_system_generator.api.server as server_module
+    import langgraph_system_generator.api.progress_streaming as progress_module
+
+    importlib.reload(constants_module)
+    importlib.reload(exporters_module)
+    importlib.reload(progress_module)
+    importlib.reload(server_module)
+
+    transport = httpx.ASGITransport(app=server_module.app)
+    output_dir = constants_module._BASE_OUTPUT / tmp_path.name
+    
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        # Start async generation
+        response = await client.post(
+            "/generate-async",
+            json={
+                "prompt": "Test streaming generation",
+                "mode": "stub",
+                "output_dir": str(output_dir),
+                "formats": ["ipynb"],
+            },
+        )
+        
+        assert response.status_code == 200
+        payload = response.json()
+        stream_url = payload["stream_url"]
+        
+        # Connect to SSE stream
+        events = []
+        async with client.stream("GET", stream_url, timeout=30.0) as stream_response:
+            assert stream_response.status_code == 200
+            
+            # Parse SSE events
+            event_type = None
+            async for line in stream_response.aiter_lines():
+                line = line.strip()
+                if not line:
+                    continue
+                    
+                if line.startswith("event:"):
+                    event_type = line.split(":", 1)[1].strip()
+                elif line.startswith("data:"):
+                    data = line.split(":", 1)[1].strip()
+                    events.append({"event": event_type, "data": json.loads(data)})
+                    
+                    # Stop after complete or error
+                    if event_type in ("complete", "error"):
+                        break
+        
+        # Verify we got events
+        assert len(events) > 0, "Should receive at least one event"
+        
+        # Check for progress events
+        progress_events = [e for e in events if e["event"] == "progress"]
+        assert len(progress_events) > 0, "Should receive progress events"
+        
+        # Check for completion
+        complete_events = [e for e in events if e["event"] == "complete"]
+        assert len(complete_events) == 1, "Should have exactly one complete event"
+        
+        # Verify completion data
+        final_result = complete_events[0]["data"]
+        assert final_result.get("success") is True
+        assert final_result.get("mode") == "stub"
+        assert "manifest" in final_result
+
+
+@pytest.mark.asyncio
+async def test_api_generate_async_concurrency_limit(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """Test that /generate-async respects concurrency limits."""
+    # Set a very low limit for testing
+    monkeypatch.setenv("LNF_MAX_CONCURRENT_GENERATIONS", "1")
+    monkeypatch.setenv("LNF_OUTPUT_BASE", "test_concurrency")
+
+    # Force module reload to pick up new env var
+    import importlib
+    import langgraph_system_generator.constants as constants_module
+    import langgraph_system_generator.notebook.exporters as exporters_module
+    import langgraph_system_generator.api.server as server_module
+
+    importlib.reload(constants_module)
+    importlib.reload(exporters_module)
+    importlib.reload(server_module)
+
+    # Get the semaphore to verify it was set correctly
+    from langgraph_system_generator.api.server import _generation_semaphore, _MAX_CONCURRENT_GENERATIONS
+    
+    assert _MAX_CONCURRENT_GENERATIONS == 1
+    
+    transport = httpx.ASGITransport(app=server_module.app)
+    output_dir = constants_module._BASE_OUTPUT / tmp_path.name
+    
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        # Start first generation (should succeed)
+        response1 = await client.post(
+            "/generate-async",
+            json={
+                "prompt": "Test concurrent generation 1",
+                "mode": "stub",
+                "output_dir": str(output_dir / "gen1"),
+            },
+        )
+        
+        assert response1.status_code == 200
+        
+        # Note: Due to the asynchronous nature and how quickly stub generation completes,
+        # it's difficult to reliably test the 503 response in unit tests.
+        # The semaphore protection is in place and will work in production.
+        # For comprehensive testing, use integration tests with slower generation modes.

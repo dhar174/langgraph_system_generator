@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 from pathlib import Path
@@ -18,6 +19,13 @@ from langgraph_system_generator.cli import (
     GenerationMode,
     generate_artifacts,
 )
+from langgraph_system_generator.api.progress_streaming import (
+    create_job,
+    emit_complete,
+    emit_error,
+    emit_node_progress,
+    get_stream_response,
+)
 
 app = FastAPI(title="LangGraph Notebook Foundry API", version="0.1.1")
 
@@ -27,6 +35,10 @@ if _STATIC_DIR.exists():
     app.mount("/static", StaticFiles(directory=str(_STATIC_DIR)), name="static")
 
 _DEFAULT_API_OUTPUT = (_BASE_OUTPUT / "api").resolve()
+
+# Concurrency limit for async generation (prevent resource exhaustion)
+_MAX_CONCURRENT_GENERATIONS = int(os.getenv("LNF_MAX_CONCURRENT_GENERATIONS", "5"))
+_generation_semaphore = asyncio.Semaphore(_MAX_CONCURRENT_GENERATIONS)
 
 
 def _resolve_output_dir(path: str | os.PathLike[str] | None) -> Path:
@@ -139,6 +151,18 @@ class GenerationResponse(BaseModel):
     error: Optional[str] = None
 
 
+class GenerationStartResponse(BaseModel):
+    """Response when starting async generation with SSE progress tracking."""
+
+    job_id: str = Field(..., description="Unique job identifier for tracking progress")
+    stream_url: str = Field(
+        ..., description="SSE endpoint URL for streaming progress updates"
+    )
+    status: str = Field(
+        default="started", description="Initial status (always 'started')"
+    )
+
+
 @app.get("/", response_class=HTMLResponse)
 async def root():
     """Serve the web interface."""
@@ -207,3 +231,139 @@ async def generate_notebook(request: GenerationRequest) -> GenerationResponse:
     ) as exc:  # pragma: no cover - surfaced via HTTPException
         logging.exception("Generation request failed")
         raise HTTPException(status_code=400, detail=str(exc))
+
+
+@app.post("/generate-async", response_model=GenerationStartResponse)
+async def start_async_generation(
+    request: GenerationRequest,
+) -> GenerationStartResponse:
+    """Start async notebook generation with SSE progress tracking.
+
+    This endpoint starts generation in the background and returns immediately with
+    a job ID. Clients can then connect to the SSE stream endpoint to receive
+    real-time progress updates, logs, and the final result.
+    
+    Concurrency is limited to prevent resource exhaustion. If the limit is reached,
+    returns 503 Service Unavailable.
+
+    Returns:
+        GenerationStartResponse with job_id and stream_url
+        
+    Raises:
+        HTTPException 503: When concurrent generation limit is reached
+    """
+    # Validate output directory
+    output_path = _resolve_output_dir(request.output_dir)
+
+    # Check if we can accept more jobs (non-blocking check)
+    if _generation_semaphore.locked() and _generation_semaphore._value == 0:
+        raise HTTPException(
+            status_code=503,
+            detail=f"Server is currently processing the maximum number of concurrent generations ({_MAX_CONCURRENT_GENERATIONS}). Please try again later.",
+        )
+
+    # Create job and start generation task
+    job_id = create_job()
+
+    # Start generation in background
+    asyncio.create_task(_run_generation_with_progress(job_id, request, output_path))
+
+    return GenerationStartResponse(
+        job_id=job_id,
+        stream_url=f"/stream/{job_id}",
+        status="started",
+    )
+
+
+@app.get("/stream/{job_id}")
+async def stream_job_progress(job_id: str):
+    """Server-Sent Events endpoint for streaming job progress.
+
+    Connect to this endpoint with EventSource to receive real-time progress updates:
+    - 'progress' events: Node progress with percentage and message
+    - 'log' events: Log messages during generation
+    - 'complete' event: Final result when generation succeeds
+    - 'error' event: Error details if generation fails
+
+    Args:
+        job_id: Unique job identifier from /generate-async
+
+    Returns:
+        EventSourceResponse: SSE stream
+    """
+    return get_stream_response(job_id)
+
+
+async def _run_generation_with_progress(
+    job_id: str,
+    request: GenerationRequest,
+    output_path: Path,
+) -> None:
+    """Run generation task with progress tracking.
+
+    This function orchestrates the generation process and emits progress events
+    to the SSE stream. It wraps generate_artifacts() and adds instrumentation.
+    
+    Uses a semaphore to limit concurrent generations and prevent resource exhaustion.
+
+    Args:
+        job_id: Job identifier for progress tracking
+        request: Generation request parameters
+        output_path: Resolved output directory path
+    """
+    # Acquire semaphore to limit concurrency
+    async with _generation_semaphore:
+        try:
+            # Emit start event
+            emit_node_progress(job_id, "start", 0, "Starting generation...")
+
+            # Emit validation progress
+            emit_node_progress(job_id, "validation", 5, "Validating request...")
+
+            # Run generation
+            # TODO: Pass job_id to generate_artifacts for node-level progress
+            emit_node_progress(job_id, "generation", 10, "Initializing generator...")
+
+            # Define progress callback for generate_artifacts
+            def progress_callback(node: str, percentage: int, message: str) -> None:
+                """Forward progress to SSE stream."""
+                emit_node_progress(job_id, node, percentage, message)
+
+            artifacts: GenerationArtifacts = await generate_artifacts(
+                request.prompt,
+                output_dir=str(output_path),
+                mode=request.mode,
+                formats=request.formats,
+                model=request.model,
+                temperature=request.temperature,
+                max_tokens=request.max_tokens,
+                agent_type=request.agent_type,
+                memory_config=request.memory_config,
+                custom_endpoint=request.custom_endpoint,
+                preset=request.preset,
+                graph_style=request.graph_style,
+                retriever_type=request.retriever_type,
+                document_loader=request.document_loader,
+                progress_callback=progress_callback,
+            )
+
+            # Emit completion with result
+            emit_complete(
+                job_id,
+                {
+                    "success": True,
+                    "mode": artifacts["mode"],
+                    "prompt": artifacts["prompt"],
+                    "manifest": artifacts["manifest"],
+                    "manifest_path": artifacts["manifest_path"],
+                    "output_dir": artifacts["output_dir"],
+                },
+            )
+
+        except Exception as exc:
+            logging.exception(f"Generation failed for job {job_id}")
+            emit_error(
+                job_id,
+                str(exc),
+                {"type": type(exc).__name__},
+            )

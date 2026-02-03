@@ -9,6 +9,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import logging
 import os
 from pathlib import Path
 from typing import Any, Dict, List, Literal, TypedDict
@@ -263,6 +264,7 @@ async def generate_artifacts(
     graph_style: str | None = None,
     retriever_type: str | None = None,
     document_loader: str | None = None,
+    progress_callback: Any | None = None,
 ) -> GenerationArtifacts:
     """Generate notebook artifacts either in stub or live mode.
 
@@ -285,22 +287,43 @@ async def generate_artifacts(
         graph_style: Graph execution style (optional)
         retriever_type: Document retriever type for RAG (optional)
         document_loader: Document loader type (optional)
+        progress_callback: Optional callback function(node, percentage, message) for progress tracking
     """
 
     from langgraph_system_generator.notebook.composer import NotebookComposer
     from langgraph_system_generator.notebook.exporters import NotebookExporter
 
+    def _report_progress(node: str, percentage: int, message: str) -> None:
+        """Helper to report progress if callback is provided."""
+        if progress_callback:
+            try:
+                progress_callback(node, percentage, message)
+            except Exception as e:
+                # Log progress callback failures instead of silently swallowing
+                logging.warning(
+                    f"Progress callback failed for node={node}, percentage={percentage}: {e}",
+                    exc_info=True
+                )
+
     target = Path(output_dir)
     target.mkdir(parents=True, exist_ok=True)
+
+    _report_progress("init", 5, "Initializing generation...")
 
     if mode == "live":
         if not os.environ.get("OPENAI_API_KEY"):
             raise RuntimeError("LLM API credentials are required for live generation mode.")
+        _report_progress("graph_init", 10, "Creating generator graph...")
         graph = create_generator_graph()
+        _report_progress("graph_invoke", 15, "Invoking generator graph...")
         result = await graph.ainvoke(_default_state(prompt))
+        _report_progress("graph_complete", 60, "Generator graph completed")
     else:
+        _report_progress("stub", 30, "Building stub result...")
         result = _build_stub_result(prompt)
+        _report_progress("stub_complete", 60, "Stub generation complete")
 
+    _report_progress("serialize", 62, "Serializing results...")
     serialized = _serialize(result)
     if "architecture_type" in serialized and serialized.get("architecture_type"):
         architecture_type = serialized.get("architecture_type")
@@ -360,6 +383,7 @@ async def generate_artifacts(
 
     # Build and export notebook in requested formats
     if cells:
+        _report_progress("compose", 65, "Composing notebook...")
         # Convert serialized cells back to CellSpec objects
         cell_specs = [CellSpec(**cell) for cell in cells]
         
@@ -371,16 +395,19 @@ async def generate_artifacts(
         if formats is None or not formats:
             formats = ["ipynb", "html", "docx", "zip"]
         
+        _report_progress("export_init", 70, f"Exporting to {len(formats)} format(s)...")
         exporter = NotebookExporter()
         
         # Export to requested formats
         if "ipynb" in formats:
+            _report_progress("export_ipynb", 72, "Exporting to Jupyter notebook...")
             ipynb_path = target / "notebook.ipynb"
             exporter.export_ipynb(notebook, ipynb_path)
             manifest["notebook_path"] = str(ipynb_path)
         
         if "html" in formats:
             try:
+                _report_progress("export_html", 78, "Exporting to HTML...")
                 html_path = target / "notebook.html"
                 exporter.export_to_html(notebook, html_path)
                 manifest["html_path"] = str(html_path)
@@ -389,6 +416,7 @@ async def generate_artifacts(
         
         if "docx" in formats:
             try:
+                _report_progress("export_docx", 84, "Exporting to Word document...")
                 docx_path = target / "notebook.docx"
                 exporter.export_notebook_to_docx(notebook, docx_path, title=plan_title)
                 manifest["docx_path"] = str(docx_path)
@@ -397,6 +425,7 @@ async def generate_artifacts(
         
         if "pdf" in formats:
             try:
+                _report_progress("export_pdf", 90, "Exporting to PDF...")
                 # PDF export requires the notebook to be saved first
                 if "ipynb" not in formats:
                     ipynb_path = target / "notebook.ipynb"
@@ -409,6 +438,7 @@ async def generate_artifacts(
         
         if "zip" in formats:
             try:
+                _report_progress("export_zip", 95, "Creating ZIP archive...")
                 # Include JSON artifacts in the ZIP
                 extra_files = []
                 if manifest.get("plan_path"):
@@ -422,9 +452,11 @@ async def generate_artifacts(
             except Exception as e:
                 manifest["zip_error"] = str(e)
 
+    _report_progress("finalize", 98, "Finalizing artifacts...")
     manifest_path = target / "manifest.json"
     _write_json(manifest_path, manifest)
 
+    _report_progress("complete", 100, "Generation complete!")
     return GenerationArtifacts(
         mode=mode,
         prompt=prompt,
