@@ -6,7 +6,7 @@ from langgraph_system_generator.generator.graph import (
     should_repair,
     should_retry_after_repair,
 )
-from langgraph_system_generator.generator.state import QAReport
+from langgraph_system_generator.generator.state import CellSpec, QAReport
 from langgraph_system_generator.utils.config import settings
 
 
@@ -46,6 +46,13 @@ def build_state(**overrides):
 def test_should_repair_all_passing(passing_report):
     """All QA reports passing should package."""
     state = build_state(qa_reports=[passing_report], repair_attempts=0)
+
+    assert should_repair(state) == "package"
+
+
+def test_should_repair_empty_reports():
+    """Empty QA reports list should package."""
+    state = build_state(qa_reports=[], repair_attempts=0)
 
     assert should_repair(state) == "package"
 
@@ -91,9 +98,10 @@ def test_should_retry_after_repair_attempts_remaining():
 
 def test_should_retry_after_repair_attempts_exhausted_with_cells():
     """Post-repair with attempts exhausted and cells should succeed."""
+    cell = CellSpec(cell_type="code", content="print('ok')", metadata={})
     state = build_state(
         repair_attempts=settings.max_repair_attempts,
-        generated_cells=[{"cell_type": "code", "content": "print('ok')", "metadata": {}}],
+        generated_cells=[cell],
     )
 
     assert should_retry_after_repair(state) == "success"
