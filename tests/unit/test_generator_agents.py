@@ -78,8 +78,9 @@ async def test_architecture_selector_parsing(payload, expected_arch, monkeypatch
 
 
 @pytest.mark.asyncio
-async def test_graph_designer_fallback_router(monkeypatch):
-    """GraphDesigner falls back to router design when parsing fails."""
+@pytest.mark.parametrize("arch_type", ["router", "subagents"])
+async def test_graph_designer_fallback(arch_type, monkeypatch):
+    """GraphDesigner falls back to the correct design when parsing fails."""
     monkeypatch.setattr(
         graph_designer,
         "ChatOpenAI",
@@ -87,24 +88,8 @@ async def test_graph_designer_fallback_router(monkeypatch):
     )
     designer = graph_designer.GraphDesigner()
     constraints = [Constraint(type="goal", value="x", priority=5)]
-    architecture = {"architecture_type": "router", "justification": "x"}
-    expected = designer._fallback_design("router")
-    result = await designer.design_workflow(architecture, constraints)
-    assert result == expected
-
-
-@pytest.mark.asyncio
-async def test_graph_designer_fallback_subagents(monkeypatch):
-    """GraphDesigner falls back to subagents design when parsing fails."""
-    monkeypatch.setattr(
-        graph_designer,
-        "ChatOpenAI",
-        make_stub_llm("invalid"),
-    )
-    designer = graph_designer.GraphDesigner()
-    constraints = [Constraint(type="goal", value="x", priority=5)]
-    architecture = {"architecture_type": "subagents", "justification": "x"}
-    expected = designer._fallback_design("subagents")
+    architecture = {"architecture_type": arch_type, "justification": "x"}
+    expected = designer._fallback_design(arch_type)
     result = await designer.design_workflow(architecture, constraints)
     assert result == expected
 
