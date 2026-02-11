@@ -62,6 +62,21 @@ async def test_intake_node_sets_constraints(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_rag_retrieval_node_falls_back_on_failure(monkeypatch):
+    """Test that rag_retrieval_node returns empty docs_context when DocsRetriever.retrieve fails.
+    
+    This test ensures VectorStoreManager initialization succeeds (by mocking OpenAIEmbeddings)
+    so that the actual retrieval failure path is exercised.
+    """
+    from unittest.mock import Mock
+    from langchain_community.embeddings import FakeEmbeddings
+
+    # Mock OpenAIEmbeddings to avoid requiring credentials and ensure VectorStoreManager succeeds
+    monkeypatch.setattr(
+        "langgraph_system_generator.rag.embeddings.OpenAIEmbeddings",
+        lambda: FakeEmbeddings(size=32),
+    )
+
+    # Mock DocsRetriever.retrieve to raise an exception
     def fake_retrieve(*_args, **_kwargs):
         raise RuntimeError("boom")
 
