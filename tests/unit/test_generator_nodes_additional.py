@@ -79,10 +79,17 @@ async def test_rag_retrieval_node_falls_back_on_failure(monkeypatch):
 async def test_architecture_selection_node_defaults_when_missing(monkeypatch):
     payload = '{"architecture_type":"router","patterns":null,"justification":"Because"}'
 
+    # Mock ChatOpenAI to avoid real LLM calls
     monkeypatch.setattr(
         architecture_selector,
         "ChatOpenAI",
         make_stub_llm(payload),
+    )
+
+    # Mock DocsRetriever.retrieve_for_pattern to avoid real embeddings/FAISS similarity search
+    monkeypatch.setattr(
+        "langgraph_system_generator.generator.agents.architecture_selector.DocsRetriever.retrieve_for_pattern",
+        lambda self, pattern_name: [],
     )
 
     result = await architecture_selection_node(
