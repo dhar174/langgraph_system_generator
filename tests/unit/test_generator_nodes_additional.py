@@ -1,9 +1,14 @@
 """Additional tests for generator graph nodes with synthetic state inputs."""
 
-from unittest.mock import AsyncMock
-
 import pytest
 
+from langgraph_system_generator.generator.agents import (
+    architecture_selector,
+    graph_designer,
+    notebook_composer,
+    requirements_analyst,
+    toolchain_engineer,
+)
 from langgraph_system_generator.generator.nodes import (
     architecture_selection_node,
     graph_design_node,
@@ -19,17 +24,35 @@ from langgraph_system_generator.generator.nodes import (
 from langgraph_system_generator.generator.state import CellSpec, Constraint, QAReport
 
 
+class DummyResponse:
+    """Simple stub for LLM response objects."""
+
+    def __init__(self, content: str):
+        self.content = content
+
+
+def make_stub_llm(content: str):
+    """Create a ChatOpenAI stub that returns a fixed response payload."""
+
+    class StubLLM:
+        def __init__(self, *_args, **_kwargs):
+            self._content = content
+
+        async def ainvoke(self, _messages):
+            return DummyResponse(self._content)
+
+    return StubLLM
+
+
 @pytest.mark.asyncio
 async def test_intake_node_sets_constraints(monkeypatch):
     constraints = [Constraint(type="goal", value="Test", priority=5)]
-
-    async def fake_analyze(prompt):
-        assert prompt == "Build a test workflow"
-        return constraints
+    payload = '[{"type":"goal","value":"Test","priority":5}]'
 
     monkeypatch.setattr(
-        "langgraph_system_generator.generator.nodes.RequirementsAnalyst.analyze",
-        fake_analyze,
+        requirements_analyst,
+        "ChatOpenAI",
+        make_stub_llm(payload),
     )
 
     result = await intake_node({"user_prompt": "Build a test workflow"})
@@ -54,12 +77,12 @@ async def test_rag_retrieval_node_falls_back_on_failure(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_architecture_selection_node_defaults_when_missing(monkeypatch):
-    async def fake_select_architecture(*_args, **_kwargs):
-        return {"patterns": None, "justification": "Because"}
+    payload = '{"architecture_type":"router","patterns":null,"justification":"Because"}'
 
     monkeypatch.setattr(
-        "langgraph_system_generator.generator.nodes.ArchitectureSelector.select_architecture",
-        fake_select_architecture,
+        architecture_selector,
+        "ChatOpenAI",
+        make_stub_llm(payload),
     )
 
     result = await architecture_selection_node(
@@ -73,14 +96,12 @@ async def test_architecture_selection_node_defaults_when_missing(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_graph_design_node_defaults_architecture_type(monkeypatch):
-    async def fake_design_workflow(architecture, constraints):
-        assert architecture["architecture_type"] == "subagents"
-        assert constraints == [Constraint(type="goal", value="Test", priority=1)]
-        return {"nodes": ["a", "b"]}
+    payload = '{"nodes":["a","b"]}'
 
     monkeypatch.setattr(
-        "langgraph_system_generator.generator.nodes.GraphDesigner.design_workflow",
-        fake_design_workflow,
+        graph_designer,
+        "ChatOpenAI",
+        make_stub_llm(payload),
     )
 
     state = {
@@ -108,28 +129,34 @@ async def test_graph_design_node_defaults_architecture_type(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_tooling_plan_node_returns_tools_plan(monkeypatch):
-    async def fake_plan_tools(workflow_design, constraints):
-        assert workflow_design == {"nodes": []}
-        assert constraints == []
-        return [{"name": "tool"}]
+    payload = '[{"name":"tool","category":"misc","purpose":"x","configuration":{}}]'
 
     monkeypatch.setattr(
-        "langgraph_system_generator.generator.nodes.ToolchainEngineer.plan_tools",
-        fake_plan_tools,
+        toolchain_engineer,
+        "ChatOpenAI",
+        make_stub_llm(payload),
     )
 
     result = await tooling_plan_node({"workflow_design": {"nodes": []}, "constraints": []})
 
-    assert result["tools_plan"] == [{"name": "tool"}]
+    assert result["tools_plan"] == [{"name": "tool", "category": "misc", "purpose": "x", "configuration": {}}]
 
 
 @pytest.mark.asyncio
 async def test_notebook_assembly_node_returns_generated_cells(monkeypatch):
     cells = [CellSpec(cell_type="markdown", content="Hi", metadata={})]
+    # Mock NotebookComposer to return cells without needing LLM
+    payload = '[]'  # Dummy payload since we'll mock the compose method
 
+    monkeypatch.setattr(
+        notebook_composer,
+        "ChatOpenAI",
+        make_stub_llm(payload),
+    )
+    
     async def fake_compose_notebook(*_args, **_kwargs):
         return cells
-
+    
     monkeypatch.setattr(
         "langgraph_system_generator.generator.nodes.NotebookComposer.compose_notebook",
         fake_compose_notebook,
