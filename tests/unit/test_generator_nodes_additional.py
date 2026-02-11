@@ -1,7 +1,5 @@
 """Additional tests for generator graph nodes with synthetic state inputs."""
 
-from unittest.mock import AsyncMock
-
 import pytest
 
 from langgraph_system_generator.generator.nodes import (
