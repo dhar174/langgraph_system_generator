@@ -24,11 +24,11 @@ def build_llm_init(
         >>> build_llm_init("gpt-5-mini", 0.7)
         "ChatOpenAI(model='gpt-5-mini', temperature=0.7)"
         >>> build_llm_init("gpt-5-mini", 0, api_base="https://custom.api", max_tokens=1000)
-        'ChatOpenAI(model=\'gpt-5-mini\', temperature=0, base_url="https://custom.api", max_tokens=1000)'
+        "ChatOpenAI(model='gpt-5-mini', temperature=0, base_url='https://custom.api', max_tokens=1000)"
     """
     params = [f'model={repr(model)}', f'temperature={temperature}']
     if api_base:
-        params.append(f'base_url="{api_base}"')
+        params.append(f'base_url={repr(api_base)}')
     if max_tokens:
         params.append(f'max_tokens={max_tokens}')
     return f"ChatOpenAI({', '.join(params)})"

@@ -402,7 +402,7 @@ class TestRouterPatternEdgeCases:
         code = RouterPattern.generate_router_node_code(
             ["search"], model_config=config
         )
-        assert 'model="gpt-4"' in code
+        assert "model='gpt-4'" in code
 
     def test_generate_route_node_with_complex_purpose(self):
         """Test route node generation with multi-line purpose."""
@@ -647,7 +647,7 @@ class TestPatternModelConfig:
         )
 
         assert "def router_node(state: WorkflowState)" in code
-        assert 'model="gpt-5-mini"' in code
+        assert "model='gpt-5-mini'" in code
         # Router always uses temperature=0 for deterministic routing
         assert "temperature=0" in code
 
@@ -661,7 +661,7 @@ class TestPatternModelConfig:
         )
 
         assert "def search_node(state: WorkflowState)" in code
-        assert 'model="gpt-5-mini"' in code
+        assert "model='gpt-5-mini'" in code
         assert "temperature=0.8" in code
 
     def test_router_pattern_uses_default_config_when_none(self):
@@ -669,7 +669,7 @@ class TestPatternModelConfig:
         code = RouterPattern.generate_router_node_code(["search"])
 
         assert "def router_node(state: WorkflowState)" in code
-        assert 'model="gpt-5-mini"' in code
+        assert "model='gpt-5-mini'" in code
         assert "temperature=" in code
 
     def test_subagents_pattern_accepts_model_config(self):
@@ -682,7 +682,7 @@ class TestPatternModelConfig:
         )
 
         assert "def researcher_node(state: WorkflowState)" in code
-        assert 'model="gpt-5-mini"' in code
+        assert "model='gpt-5-mini'" in code
         assert "temperature=0.9" in code
 
     def test_subagents_supervisor_uses_temperature_zero(self):
@@ -695,7 +695,7 @@ class TestPatternModelConfig:
         )
 
         assert "def supervisor_node(state: WorkflowState)" in code
-        assert 'model="gpt-5-mini"' in code
+        assert "model='gpt-5-mini'" in code
         # Supervisor should use temperature=0 for deterministic routing
         assert "temperature=0" in code
 
@@ -733,7 +733,7 @@ class TestPatternModelConfig:
         )
 
         assert "def generate_node(state: WorkflowState)" in code
-        assert 'model="gpt-5-mini"' in code
+        assert "model='gpt-5-mini'" in code
         assert "temperature=0.6" in code
 
     def test_critique_loop_critique_uses_temperature_zero(self):
@@ -746,7 +746,7 @@ class TestPatternModelConfig:
         )
 
         assert "def critique_node(state: WorkflowState)" in code
-        assert 'model="gpt-5-mini"' in code
+        assert "model='gpt-5-mini'" in code
         # Critique should use temperature=0 for consistent evaluation
         assert "temperature=0" in code
 
@@ -758,31 +758,31 @@ class TestPatternModelConfig:
         code = CritiqueLoopPattern.generate_revise_node_code(model_config=config)
 
         assert "def revise_node(state: WorkflowState)" in code
-        assert 'model="gpt-5-mini"' in code
+        assert "model='gpt-5-mini'" in code
         assert "temperature=0.7" in code
 
     def test_all_patterns_preserve_gpt_5_mini_default(self):
         """Test all patterns preserve gpt-5-mini as default model."""
         # Router pattern
         router_code = RouterPattern.generate_router_node_code(["search"])
-        assert 'model="gpt-5-mini"' in router_code
+        assert "model='gpt-5-mini'" in router_code
 
         # Subagents pattern
         supervisor_code = SubagentsPattern.generate_supervisor_code(["researcher"])
-        assert 'model="gpt-5-mini"' in supervisor_code
+        assert "model='gpt-5-mini'" in supervisor_code
 
         subagent_code = SubagentsPattern.generate_subagent_code("researcher", "Researcher")
-        assert 'model="gpt-5-mini"' in subagent_code
+        assert "model='gpt-5-mini'" in subagent_code
 
         # Critique loop pattern
         generate_code = CritiqueLoopPattern.generate_generation_node_code()
-        assert 'model="gpt-5-mini"' in generate_code
+        assert "model='gpt-5-mini'" in generate_code
 
         critique_code = CritiqueLoopPattern.generate_critique_node_code()
-        assert 'model="gpt-5-mini"' in critique_code
+        assert "model='gpt-5-mini'" in critique_code
 
         revise_code = CritiqueLoopPattern.generate_revise_node_code()
-        assert 'model="gpt-5-mini"' in revise_code
+        assert "model='gpt-5-mini'" in revise_code
 
     def test_complete_examples_accept_model_config(self):
         """Test complete example generators accept model config."""
@@ -794,7 +794,7 @@ class TestPatternModelConfig:
         router_example = RouterPattern.generate_complete_example(
             ["search"], model_config=config
         )
-        assert 'model="gpt-5-mini"' in router_example
+        assert "model='gpt-5-mini'" in router_example
         # Router uses temperature=0 for deterministic routing
         assert "temperature=0" in router_example
 
@@ -802,13 +802,13 @@ class TestPatternModelConfig:
         subagents_example = SubagentsPattern.generate_complete_example(
             ["researcher"], model_config=config
         )
-        assert 'model="gpt-5-mini"' in subagents_example
+        assert "model='gpt-5-mini'" in subagents_example
 
         # Critique loop pattern
         critique_example = CritiqueLoopPattern.generate_complete_example(
             model_config=config
         )
-        assert 'model="gpt-5-mini"' in critique_example
+        assert "model='gpt-5-mini'" in critique_example
 
     def test_patterns_support_api_base_parameter(self):
         """Test patterns include api_base in generated code when provided."""
@@ -818,15 +818,15 @@ class TestPatternModelConfig:
 
         # Router pattern
         router_code = RouterPattern.generate_route_node_code("search", "Search", model_config=config)
-        assert 'base_url="https://custom.api.com"' in router_code
+        assert "base_url='https://custom.api.com'" in router_code
 
         # Subagents pattern
         subagent_code = SubagentsPattern.generate_subagent_code("researcher", "Research", model_config=config)
-        assert 'base_url="https://custom.api.com"' in subagent_code
+        assert "base_url='https://custom.api.com'" in subagent_code
 
         # Critique loop pattern
         generate_code = CritiqueLoopPattern.generate_generation_node_code(model_config=config)
-        assert 'base_url="https://custom.api.com"' in generate_code
+        assert "base_url='https://custom.api.com'" in generate_code
 
     def test_patterns_support_max_tokens_parameter(self):
         """Test patterns include max_tokens in generated code when provided."""
