@@ -17,7 +17,7 @@ def test_build_llm_init_includes_base_url_only_when_passed():
     """Ensure base_url appears only when provided."""
     result = build_llm_init("gpt-5-mini", 0.3, api_base="https://example.com")
 
-    assert 'base_url="https://example.com"' in result
+    assert "base_url='https://example.com'" in result
     assert "max_tokens" not in result
 
 
