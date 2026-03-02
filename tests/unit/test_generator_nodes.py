@@ -13,6 +13,8 @@ from langgraph_system_generator.generator.nodes import (
     tooling_plan_node,
 )
 from langgraph_system_generator.generator.state import CellSpec, Constraint, NotebookPlan
+from langgraph_system_generator.generator.nodes import intake_node, rag_retrieval_node
+from langgraph_system_generator.generator.state import Constraint, DocSnippet
 
 
 @pytest.mark.asyncio
@@ -231,3 +233,92 @@ async def test_notebook_assembly_node_fallback_when_selected_patterns_missing():
         "architecture_type": "router",  # Should default to "router"
         "justification": "Fits the request.",
     }
+@pytest.mark.parametrize("failure_mode", ["vector_store", "retrieve"])
+async def test_rag_retrieval_node_returns_empty_on_failure(
+    monkeypatch, failure_mode
+):
+    if failure_mode == "vector_store":
+        class BoomManager:
+            def __init__(self, *args, **kwargs):
+                raise RuntimeError("boom")
+
+        monkeypatch.setattr(
+            "langgraph_system_generator.generator.nodes.VectorStoreManager",
+            BoomManager,
+        )
+    else:
+        class DummyManager:
+            def __init__(self, *args, **kwargs):
+                pass
+
+        class BoomRetriever:
+            def __init__(self, manager):
+                pass
+
+            def retrieve(self, *args, **kwargs):
+                raise RuntimeError("boom")
+
+        monkeypatch.setattr(
+            "langgraph_system_generator.generator.nodes.VectorStoreManager",
+            DummyManager,
+        )
+        monkeypatch.setattr(
+            "langgraph_system_generator.generator.nodes.DocsRetriever",
+            BoomRetriever,
+        )
+
+    result = await rag_retrieval_node({"user_prompt": "Find docs"})
+
+    assert result == {"docs_context": []}
+
+
+@pytest.mark.asyncio
+async def test_rag_retrieval_node_maps_snippets(monkeypatch):
+    class DummyManager:
+        def __init__(self, *args, **kwargs):
+            pass
+
+    class DummyRetriever:
+        def __init__(self, manager):
+            pass
+
+        def retrieve(self, prompt, k=10):
+            return [
+                {
+                    "content": "Content A",
+                    "source": "source-a",
+                    "relevance_score": 0.9,
+                    "heading": "Heading A",
+                },
+                {
+                    "content": "Content B",
+                    "source": "source-b",
+                    "relevance_score": 0.5,
+                },
+            ]
+
+    monkeypatch.setattr(
+        "langgraph_system_generator.generator.nodes.VectorStoreManager",
+        DummyManager,
+    )
+    monkeypatch.setattr(
+        "langgraph_system_generator.generator.nodes.DocsRetriever",
+        DummyRetriever,
+    )
+
+    result = await rag_retrieval_node({"user_prompt": "Find docs"})
+
+    assert result["docs_context"] == [
+        DocSnippet(
+            content="Content A",
+            source="source-a",
+            relevance_score=0.9,
+            heading="Heading A",
+        ),
+        DocSnippet(
+            content="Content B",
+            source="source-b",
+            relevance_score=0.5,
+            heading=None,
+        ),
+    ]
