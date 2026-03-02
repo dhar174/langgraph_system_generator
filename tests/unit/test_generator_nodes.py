@@ -67,13 +67,18 @@ async def test_tooling_plan_node_returns_tools_plan():
     workflow_design = {"nodes": [{"name": "agent", "purpose": "coordinate"}]}
     expected_tools = [{"name": "search", "category": "search"}]
 
+    # Patch ChatOpenAI used inside ToolchainEngineer.__init__ to avoid requiring OPENAI_API_KEY
     with patch(
-        "langgraph_system_generator.generator.nodes.ToolchainEngineer.plan_tools",
-        new=AsyncMock(return_value=expected_tools),
-    ) as mock_plan:
-        result = await tooling_plan_node(
-            {"workflow_design": workflow_design, "constraints": constraints}
-        )
+        "langgraph_system_generator.generator.agents.toolchain_engineer.ChatOpenAI",
+        return_value=MagicMock(),
+    ):
+        with patch(
+            "langgraph_system_generator.generator.nodes.ToolchainEngineer.plan_tools",
+            new=AsyncMock(return_value=expected_tools),
+        ) as mock_plan:
+            result = await tooling_plan_node(
+                {"workflow_design": workflow_design, "constraints": constraints}
+            )
 
     assert result == {"tools_plan": expected_tools}
     mock_plan.assert_awaited_once_with(workflow_design, constraints)
