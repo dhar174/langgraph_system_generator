@@ -111,19 +111,23 @@ async def test_notebook_assembly_node_passes_architecture_and_plans():
         return expected_cells
 
     with patch(
-        "langgraph_system_generator.generator.nodes.NotebookComposer.compose_notebook",
-        new=AsyncMock(side_effect=capture_compose),
+        "langgraph_system_generator.generator.agents.notebook_composer.ChatOpenAI",
+        return_value=MagicMock(),
     ):
-        result = await notebook_assembly_node(
-            {
-                "notebook_plan": notebook_plan,
-                "workflow_design": workflow_design,
-                "tools_plan": tools_plan,
-                "constraints": constraints,
-                "selected_patterns": {"primary": "router"},
-                "architecture_justification": "Fits the request.",
-            }
-        )
+        with patch(
+            "langgraph_system_generator.generator.nodes.NotebookComposer.compose_notebook",
+            new=AsyncMock(side_effect=capture_compose),
+        ):
+            result = await notebook_assembly_node(
+                {
+                    "notebook_plan": notebook_plan,
+                    "workflow_design": workflow_design,
+                    "tools_plan": tools_plan,
+                    "constraints": constraints,
+                    "selected_patterns": {"primary": "router"},
+                    "architecture_justification": "Fits the request.",
+                }
+            )
 
     assert result == {"generated_cells": expected_cells}
     assert captured_args["plan"] is notebook_plan
@@ -158,19 +162,23 @@ async def test_notebook_assembly_node_fallback_when_primary_missing():
         return expected_cells
 
     with patch(
-        "langgraph_system_generator.generator.nodes.NotebookComposer.compose_notebook",
-        new=AsyncMock(side_effect=capture_compose),
+        "langgraph_system_generator.generator.agents.notebook_composer.ChatOpenAI",
+        return_value=MagicMock(),
     ):
-        result = await notebook_assembly_node(
-            {
-                "notebook_plan": notebook_plan,
-                "workflow_design": workflow_design,
-                "tools_plan": tools_plan,
-                "constraints": constraints,
-                "selected_patterns": {},  # Empty dict, no "primary" key
-                "architecture_justification": "Fits the request.",
-            }
-        )
+        with patch(
+            "langgraph_system_generator.generator.nodes.NotebookComposer.compose_notebook",
+            new=AsyncMock(side_effect=capture_compose),
+        ):
+            result = await notebook_assembly_node(
+                {
+                    "notebook_plan": notebook_plan,
+                    "workflow_design": workflow_design,
+                    "tools_plan": tools_plan,
+                    "constraints": constraints,
+                    "selected_patterns": {},  # Empty dict, no "primary" key
+                    "architecture_justification": "Fits the request.",
+                }
+            )
 
     assert result == {"generated_cells": expected_cells}
     assert captured_args["architecture"] == {
@@ -202,19 +210,23 @@ async def test_notebook_assembly_node_fallback_when_selected_patterns_missing():
         return expected_cells
 
     with patch(
-        "langgraph_system_generator.generator.nodes.NotebookComposer.compose_notebook",
-        new=AsyncMock(side_effect=capture_compose),
+        "langgraph_system_generator.generator.agents.notebook_composer.ChatOpenAI",
+        return_value=MagicMock(),
     ):
-        result = await notebook_assembly_node(
-            {
-                "notebook_plan": notebook_plan,
-                "workflow_design": workflow_design,
-                "tools_plan": tools_plan,
-                "constraints": constraints,
-                # "selected_patterns" key is completely missing
-                "architecture_justification": "Fits the request.",
-            }
-        )
+        with patch(
+            "langgraph_system_generator.generator.nodes.NotebookComposer.compose_notebook",
+            new=AsyncMock(side_effect=capture_compose),
+        ):
+            result = await notebook_assembly_node(
+                {
+                    "notebook_plan": notebook_plan,
+                    "workflow_design": workflow_design,
+                    "tools_plan": tools_plan,
+                    "constraints": constraints,
+                    # "selected_patterns" key is completely missing
+                    "architecture_justification": "Fits the request.",
+                }
+            )
 
     assert result == {"generated_cells": expected_cells}
     assert captured_args["architecture"] == {
