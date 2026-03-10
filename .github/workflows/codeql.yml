@@ -1,0 +1,61 @@
+# CodeQL Advanced Security analysis – reusable workflow
+# Called by wiki-from-code.yml; also runs on push/PR to main.
+#
+# GitHub Advanced Security (GHAS) / CodeQL is a GitHub Pro+ / Teams / Enterprise
+# feature for private repositories.  Running this workflow and seeing it succeed
+# (i.e. the "Security" tab shows scan results) is therefore a reliable *observable
+# signal* that the account has the required entitlement active.
+#
+# Reference: https://docs.github.com/en/code-security/code-scanning
+
+name: "CodeQL"
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+  schedule:
+    # Run a weekly scan every Tuesday at 05:17 UTC
+    - cron: "17 5 * * 2"
+  # Allow other workflows to call this as a reusable workflow
+  workflow_call:
+
+permissions:
+  actions: read
+  contents: read
+  security-events: write
+
+jobs:
+  analyze:
+    name: Analyze (${{ matrix.language }})
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        # Only Python is present in this repository
+        language: ["python"]
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # Initialise the CodeQL tools for scanning.
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: ${{ matrix.language }}
+          # Use the default query suite; extend with 'security-extended' for
+          # broader Pro+ Advanced Security coverage.
+          queries: security-extended
+
+      # Autobuild attempts to build any compiled languages; for Python this is
+      # a no-op but keeps the step for consistency when languages are added.
+      - name: Autobuild
+        uses: github/codeql-action/autobuild@v3
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: "/language:${{ matrix.language }}"
