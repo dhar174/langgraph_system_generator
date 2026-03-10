@@ -62,7 +62,20 @@ class _MockTransport(httpx.BaseTransport):
 
 
 def _client(routes: dict[str, tuple[int, Any]]) -> httpx.Client:
-    return httpx.Client(transport=_MockTransport(routes), base_url="https://api.github.com")
+    # No base_url: production code constructs full URLs via _GITHUB_API constant.
+    return httpx.Client(transport=_MockTransport(routes))
+
+
+def _patched_client_factory(routes: dict[str, tuple[int, Any]]):
+    """Return a drop-in replacement for httpx.Client that uses _MockTransport."""
+    original = httpx.Client
+
+    class _PatchedClient(original):
+        def __init__(self, *args, **kwargs):
+            kwargs["transport"] = _MockTransport(routes)
+            super().__init__(*args, **kwargs)
+
+    return _PatchedClient
 
 
 # ---------------------------------------------------------------------------
@@ -280,16 +293,7 @@ def test_check_plan_all_signals_positive(monkeypatch):
         "/repos/owner/repo/dependency-graph/sbom": (200, {"sbom": {}}),
         "/orgs/myorg/copilot/billing/seats": (200, {"total_seats": 3}),
     }
-
-    # Patch httpx.Client to use our mock transport
-    original_client = httpx.Client
-
-    class _PatchedClient(original_client):
-        def __init__(self, *args, **kwargs):
-            kwargs["transport"] = _MockTransport(routes)
-            super().__init__(*args, **kwargs)
-
-    monkeypatch.setattr(httpx, "Client", _PatchedClient)
+    monkeypatch.setattr(httpx, "Client", _patched_client_factory(routes))
 
     report = check_plan(
         token="fake-token",
@@ -307,15 +311,7 @@ def test_check_plan_free_account(monkeypatch):
     routes: dict[str, tuple[int, Any]] = {
         "/user": (200, {"login": "freeuser", "plan": {"name": "free"}}),
     }
-
-    original_client = httpx.Client
-
-    class _PatchedClient(original_client):
-        def __init__(self, *args, **kwargs):
-            kwargs["transport"] = _MockTransport(routes)
-            super().__init__(*args, **kwargs)
-
-    monkeypatch.setattr(httpx, "Client", _PatchedClient)
+    monkeypatch.setattr(httpx, "Client", _patched_client_factory(routes))
 
     report = check_plan(token="fake-token")
     assert report.plan_name == "free"
@@ -340,15 +336,7 @@ def test_main_json_output(monkeypatch):
     routes: dict[str, tuple[int, Any]] = {
         "/user": (200, {"login": "tester", "plan": {"name": "pro"}}),
     }
-
-    original_client = httpx.Client
-
-    class _PatchedClient(original_client):
-        def __init__(self, *args, **kwargs):
-            kwargs["transport"] = _MockTransport(routes)
-            super().__init__(*args, **kwargs)
-
-    monkeypatch.setattr(httpx, "Client", _PatchedClient)
+    monkeypatch.setattr(httpx, "Client", _patched_client_factory(routes))
 
     import io
     from contextlib import redirect_stdout
@@ -369,15 +357,7 @@ def test_main_text_output(monkeypatch, capsys):
     routes: dict[str, tuple[int, Any]] = {
         "/user": (200, {"login": "tester", "plan": {"name": "free"}}),
     }
-
-    original_client = httpx.Client
-
-    class _PatchedClient(original_client):
-        def __init__(self, *args, **kwargs):
-            kwargs["transport"] = _MockTransport(routes)
-            super().__init__(*args, **kwargs)
-
-    monkeypatch.setattr(httpx, "Client", _PatchedClient)
+    monkeypatch.setattr(httpx, "Client", _patched_client_factory(routes))
 
     result = main(["--token", "fake"])
     captured = capsys.readouterr()

@@ -51,7 +51,11 @@ Returns a `plan` field for **authenticated** requests:
 
 > ⚠ The `plan` object is only returned when the token has sufficient user scopes.
 > It does **not** distinguish between "GitHub Pro" and "GitHub Pro+" – both return "pro".
-> Copilot tier (Individual / Business / Enterprise) requires a separate check.
+> To differentiate Pro from Pro+, check `settings/copilot/features` for the Copilot
+> plan label ("Individual" = Copilot Pro, included in GitHub Pro+) or inspect the
+> advanced Copilot features that are gated behind Pro+ (e.g. multi-file editing,
+> scheduled tasks).  Copilot tier (Individual / Business / Enterprise) requires a
+> separate check.
 
 ### 2.2  Code Scanning / Advanced Security
 
@@ -116,9 +120,9 @@ python scripts/check_github_plan.py --token "$GITHUB_TOKEN"
 # Full check including a repo and org
 python scripts/check_github_plan.py \
     --token "$GITHUB_TOKEN" \
-    --owner dhar174 \
-    --repo langgraph_system_generator \
-    --org dhar174
+    --owner <your-username-or-org> \
+    --repo <your-repo-name> \
+    --org <your-org>
 
 # Machine-readable JSON output
 python scripts/check_github_plan.py --token "$GITHUB_TOKEN" --json
@@ -152,7 +156,7 @@ The `.github/workflows/codeql.yml` workflow in this repository runs **GitHub Adv
 
 You can inspect the last workflow run at:
 ```
-https://github.com/dhar174/langgraph_system_generator/actions/workflows/codeql.yml
+https://github.com/<owner>/<repo>/actions/workflows/codeql.yml
 ```
 
 ---

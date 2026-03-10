@@ -140,7 +140,7 @@ def _get(client: httpx.Client, path: str) -> tuple[int, Any]:
         resp = client.get(f"{_GITHUB_API}{path}")
         try:
             body = resp.json()
-        except Exception:
+        except (ValueError, json.JSONDecodeError):
             body = None
         return resp.status_code, body
     except httpx.RequestError as exc:
@@ -224,7 +224,7 @@ def probe_marketplace_purchases(client: httpx.Client) -> PlanSignal:
     if status == 200 and isinstance(body, list):
         if body:
             signal.detected = True
-            plans = [p.get("plan", {}).get("name", "?") for p in body]
+            plans = [(p.get("plan") or {}).get("name", "?") for p in body]
             signal.details = f"{len(body)} purchase(s): {', '.join(plans)}"
         else:
             signal.details = "No marketplace purchases found"
