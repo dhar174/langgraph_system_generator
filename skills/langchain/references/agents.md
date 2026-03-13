@@ -47,7 +47,10 @@ def calculator(expression: str) -> str:
             return _ALLOWED_OPERATORS[type(node.op)](_evaluate(node.operand))
         raise ValueError("Only basic arithmetic expressions are supported.")
 
-    return str(_evaluate(ast.parse(expression, mode="eval").body))
+    try:
+        return str(_evaluate(ast.parse(expression, mode="eval").body))
+    except ZeroDivisionError as exc:
+        raise ValueError("Division by zero is not supported.") from exc
 
 def search(query: str) -> str:
     """Search for information."""

@@ -162,7 +162,10 @@ def safe_calculate(expression: str) -> float:
             return _ALLOWED_OPERATORS[type(node.op)](_evaluate(node.operand))
         raise ValueError("Only basic arithmetic expressions are supported.")
 
-    return _evaluate(ast.parse(expression, mode="eval").body)
+    try:
+        return _evaluate(ast.parse(expression, mode="eval").body)
+    except ZeroDivisionError as exc:
+        raise ValueError("Division by zero is not supported.") from exc
 
 
 calculator = Tool(
