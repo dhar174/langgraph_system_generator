@@ -1,4 +1,4 @@
-   - Technologies used
-   - Development setup
-   - Technical constraints
-   - Dependencies
+- Technologies used
+- Development setup
+- Technical constraints
+- Dependencies
