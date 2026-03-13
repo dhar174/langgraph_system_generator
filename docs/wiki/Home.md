@@ -88,6 +88,7 @@ Ready to generate your first multi-agent system? Check out:
 
 - **[Getting Started](Getting-Started.md)**: Installation and your first generation
 - **[Architecture Deep Dive](Architecture-Deep-Dive.md)**: Understanding the generation pipeline
+- **[Architecture Assessment](Architecture-Assessment.md)**: Balanced review of strengths, weaknesses, and gaps to the full vision
 - **[Pattern Library Guide](Pattern-Library-Guide.md)**: Detailed pattern documentation
 - **[CLI & API Reference](CLI-and-API-Reference.md)**: Complete interface documentation
 

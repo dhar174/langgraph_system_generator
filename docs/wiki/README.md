@@ -10,8 +10,9 @@ Comprehensive documentation for the LangGraph System Generator project.
 2. **[Getting Started](Getting-Started.md)** - Installation, setup, and first generation
 3. **[Architecture Deep Dive](Architecture-Deep-Dive.md)** - Internal architecture and generation pipeline
 4. **[Pattern Library Guide](Pattern-Library-Guide.md)** - Complete guide to Router, Subagents, and Critique-Revise patterns
-5. **[CLI & API Reference](CLI-and-API-Reference.md)** - Command-line and REST API documentation
-6. **[Colab Usage](Colab-Usage.md)** - Using generated notebooks in Google Colab
+5. **[Architecture Assessment](Architecture-Assessment.md)** - Strengths, weaknesses, improvement recommendations, and progress-to-vision analysis
+6. **[CLI & API Reference](CLI-and-API-Reference.md)** - Command-line and REST API documentation
+7. **[Colab Usage](Colab-Usage.md)** - Using generated notebooks in Google Colab
 
 ## Quick Links
 
@@ -37,6 +38,7 @@ docs/wiki/
 ├── Getting-Started.md           # Installation and quickstart guide
 ├── Architecture-Deep-Dive.md    # Technical architecture details
 ├── Pattern-Library-Guide.md     # Pattern documentation
+├── Architecture-Assessment.md   # Independent architecture review
 ├── CLI-and-API-Reference.md     # Interface documentation
 ├── Colab-Usage.md              # Google Colab guide
 └── README.md                    # This file
@@ -82,14 +84,15 @@ To improve or add documentation:
 
 This wiki provides comprehensive coverage of:
 
-✅ Installation and setup  
-✅ CLI and API usage  
-✅ Pattern library (Router, Subagents, Critique-Revise)  
-✅ Architecture and internals  
-✅ Multi-format export system  
-✅ QA and repair system  
-✅ Google Colab integration  
-✅ Troubleshooting and best practices  
+✅ Installation and setup
+✅ CLI and API usage
+✅ Pattern library (Router, Subagents, Critique-Revise)
+✅ Architecture and internals
+✅ Independent architecture assessment
+✅ Multi-format export system
+✅ QA and repair system
+✅ Google Colab integration
+✅ Troubleshooting and best practices
 
 ## Version
 
