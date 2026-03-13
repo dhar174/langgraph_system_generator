@@ -1,0 +1,4 @@
+- Contains individual markdown files for each task
+   - Each task has its own dedicated file with format `TASKID-taskname.md`
+   - Includes task index file (`_index.md`) listing all tasks with their statuses
+   - Preserves complete thought process and history for each task
