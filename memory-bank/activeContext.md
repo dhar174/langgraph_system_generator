@@ -1,4 +1,4 @@
-   - Current work focus
-   - Recent changes
-   - Next steps
-   - Active decisions and considerations
+- Current work focus
+- Recent changes
+- Next steps
+- Active decisions and considerations
