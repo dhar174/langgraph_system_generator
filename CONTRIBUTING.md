@@ -29,8 +29,10 @@ python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 pip install -e .
 
-# Build the RAG index (needed for integration tests)
-python scripts/build_index.py
+# (Optional) Build the RAG vector index for live-mode retrieval.
+# Requires OPENAI_API_KEY. Skip this step if you only plan to run the unit test
+# suite — unit tests run in stub mode and do not need a pre-built index.
+# OPENAI_API_KEY=sk-... python scripts/build_index.py
 ```
 
 Verify the setup:
@@ -67,15 +69,18 @@ All unit tests should pass without an `OPENAI_API_KEY` (LLM calls are mocked).
 These rules are enforced by the existing test suite — new tests must follow them or
 they will fail in CI:
 
-- **Patch `ChatOpenAI` at the agent module path** before the agent is instantiated.
-  For example: `monkeypatch.setattr("generator.agents.notebook_composer.ChatOpenAI", MockLLM)`.
-  Patching `langchain_openai.ChatOpenAI` globally is not sufficient.
+- **Patch `ChatOpenAI` at the fully-qualified agent module path** before the agent is
+  instantiated. For example:
+  `monkeypatch.setattr("langgraph_system_generator.generator.agents.notebook_composer.ChatOpenAI", MockLLM)`.
+  Patching `langchain_openai.ChatOpenAI` globally is not sufficient and will cause tests
+  to fail in CI.
 
 - **Use `FakeEmbeddings`** from `langchain_community.embeddings` wherever
   `OpenAIEmbeddings` would be called, so tests run without credentials.
 
-- **Stub `DocsRetriever.retrieve_for_pattern`** to return `[]` in any test that
-  exercises a generator node, to avoid real FAISS similarity searches.
+- **Stub `DocsRetriever` methods** to return `[]` to avoid real FAISS similarity searches:
+  - For `rag_retrieval_node` tests: patch `langgraph_system_generator.generator.nodes.DocsRetriever.retrieve`
+  - For `ArchitectureSelector` tests: patch `langgraph_system_generator.generator.agents.architecture_selector.DocsRetriever.retrieve_for_pattern`
 
 - **Use `AsyncMock`** for all async functions / coroutines.
 
@@ -102,13 +107,16 @@ Run these prompts from Copilot Chat (type `/` to see the list):
 
 ### Custom agents (`.github/agents/`)
 
-Open Copilot Chat and `@mention` the relevant agent:
+Open Copilot Chat and `@mention` the relevant agent. The table below lists the agent
+filename (the invoke identifier) and its display name in the Copilot Chat agent picker:
 
-- **`architect`** — structural and design advice
-- **`test-writer`** — generates comprehensive test suites
-- **`se-security-reviewer`** — security audit before merging sensitive changes
-- **`debug`** — step-by-step debugging of complex failures
-- **`janitor`** — cleanup, dead-code removal, and tech-debt reduction
+| File (`@<filename>`) | Display name | When to use |
+|---|---|---|
+| `@test-writer` | **Test Writer** | Generating tests |
+| `@architect` | **Architect** | Structural and design advice |
+| `@se-security-reviewer` | **SE: Security** | Security audit before merging sensitive changes |
+| `@debug` | **debug** | Step-by-step debugging of complex failures |
+| `@janitor` | **janitor** | Cleanup, dead-code removal, and tech-debt reduction |
 
 ### Custom instructions (`.github/instructions/`)
 

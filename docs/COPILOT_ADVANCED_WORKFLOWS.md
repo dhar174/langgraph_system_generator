@@ -65,9 +65,10 @@ See [`.github/prompts/langgraph-code-explanation.prompt.md`](../.github/prompts/
 | Convention | Detail |
 |---|---|
 | Test runner | `pytest` with `--asyncio-mode=auto` |
-| OpenAI mocking | Patch `ChatOpenAI` at the **agent module level** before instantiation |
+| OpenAI mocking | Patch `ChatOpenAI` at the **fully-qualified agent module path** before instantiation |
 | Embeddings mocking | Use `FakeEmbeddings` from `langchain_community.embeddings` |
-| RAG stubbing | Monkeypatch `DocsRetriever.retrieve_for_pattern` to return `[]` |
+| RAG stubbing — `rag_retrieval_node` | Patch `langgraph_system_generator.generator.nodes.DocsRetriever.retrieve` to return `[]` |
+| RAG stubbing — `ArchitectureSelector` | Patch `langgraph_system_generator.generator.agents.architecture_selector.DocsRetriever.retrieve_for_pattern` to return `[]` |
 | Test location | `tests/unit/` for units, `tests/patterns/` for pattern assertions |
 
 ### Chat prompt
@@ -77,9 +78,12 @@ Select the function or class to test, then:
 ```
 Generate pytest unit tests for the selected code. Follow these constraints:
 - Use AsyncMock for all coroutines.
-- Patch ChatOpenAI at the agent module path (e.g. generator.agents.notebook_composer.ChatOpenAI)
+- Patch ChatOpenAI at the fully-qualified agent module path (e.g.
+  langgraph_system_generator.generator.agents.notebook_composer.ChatOpenAI)
   before instantiating the agent under test.
-- Stub DocsRetriever.retrieve_for_pattern to return [] to avoid FAISS calls.
+- For rag_retrieval_node tests: patch langgraph_system_generator.generator.nodes.DocsRetriever.retrieve to return [].
+- For ArchitectureSelector tests: patch langgraph_system_generator.generator.agents.architecture_selector.DocsRetriever.retrieve_for_pattern to return [].
+- Patching langchain_openai.ChatOpenAI globally is not sufficient and will fail.
 - Do not require a real OPENAI_API_KEY; all LLM calls must be mocked.
 ```
 
@@ -282,9 +286,17 @@ it in future sessions.
 
 ### Agents and Skills
 
-The `.github/agents/` directory contains specialised Copilot agents. Use the `test-writer`
-agent when generating tests, the `architect` agent when planning structural changes, and
-the `se-security-reviewer` agent before opening security-sensitive PRs.
+The `.github/agents/` directory contains specialised Copilot agents. The table below lists
+the agent filename (used to invoke it) and its display name (shown in the Copilot Chat
+agent picker):
+
+| File (`@<filename>`) | Display name | When to use |
+|---|---|---|
+| `@test-writer` | **Test Writer** | Generating tests |
+| `@architect` | **Architect** | Planning structural changes |
+| `@se-security-reviewer` | **SE: Security** | Security audit before merging sensitive PRs |
+| `@debug` | **debug** | Step-by-step debugging of complex failures |
+| `@janitor` | **janitor** | Cleanup, dead-code removal, tech-debt reduction |
 
 ### Prompt files
 

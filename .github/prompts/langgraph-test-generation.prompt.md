@@ -14,7 +14,7 @@ inside-out.
 
 | What to mock | How |
 |---|---|
-| `ChatOpenAI` | Patch at the **agent module path** *before* the agent is instantiated, e.g. `generator.agents.notebook_composer.ChatOpenAI`. Never patch `langchain_openai.ChatOpenAI` globally. |
+| `ChatOpenAI` | Patch at the **fully-qualified agent module path** *before* the agent is instantiated, e.g. `langgraph_system_generator.generator.agents.notebook_composer.ChatOpenAI`. Never patch `langchain_openai.ChatOpenAI` globally. |
 | OpenAI embeddings | Substitute with `FakeEmbeddings` from `langchain_community.embeddings`. |
 | `DocsRetriever.retrieve` / `retrieve_for_pattern` | Monkeypatch to return `[]` to avoid real FAISS calls. |
 | Async node functions | Use `AsyncMock` from `unittest.mock` for all coroutines. |
