@@ -42,12 +42,18 @@ from qdrant_client import QdrantClient
 
 ### Enable tracing
 
+```bash
+export LANGCHAIN_TRACING_V2=true
+export LANGCHAIN_API_KEY=your-langsmith-api-key
+export LANGCHAIN_PROJECT=my-project
+# Keep real keys out of source control.
+```
+
 ```python
 import os
 
-os.environ["LANGCHAIN_TRACING_V2"] = "true"
-os.environ["LANGCHAIN_API_KEY"] = "your-langsmith-api-key"
-os.environ["LANGCHAIN_PROJECT"] = "my-project"
+if not os.getenv("LANGCHAIN_API_KEY"):
+    raise RuntimeError("Set LANGCHAIN_API_KEY in your environment before running traced LangChain workloads.")
 ```
 
 ## Deployment patterns

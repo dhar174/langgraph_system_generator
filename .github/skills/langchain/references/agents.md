@@ -16,13 +16,38 @@ This is the **ReAct pattern** (Reasoning + Acting).
 ## Basic agent creation
 
 ```python
+import ast
+import operator as op
+
 from langchain.agents import create_agent
 from langchain_anthropic import ChatAnthropic
 
 # Define tools
+_ALLOWED_OPERATORS = {
+    ast.Add: op.add,
+    ast.Sub: op.sub,
+    ast.Mult: op.mul,
+    ast.Div: op.truediv,
+    ast.Pow: op.pow,
+    ast.USub: op.neg,
+}
+
+
 def calculator(expression: str) -> str:
-    """Evaluate a math expression."""
-    return str(eval(expression))
+    """Evaluate a basic math expression safely."""
+
+    def _evaluate(node):
+        if isinstance(node, ast.Constant) and isinstance(node.value, (int, float)):
+            return node.value
+        if isinstance(node, ast.BinOp) and type(node.op) in _ALLOWED_OPERATORS:
+            return _ALLOWED_OPERATORS[type(node.op)](
+                _evaluate(node.left), _evaluate(node.right)
+            )
+        if isinstance(node, ast.UnaryOp) and type(node.op) in _ALLOWED_OPERATORS:
+            return _ALLOWED_OPERATORS[type(node.op)](_evaluate(node.operand))
+        raise ValueError("Only basic arithmetic expressions are supported.")
+
+    return str(_evaluate(ast.parse(expression, mode="eval").body))
 
 def search(query: str) -> str:
     """Search for information."""

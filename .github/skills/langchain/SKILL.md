@@ -131,14 +131,44 @@ result = chain.run(topic="machine learning")
 **ReAct (Reasoning + Acting) pattern:**
 
 ```python
+import ast
+import operator as op
+
 from langchain.agents import create_tool_calling_agent, AgentExecutor
 from langchain.tools import Tool
 
 # Define custom tool
+_ALLOWED_OPERATORS = {
+    ast.Add: op.add,
+    ast.Sub: op.sub,
+    ast.Mult: op.mul,
+    ast.Div: op.truediv,
+    ast.Pow: op.pow,
+    ast.USub: op.neg,
+}
+
+
+def safe_calculate(expression: str) -> float:
+    """Evaluate a basic math expression without executing arbitrary code."""
+
+    def _evaluate(node):
+        if isinstance(node, ast.Constant) and isinstance(node.value, (int, float)):
+            return node.value
+        if isinstance(node, ast.BinOp) and type(node.op) in _ALLOWED_OPERATORS:
+            return _ALLOWED_OPERATORS[type(node.op)](
+                _evaluate(node.left), _evaluate(node.right)
+            )
+        if isinstance(node, ast.UnaryOp) and type(node.op) in _ALLOWED_OPERATORS:
+            return _ALLOWED_OPERATORS[type(node.op)](_evaluate(node.operand))
+        raise ValueError("Only basic arithmetic expressions are supported.")
+
+    return _evaluate(ast.parse(expression, mode="eval").body)
+
+
 calculator = Tool(
     name="Calculator",
-    func=lambda x: eval(x),
-    description="Useful for math calculations. Input: valid Python expression."
+    func=lambda x: str(safe_calculate(x)),
+    description="Useful for basic arithmetic calculations using numbers and +, -, *, /, or **."
 )
 
 # Create agent with tools
@@ -326,15 +356,20 @@ agent = create_agent(model=llm, tools=[risky_operation])
 
 ### LangSmith observability
 
+```bash
+export LANGCHAIN_TRACING_V2=true
+export LANGCHAIN_API_KEY=your-langsmith-api-key
+export LANGCHAIN_PROJECT=my-project
+# Keep real keys out of source control.
+```
+
 ```python
 import os
 
-# Enable tracing
-os.environ["LANGCHAIN_TRACING_V2"] = "true"
-os.environ["LANGCHAIN_API_KEY"] = "your-api-key"
-os.environ["LANGCHAIN_PROJECT"] = "my-project"
+if not os.getenv("LANGCHAIN_API_KEY"):
+    raise RuntimeError("Set LANGCHAIN_API_KEY in your environment before enabling LangSmith tracing.")
 
-# All chains/agents automatically traced
+# All chains/agents automatically traced when the environment is configured
 agent = create_agent(model=llm, tools=[calculator])
 result = agent.invoke({"input": "Calculate 123 * 456"})
 
