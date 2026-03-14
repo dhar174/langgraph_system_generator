@@ -90,6 +90,18 @@ class TestCritiqueLoopPatternCodeGeneration:
         compile(generation, "<generate_node>", "exec")
         compile(revise, "<revise_node>", "exec")
 
+    def test_generated_code_escapes_embedded_quotes_and_newlines(self):
+        """Test generated code remains valid with complex task and criteria strings."""
+        generation = CritiqueLoopPattern.generate_generation_node_code(
+            task_description='Write a "safe" guide with\ntricky content and """quotes"""',
+        )
+        critique = CritiqueLoopPattern.generate_critique_node_code(
+            criteria=['First line\nSecond line', 'Quoted "criterion"'],
+        )
+
+        compile(generation, "<escaped_task_description>", "exec")
+        compile(critique, "<escaped_criteria>", "exec")
+
 
 class TestCritiqueLoopPatternFailureConditions:
     """Test configurable failure and termination conditions."""
@@ -255,6 +267,13 @@ class TestCritiqueLoopPatternDocumentation:
                 feedback_source="review-bot"
             )
 
+    def test_invalid_additional_field_name_raises_value_error(self):
+        """Test unsafe state field names are rejected before code generation."""
+        with pytest.raises(ValueError, match="identifier"):
+            CritiqueLoopPattern.generate_state_code(
+                additional_fields={"not-valid-field": "Invalid field"}
+            )
+
 
 class TestCritiqueLoopPatternRobustness:
     """Test robustness characteristics of CritiqueLoopPattern."""
@@ -285,3 +304,13 @@ class TestCritiqueLoopPatternRobustness:
 
         assert elapsed < 3.0, f"Code generation took {elapsed}s, expected < 3s"
         assert len(code) > 1000
+
+    def test_human_feedback_code_validates_handler_output(self):
+        """Test generated human critique code includes callback safety checks."""
+        code = CritiqueLoopPattern.generate_critique_node_code(
+            feedback_source="human",
+        )
+
+        assert "callable(feedback_handler)" in code
+        assert "must return a boolean 'approved' value" in code
+        assert "finite quality_score between 0.0 and 1.0" in code

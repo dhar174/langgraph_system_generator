@@ -182,6 +182,10 @@ In human-feedback mode the generated example includes a `collect_human_feedback`
 callback that you can replace with a UI approval flow, moderation queue, or
 external review service.
 
+Only inject trusted application callbacks into workflow state. Do not source
+the human feedback handler from user input, persisted checkpoints, or other
+untrusted data.
+
 **See Also**: `examples/critique_revise_pattern_example.py` for comprehensive examples
 
 ---

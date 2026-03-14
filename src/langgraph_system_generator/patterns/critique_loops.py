@@ -43,6 +43,25 @@ class CritiqueLoopPattern:
     """
 
     @staticmethod
+    def _quote_string(value: str) -> str:
+        """Return a Python-safe string literal for generated code."""
+        return repr(value)
+
+    @staticmethod
+    def _quote_string_list(values: List[str]) -> str:
+        """Return a Python-safe list literal for generated code."""
+        return "[" + ", ".join(repr(value) for value in values) + "]"
+
+    @staticmethod
+    def _validate_field_name(field_name: str) -> str:
+        """Validate that a generated state field name is a safe identifier."""
+        if not field_name.isidentifier():
+            raise ValueError(
+                f"Invalid additional field name {field_name!r}; expected a Python identifier"
+            )
+        return field_name
+
+    @staticmethod
     def generate_state_code(
         additional_fields: Optional[Dict[str, str]] = None,
         include_human_feedback: bool = False,
@@ -71,7 +90,9 @@ class CritiqueLoopPattern:
         additional = ""
         if additional_fields:
             for field_name, description in additional_fields.items():
-                additional += f"    {field_name}: str  # {description}\n"
+                safe_name = CritiqueLoopPattern._validate_field_name(field_name)
+                safe_description = str(description).replace("\n", " ").replace("\r", " ")
+                additional += f"    {safe_name}: str  # {safe_description}\n"
 
         return f'''from typing import Annotated, List
 from langgraph.graph import MessagesState
@@ -117,26 +138,25 @@ class WorkflowState(MessagesState):
         temperature = config.temperature
         api_base = config.api_base
         max_tokens = config.max_tokens
+        safe_task_description = CritiqueLoopPattern._quote_string(task_description)
         
         llm_init = build_llm_init(llm_model, temperature, api_base, max_tokens)
         
         return f'''def generate_node(state: WorkflowState) -> WorkflowState:
-    """Generate initial output or first draft.
-    
-    Task: {task_description}
-    """
+    """Generate initial output or first draft for the configured task."""
     from langchain_openai import ChatOpenAI
     from langchain_core.messages import HumanMessage, SystemMessage
     
     messages = state["messages"]
     revision_count = state.get("revision_count", 0)
+    task_description = {safe_task_description}
     
     # Initialize LLM
     llm = {llm_init}
     
     # Generation prompt
-    system_prompt = SystemMessage(content="""You are an expert content generator.
-{task_description}
+    system_prompt = SystemMessage(content=f"""You are an expert content generator.
+{{task_description}}
 
 Create high-quality output that is clear, accurate, and well-structured.""")
     
@@ -200,14 +220,16 @@ Create high-quality output that is clear, accurate, and well-structured.""")
                 "Structure and organization",
             ]
 
-        criteria_str = "\\n".join([f"- {c}" for c in criteria])
+        criteria_literal = CritiqueLoopPattern._quote_string_list(criteria)
 
         if feedback_source == "human":
-            return '''from langchain_core.messages import HumanMessage
+            return '''import math
+
+from langchain_core.messages import HumanMessage
 
 
 def critique_node(state: WorkflowState) -> WorkflowState:
-    """Collect human feedback from a callback and normalize it for revision."""
+    """Collect human feedback from trusted application code and normalize it."""
     current_draft = state.get("current_draft", "")
     messages = state["messages"]
     criteria = state.get("criteria", [])
@@ -219,6 +241,8 @@ def critique_node(state: WorkflowState) -> WorkflowState:
         raise ValueError(
             "Human feedback mode requires a 'human_feedback_handler' callback in state"
         )
+    if not callable(feedback_handler):
+        raise TypeError("human_feedback_handler must be callable")
 
     review = feedback_handler(
         draft=current_draft,
@@ -231,7 +255,13 @@ def critique_node(state: WorkflowState) -> WorkflowState:
         raise TypeError("human_feedback_handler must return a dict")
 
     quality_score = float(review.get("quality_score", previous_quality_score))
-    approved = bool(review.get("approved", False))
+    approved = review.get("approved", False)
+    if not isinstance(approved, bool):
+        raise TypeError("human_feedback_handler must return a boolean 'approved' value")
+    if not math.isfinite(quality_score) or not 0.0 <= quality_score <= 1.0:
+        raise ValueError(
+            "human_feedback_handler must return a finite quality_score between 0.0 and 1.0"
+        )
     feedback_text = str(review.get("feedback", "")).strip()
 
     if not feedback_text:
@@ -300,18 +330,19 @@ def critique_node(state: WorkflowState) -> WorkflowState:
     """
     current_draft = state.get("current_draft", "")
     messages = state["messages"]
-    criteria = state.get("criteria", [])
+    criteria = state.get("criteria", []) or {criteria_literal}
     previous_quality_score = state.get("quality_score", 0.0)
+    criteria_summary = chr(10).join([f"- {{criterion}}" for criterion in criteria])
     
     # Initialize LLM with structured output
     llm = {llm_init}
     structured_llm = llm.with_structured_output(CritiqueAssessment)
     
     # Critique prompt
-    system_prompt = """You are an expert critic and reviewer.
+    system_prompt = f"""You are an expert critic and reviewer.
 Evaluate the output against these quality criteria:
-{criteria_str}
-
+{{criteria_summary}}
+ 
 Provide honest, constructive feedback that will help improve the output.
 Be specific about what needs to change."""
     
@@ -357,14 +388,17 @@ def critique_node(state: WorkflowState) -> WorkflowState:
     """Critique the current draft and provide feedback."""
     current_draft = state.get("current_draft", "")
     messages = state["messages"]
+    criteria = state.get("criteria", []) or {criteria_literal}
     previous_quality_score = state.get("quality_score", 0.0)
+    criteria_summary = chr(10).join([f"- {{criterion}}" for criterion in criteria])
     
     llm = {llm_init}
     
     # Critique prompt
     system_prompt = SystemMessage(content=f"""You are an expert critic.
-Evaluate against: {criteria_str}
-
+Evaluate against:
+{{criteria_summary}}
+ 
 Format: SCORE|APPROVED or NEEDS_REVISION|feedback""")
     
     user_prompt = HumanMessage(content=f"Review:\\n{{current_draft}}")
@@ -621,6 +655,8 @@ graph = workflow.compile(checkpointer=memory)"""
                 "Completeness",
                 "Structure and organization",
             ]
+        task_description_literal = CritiqueLoopPattern._quote_string(task_description)
+        criteria_literal = CritiqueLoopPattern._quote_string_list(criteria)
 
         # Generate all components
         include_human_feedback = feedback_source == "human"
@@ -657,8 +693,6 @@ def collect_human_feedback(
 
     Replace this with UI review, a moderation queue, or API-driven approval.
     """
-    draft_preview = draft[:120].replace("\\n", " ")
-    print(f"[human review] revision={revision_count} preview={draft_preview}")
     return {
         "quality_score": 0.65 if revision_count == 0 else 0.9,
         "approved": revision_count >= 1,
@@ -686,9 +720,6 @@ This example demonstrates an iterative refinement workflow where:
 - A critic evaluates the quality (via automated or human feedback)
 - Revisions are made based on feedback
 - The cycle repeats until approval or max iterations
-
-Quality Criteria:
-{chr(10).join([f"- {c}" for c in criteria])}
 """
 
 {state_code}
@@ -715,13 +746,13 @@ if __name__ == "__main__":
     async def run_example():
         # Initialize state
         initial_state = {{
-            "messages": [HumanMessage(content="{task_description}")],
+            "messages": [HumanMessage(content={task_description_literal})],
             "current_draft": "",
             "critique_feedback": "",
             "revision_count": 0,
             "quality_score": 0.0,
             "approved": False,
-            "criteria": {criteria},
+            "criteria": {criteria_literal},
 {failure_state_fields}{human_state_fields}
         }}
         
