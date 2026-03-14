@@ -25,7 +25,7 @@ def load_template(skill_dir: Path, kind: str) -> dict[str, Any]:
     asset_name = "experiment-template.ipynb" if kind == "experiment" else "tutorial-template.ipynb"
     template_path = skill_dir / "assets" / asset_name
     if not template_path.exists():
-        raise SystemExit(f"Missing template: {template_path}")
+        sys.exit(f"Error: Missing template: {template_path}")
     with template_path.open("r", encoding="utf-8") as f:
         data = json.load(f)
     if not isinstance(data, dict):
