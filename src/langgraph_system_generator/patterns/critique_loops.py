@@ -17,7 +17,7 @@ Example Usage:
     >>> graph_code = CritiqueLoopPattern.generate_graph_code(max_revisions=3)
 """
 
-from typing import Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Union
 
 from langgraph_system_generator.patterns.utils import build_llm_init
 from langgraph_system_generator.utils.config import ModelConfig
@@ -32,21 +32,42 @@ class CritiqueLoopPattern:
     - Multiple revision cycles are acceptable
     - Quality standards must be met before completion
 
-    Architecture:
-        START -> generate -> critique -> [revise -> critique] -> END
+        Architecture:
+            START -> generate -> critique -> [revise -> critique] -> END
         (loops until approval or max iterations)
+
+    The generated critique node can be configured for:
+    - Automated LLM-based critique
+    - Human feedback injected through a callback in workflow state
+    - Custom failure conditions for stalled or incomplete revisions
     """
 
     @staticmethod
-    def generate_state_code(additional_fields: Optional[Dict[str, str]] = None) -> str:
+    def generate_state_code(
+        additional_fields: Optional[Dict[str, str]] = None,
+        include_human_feedback: bool = False,
+        include_failure_tracking: bool = False,
+    ) -> str:
         """Generate state schema code for critique-revise pattern.
 
         Args:
             additional_fields: Optional dict mapping field names to descriptions
+            include_human_feedback: Whether to include state for human-review hooks
+            include_failure_tracking: Whether to include failure-tracking fields
 
         Returns:
             Python code string defining the WorkflowState class
         """
+        built_in = ""
+        if include_human_feedback:
+            built_in += (
+                "    human_feedback_handler: object  # Callback that returns human review feedback\n"
+            )
+        if include_failure_tracking:
+            built_in += (
+                "    previous_quality_score: float  # Previous critique score for improvement checks\n"
+            )
+
         additional = ""
         if additional_fields:
             for field_name, description in additional_fields.items():
@@ -68,7 +89,7 @@ class WorkflowState(MessagesState):
     quality_score: float  # Quality assessment score (0-1)
     approved: bool  # Whether output meets quality standards
     criteria: List[str]  # Quality criteria to evaluate
-{additional}'''
+{built_in}{additional}'''
 
     @staticmethod
     def generate_generation_node_code(
@@ -137,6 +158,7 @@ Create high-quality output that is clear, accurate, and well-structured.""")
         criteria: Optional[List[str]] = None,
         model_config: Optional[Union[ModelConfig, dict]] = None,
         use_structured_output: bool = True,
+        feedback_source: str = "automated",
     ) -> str:
         """Generate code for critique/review node.
 
@@ -144,10 +166,17 @@ Create high-quality output that is clear, accurate, and well-structured.""")
             criteria: Optional list of quality criteria to evaluate
             model_config: ModelConfig instance or dict with model settings
             use_structured_output: Whether to use structured output
+            feedback_source: Either "automated" for LLM critique or "human"
+                for callback-driven feedback collection
 
         Returns:
             Python code string implementing the critique node
         """
+        if feedback_source not in {"automated", "human"}:
+            raise ValueError(
+                "feedback_source must be either 'automated' or 'human'"
+            )
+
         # Handle model_config parameter
         if model_config is None:
             config = ModelConfig()
@@ -172,6 +201,68 @@ Create high-quality output that is clear, accurate, and well-structured.""")
             ]
 
         criteria_str = "\\n".join([f"- {c}" for c in criteria])
+
+        if feedback_source == "human":
+            return '''from langchain_core.messages import HumanMessage
+
+
+def critique_node(state: WorkflowState) -> WorkflowState:
+    """Collect human feedback from a callback and normalize it for revision."""
+    current_draft = state.get("current_draft", "")
+    messages = state["messages"]
+    criteria = state.get("criteria", [])
+    revision_count = state.get("revision_count", 0)
+    previous_quality_score = state.get("quality_score", 0.0)
+    feedback_handler = state.get("human_feedback_handler")
+
+    if feedback_handler is None:
+        raise ValueError(
+            "Human feedback mode requires a 'human_feedback_handler' callback in state"
+        )
+
+    review = feedback_handler(
+        draft=current_draft,
+        criteria=criteria,
+        revision_count=revision_count,
+        previous_feedback=state.get("critique_feedback", ""),
+    )
+
+    if not isinstance(review, dict):
+        raise TypeError("human_feedback_handler must return a dict")
+
+    quality_score = float(review.get("quality_score", previous_quality_score))
+    approved = bool(review.get("approved", False))
+    feedback_text = str(review.get("feedback", "")).strip()
+
+    if not feedback_text:
+        feedback_text = (
+            "Human reviewer requested another revision without additional notes."
+        )
+
+    criteria_summary = (
+        chr(10).join([f"- {criterion}" for criterion in criteria])
+        if criteria
+        else "- No explicit criteria provided"
+    )
+    normalized_feedback = f"""Quality Score: {quality_score}
+Status: {"APPROVED" if approved else "NEEDS REVISION"}
+
+Human Review:
+{feedback_text}
+
+Criteria Reviewed:
+{criteria_summary}"""
+
+    return {
+        **state,
+        "critique_feedback": normalized_feedback,
+        "quality_score": quality_score,
+        "approved": approved,
+        "previous_quality_score": previous_quality_score,
+        "messages": messages + [
+            HumanMessage(content=f"Human critique: {normalized_feedback}")
+        ],
+    }'''
 
         if use_structured_output:
             return f'''from langchain_openai import ChatOpenAI
@@ -210,6 +301,7 @@ def critique_node(state: WorkflowState) -> WorkflowState:
     current_draft = state.get("current_draft", "")
     messages = state["messages"]
     criteria = state.get("criteria", [])
+    previous_quality_score = state.get("quality_score", 0.0)
     
     # Initialize LLM with structured output
     llm = {llm_init}
@@ -253,6 +345,7 @@ Suggestions for improvement:
         "critique_feedback": feedback,
         "quality_score": assessment.quality_score,
         "approved": assessment.approved,
+        "previous_quality_score": previous_quality_score,
         "messages": messages + [HumanMessage(content=f"Critique: {{feedback}}")],
     }}'''
         else:
@@ -264,6 +357,7 @@ def critique_node(state: WorkflowState) -> WorkflowState:
     """Critique the current draft and provide feedback."""
     current_draft = state.get("current_draft", "")
     messages = state["messages"]
+    previous_quality_score = state.get("quality_score", 0.0)
     
     llm = {llm_init}
     
@@ -288,6 +382,8 @@ Format: SCORE|APPROVED or NEEDS_REVISION|feedback""")
         "critique_feedback": feedback,
         "quality_score": score,
         "approved": approved,
+        "previous_quality_score": previous_quality_score,
+        "messages": messages + [HumanMessage(content=f"Critique: {{feedback}}")],
     }}'''
 
     @staticmethod
@@ -362,53 +458,90 @@ Revise the draft to address the feedback.""")
 
     @staticmethod
     def generate_conditional_edge_code(
-        max_revisions: int = 3, min_quality_score: float = 0.8
+        max_revisions: int = 3,
+        min_quality_score: float = 0.8,
+        failure_conditions: Optional[Dict[str, Any]] = None,
     ) -> str:
         """Generate conditional edge routing code.
 
         Args:
             max_revisions: Maximum number of revision cycles
             min_quality_score: Minimum quality score to approve
+            failure_conditions: Optional failure controls. Supported keys:
+                fail_on_max_revisions, fail_on_no_improvement,
+                min_quality_improvement, fail_on_missing_feedback
 
         Returns:
             Python code string for conditional routing logic
         """
+        failure_conditions = failure_conditions or {}
+        fail_on_max_revisions = bool(
+            failure_conditions.get("fail_on_max_revisions", False)
+        )
+        fail_on_no_improvement = bool(
+            failure_conditions.get("fail_on_no_improvement", False)
+        )
+        min_quality_improvement = float(
+            failure_conditions.get("min_quality_improvement", 0.0)
+        )
+        fail_on_missing_feedback = bool(
+            failure_conditions.get("fail_on_missing_feedback", False)
+        )
+
         return f'''def should_continue(state: WorkflowState) -> str:
     """Determine if we should continue revising or finish.
     
     Decision criteria:
     - If approved: finish
+    - If critique feedback is missing and required: terminate early
     - If max revisions reached: finish (even if not perfect)
+    - If quality stagnates and improvement is required: terminate early
     - Otherwise: continue revising
     """
     approved = state.get("approved", False)
     revision_count = state.get("revision_count", 0)
     quality_score = state.get("quality_score", 0.0)
+    previous_quality_score = state.get("previous_quality_score", 0.0)
+    critique_feedback = state.get("critique_feedback", "")
+    quality_delta = quality_score - previous_quality_score
+
+    if {fail_on_missing_feedback} and not critique_feedback.strip():
+        return "missing_feedback"
     
     # Check approval status
     if approved:
         return "finish"
-    
-    # Check max revisions
-    if revision_count >= {max_revisions}:
-        return "max_revisions_reached"
-    
+
     # Check quality threshold
     if quality_score >= {min_quality_score}:
         return "finish"
+
+    if (
+        {fail_on_no_improvement}
+        and revision_count > 0
+        and quality_delta <= {min_quality_improvement}
+    ):
+        return "no_improvement"
+
+    # Check max revisions
+    if revision_count >= {max_revisions}:
+        return "max_revisions_failed" if {fail_on_max_revisions} else "max_revisions_reached"
     
     # Continue revising
     return "revise"'''
 
     @staticmethod
     def generate_graph_code(
-        max_revisions: int = 3, min_quality_score: float = 0.8
+        max_revisions: int = 3,
+        min_quality_score: float = 0.8,
+        failure_conditions: Optional[Dict[str, Any]] = None,
     ) -> str:
         """Generate complete critique-revise graph construction code.
 
         Args:
             max_revisions: Maximum revision cycles
             min_quality_score: Minimum quality score to approve
+            failure_conditions: Optional failure controls passed to the router
 
         Returns:
             Python code string for building the complete graph
@@ -417,7 +550,7 @@ Revise the draft to address the feedback.""")
 from langgraph.checkpoint.memory import MemorySaver
 
 
-{CritiqueLoopPattern.generate_conditional_edge_code(max_revisions, min_quality_score)}
+{CritiqueLoopPattern.generate_conditional_edge_code(max_revisions, min_quality_score, failure_conditions)}
 
 
 # Create graph
@@ -441,6 +574,9 @@ workflow.add_conditional_edges(
     should_continue,
     {{
         "finish": END,
+        "missing_feedback": END,
+        "no_improvement": END,
+        "max_revisions_failed": END,
         "max_revisions_reached": END,
         "revise": "revise"
     }}
@@ -457,7 +593,11 @@ graph = workflow.compile(checkpointer=memory)"""
         task_description: str = "Write a technical article",
         criteria: Optional[List[str]] = None,
         max_revisions: int = 3,
+        min_quality_score: float = 0.8,
         model_config: Optional[Union[ModelConfig, dict]] = None,
+        use_structured_output: bool = True,
+        feedback_source: str = "automated",
+        failure_conditions: Optional[Dict[str, Any]] = None,
     ) -> str:
         """Generate a complete, runnable critique-revise loop example.
 
@@ -465,7 +605,11 @@ graph = workflow.compile(checkpointer=memory)"""
             task_description: Description of generation task
             criteria: Optional list of quality criteria
             max_revisions: Maximum revision cycles
+            min_quality_score: Minimum score required for automatic approval
             model_config: ModelConfig instance or dict with model settings
+            use_structured_output: Whether automated critique uses a Pydantic schema
+            feedback_source: Either "automated" or "human"
+            failure_conditions: Optional failure controls passed to graph routing
 
         Returns:
             Complete Python code for a critique-revise workflow
@@ -479,13 +623,59 @@ graph = workflow.compile(checkpointer=memory)"""
             ]
 
         # Generate all components
-        state_code = CritiqueLoopPattern.generate_state_code()
+        include_human_feedback = feedback_source == "human"
+        state_code = CritiqueLoopPattern.generate_state_code(
+            include_human_feedback=include_human_feedback,
+            include_failure_tracking=bool(failure_conditions),
+        )
         generate_code = CritiqueLoopPattern.generate_generation_node_code(
             task_description, model_config=model_config
         )
-        critique_code = CritiqueLoopPattern.generate_critique_node_code(criteria, model_config=model_config)
+        critique_code = CritiqueLoopPattern.generate_critique_node_code(
+            criteria,
+            model_config=model_config,
+            use_structured_output=use_structured_output,
+            feedback_source=feedback_source,
+        )
         revise_code = CritiqueLoopPattern.generate_revise_node_code(model_config=model_config)
-        graph_code = CritiqueLoopPattern.generate_graph_code(max_revisions)
+        graph_code = CritiqueLoopPattern.generate_graph_code(
+            max_revisions,
+            min_quality_score,
+            failure_conditions=failure_conditions,
+        )
+
+        human_feedback_example = ""
+        if feedback_source == "human":
+            human_feedback_example = '''
+def collect_human_feedback(
+    draft: str,
+    criteria: list[str],
+    revision_count: int,
+    previous_feedback: str,
+) -> dict:
+    """Example human feedback hook for plug-and-play workflows.
+
+    Replace this with UI review, a moderation queue, or API-driven approval.
+    """
+    draft_preview = draft[:120].replace("\\n", " ")
+    print(f"[human review] revision={revision_count} preview={draft_preview}")
+    return {
+        "quality_score": 0.65 if revision_count == 0 else 0.9,
+        "approved": revision_count >= 1,
+        "feedback": (
+            "Tighten the introduction, clarify the example, and improve the ending."
+        ),
+    }
+'''
+
+        human_state_fields = ""
+        if feedback_source == "human":
+            human_state_fields = '\n            "human_feedback_handler": collect_human_feedback,'
+
+        failure_state_fields = ""
+        if failure_conditions:
+            failure_state_fields = """
+            "previous_quality_score": 0.0, """
 
         return f'''"""
 Critique-Revise Loop Pattern Example
@@ -493,7 +683,7 @@ Generated by LangGraph System Generator
 
 This example demonstrates an iterative refinement workflow where:
 - Initial content is generated
-- A critic evaluates the quality
+- A critic evaluates the quality (via automated or human feedback)
 - Revisions are made based on feedback
 - The cycle repeats until approval or max iterations
 
@@ -514,6 +704,7 @@ Quality Criteria:
 
 
 {graph_code}
+{human_feedback_example}
 
 
 # Example usage
@@ -531,6 +722,7 @@ if __name__ == "__main__":
             "quality_score": 0.0,
             "approved": False,
             "criteria": {criteria},
+{failure_state_fields}{human_state_fields}
         }}
         
         # Run workflow

@@ -21,6 +21,7 @@ Requirements:
 import os
 
 from langgraph_system_generator.patterns import CritiqueLoopPattern
+from langgraph_system_generator.utils.config import ModelConfig
 
 
 def generate_content_refinement_system():
@@ -81,7 +82,8 @@ def generate_custom_quality_system():
     # Step 2: Generate generation node
     task = "Generate API documentation for a RESTful web service"
     generation_code = CritiqueLoopPattern.generate_generation_node_code(
-        task_description=task, llm_model="gpt-4"
+        task_description=task,
+        model_config=ModelConfig(model="gpt-4", temperature=0.3),
     )
     print("\n2. Generation Node:")
     print("-" * 40)
@@ -104,7 +106,9 @@ def generate_custom_quality_system():
     print(critique_code[:600] + "...")
     
     # Step 4: Generate revision node
-    revise_code = CritiqueLoopPattern.generate_revise_node_code(llm_model="gpt-4")
+    revise_code = CritiqueLoopPattern.generate_revise_node_code(
+        model_config=ModelConfig(model="gpt-4", temperature=0.7)
+    )
     print("\n4. Revision Node:")
     print("-" * 40)
     print(revise_code[:400] + "...")
@@ -119,6 +123,15 @@ def generate_custom_quality_system():
     print("\nQuality Thresholds:")
     print(f"  - Max Revisions: 5")
     print(f"  - Min Quality Score: 0.85 (85%)")
+
+    human_review_code = CritiqueLoopPattern.generate_complete_example(
+        task_description="Prepare a customer-facing release announcement",
+        feedback_source="human",
+        failure_conditions={"fail_on_missing_feedback": True},
+    )
+    print("\n6. Human Feedback Variant:")
+    print("-" * 40)
+    print(human_review_code[:600] + "...")
 
 
 def demonstrate_iterative_improvement():
