@@ -21,6 +21,8 @@ class DummyLLM:
                 self.content = content
 
         return Response("")
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "architecture_type, state_marker",
@@ -178,3 +180,60 @@ async def test_compose_notebook_sections_and_packages(
             f"Section '{section}' appears out of order. Expected sections in order: {expected_order}"
         )
         prev_expected_pos = current_expected_pos
+
+
+def test_tool_fallback_sanitizes_identifier_and_compiles(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr(composer_module, "ChatOpenAI", DummyLLM)
+    composer = composer_module.NotebookComposer()
+
+    fallback_code = composer._generate_tool_fallback(
+        {
+            "name": '9 bad tool";\nprint("oops")',
+            "purpose": 'Line 1\n"""\nprint("owned")',
+            "category": 'api"\n# injected',
+        }
+    )
+
+    assert 'def _9_bad_tool_print_oops' in fallback_code
+    assert '# Tool: 9 bad tool"; print("oops")' in fallback_code
+    assert '"category": "api\\" # injected"' in fallback_code
+    compile(fallback_code, "<tool_fallback>", "exec")
+
+
+def test_node_fallback_sanitizes_identifier_and_compiles(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr(composer_module, "ChatOpenAI", DummyLLM)
+    composer = composer_module.NotebookComposer()
+
+    fallback_code = composer._generate_node_fallback(
+        {
+            "name": '9 node name";\nraise SystemExit',
+            "purpose": 'Node purpose\n"""\nraise RuntimeError("boom")',
+        },
+        {},
+    )
+
+    assert 'def _9_node_name_raise_SystemExit_node' in fallback_code
+    assert '\\"\\"\\"' in fallback_code
+    compile(fallback_code, "<node_fallback>", "exec")
+
+
+def test_graph_fallback_uses_sanitized_function_references(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    monkeypatch.setattr(composer_module, "ChatOpenAI", DummyLLM)
+    composer = composer_module.NotebookComposer()
+
+    graph_code = composer._generate_graph_fallback(
+        {
+            "entry_point": 'start node',
+            "nodes": [
+                {"name": 'start node'},
+                {"name": '9 result-node'},
+            ],
+            "edges": [{"from": 'start node', "to": '9 result-node'}],
+        }
+    )
+
+    assert 'workflow.add_node("start node", start_node_node)' in graph_code
+    assert 'workflow.add_node("9 result-node", _9_result_node_node)' in graph_code
+    compile(graph_code, "<graph_fallback>", "exec")

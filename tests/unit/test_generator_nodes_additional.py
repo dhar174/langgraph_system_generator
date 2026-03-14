@@ -10,6 +10,7 @@ from langgraph_system_generator.generator.agents import (
     toolchain_engineer,
 )
 from langgraph_system_generator.generator.nodes import (
+    _runtime_qa_suggestions,
     architecture_selection_node,
     graph_design_node,
     intake_node,
@@ -290,6 +291,33 @@ async def test_runtime_qa_node_reports_smoke_test_failure(monkeypatch):
     report = result["qa_reports"][-1]
     assert "Cell execution error" in report.message
     assert report.passed is False
+    assert report.suggestions == _runtime_qa_suggestions(report.message)
+
+
+@pytest.mark.asyncio
+async def test_runtime_qa_node_reports_dependency_failure(monkeypatch):
+    monkeypatch.setattr(
+        "langgraph_system_generator.generator.nodes.inspect_kernel_spec",
+        lambda: (True, "kernel ok"),
+    )
+    monkeypatch.setattr(
+        "langgraph_system_generator.generator.nodes.run_notebook_smoke_test",
+        lambda: (
+            False,
+            "Runtime validation unavailable: missing notebook execution dependency (No module named 'nbclient')",
+        ),
+    )
+
+    state = {
+        "generated_cells": [CellSpec(cell_type="markdown", content="Hi", metadata={})],
+        "qa_reports": [],
+    }
+    result = await runtime_qa_node(state)
+
+    report = result["qa_reports"][-1]
+    assert report.passed is False
+    assert any("nbclient" in suggestion or "jupyter_client" in suggestion for suggestion in report.suggestions)
+    assert all("kernel spec" not in suggestion.lower() for suggestion in report.suggestions)
 
 
 @pytest.mark.asyncio
