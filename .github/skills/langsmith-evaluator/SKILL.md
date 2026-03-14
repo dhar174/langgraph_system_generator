@@ -123,7 +123,7 @@ async function accuracyEvaluator(run, example) {
     ]
     });
 
-    const grade = JSON.parse(response.choices[0].message.content);
+    const grade = JSON.parse(response.choices[0].message.content || "{}");
     return { score: grade.is_accurate ? 1 : 0, comment: grade.reasoning };
 }
 ```

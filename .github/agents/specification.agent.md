@@ -1,16 +1,7 @@
 ---
-name: 'Specification Generator'
 description: 'Generate or update specification documents for new or existing functionality.'
-tools: ['execute', 'read', 'edit/createDirectory', 'edit/createFile', 'edit/editFiles', 'search', 'cognitionai/deepwiki/*', 'mcp_docker/add_observations', 'mcp_docker/ask_question', 'mcp_docker/code-mode', 'mcp_docker/create_entities', 'mcp_docker/create_relations', 'mcp_docker/delete_entities', 'mcp_docker/delete_observations', 'mcp_docker/delete_relations', 'mcp_docker/enable_cache_components', 'mcp_docker/get_capability_page', 'mcp_docker/get-library-docs', 'mcp_docker/issue_read', 'mcp_docker/issue_write', 'mcp_docker/list_branches', 'mcp_docker/list_commits', 'mcp_docker/list_issues', 'mcp_docker/list_pull_requests', 'mcp_docker/list_tags', 'mcp_docker/nextjs_docs', 'mcp_docker/nextjs_runtime', 'mcp_docker/open_nodes', 'mcp_docker/pull_request_read', 'mcp_docker/pull_request_review_write', 'mcp_docker/read_graph', 'mcp_docker/read_wiki_contents', 'mcp_docker/read_wiki_structure', 'mcp_docker/resolve-library-id', 'mcp_docker/search_code', 'mcp_docker/search_documentation', 'mcp_docker/search_generic_code', 'mcp_docker/search_generic_documentation', 'mcp_docker/search_issues', 'mcp_docker/search_nodes', 'mcp_docker/search_pull_requests', 'mcp_docker/search_repositories', 'mcp_docker/sequentialthinking', 'mcp_docker/sub_issue_write', 'mcp_docker/tavily-crawl', 'mcp_docker/tavily-extract', 'mcp_docker/tavily-map', 'mcp_docker/tavily-search', 'mcp_docker/test_wikipedia_connectivity', 'mcp_docker/update_pull_request', 'mcp_docker/update_pull_request_branch', 'mcp_docker/upgrade_nextjs_16', 'agent', 'azure-mcp/search', 'ms-vscode.vscode-websearchforcopilot/websearch', 'todo']
-handoffs:
-  - label: "📝 Create Implementation Plan"
-    agent: Implementation Plan Generation Mode
-    prompt: "Generate a detailed implementation plan based on this specification"
-    send: false
-  - label: "🏗️ Review Architecture"
-    agent: Architect
-    prompt: "Review and refine the architecture for this specification"
-    send: false
+name: 'Specification'
+tools: ['changes', 'search/codebase', 'edit/editFiles', 'extensions', 'web/fetch', 'findTestFiles', 'githubRepo', 'new', 'openSimpleBrowser', 'problems', 'runCommands', 'runTasks', 'runTests', 'search', 'search/searchResults', 'runCommands/terminalLastCommand', 'runCommands/terminalSelection', 'testFailure', 'usages', 'vscodeAPI', 'microsoft.docs.mcp', 'github']
 ---
 # Specification mode instructions
 

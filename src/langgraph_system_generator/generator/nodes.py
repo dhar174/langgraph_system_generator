@@ -156,7 +156,7 @@ async def graph_design_node(state: GeneratorState) -> Dict[str, Any]:
             "Execution",
         ],
         cell_count_estimate=len(workflow_design.get("nodes", [])) * 3 + 10,
-        patterns_used=[state["selected_patterns"].get("primary", "router")],
+        patterns_used=[state.get("selected_patterns", {}).get("primary", "router")],
         architecture_type=architecture["architecture_type"],
     )
 
@@ -199,7 +199,7 @@ async def notebook_assembly_node(state: GeneratorState) -> Dict[str, Any]:
     tools_plan = state.get("tools_plan", [])
 
     architecture = {
-        "architecture_type": state["selected_patterns"].get("primary", "router"),
+        "architecture_type": state.get("selected_patterns", {}).get("primary", "router"),
         "justification": state["architecture_justification"],
     }
 

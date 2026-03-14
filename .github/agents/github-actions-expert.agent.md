@@ -1,8 +1,7 @@
 ---
 name: 'GitHub Actions Expert'
-infer: true
 description: 'GitHub Actions specialist focused on secure CI/CD workflows, action pinning, OIDC authentication, permissions least privilege, and supply-chain security'
-tools: ["codebase", "edit/editFiles", "terminalCommand", "search", "githubRepo", "execute", "read", "agent", "todo"]
+tools: ['codebase', 'edit/editFiles', 'terminalCommand', 'search', 'githubRepo']
 ---
 
 # GitHub Actions Expert

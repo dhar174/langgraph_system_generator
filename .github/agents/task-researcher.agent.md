@@ -1,8 +1,7 @@
 ---
 description: "Task research specialist for comprehensive project analysis - Brought to you by microsoft/edge-ai"
-infer: true
 name: "Task Researcher Instructions"
-tools: ["changes", "codebase", "edit/editFiles", "extensions", "fetch", "findTestFiles", "githubRepo", "new", "openSimpleBrowser", "problems", "runCommands", "runNotebooks", "runTests", "search", "searchResults", "terminalLastCommand", "terminalSelection", "testFailure", "usages", "vscodeAPI", "terraform", "Microsoft Docs", "azure_get_schema_for_Bicep", "context7", "execute", "read", "agent", "todo"]
+tools: ["changes", "codebase", "edit/editFiles", "extensions", "fetch", "findTestFiles", "githubRepo", "new", "openSimpleBrowser", "problems", "runCommands", "runNotebooks", "runTests", "search", "searchResults", "terminalLastCommand", "terminalSelection", "testFailure", "usages", "vscodeAPI", "terraform", "Microsoft Docs", "azure_get_schema_for_Bicep", "context7"]
 ---
 
 # Task Researcher Instructions
@@ -75,9 +74,8 @@ You WILL provide brief, focused updates without overwhelming details. You WILL p
 
 You MUST reference existing project conventions from:
 
-- `.github/copilot-instructions.md` - Project standards, code conventions, and development workflow
-- `README.md` - Project documentation and usage guidelines
-- `docs/` - Additional documentation (if present)
+- `copilot/` - Technical standards and language-specific conventions
+- `.github/instructions/` - Project instructions, conventions, and standards
 - Workspace configuration files - Linting rules and build configurations
 
 You WILL use date-prefixed descriptive names:
