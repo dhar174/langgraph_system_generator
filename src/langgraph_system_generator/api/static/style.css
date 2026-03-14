@@ -842,6 +842,13 @@ textarea:focus-visible {
     margin-bottom: 1rem;
 }
 
+.history-actions {
+    display: flex;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+}
+
 .history-content {
     display: flex;
     flex-direction: column;
@@ -907,6 +914,14 @@ textarea:focus-visible {
 .btn-small {
     padding: 0.5rem 1rem;
     font-size: 0.875rem;
+}
+
+.btn:disabled,
+.btn-secondary:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+    transform: none;
+    box-shadow: none;
 }
 
 .btn-icon {

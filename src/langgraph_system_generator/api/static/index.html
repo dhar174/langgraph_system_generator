@@ -286,6 +286,10 @@
                                             <span>HTML (.html)</span>
                                         </label>
                                         <label class="checkbox-label">
+                                            <input type="checkbox" name="formats" value="markdown">
+                                            <span>Markdown (.md)</span>
+                                        </label>
+                                        <label class="checkbox-label">
                                             <input type="checkbox" name="formats" value="docx" checked>
                                             <span>Word Document (.docx)</span>
                                         </label>
@@ -349,7 +353,11 @@
             <div class="card history-card" id="historyCard" style="display: none;">
                 <div class="history-header">
                     <h2>📜 Recent Generations</h2>
-                    <button type="button" class="btn btn-secondary btn-small" id="clearHistoryBtn">Clear History</button>
+                    <div class="history-actions">
+                        <button type="button" class="btn btn-secondary btn-small" id="rerunLastBtn" disabled>Rerun Last</button>
+                        <button type="button" class="btn btn-secondary btn-small" id="copyLastPromptBtn" disabled>Copy Last Prompt</button>
+                        <button type="button" class="btn btn-secondary btn-small" id="clearHistoryBtn">Clear History</button>
+                    </div>
                 </div>
                 <div id="historyContent" class="history-content"></div>
             </div>

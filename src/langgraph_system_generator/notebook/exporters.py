@@ -152,6 +152,29 @@ class NotebookExporter:
 
         return str(target)
 
+    def export_to_markdown(
+        self, notebook: nbformat.NotebookNode, output_path: str | Path
+    ) -> str:
+        """Export notebook to Markdown using nbconvert."""
+        _validate_output_path(Path(output_path))
+        try:
+            from nbconvert import MarkdownExporter
+        except ImportError as exc:
+            raise ImportError(
+                "nbconvert is required for Markdown export. Install it with: pip install nbconvert"
+            ) from exc
+
+        nbformat.validate(notebook)
+        target = _safe_output_path(output_path)
+
+        exporter = MarkdownExporter()
+        body, _ = exporter.from_notebook_node(notebook)
+
+        with target.open("w", encoding="utf-8") as handle:
+            handle.write(body)
+
+        return str(target)
+
     def export_to_pdf(
         self, notebook_path: str | Path, output_path: str | Path, method: str = "webpdf"
     ) -> str:

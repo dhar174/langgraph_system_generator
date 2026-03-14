@@ -124,6 +124,43 @@ async def test_api_generate_with_formats(
     assert "pdf_path" not in payload["manifest"]
 
 
+@pytest.mark.asyncio
+async def test_api_download_artifact_endpoint(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """Test downloading a generated artifact through the API."""
+    monkeypatch.setenv("LNF_OUTPUT_BASE", "test_api_artifact_download")
+
+    import importlib
+    import langgraph_system_generator.constants as constants_module
+    import langgraph_system_generator.notebook.exporters as exporters_module
+    import langgraph_system_generator.cli as cli_module
+    import langgraph_system_generator.api.server as server_module
+
+    importlib.reload(constants_module)
+    importlib.reload(exporters_module)
+    importlib.reload(cli_module)
+    importlib.reload(server_module)
+
+    artifacts = await cli_module.generate_artifacts(
+        "Artifact download prompt",
+        output_dir=str(constants_module._BASE_OUTPUT / tmp_path.name),
+        mode="stub",
+        formats=["ipynb"],
+    )
+
+    transport = httpx.ASGITransport(app=server_module.app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.get(
+            "/artifacts",
+            params={"path": artifacts["manifest"]["notebook_path"]},
+        )
+
+    assert response.status_code == 200
+    assert "notebook.ipynb" in response.headers.get("content-disposition", "")
+    assert response.content
+
+
 def test_health_endpoint():
     client = TestClient(app)
     response = client.get("/health")

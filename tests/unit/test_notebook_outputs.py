@@ -106,6 +106,38 @@ async def test_generate_docx_export(tmp_path: Path, monkeypatch: pytest.MonkeyPa
 
 
 @pytest.mark.asyncio
+async def test_generate_markdown_export(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """Test that Markdown export is generated when requested."""
+    monkeypatch.setenv("LNF_OUTPUT_BASE", "test_markdown_export")
+
+    import importlib
+    import langgraph_system_generator.constants as constants_module
+    import langgraph_system_generator.notebook.exporters as exporters_module
+    import langgraph_system_generator.cli as cli_module
+
+    importlib.reload(constants_module)
+    importlib.reload(exporters_module)
+    importlib.reload(cli_module)
+
+    artifacts = await cli_module.generate_artifacts(
+        "Create a test system",
+        output_dir=str(constants_module._BASE_OUTPUT / "test_markdown"),
+        mode="stub",
+        formats=["ipynb", "markdown"],
+    )
+
+    assert "markdown_path" in artifacts["manifest"]
+    markdown_path = constants_module.resolve_under_base(
+        Path(artifacts["manifest"]["markdown_path"])
+    )
+    assert markdown_path.exists()
+    assert markdown_path.suffix == ".md"
+    assert markdown_path.read_text(encoding="utf-8").strip()
+
+
+@pytest.mark.asyncio
 async def test_generate_zip_bundle(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     """Test that ZIP bundle is generated with all artifacts."""
     # Set a test output base
