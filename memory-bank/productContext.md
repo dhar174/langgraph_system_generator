@@ -25,7 +25,8 @@
 ## UX Goals Reflected in the Code
 
 - Fast local onboarding via `python -m venv`, `pip install -r requirements.txt`,
-  and `lnf`/FastAPI entry points.
+  installing the package itself (e.g., `pip install -e .` or `pip install -e ".[full]"`),
+  and then using the `lnf`/FastAPI entry points.
 - Clear API and web progress reporting through SSE for long-running generation.
 - Multiple artifact formats so generated systems are easy to run, inspect,
   share, and download.
