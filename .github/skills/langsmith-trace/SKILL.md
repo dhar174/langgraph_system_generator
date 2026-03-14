@@ -11,7 +11,7 @@ Two main topics: **adding tracing** to your application, and **querying traces**
 Environment Variables
 
 ```bash
-LANGSMITH_API_KEY=lsv2_pt_your_api_key_here          # Required
+LANGSMITH_API_KEY=<your_api_key_here>               # Required
 LANGSMITH_PROJECT=your-project-name                   # Optional: default project
 LANGSMITH_WORKSPACE_ID=your-workspace-id              # Optional: for org-scoped keys
 ```
@@ -20,7 +20,7 @@ LANGSMITH_WORKSPACE_ID=your-workspace-id              # Optional: for org-scoped
 
 CLI Tool
 ```bash
-curl -sSL https://raw.githubusercontent.com/langchain-ai/langsmith-cli/main/scripts/install.sh | sh
+pip install langsmith
 ```
 </setup>
 
@@ -256,7 +256,7 @@ Use `--include-io` or `--full` to include inputs/outputs (required for dataset g
 
 <tips>
 - **Start with traces** — they provide complete context needed for trajectory and dataset generation
-- Use `traces export --full` for bulk data destined for datasets
+- Use `langsmith trace export --full` for bulk data destined for datasets
 - Always specify `--project` to avoid mixing data from different projects
 - Use `/tmp` for temporary exports
 - Include `--include-metadata` for performance/cost analysis

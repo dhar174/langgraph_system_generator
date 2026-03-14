@@ -11,7 +11,7 @@ Three core components: **(1) Creating Evaluators** - LLM-as-Judge, custom code; 
 Environment Variables
 
 ```bash
-LANGSMITH_API_KEY=lsv2_pt_your_api_key_here          # Required
+LANGSMITH_API_KEY=<your_api_key_here>               # Required
 LANGSMITH_PROJECT=your-project-name                   # Check this to know which project has traces
 LANGSMITH_WORKSPACE_ID=your-workspace-id              # Optional: for org-scoped keys
 OPENAI_API_KEY=your_openai_key                        # For LLM as Judge
@@ -26,7 +26,7 @@ pip install langsmith langchain-openai python-dotenv
 
 CLI Tool (for uploading evaluators)
 ```bash
-curl -sSL https://raw.githubusercontent.com/langchain-ai/langsmith-cli/main/scripts/install.sh | sh
+pip install langsmith
 ```
 
 JavaScript Dependencies
