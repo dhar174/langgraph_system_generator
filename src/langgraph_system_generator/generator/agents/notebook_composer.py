@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+import re
 from typing import Any, Dict, List
 
 from langchain_core.messages import HumanMessage, SystemMessage
@@ -354,8 +356,8 @@ def {func_name}(*args, **kwargs):
     \"\"\"
     primary_input = args[0] if args else kwargs.get("input")
     result = {{
-        "tool": "{tool_name}",
-        "category": "{tool_category or 'general'}",
+        "tool": {json.dumps(tool_name)},
+        "category": {json.dumps(tool_category or "general")},
         "status": "fallback",
         "input": primary_input,
         "options": kwargs,
@@ -482,6 +484,10 @@ Generate the complete Python function implementation."""
         node_name = node.get("name", "unknown")
         node_purpose = node.get("purpose", "")
 
+        safe_content = repr(
+            f"{node_name} completed a fallback step for: {node_purpose or node_name}"
+        )
+
         return f"""def {node_name}_node(state: WorkflowState) -> WorkflowState:
     \"\"\"
     {node_purpose}
@@ -494,7 +500,7 @@ Generate the complete Python function implementation."""
     messages = list(state.get("messages", []))
     messages.append(
         AIMessage(
-            content="{node_name} completed a fallback step for: {node_purpose or node_name}"
+            content={safe_content}
         )
     )
 
@@ -669,12 +675,21 @@ Generate the complete Python function implementation."""
             conditional_blocks = []
             for ce in conditional_edges:
                 source = ce.get("from", "node")
-                function_name = f"_route_from_{source}".replace("-", "_").replace(" ", "_")
+                # Produce a valid Python identifier: replace every non-alphanumeric
+                # character with '_' and ensure the result doesn't start with a digit.
+                source_slug = re.sub(r"[^a-zA-Z0-9]", "_", source)
+                if source_slug and source_slug[0].isdigit():
+                    source_slug = "_" + source_slug
+                source_slug = source_slug or "node"
+                function_name = f"_route_from_{source_slug}"
+                # Serialize source safely for use inside a string literal in the
+                # generated code (handles quotes, backslashes, newlines, etc.).
+                safe_source = json.dumps(source)
                 conditional_blocks.append(
                     f"""def {function_name}(state: WorkflowState) -> str:
     return "__end__"
 
-workflow.add_conditional_edges("{source}", {function_name}, {{"__end__": END}})"""
+workflow.add_conditional_edges({safe_source}, {function_name}, {{"__end__": END}})"""
                 )
             conditional_code = "\n\n# Add conditional edges\n" + "\n\n".join(conditional_blocks)
 

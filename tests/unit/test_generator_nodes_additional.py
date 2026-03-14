@@ -226,6 +226,10 @@ async def test_runtime_qa_node_message_empty_cells():
 @pytest.mark.asyncio
 async def test_runtime_qa_node_message_with_cells(monkeypatch):
     monkeypatch.setattr(
+        "langgraph_system_generator.generator.nodes.inspect_kernel_spec",
+        lambda: (True, "kernel ok"),
+    )
+    monkeypatch.setattr(
         "langgraph_system_generator.generator.nodes.run_notebook_smoke_test",
         lambda: (True, "Runtime execution environment validated using the 'python3' kernel."),
     )
@@ -243,9 +247,13 @@ async def test_runtime_qa_node_message_with_cells(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_runtime_qa_node_reports_kernel_failure(monkeypatch):
+    """When the kernel is unavailable, runtime QA is treated as skipped (passed=True)."""
     monkeypatch.setattr(
-        "langgraph_system_generator.generator.nodes.run_notebook_smoke_test",
-        lambda: (False, "Runtime validation unavailable: kernel 'python3' is not registered."),
+        "langgraph_system_generator.generator.nodes.inspect_kernel_spec",
+        lambda: (
+            False,
+            "Runtime validation unavailable: kernel 'python3' is not registered.",
+        ),
     )
 
     state = {
@@ -256,6 +264,31 @@ async def test_runtime_qa_node_reports_kernel_failure(monkeypatch):
 
     report = result["qa_reports"][-1]
     assert "Runtime validation unavailable" in report.message
+    # Unavailable runtime is treated as skipped (passed=True) so repair loops
+    # are not triggered in environments without a registered kernel.
+    assert report.passed is True
+
+
+@pytest.mark.asyncio
+async def test_runtime_qa_node_reports_smoke_test_failure(monkeypatch):
+    """When kernel is available but execution fails, passed should be False."""
+    monkeypatch.setattr(
+        "langgraph_system_generator.generator.nodes.inspect_kernel_spec",
+        lambda: (True, "kernel ok"),
+    )
+    monkeypatch.setattr(
+        "langgraph_system_generator.generator.nodes.run_notebook_smoke_test",
+        lambda: (False, "Cell execution error: NameError in cell 1"),
+    )
+
+    state = {
+        "generated_cells": [CellSpec(cell_type="markdown", content="Hi", metadata={})],
+        "qa_reports": [],
+    }
+    result = await runtime_qa_node(state)
+
+    report = result["qa_reports"][-1]
+    assert "Cell execution error" in report.message
     assert report.passed is False
 
 

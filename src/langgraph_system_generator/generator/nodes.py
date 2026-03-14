@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -27,7 +28,10 @@ from langgraph_system_generator.generator.state import (
 from langgraph_system_generator.notebook.composer import (
     NotebookComposer as NotebookFileComposer,
 )
-from langgraph_system_generator.notebook.runtime import run_notebook_smoke_test
+from langgraph_system_generator.notebook.runtime import (
+    inspect_kernel_spec,
+    run_notebook_smoke_test,
+)
 from langgraph_system_generator.qa import NotebookRepairAgent, NotebookValidator
 from langgraph_system_generator.rag.embeddings import VectorStoreManager
 from langgraph_system_generator.rag.retriever import DocsRetriever
@@ -305,19 +309,32 @@ async def runtime_qa_node(state: GeneratorState) -> Dict[str, Any]:
             message=message,
         )
     else:
-        passed, message = run_notebook_smoke_test()
-        suggestions = []
-        if not passed:
-            suggestions = [
-                "Install a healthy python3 Jupyter kernel before running runtime QA.",
-                "Refresh the kernel spec with: python -m ipykernel install --user --name python3",
-            ]
-        report = QAReport(
-            check_name="Runtime Check",
-            passed=passed,
-            message=message,
-            suggestions=suggestions,
-        )
+        # First check whether the runtime is even available (non-blocking).
+        kernel_ok, kernel_message = inspect_kernel_spec()
+        if not kernel_ok:
+            # Kernel/runtime is unavailable in this environment.  Treat this as
+            # a skipped check so generation does not enter unnecessary repair loops.
+            report = QAReport(
+                check_name="Runtime Check",
+                passed=True,
+                message=f"Runtime QA skipped (environment unavailable): {kernel_message}",
+            )
+        else:
+            # Run the potentially long-running smoke test off the event loop so
+            # the async workflow (API/SSE) remains responsive.
+            passed, message = await asyncio.to_thread(run_notebook_smoke_test)
+            suggestions = []
+            if not passed:
+                suggestions = [
+                    "Install a healthy python3 Jupyter kernel before running runtime QA.",
+                    "Refresh the kernel spec with: python -m ipykernel install --user --name python3",
+                ]
+            report = QAReport(
+                check_name="Runtime Check",
+                passed=passed,
+                message=message,
+                suggestions=suggestions,
+            )
 
     existing_reports = state.get("qa_reports") or []
     return {"qa_reports": [*existing_reports, report]}
