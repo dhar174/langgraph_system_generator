@@ -1,6 +1,9 @@
 """Configuration management for LangGraph Notebook Foundry."""
 
 from functools import lru_cache
+import os
+from pathlib import Path
+import sys
 from typing import Optional
 
 from pydantic import BaseModel, Field
@@ -46,7 +49,6 @@ class Settings(BaseSettings):
     """Project settings loaded from environment or a `.env` file."""
 
     model_config = SettingsConfigDict(
-        env_file=".env",
         env_file_encoding="utf-8",
         extra="ignore",
     )
@@ -91,18 +93,77 @@ class Settings(BaseSettings):
     )
 
 
-@lru_cache(maxsize=1)
-def get_settings() -> Settings:
-    """Return a cached settings instance."""
-
-    return Settings()
+_DEFAULT_ENV_FILE = object()
 
 
-def reset_settings_cache() -> Settings:
+def _pytest_is_active() -> bool:
+    """Return True when running under pytest collection or execution."""
+
+    return "pytest" in sys.modules or "PYTEST_CURRENT_TEST" in os.environ
+
+
+def _resolve_default_env_file() -> str | None:
+    """Resolve the default dotenv path for application usage.
+
+    Tests should remain deterministic and therefore do not implicitly load the
+    repository root `.env` file unless they ask for one explicitly.
+    """
+
+    configured_env_file = os.environ.get("LNF_ENV_FILE")
+    if configured_env_file is not None:
+        return configured_env_file or None
+
+    if os.environ.get("LNF_DISABLE_DOTENV", "").lower() in {"1", "true", "yes", "on"}:
+        return None
+
+    if _pytest_is_active():
+        return None
+
+    candidate = Path(".env")
+    if candidate.exists():
+        return str(candidate)
+
+    return None
+
+
+@lru_cache(maxsize=8)
+def _cached_settings(env_file: str | None) -> Settings:
+    """Create and cache settings instances by env file path."""
+
+    init_kwargs = {}
+    if env_file is not None:
+        init_kwargs["_env_file"] = env_file
+        init_kwargs["_env_file_encoding"] = "utf-8"
+
+    return Settings(**init_kwargs)
+
+
+def get_settings(env_file: str | Path | None | object = _DEFAULT_ENV_FILE) -> Settings:
+    """Return a cached settings instance.
+
+    Args:
+        env_file: Optional dotenv file path. Pass `None` to disable dotenv
+            loading explicitly. When omitted, the app auto-loads `.env` outside
+            pytest and skips it during tests.
+    """
+
+    if env_file is _DEFAULT_ENV_FILE:
+        resolved_env_file = _resolve_default_env_file()
+    elif env_file is None:
+        resolved_env_file = None
+    else:
+        resolved_env_file = str(Path(env_file))
+
+    return _cached_settings(resolved_env_file)
+
+
+def reset_settings_cache(
+    env_file: str | Path | None | object = _DEFAULT_ENV_FILE,
+) -> Settings:
     """Clear and refresh the cached settings instance."""
 
-    get_settings.cache_clear()
-    refreshed = get_settings()
+    _cached_settings.cache_clear()
+    refreshed = get_settings(env_file)
     globals()["settings"] = refreshed
     return refreshed
 

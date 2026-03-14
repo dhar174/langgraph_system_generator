@@ -1,200 +1,269 @@
-"""Router Pattern Example - Multi-Agent Routing System
+"""Runnable router pattern demo built with current LangGraph state patterns.
 
-This example demonstrates how to use the RouterPattern from the
-langgraph_system_generator pattern library to create a multi-agent system
-with dynamic routing capabilities.
+The example defaults to ``stub`` mode so it can run without network access.
+Use ``--mode live`` to switch to ``ChatOpenAI``-backed routing and handlers.
 
-The router pattern is ideal for:
-- Directing requests to specialized agents based on input classification
-- Building modular systems with domain-specific expertise
-- Implementing conditional agent execution
-
-Usage:
-    python examples/router_pattern_example.py
-
-Requirements:
-    - langchain-openai
-    - langgraph
-    - OPENAI_API_KEY environment variable
+Examples:
+    python examples/router_pattern_example.py --mode stub
+    python examples/router_pattern_example.py --mode live --input "Analyze this incident report"
 """
 
+from __future__ import annotations
+
+import argparse
+import operator
 import os
+from typing import Annotated, Literal
 
-from langgraph_system_generator.patterns import RouterPattern
+from langchain_core.messages import AIMessage, AnyMessage, HumanMessage, SystemMessage
+from langchain_openai import ChatOpenAI
+from langgraph.graph import END, START, StateGraph
+from langgraph.graph.message import add_messages
+from langgraph.types import Command
+from pydantic import BaseModel, Field
+from typing_extensions import TypedDict
 
+ExampleMode = Literal["stub", "live"]
+RouteName = Literal["search", "analyze", "summarize"]
 
-def generate_router_system():
-    """Generate a complete router-based multi-agent system.
-    
-    This example creates a system with three specialized routes:
-    - search: For information retrieval queries
-    - analyze: For data analysis and interpretation
-    - summarize: For text summarization tasks
-    """
-    
-    # Define the routes and their purposes
-    routes = ["search", "analyze", "summarize"]
-    route_purposes = {
-        "search": "Search and retrieve information from various sources",
-        "analyze": "Analyze data, identify patterns, and provide insights",
-        "summarize": "Condense long texts into concise summaries",
-    }
-    
-    # Generate complete example code
-    complete_code = RouterPattern.generate_complete_example(routes, route_purposes)
-    
-    print("=" * 80)
-    print("Generated Router Pattern System")
-    print("=" * 80)
-    print(complete_code)
-    print("=" * 80)
-    
-    return complete_code
+DEFAULT_INPUT = "Analyze the attached customer feedback themes and summarize the biggest risks."
+DEFAULT_MODEL = os.environ.get("LNF_EXAMPLE_MODEL", "gpt-5-mini")
 
 
-def generate_custom_router():
-    """Generate a custom router with specific configuration.
-    
-    This demonstrates how to customize individual components of the router pattern.
-    """
-    
-    print("\n" + "=" * 80)
-    print("Custom Router Configuration")
-    print("=" * 80)
-    
-    # Step 1: Generate custom state with additional fields
-    additional_fields = {
-        "user_id": "Unique identifier for the user",
-        "priority": "Request priority level (high, medium, low)",
-    }
-    state_code = RouterPattern.generate_state_code(additional_fields=additional_fields)
-    print("\n1. Custom State Schema:")
-    print("-" * 40)
-    print(state_code)
-    
-    # Step 2: Generate router with structured output
-    routes = ["technical_support", "billing", "general_inquiry"]
-    router_code = RouterPattern.generate_router_node_code(
-        routes=routes,
-        llm_model="gpt-4",
-        use_structured_output=True,
+class RouteDecision(BaseModel):
+    """Structured routing output used by the router node."""
+
+    route: RouteName = Field(description="The specialist route that should handle the request.")
+    reason: str = Field(description="Short explanation for the chosen route.")
+
+
+class RouterState(TypedDict):
+    """Shared graph state for the router example."""
+
+    messages: Annotated[list[AnyMessage], add_messages]
+    route_trace: Annotated[list[str], operator.add]
+    route: str
+    route_reason: str
+    final_output: str
+
+
+def _require_live_api_key(mode: ExampleMode) -> None:
+    if mode == "live" and not os.getenv("OPENAI_API_KEY"):
+        raise SystemExit("OPENAI_API_KEY is required for --mode live.")
+
+
+def _build_live_model(*, temperature: float) -> ChatOpenAI:
+    return ChatOpenAI(model=DEFAULT_MODEL, temperature=temperature)
+
+
+def _route_stub(user_input: str) -> RouteDecision:
+    lowered = user_input.lower()
+    if any(token in lowered for token in ("find", "lookup", "search", "research")):
+        return RouteDecision(
+            route="search",
+            reason="Stub router detected a retrieval-style request.",
+        )
+    if any(token in lowered for token in ("analyze", "pattern", "trend", "compare", "risk")):
+        return RouteDecision(
+            route="analyze",
+            reason="Stub router detected an analysis-focused request.",
+        )
+    return RouteDecision(
+        route="summarize",
+        reason="Stub router fell back to summarization for a broad request.",
     )
-    print("\n2. Router Node with Structured Output:")
-    print("-" * 40)
-    print(router_code[:500] + "...")
-    
-    # Step 3: Generate individual route handlers
-    print("\n3. Route Handler Examples:")
-    print("-" * 40)
-    
-    for route, purpose in {
-        "technical_support": "Handle technical issues and troubleshooting",
-        "billing": "Manage billing inquiries and payment issues",
-        "general_inquiry": "Address general questions and information requests",
-    }.items():
-        route_code = RouterPattern.generate_route_node_code(route, purpose)
-        print(f"\n{route.upper()} Handler:")
-        print(route_code[:300] + "...")
-    
-    # Step 4: Generate graph construction code
-    graph_code = RouterPattern.generate_graph_code(
-        routes=routes,
-        entry_point="router",
-        use_conditional_edges=True,
+
+
+def _route_live(user_input: str) -> RouteDecision:
+    model = _build_live_model(temperature=0)
+    structured_model = model.with_structured_output(RouteDecision)
+    return structured_model.invoke(
+        [
+            SystemMessage(
+                content=(
+                    "You are a deterministic router for a LangGraph demo. "
+                    "Choose exactly one route: search, analyze, or summarize."
+                )
+            ),
+            HumanMessage(content=user_input),
+        ]
     )
-    print("\n4. Graph Construction:")
-    print("-" * 40)
-    print(graph_code[:500] + "...")
 
 
-def demonstrate_integration():
-    """Demonstrate how to integrate router pattern into existing workflows.
-    
-    This shows how pattern components can be used in custom agentic workflows.
-    """
-    
-    print("\n" + "=" * 80)
-    print("Integration Example - Using Pattern in Custom Workflow")
-    print("=" * 80)
-    
-    # Generate just the state schema
-    state_code = RouterPattern.generate_state_code()
-    
-    # You can now use this in your custom workflow
-    print("\nGenerated State Schema (ready to use in your workflow):")
-    print("-" * 40)
-    print(state_code)
-    
-    # Generate router node for custom routes
-    custom_routes = ["data_processing", "visualization", "export"]
-    router_node_code = RouterPattern.generate_router_node_code(custom_routes)
-    
-    print("\nGenerated Router Node (integrate into your graph):")
-    print("-" * 40)
-    print(router_node_code[:400] + "...")
-    
-    print("\n" + "=" * 80)
-    print("Integration Tips:")
-    print("=" * 80)
-    print("""
-1. Copy the generated state code into your workflow file
-2. Integrate the router_node function into your graph
-3. Add custom route handlers using generate_route_node_code()
-4. Build the graph using the generated graph construction code
-5. Customize the LLM models, prompts, and logic as needed
-    """)
+def _run_search(mode: ExampleMode, user_input: str) -> str:
+    if mode == "stub":
+        return (
+            "Stub search report:\n"
+            "- Gathered three representative customer comments.\n"
+            "- Retrieved two competitor notes.\n"
+            "- Highlighted a recent churn trend tied to onboarding friction."
+        )
+
+    model = _build_live_model(temperature=0.2)
+    response = model.invoke(
+        [
+            SystemMessage(
+                content=(
+                    "You are a retrieval specialist. Return concise research notes that a downstream "
+                    "analyst can use immediately."
+                )
+            ),
+            HumanMessage(content=user_input),
+        ]
+    )
+    return response.content
 
 
-def main():
-    """Run all router pattern examples."""
-    
-    print("\n" + "=" * 80)
-    print("LangGraph Router Pattern Examples")
-    print("Pattern Library - langgraph_system_generator")
-    print("=" * 80)
-    
-    # Check for API key
-    if not os.getenv("OPENAI_API_KEY"):
-        print("\n⚠️  WARNING: OPENAI_API_KEY not found in environment")
-        print("The generated code requires an API key to run.")
-        print("Set it with: export OPENAI_API_KEY='your-key-here'\n")
-    
-    # Example 1: Generate complete system
-    print("\n" + "=" * 80)
-    print("Example 1: Complete Router System")
-    print("=" * 80)
-    print("Generating a fully functional router-based multi-agent system...")
-    generate_router_system()
-    
-    # Example 2: Custom router configuration
-    print("\n" + "=" * 80)
-    print("Example 2: Custom Router Configuration")
-    print("=" * 80)
-    print("Demonstrating customization options...")
-    generate_custom_router()
-    
-    # Example 3: Integration into existing workflows
-    print("\n" + "=" * 80)
-    print("Example 3: Integration with Custom Workflows")
-    print("=" * 80)
-    print("Showing how to use pattern components in your own code...")
-    demonstrate_integration()
-    
-    print("\n" + "=" * 80)
-    print("Examples Complete!")
-    print("=" * 80)
-    print("""
-Next Steps:
-1. Copy the generated code into your project
-2. Customize the routes, prompts, and LLM models
-3. Add your domain-specific logic to route handlers
-4. Test the system with sample inputs
-5. Deploy to production
+def _run_analysis(mode: ExampleMode, user_input: str) -> str:
+    if mode == "stub":
+        return (
+            "Stub analysis:\n"
+            "- The dominant risk is onboarding confusion during the first session.\n"
+            "- A secondary risk is missing follow-up nudges for inactive users.\n"
+            "- The highest-leverage fix is a guided checklist plus a day-two reminder."
+        )
 
-For more information, see:
-- Pattern documentation: docs/patterns.md
-- LangGraph documentation: https://langchain-ai.github.io/langgraph/
-    """)
+    model = _build_live_model(temperature=0.2)
+    response = model.invoke(
+        [
+            SystemMessage(
+                content=(
+                    "You are an analyst. Explain patterns, risks, and recommended next steps in a tight "
+                    "operator-facing format."
+                )
+            ),
+            HumanMessage(content=user_input),
+        ]
+    )
+    return response.content
+
+
+def _run_summary(mode: ExampleMode, user_input: str) -> str:
+    if mode == "stub":
+        return (
+            "Stub summary:\n"
+            "The request should be condensed into a short executive update with one key risk, one key "
+            "opportunity, and one immediate action."
+        )
+
+    model = _build_live_model(temperature=0.2)
+    response = model.invoke(
+        [
+            SystemMessage(
+                content=(
+                    "You are a summarization specialist. Produce a short, polished summary with a clear "
+                    "takeaway."
+                )
+            ),
+            HumanMessage(content=user_input),
+        ]
+    )
+    return response.content
+
+
+def build_router_graph(mode: ExampleMode = "stub"):
+    """Build a runnable router graph using current LangGraph patterns."""
+
+    _require_live_api_key(mode)
+
+    def router_node(
+        state: RouterState,
+    ) -> Command[Literal["search", "analyze", "summarize"]]:
+        user_input = state["messages"][0].content if state["messages"] else DEFAULT_INPUT
+        decision = _route_stub(user_input) if mode == "stub" else _route_live(user_input)
+
+        # Returning Command keeps the state update and the dynamic route selection in one node.
+        return Command(
+            update={
+                "route": decision.route,
+                "route_reason": decision.reason,
+                "route_trace": [f"router->{decision.route}"],
+                "messages": [
+                    AIMessage(
+                        content=f"Router selected {decision.route}: {decision.reason}"
+                    )
+                ],
+            },
+            goto=decision.route,
+        )
+
+    def search_node(state: RouterState):
+        user_input = state["messages"][0].content if state["messages"] else DEFAULT_INPUT
+        result = _run_search(mode, user_input)
+        return {
+            "final_output": result,
+            "route_trace": ["search"],
+            "messages": [AIMessage(content=result)],
+        }
+
+    def analyze_node(state: RouterState):
+        user_input = state["messages"][0].content if state["messages"] else DEFAULT_INPUT
+        result = _run_analysis(mode, user_input)
+        return {
+            "final_output": result,
+            "route_trace": ["analyze"],
+            "messages": [AIMessage(content=result)],
+        }
+
+    def summarize_node(state: RouterState):
+        user_input = state["messages"][0].content if state["messages"] else DEFAULT_INPUT
+        result = _run_summary(mode, user_input)
+        return {
+            "final_output": result,
+            "route_trace": ["summarize"],
+            "messages": [AIMessage(content=result)],
+        }
+
+    workflow = StateGraph(RouterState)
+    workflow.add_node("router", router_node)
+    workflow.add_node("search", search_node)
+    workflow.add_node("analyze", analyze_node)
+    workflow.add_node("summarize", summarize_node)
+    workflow.add_edge(START, "router")
+    workflow.add_edge("search", END)
+    workflow.add_edge("analyze", END)
+    workflow.add_edge("summarize", END)
+    return workflow.compile()
+
+
+def run_router_example(
+    user_input: str = DEFAULT_INPUT,
+    mode: ExampleMode = "stub",
+) -> RouterState:
+    """Execute the router demo and return the final graph state."""
+
+    graph = build_router_graph(mode)
+    return graph.invoke(
+        {
+            "messages": [HumanMessage(content=user_input)],
+            "route_trace": [],
+            "route": "",
+            "route_reason": "",
+            "final_output": "",
+        }
+    )
+
+
+def main(argv: list[str] | None = None) -> None:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--mode", choices=["stub", "live"], default="stub")
+    parser.add_argument("--input", default=DEFAULT_INPUT)
+    args = parser.parse_args(argv)
+
+    result = run_router_example(args.input, args.mode)
+
+    print("Router Pattern Example")
+    print(f"Mode: {args.mode}")
+    print(f"Route selected: {result['route']}")
+    print(f"Reason: {result['route_reason']}")
+    print("Trace:")
+    for entry in result["route_trace"]:
+        print(f"- {entry}")
+    print("Final output:")
+    print(result["final_output"])
+
+    if args.mode == "stub":
+        print("Live mode note: rerun with --mode live and OPENAI_API_KEY to use ChatOpenAI.")
 
 
 if __name__ == "__main__":
