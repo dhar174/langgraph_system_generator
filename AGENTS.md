@@ -147,6 +147,10 @@ Common settings:
 - `DEFAULT_BUDGET_TOKENS`
 - `LNF_OUTPUT_BASE`
 
+Output paths are validated against the configured base directory. Prefer
+repo-relative paths such as `./output/demo`. If you need outputs rooted
+somewhere else, set `LNF_OUTPUT_BASE` first.
+
 ## Local development workflow
 
 Use small, reviewable changes and keep docs, tests, and examples aligned with
@@ -445,6 +449,11 @@ CI disagreement:
 
 - rerun the exact commands from `.github/workflows/python-app.yml`
 - check for test mocking mistakes before assuming a production code regression
+
+Output path rejected:
+
+- use a relative output path like `./output/demo`
+- if needed, set `LNF_OUTPUT_BASE=$(pwd)` before running CLI or server commands
 
 ## Working rules for automated coding agents
 
