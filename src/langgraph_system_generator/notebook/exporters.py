@@ -145,7 +145,7 @@ class NotebookExporter:
         target = _safe_output_path(output_path)
 
         exporter = HTMLExporter()
-        body, resources = exporter.from_notebook_node(notebook)
+        body, _ = exporter.from_notebook_node(notebook)
 
         with target.open("w", encoding="utf-8") as handle:
             handle.write(body)
@@ -168,7 +168,7 @@ class NotebookExporter:
         target = _safe_output_path(output_path)
 
         exporter = MarkdownExporter()
-        body, _ = exporter.from_notebook_node(notebook)
+        body, resources = exporter.from_notebook_node(notebook)
 
         with target.open("w", encoding="utf-8") as handle:
             handle.write(body)

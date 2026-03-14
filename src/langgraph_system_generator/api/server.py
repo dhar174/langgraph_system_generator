@@ -75,11 +75,11 @@ def _resolve_artifact_path(path: str | os.PathLike[str]) -> Path:
     except ValueError as exc:
         raise HTTPException(
             status_code=400,
-            detail="artifact path must reside within the allowed base directory.",
+            detail="Artifact path must reside within the allowed base directory.",
         ) from exc
 
     if not artifact_path.is_file():
-        raise HTTPException(status_code=404, detail="artifact not found.")
+        raise HTTPException(status_code=404, detail="Artifact not found.")
 
     return artifact_path
 

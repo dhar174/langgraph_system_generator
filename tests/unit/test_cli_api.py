@@ -161,6 +161,26 @@ async def test_api_download_artifact_endpoint(
     assert response.content
 
 
+@pytest.mark.asyncio
+async def test_api_download_artifact_rejects_invalid_path(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """Test artifact download rejects paths outside the trusted base."""
+    monkeypatch.setenv("LNF_OUTPUT_BASE", "test_api_artifact_reject")
+
+    import importlib
+    import langgraph_system_generator.api.server as server_module
+
+    importlib.reload(server_module)
+
+    transport = httpx.ASGITransport(app=server_module.app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.get("/artifacts", params={"path": str(tmp_path / ".." / "escape.txt")})
+
+    assert response.status_code == 400
+    assert "allowed base directory" in response.json()["detail"]
+
+
 def test_health_endpoint():
     client = TestClient(app)
     response = client.get("/health")

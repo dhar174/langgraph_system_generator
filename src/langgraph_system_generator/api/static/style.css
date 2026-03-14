@@ -924,6 +924,20 @@ textarea:focus-visible {
     box-shadow: none;
 }
 
+.toast-notification {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    background: var(--success-color);
+    color: white;
+    padding: 1rem;
+    border-radius: 0.5rem;
+    z-index: 1000;
+    opacity: 1;
+    transition: opacity 0.3s ease;
+    animation: slideDown 0.3s ease;
+}
+
 .btn-icon {
     width: 44px;
     height: 44px;

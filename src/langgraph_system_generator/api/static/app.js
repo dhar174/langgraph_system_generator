@@ -104,7 +104,7 @@ function buildArtifactDownloadUrl(path) {
 
 function showToast(message, duration = 2000) {
     const notification = document.createElement('div');
-    notification.style.cssText = 'position: fixed; top: 20px; right: 20px; background: var(--success-color); color: white; padding: 1rem; border-radius: 0.5rem; z-index: 1000; opacity: 1; transition: opacity 0.3s ease; animation: slideDown 0.3s ease;';
+    notification.className = 'toast-notification';
     notification.textContent = message;
     document.body.appendChild(notification);
 
@@ -575,14 +575,13 @@ function showResult(data) {
     copyBtn.onclick = () => {
         const resultText = JSON.stringify(manifest, null, 2);
         copyTextToClipboard(resultText, '✅ Result info copied').then((copied) => {
-            if (!copied) {
-                return;
+            if (copied) {
+                const originalText = copyBtn.textContent;
+                copyBtn.textContent = '✅ Copied!';
+                setTimeout(() => {
+                    copyBtn.textContent = originalText;
+                }, 2000);
             }
-            const originalText = copyBtn.textContent;
-            copyBtn.textContent = '✅ Copied!';
-            setTimeout(() => {
-                copyBtn.textContent = originalText;
-            }, 2000);
         });
     };
     exportButtons.appendChild(copyBtn);
