@@ -19,7 +19,7 @@
 - **Agent-per-step decomposition:** generator nodes delegate LLM work to focused agent classes such as `RequirementsAnalyst`, `ArchitectureSelector`, `GraphDesigner`, `ToolchainEngineer`, and `NotebookComposer`.
 - **Pattern code generation library:** `patterns/router.py`,
   `patterns/subagents.py`, and `patterns/critique_loops.py` generate reusable LangGraph workflow code as strings for notebook/content assembly.
-- **Notebook-as-artifact assembly:** generated `CellSpec` objects are converted into validated `nbformat` notebooks by `notebook/composer.py`, then exported into multiple formats by `notebook/export` helpers.
+- **Notebook-as-artifact assembly:** generated `CellSpec` objects are converted into validated `nbformat` notebooks by `notebook/composer.py`, then exported into multiple formats by `notebook/exporters.py` and related format helpers.
 - **Validation/repair loop:** `qa/validators.py` reports notebook issues and `qa/repair.py` applies localized repairs before re-running validation.
 - **SSE progress streaming:** `api/progress_streaming.py` uses in-memory queues keyed by job ID to stream progress, logs, completion, and error events.
 
