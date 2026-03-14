@@ -98,6 +98,34 @@ function getCharacterCount(text) {
     return Array.from(text || '').length;
 }
 
+function buildArtifactDownloadUrl(path) {
+    return `/artifacts?path=${encodeURIComponent(path)}`;
+}
+
+function showToast(message, duration = 2000) {
+    const notification = document.createElement('div');
+    notification.className = 'toast-notification';
+    notification.textContent = message;
+    document.body.appendChild(notification);
+
+    setTimeout(() => {
+        notification.style.opacity = '0';
+        setTimeout(() => notification.remove(), 300);
+    }, duration);
+}
+
+async function copyTextToClipboard(text, successMessage) {
+    try {
+        await navigator.clipboard.writeText(text);
+        showToast(successMessage);
+        return true;
+    } catch (err) {
+        console.error('Failed to copy:', err);
+        showError('Failed to copy to clipboard. Your browser may block clipboard access.');
+        return false;
+    }
+}
+
 // Update character count
 promptTextarea.addEventListener('input', () => {
     const count = getCharacterCount(promptTextarea.value);
@@ -521,6 +549,7 @@ function showResult(data) {
     const formats = [
         { key: 'notebook_path', label: 'Notebook (.ipynb)', icon: '📓' },
         { key: 'html_path', label: 'HTML', icon: '🌐' },
+        { key: 'markdown_path', label: 'Markdown', icon: '📝' },
         { key: 'docx_path', label: 'Word Doc', icon: '📄' },
         { key: 'pdf_path', label: 'PDF', icon: '📕' },
         { key: 'zip_path', label: 'ZIP Bundle', icon: '📦' }
@@ -530,7 +559,7 @@ function showResult(data) {
         if (manifest[format.key]) {
             const btn = document.createElement('a');
             btn.className = 'btn btn-secondary';
-            btn.href = manifest[format.key];
+            btn.href = buildArtifactDownloadUrl(manifest[format.key]);
             btn.download = '';
             btn.style.display = 'inline-flex';
             btn.style.textDecoration = 'none';
@@ -545,14 +574,14 @@ function showResult(data) {
     copyBtn.textContent = '📋 Copy Result Info';
     copyBtn.onclick = () => {
         const resultText = JSON.stringify(manifest, null, 2);
-        navigator.clipboard.writeText(resultText).then(() => {
-            const originalText = copyBtn.textContent;
-            copyBtn.textContent = '✅ Copied!';
-            setTimeout(() => {
-                copyBtn.textContent = originalText;
-            }, 2000);
-        }).catch(err => {
-            console.error('Failed to copy:', err);
+        copyTextToClipboard(resultText, '✅ Result info copied').then((copied) => {
+            if (copied) {
+                const originalText = copyBtn.textContent;
+                copyBtn.textContent = '✅ Copied!';
+                setTimeout(() => {
+                    copyBtn.textContent = originalText;
+                }, 2000);
+            }
         });
     };
     exportButtons.appendChild(copyBtn);
@@ -802,6 +831,16 @@ function clearHistory() {
 function updateHistoryDisplay() {
     const historyContent = document.getElementById('historyContent');
     const history = loadFromHistory();
+    const rerunLastBtn = document.getElementById('rerunLastBtn');
+    const copyLastPromptBtn = document.getElementById('copyLastPromptBtn');
+    const hasHistory = history.length > 0;
+
+    if (rerunLastBtn) {
+        rerunLastBtn.disabled = !hasHistory;
+    }
+    if (copyLastPromptBtn) {
+        copyLastPromptBtn.disabled = !hasHistory;
+    }
     
     if (history.length === 0) {
         historyContent.textContent = '';
@@ -935,18 +974,18 @@ function rerunFromHistory(entry) {
     
     // Hide history
     document.getElementById('historyCard').style.display = 'none';
-    
-    // Show a notification
-    const notification = document.createElement('div');
-    notification.style.cssText = 'position: fixed; top: 20px; right: 20px; background: var(--success-color); color: white; padding: 1rem; border-radius: 0.5rem; z-index: 1000; opacity: 1; transition: opacity 0.3s ease; animation: slideDown 0.3s ease;';
-    notification.textContent = '✅ Configuration loaded from history';
-    document.body.appendChild(notification);
-    
-    setTimeout(() => {
-        // Fade out the notification before removing it
-        notification.style.opacity = '0';
-        setTimeout(() => notification.remove(), 300);
-    }, 2000);
+
+    showToast('✅ Configuration loaded from history');
+}
+
+function copyLastPromptFromHistory() {
+    const history = loadFromHistory();
+    if (history.length === 0) {
+        return;
+    }
+
+    const latestPrompt = history[0].fullPrompt || history[0].prompt || '';
+    copyTextToClipboard(latestPrompt, '✅ Last prompt copied');
 }
 
 // History toggle button
@@ -971,6 +1010,19 @@ clearHistoryBtn.addEventListener('click', () => {
     if (confirm('Are you sure you want to clear all history?')) {
         clearHistory();
     }
+});
+
+const rerunLastBtn = document.getElementById('rerunLastBtn');
+rerunLastBtn.addEventListener('click', () => {
+    const history = loadFromHistory();
+    if (history.length > 0) {
+        rerunFromHistory(history[0]);
+    }
+});
+
+const copyLastPromptBtn = document.getElementById('copyLastPromptBtn');
+copyLastPromptBtn.addEventListener('click', () => {
+    copyLastPromptFromHistory();
 });
 
 // Initialize history display on load
