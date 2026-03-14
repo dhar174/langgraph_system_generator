@@ -14,9 +14,12 @@
 - Standard setup flow is:
   - create a virtual environment
   - install `requirements.txt`
+  - install the package in editable mode, for example:
+    - `pip install -e .` for core functionality, or
+    - `pip install -e ".[full]"` to enable full API/RAG/export features
   - copy `.env.example` to `.env`
   - run `python -m pytest`
-- The package exposes the `lnf` console entry point from `setup.py`.
+- The `lnf` console entry point defined in `setup.py` is available only after the package has been installed.
 
 ## Configuration Model
 
