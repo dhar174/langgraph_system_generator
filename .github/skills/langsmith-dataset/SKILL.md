@@ -11,7 +11,7 @@ Create, manage, and upload evaluation datasets to LangSmith for testing and vali
 Environment Variables
 
 ```bash
-LANGSMITH_API_KEY=lsv2_pt_your_api_key_here          # Required
+LANGSMITH_API_KEY=<your_api_key_here>               # Required
 LANGSMITH_PROJECT=your-project-name                   # Check this to know which project has traces
 LANGSMITH_WORKSPACE_ID=your-workspace-id              # Optional: for org-scoped keys
 ```
@@ -31,7 +31,7 @@ npm install langsmith
 CLI Tool
 
 ```bash
-curl -sSL https://raw.githubusercontent.com/langchain-ai/langsmith-cli/main/scripts/install.sh | sh
+pip install langsmith
 ```
 </setup>
 
@@ -61,12 +61,11 @@ Use the `langsmith` CLI to manage datasets and examples.
 ### Common Flags
 
 - `--limit N` - Limit number of results
-- `--yes` - Skip confirmation prompts (use with caution)
+- `--yes` - Skip confirmation prompts (use with caution; see safety note below)
 
 **IMPORTANT - Safety Prompts:**
 - The CLI prompts for confirmation before destructive operations (delete, overwrite)
-- **If you are running with user input:** ALWAYS wait for user input; NEVER use `--yes` unless the user explicitly requests it
-- **If you are running non-interactively:** Use `--yes` to skip confirmation prompts
+- **NEVER use `--yes` flag unless the user explicitly requests it** (or you are running in an automated CI/CD pipeline where interaction is impossible and the user has pre-authorized the action)
 </usage>
 
 <dataset_types_overview>
@@ -292,4 +291,3 @@ langsmith experiment list --dataset "Skills: Final Response"
 - Use `langsmith dataset get "Name"` to check remote count
 - Compare with local file to verify upload completeness
 </troubleshooting>
-</output>
