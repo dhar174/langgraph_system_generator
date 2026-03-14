@@ -181,9 +181,9 @@ Before writing evaluators, you MUST test your run function and inspect the actua
 **Debugging workflow:**
 1. Run your agent once on sample input
 2. Query the trace to see the execution structure
-3. Print the raw output and verify against trace to output contains the right data
+3. Print the raw output and verify against the trace to ensure the output contains the right data
 4. Adjust the run function as needed
-4. Verify your output matches your dataset schema
+5. Verify your output matches your dataset schema
 
 **Try your hardest to match your run function output to your dataset schema.** This makes evaluators simple and reusable. If matching isn't possible, your evaluator must know how to extract and compare the right fields from each side.
 
