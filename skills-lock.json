@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "skills": {
+    "langsmith-dataset": {
+      "source": ".github/skills/langsmith-dataset",
+      "sourceType": "local",
+      "computedHash": "47995677822132ebba7b9fbf4f24d4f6e1164d94c144f4c2e40f8f43b0dde6bb"
+    },
+    "langsmith-evaluator": {
+      "source": ".github/skills/langsmith-evaluator",
+      "sourceType": "local",
+      "computedHash": "7605e9cdf5860589d46074c3d27e01f14896abd0a6eebc2fb3820d52f8486741"
+    },
+    "langsmith-trace": {
+      "source": ".github/skills/langsmith-trace",
+      "sourceType": "local",
+      "computedHash": "9af07d5f6e2c810d98542a783d4e99a590d663607a7219ec6ff06e59e6977d65"
+    }
+  }
+}
