@@ -130,7 +130,7 @@ const examples: Array<{trace_id?: string, inputs: Record<string, any>, outputs: 
 const files = readdirSync("./traces").filter(f => f.endsWith(".jsonl"));
 
 for (const file of files) {
-  const lines = readFileSync(join("./traces", file), "utf-8").trim().split("\n");
+  const lines = readFileSync(join("./traces", file), "utf-8").split("\n").filter(line => line.trim());
   const runs = lines.map(line => JSON.parse(line));
   const root = runs.find(r => r.parent_run_id == null);
   if (root?.inputs && root?.outputs) {
