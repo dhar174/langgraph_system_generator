@@ -316,6 +316,7 @@ async def test_runtime_qa_node_reports_dependency_failure(monkeypatch):
 
     report = result["qa_reports"][-1]
     assert report.passed is False
+    assert report.suggestions == _runtime_qa_suggestions(report.message)
     assert any("nbclient" in suggestion or "jupyter_client" in suggestion for suggestion in report.suggestions)
     assert all("kernel spec" not in suggestion.lower() for suggestion in report.suggestions)
 

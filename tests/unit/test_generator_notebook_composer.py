@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import ast
+
 import pytest
 
 from langgraph_system_generator.generator.agents import notebook_composer as composer_module
@@ -196,8 +198,13 @@ def test_tool_fallback_sanitizes_identifier_and_compiles(monkeypatch: pytest.Mon
 
     assert 'def _9_bad_tool_print_oops' in fallback_code
     assert '# Tool: 9 bad tool"; print("oops")' in fallback_code
+    assert '9 bad tool";\nprint("oops")' not in fallback_code
     assert '"category": "api\\" # injected"' in fallback_code
+    assert fallback_code.splitlines()[0] == '# Tool: 9 bad tool"; print("oops")'
     compile(fallback_code, "<tool_fallback>", "exec")
+    parsed = ast.parse(fallback_code)
+    assert len(parsed.body) == 1
+    assert isinstance(parsed.body[0], ast.FunctionDef)
 
 
 def test_node_fallback_sanitizes_identifier_and_compiles(monkeypatch: pytest.MonkeyPatch):
@@ -213,8 +220,12 @@ def test_node_fallback_sanitizes_identifier_and_compiles(monkeypatch: pytest.Mon
     )
 
     assert 'def _9_node_name_raise_SystemExit_node' in fallback_code
+    assert '9 node name";\nraise SystemExit' not in fallback_code
     assert '\\"\\"\\"' in fallback_code
     compile(fallback_code, "<node_fallback>", "exec")
+    parsed = ast.parse(fallback_code)
+    assert len(parsed.body) == 1
+    assert isinstance(parsed.body[0], ast.FunctionDef)
 
 
 def test_graph_fallback_uses_sanitized_function_references(

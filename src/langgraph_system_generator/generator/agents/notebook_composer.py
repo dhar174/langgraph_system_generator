@@ -451,6 +451,9 @@ def {func_name}(*args, **kwargs):
         node_purpose = node.get("purpose", "")
         safe_node_identifier = self._safe_identifier(node_name, "unknown")
         state_schema = workflow_design.get("state_schema", {})
+        function_signature = (
+            f"def {safe_node_identifier}_node(state: WorkflowState) -> WorkflowState"
+        )
 
         try:
             # Build prompt for LLM
@@ -460,7 +463,7 @@ def {func_name}(*args, **kwargs):
 Generate a complete, production-ready Python function for a LangGraph node.
 
 Requirements:
-- Function signature: def {safe_node_identifier}_node(state: WorkflowState) -> WorkflowState
+- Function signature: {function_signature}
 - The function MUST return an updated state dictionary (not just 'return state')
 - Include proper LLM initialization and invocation if needed
 - Use MessagesState pattern with proper message handling
@@ -698,12 +701,17 @@ Generate the complete Python function implementation."""
         conditional_edges = workflow_design.get("conditional_edges", [])
 
         # Generate node additions
+        node_bindings = [
+            (
+                json.dumps(str(node.get("name", "unknown"))),
+                self._safe_identifier(node.get("name", "unknown"), "unknown"),
+            )
+            for node in nodes
+        ]
         node_additions = "\n".join(
             [
-                f"workflow.add_node("
-                f"{json.dumps(str(node.get('name', 'unknown')))}, "
-                f"{self._safe_identifier(node.get('name', 'unknown'), 'unknown')}_node)"
-                for node in nodes
+                f"workflow.add_node({display_name}, {function_name}_node)"
+                for display_name, function_name in node_bindings
             ]
         )
 
