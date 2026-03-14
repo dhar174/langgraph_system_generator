@@ -38,7 +38,7 @@ const themeIcon = themeToggle.querySelector('.theme-icon');
 // Initialize theme from localStorage
 const currentTheme = localStorage.getItem('theme') || 'dark';
 document.documentElement.setAttribute('data-theme', currentTheme);
-themeIcon.textContent = currentTheme === 'dark' ? '🌙' : '☀️';
+themeIcon.textContent = currentTheme === 'dark' ? 'Dark' : 'Light';
 
 // Theme toggle functionality
 themeToggle.addEventListener('click', () => {
@@ -47,7 +47,7 @@ themeToggle.addEventListener('click', () => {
     
     document.documentElement.setAttribute('data-theme', newTheme);
     localStorage.setItem('theme', newTheme);
-    themeIcon.textContent = newTheme === 'dark' ? '🌙' : '☀️';
+    themeIcon.textContent = newTheme === 'dark' ? 'Dark' : 'Light';
 });
 
 // Advanced options toggle
@@ -281,7 +281,7 @@ function initProgressSteps() {
         const icon = document.createElement('span');
         icon.className = 'step-icon';
         icon.setAttribute('aria-label', 'Step status');
-        icon.textContent = '⏳';
+        icon.textContent = '...';
         
         const text = document.createElement('span');
         text.className = 'step-text';
@@ -316,12 +316,12 @@ function showProgress(step, percentage, message) {
         
         if (percentage >= stepPercent) {
             stepDiv.classList.add('complete');
-            icon.textContent = '✅';
+            icon.textContent = 'OK';
         } else if (Math.abs(percentage - stepPercent) < 15) {
             stepDiv.classList.add('active');
-            icon.textContent = '⏳';
+            icon.textContent = '...';
         } else {
-            icon.textContent = '⏳';
+            icon.textContent = '...';
         }
     });
 }
@@ -347,7 +347,7 @@ function showResult(data) {
     const successHeading = document.createElement('h3');
     successHeading.style.color = 'var(--success-color)';
     successHeading.style.marginBottom = '0.5rem';
-    successHeading.textContent = '✅ Generation Successful!';
+    successHeading.textContent = 'Generation Successful!';
     
     const successParagraph = document.createElement('p');
     successParagraph.textContent = 'Your system was generated in ';
@@ -479,7 +479,7 @@ function showResult(data) {
     const stepsHeading = document.createElement('h4');
     stepsHeading.style.marginBottom = '0.5rem';
     stepsHeading.style.color = 'var(--text-primary)';
-    stepsHeading.textContent = '📝 Next Steps:';
+    stepsHeading.textContent = 'Next Steps:';
     
     const stepsList = document.createElement('ol');
     stepsList.style.marginLeft = '1.5rem';
@@ -510,7 +510,7 @@ function showResult(data) {
     const exportHeading = document.createElement('h4');
     exportHeading.style.marginBottom = '1rem';
     exportHeading.style.color = 'var(--text-primary)';
-    exportHeading.textContent = '📥 Available Downloads:';
+    exportHeading.textContent = 'Available Downloads:';
     
     const exportButtons = document.createElement('div');
     exportButtons.style.display = 'flex';
@@ -519,11 +519,11 @@ function showResult(data) {
     
     // Add download buttons for available formats
     const formats = [
-        { key: 'notebook_path', label: 'Notebook (.ipynb)', icon: '📓' },
-        { key: 'html_path', label: 'HTML', icon: '🌐' },
-        { key: 'docx_path', label: 'Word Doc', icon: '📄' },
-        { key: 'pdf_path', label: 'PDF', icon: '📕' },
-        { key: 'zip_path', label: 'ZIP Bundle', icon: '📦' }
+        { key: 'notebook_path', label: 'Notebook (.ipynb)' },
+        { key: 'html_path', label: 'HTML' },
+        { key: 'docx_path', label: 'Word Doc' },
+        { key: 'pdf_path', label: 'PDF' },
+        { key: 'zip_path', label: 'ZIP Bundle' }
     ];
     
     formats.forEach(format => {
@@ -534,7 +534,7 @@ function showResult(data) {
             btn.download = '';
             btn.style.display = 'inline-flex';
             btn.style.textDecoration = 'none';
-            btn.textContent = `${format.icon} ${format.label}`;
+            btn.textContent = format.label;
             exportButtons.appendChild(btn);
         }
     });
@@ -542,12 +542,12 @@ function showResult(data) {
     // Add copy result button
     const copyBtn = document.createElement('button');
     copyBtn.className = 'btn btn-secondary';
-    copyBtn.textContent = '📋 Copy Result Info';
+    copyBtn.textContent = 'Copy Result Info';
     copyBtn.onclick = () => {
         const resultText = JSON.stringify(manifest, null, 2);
         navigator.clipboard.writeText(resultText).then(() => {
             const originalText = copyBtn.textContent;
-            copyBtn.textContent = '✅ Copied!';
+            copyBtn.textContent = 'Copied!';
             setTimeout(() => {
                 copyBtn.textContent = originalText;
             }, 2000);
@@ -939,7 +939,7 @@ function rerunFromHistory(entry) {
     // Show a notification
     const notification = document.createElement('div');
     notification.style.cssText = 'position: fixed; top: 20px; right: 20px; background: var(--success-color); color: white; padding: 1rem; border-radius: 0.5rem; z-index: 1000; opacity: 1; transition: opacity 0.3s ease; animation: slideDown 0.3s ease;';
-    notification.textContent = '✅ Configuration loaded from history';
+    notification.textContent = 'Configuration loaded from history';
     document.body.appendChild(notification);
     
     setTimeout(() => {

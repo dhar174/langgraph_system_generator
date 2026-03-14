@@ -224,7 +224,12 @@ async def test_runtime_qa_node_message_empty_cells():
 
 
 @pytest.mark.asyncio
-async def test_runtime_qa_node_message_with_cells():
+async def test_runtime_qa_node_message_with_cells(monkeypatch):
+    monkeypatch.setattr(
+        "langgraph_system_generator.generator.nodes.run_notebook_smoke_test",
+        lambda: (True, "Runtime execution environment validated using the 'python3' kernel."),
+    )
+
     state = {
         "generated_cells": [CellSpec(cell_type="markdown", content="Hi", metadata={})],
         "qa_reports": [],
@@ -232,7 +237,26 @@ async def test_runtime_qa_node_message_with_cells():
     result = await runtime_qa_node(state)
 
     report = result["qa_reports"][-1]
-    assert "not yet implemented" in report.message
+    assert "validated" in report.message
+    assert report.passed is True
+
+
+@pytest.mark.asyncio
+async def test_runtime_qa_node_reports_kernel_failure(monkeypatch):
+    monkeypatch.setattr(
+        "langgraph_system_generator.generator.nodes.run_notebook_smoke_test",
+        lambda: (False, "Runtime validation unavailable: kernel 'python3' is not registered."),
+    )
+
+    state = {
+        "generated_cells": [CellSpec(cell_type="markdown", content="Hi", metadata={})],
+        "qa_reports": [],
+    }
+    result = await runtime_qa_node(state)
+
+    report = result["qa_reports"][-1]
+    assert "Runtime validation unavailable" in report.message
+    assert report.passed is False
 
 
 @pytest.mark.asyncio

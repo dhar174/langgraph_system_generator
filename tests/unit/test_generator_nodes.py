@@ -233,6 +233,7 @@ async def test_notebook_assembly_node_fallback_when_selected_patterns_missing():
         "architecture_type": "router",  # Should default to "router"
         "justification": "Fits the request.",
     }
+@pytest.mark.asyncio
 @pytest.mark.parametrize("failure_mode", ["vector_store", "retrieve"])
 async def test_rag_retrieval_node_returns_empty_on_failure(
     monkeypatch, failure_mode
