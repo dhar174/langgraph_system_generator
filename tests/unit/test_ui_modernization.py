@@ -39,7 +39,7 @@ def static_dir(repo_root):
 @pytest.fixture
 def html_content(static_dir):
     """Load HTML content."""
-    return (static_dir / "index.html").read_text()
+    return (static_dir / "index.html").read_text(encoding="utf-8")
 
 
 @pytest.fixture
@@ -51,13 +51,13 @@ def html_soup(html_content):
 @pytest.fixture
 def js_content(static_dir):
     """Load JavaScript content."""
-    return (static_dir / "app.js").read_text()
+    return (static_dir / "app.js").read_text(encoding="utf-8")
 
 
 @pytest.fixture
 def css_content(static_dir):
     """Load CSS content."""
-    return (static_dir / "style.css").read_text()
+    return (static_dir / "style.css").read_text(encoding="utf-8")
 
 
 # ============================================================================

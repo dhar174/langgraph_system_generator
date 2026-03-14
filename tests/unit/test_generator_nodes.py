@@ -58,6 +58,7 @@ async def test_requirements_analyst_fallback_truncates_prompt_on_bad_json():
 
 
 @pytest.mark.asyncio
+@pytest.mark.asyncio
 @pytest.mark.parametrize("failure_mode", ["vector_store", "retrieve"])
 async def test_rag_retrieval_node_returns_empty_on_failure(
     monkeypatch, failure_mode

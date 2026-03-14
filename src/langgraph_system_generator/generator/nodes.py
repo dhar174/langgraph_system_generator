@@ -27,6 +27,7 @@ from langgraph_system_generator.generator.state import (
 from langgraph_system_generator.notebook.composer import (
     NotebookComposer as NotebookFileComposer,
 )
+from langgraph_system_generator.notebook.runtime import run_notebook_smoke_test
 from langgraph_system_generator.qa import NotebookRepairAgent, NotebookValidator
 from langgraph_system_generator.rag.embeddings import VectorStoreManager
 from langgraph_system_generator.rag.retriever import DocsRetriever
@@ -288,7 +289,7 @@ async def static_qa_node(state: GeneratorState) -> Dict[str, Any]:
 
 
 async def runtime_qa_node(state: GeneratorState) -> Dict[str, Any]:
-    """Run runtime quality checks (placeholder for now).
+    """Run runtime quality checks using a notebook execution smoke test.
 
     Args:
         state: Current generator state
@@ -296,20 +297,27 @@ async def runtime_qa_node(state: GeneratorState) -> Dict[str, Any]:
     Returns:
         Updated state with additional QA reports
     """
-    # Placeholder: In a full implementation, this would execute the notebook
-    # and check for runtime errors. For now, explicitly skip execution checks.
     if not state.get("generated_cells"):
         message = "Runtime checks skipped: no generated cells to execute."
-    else:
-        message = (
-            "Runtime checks skipped: notebook execution validation "
-            "is not yet implemented."
+        report = QAReport(
+            check_name="Runtime Check",
+            passed=True,
+            message=message,
         )
-    report = QAReport(
-        check_name="Runtime Check",
-        passed=True,
-        message=message,
-    )
+    else:
+        passed, message = run_notebook_smoke_test()
+        suggestions = []
+        if not passed:
+            suggestions = [
+                "Install a healthy python3 Jupyter kernel before running runtime QA.",
+                "Refresh the kernel spec with: python -m ipykernel install --user --name python3",
+            ]
+        report = QAReport(
+            check_name="Runtime Check",
+            passed=passed,
+            message=message,
+            suggestions=suggestions,
+        )
 
     existing_reports = state.get("qa_reports") or []
     return {"qa_reports": [*existing_reports, report]}

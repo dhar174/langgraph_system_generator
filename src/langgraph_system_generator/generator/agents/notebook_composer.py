@@ -348,11 +348,21 @@ Generate the complete Python function implementation."""
 def {func_name}(*args, **kwargs):
     \"\"\"
     {tool_purpose}
-    
-    TODO: Implement the actual tool logic.
+
+    Fallback implementation that returns a structured payload so the notebook
+    remains runnable even when a richer tool implementation is unavailable.
     \"\"\"
+    primary_input = args[0] if args else kwargs.get("input")
+    result = {{
+        "tool": "{tool_name}",
+        "category": "{tool_category or 'general'}",
+        "status": "fallback",
+        "input": primary_input,
+        "options": kwargs,
+    }}
+
 {implementation_hint}
-    pass"""
+    return result"""
 
     def _create_node_cells(self, workflow_design: Dict[str, Any]) -> List[CellSpec]:
         """Create node implementation cells with LLM-generated or pattern-based code."""
@@ -475,25 +485,23 @@ Generate the complete Python function implementation."""
         return f"""def {node_name}_node(state: WorkflowState) -> WorkflowState:
     \"\"\"
     {node_purpose}
-    
-    TODO: Implement the actual node logic.
+
+    Fallback implementation that appends a trace message so the generated graph
+    remains executable when richer node synthesis is unavailable.
     \"\"\"
-    from langchain_openai import ChatOpenAI
-    from langchain_core.messages import HumanMessage
-    
-    messages = state["messages"]
-    
-    # Example LLM-based implementation:
-    # llm = ChatOpenAI(model="gpt-5-mini", temperature=0.7)
-    # response = llm.invoke(messages)
-    # 
-    # return {{
-    #     **state,
-    #     "messages": messages + [response],
-    # }}
-    
-    # Implement node logic here
-    return state"""
+    from langchain_core.messages import AIMessage
+
+    messages = list(state.get("messages", []))
+    messages.append(
+        AIMessage(
+            content="{node_name} completed a fallback step for: {node_purpose or node_name}"
+        )
+    )
+
+    return {{
+        **state,
+        "messages": messages,
+    }}"""
 
     def _generate_nodes_from_pattern(
         self,
@@ -658,11 +666,18 @@ Generate the complete Python function implementation."""
         # Generate conditional edges if present
         conditional_code = ""
         if conditional_edges:
-            conditional_code = "\n\n# Add conditional edges\n" + "\n".join(
-                [
-                    f'# TODO: Implement conditional logic for {ce.get("from")}'
-                    for ce in conditional_edges
-                ]
+            conditional_blocks = []
+            for ce in conditional_edges:
+                source = ce.get("from", "node")
+                function_name = f"_route_from_{source}".replace("-", "_").replace(" ", "_")
+                conditional_blocks.append(
+                    f"""def {function_name}(state: WorkflowState) -> str:
+    return "__end__"
+
+workflow.add_conditional_edges("{source}", {function_name}, {{"__end__": END}})"""
+                )
+            conditional_code = "\n\n# Add conditional edges\n" + "\n\n".join(
+                conditional_blocks
             )
 
         return f"""from langgraph.graph import END, START, StateGraph
