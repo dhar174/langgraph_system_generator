@@ -42,8 +42,8 @@ Use the bundled CLI (stub mode by default) to generate scaffold artifacts or reb
 # Generate offline-friendly artifacts from a prompt
 lnf generate "Create a router-based chatbot" --output ./output/demo --mode stub
 
-# Generate specific output formats (default: all formats)
-lnf generate "Create a chatbot" --output ./output/demo --formats ipynb html docx
+# Generate specific output formats (default: all formats except PDF)
+lnf generate "Create a chatbot" --output ./output/demo --formats ipynb html markdown docx
 
 # Build the FAISS index from cached docs with fake embeddings (no API key needed)
 lnf build-index --cache ./data/cached_docs --store ./data/vector_store
@@ -58,6 +58,7 @@ The generator produces the following artifacts:
 - **JSON artifacts**: `manifest.json`, `notebook_plan.json`, `generated_cells.json` for programmatic access
 - **Jupyter Notebook** (`.ipynb`): Fully functional notebook ready to run in Jupyter or Google Colab
 - **HTML** (`.html`): Web-ready notebook export for viewing and sharing
+- **Markdown** (`.md`): Plain-text notebook export for review, versioning, and reuse
 - **DOCX** (`.docx`): Microsoft Word document for documentation and editing
 - **PDF** (`.pdf`): Print-ready PDF document (requires additional dependencies)
 - **ZIP Bundle** (`.zip`): Complete package with notebook and all JSON artifacts
@@ -65,7 +66,7 @@ The generator produces the following artifacts:
 Use the `--formats` option to select specific formats (default: generates all except PDF):
 
 ```bash
-lnf generate "Create a chatbot" --formats ipynb html docx zip
+lnf generate "Create a chatbot" --formats ipynb html markdown docx zip
 ```
 
 ## Web Interface
@@ -86,8 +87,8 @@ Then open your browser to `http://localhost:8000` to access the web UI.
 - **Theme Toggle**: Switch between dark and light themes
 - **Progress Tracking**: Real-time progress bar with detailed generation steps
 - **Generation History**: Track and reuse previous configurations
-- **Export Options**: Download notebooks in multiple formats (IPYNB, HTML, DOCX, PDF, ZIP)
-- **Results Display**: View generated artifacts with download links
+- **Export Options**: Download notebooks in multiple formats (IPYNB, HTML, Markdown, DOCX, PDF, ZIP)
+- **Results Display**: View generated artifacts with browser-safe download links
 - **Responsive Design**: Works on desktop and mobile devices
 - **Accessibility**: Full keyboard navigation and screen reader support
 
@@ -106,6 +107,7 @@ Endpoints:
 - `GET /` – web interface
 - `GET /health` – health check
 - `POST /generate` – generate artifacts (supports `stub`/`live` modes; defaults to `stub`)
+- `GET /artifacts` – download a generated artifact returned in the manifest
 
 Example API usage:
 
@@ -116,7 +118,7 @@ curl -X POST http://localhost:8000/generate \
     "prompt": "Create a customer support chatbot with routing",
     "mode": "stub",
     "output_dir": "./output/my_system",
-    "formats": ["ipynb", "html", "docx", "zip"]
+    "formats": ["ipynb", "html", "markdown", "docx", "zip"]
   }'
 ```
 
@@ -130,6 +132,7 @@ The API response includes paths to all generated artifacts in the manifest:
   "manifest": {
     "notebook_path": "./output/my_system/notebook.ipynb",
     "html_path": "./output/my_system/notebook.html",
+    "markdown_path": "./output/my_system/notebook.md",
     "docx_path": "./output/my_system/notebook.docx",
     "zip_path": "./output/my_system/notebook_bundle.zip",
     "plan_path": "./output/my_system/notebook_plan.json",
