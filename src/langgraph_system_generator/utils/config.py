@@ -4,7 +4,7 @@ from functools import lru_cache
 import os
 from pathlib import Path
 import sys
-from typing import Optional
+from typing import Optional, Union
 
 from pydantic import BaseModel, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -102,7 +102,7 @@ def _pytest_is_active() -> bool:
     return "pytest" in sys.modules or "PYTEST_CURRENT_TEST" in os.environ
 
 
-def _resolve_default_env_file() -> str | None:
+def _resolve_default_env_file() -> Optional[str]:
     """Resolve the default dotenv path for application usage."""
 
     configured_env_file = os.environ.get("LNF_ENV_FILE")
@@ -123,7 +123,7 @@ def _resolve_default_env_file() -> str | None:
 
 
 @lru_cache(maxsize=8)
-def _cached_settings(env_file: str | None) -> Settings:
+def _cached_settings(env_file: Optional[str]) -> Settings:
     """Create and cache settings instances by env file path."""
 
     init_kwargs = {}
@@ -134,7 +134,7 @@ def _cached_settings(env_file: str | None) -> Settings:
     return Settings(**init_kwargs)
 
 
-def get_settings(env_file: str | Path | None | object = _DEFAULT_ENV_FILE) -> Settings:
+def get_settings(env_file: Union[str, Path, None, object] = _DEFAULT_ENV_FILE) -> Settings:
     """Return a cached settings instance."""
 
     if env_file is _DEFAULT_ENV_FILE:
@@ -148,7 +148,7 @@ def get_settings(env_file: str | Path | None | object = _DEFAULT_ENV_FILE) -> Se
 
 
 def reset_settings_cache(
-    env_file: str | Path | None | object = _DEFAULT_ENV_FILE,
+    env_file: Union[str, Path, None, object] = _DEFAULT_ENV_FILE,
 ) -> Settings:
     """Clear and refresh the cached settings instance."""
 

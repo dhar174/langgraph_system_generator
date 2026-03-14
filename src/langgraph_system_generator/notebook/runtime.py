@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from functools import lru_cache
 from pathlib import Path
 from shutil import which
 
@@ -34,6 +35,7 @@ def inspect_kernel_spec(kernel_name: str = "python3") -> tuple[bool, str]:
     return True, f"Kernel '{kernel_name}' is available for notebook execution."
 
 
+@lru_cache(maxsize=8)
 def run_notebook_smoke_test(
     kernel_name: str = "python3", timeout: int = 60
 ) -> tuple[bool, str]:
