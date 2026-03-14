@@ -20,7 +20,7 @@ Successfully implemented end-to-end notebook and document generation in the Lang
 
 **New Features:**
 - Converts generated cells to `CellSpec` objects and builds validated notebooks
-- Exports to IPYNB (always), HTML, DOCX, PDF (optional), and ZIP formats
+- Exports to IPYNB (always), HTML, Markdown, DOCX, PDF (optional), and ZIP formats
 - Gracefully handles export failures with error messages in manifest
 - Ensures required sections are present (setup, config, graph, execution, export, troubleshooting)
 
@@ -28,12 +28,12 @@ Successfully implemented end-to-end notebook and document generation in the Lang
 
 **Added `--formats` argument:**
 ```bash
-lnf generate "Create a chatbot" --formats ipynb html docx
+lnf generate "Create a chatbot" --formats ipynb html markdown docx
 ```
 
 **Updated output messages:**
 - Now displays paths to all generated artifacts
-- Shows notebook, HTML, DOCX, PDF, and ZIP bundle paths when available
+- Shows notebook, HTML, Markdown, DOCX, PDF, and ZIP bundle paths when available
 
 **Default behavior:**
 - Generates all formats (ipynb, html, docx, zip) when `--formats` not specified
@@ -43,7 +43,7 @@ lnf generate "Create a chatbot" --formats ipynb html docx
 
 **Updated `GenerationRequest` model:**
 - Added `formats` field (optional list of strings)
-- Accepts format selection via API: `["ipynb", "html", "docx", "zip"]`
+- Accepts format selection via API: `["ipynb", "html", "markdown", "docx", "zip"]`
 
 **Updated `generate_notebook()` endpoint:**
 - Passes format selection to `generate_artifacts()`
@@ -89,7 +89,7 @@ lnf generate "Create a chatbot" --formats ipynb html docx
 **New documentation:**
 
 **`docs/NOTEBOOK_OUTPUT_GUIDE.md`** - Comprehensive guide covering:
-- Overview of available formats (IPYNB, HTML, DOCX, PDF, ZIP)
+- Overview of available formats (IPYNB, HTML, Markdown, DOCX, PDF, ZIP)
 - CLI usage examples
 - API usage examples  
 - Programmatic usage patterns
@@ -112,9 +112,10 @@ The workflow now produces:
 ### Format-Dependent (based on `formats` parameter):
 4. **`notebook.ipynb`** - Jupyter notebook (default: always)
 5. **`notebook.html`** - HTML export (default: included)
-6. **`notebook.docx`** - Word document (default: included)
-7. **`notebook_bundle.zip`** - ZIP bundle (default: included)
-8. **`notebook.pdf`** - PDF export (optional, requires deps)
+6. **`notebook.md`** - Markdown export (optional)
+7. **`notebook.docx`** - Word document (default: included)
+8. **`notebook_bundle.zip`** - ZIP bundle (default: included)
+9. **`notebook.pdf`** - PDF export (optional, requires deps)
 
 ## Example Manifest
 
@@ -127,6 +128,7 @@ The workflow now produces:
   "plan_title": "LangGraph Workflow: Create a customer support chatbot",
   "notebook_path": "./output/notebook.ipynb",
   "html_path": "./output/notebook.html",
+  "markdown_path": "./output/notebook.md",
   "docx_path": "./output/notebook.docx",
   "zip_path": "./output/notebook_bundle.zip",
   "plan_path": "./output/notebook_plan.json",
@@ -143,7 +145,7 @@ The workflow now produces:
 lnf generate "Create a chatbot" -o ./output/chatbot
 
 # Generate specific formats
-lnf generate "Create a chatbot" -o ./output/chatbot --formats ipynb html docx
+lnf generate "Create a chatbot" -o ./output/chatbot --formats ipynb html markdown docx
 
 # Generate only notebook
 lnf generate "Create a chatbot" -o ./output/chatbot --formats ipynb
@@ -168,7 +170,7 @@ curl -X POST http://localhost:8000/generate \
     "prompt": "Create a chatbot",
     "mode": "stub",
     "output_dir": "./output/chatbot",
-    "formats": ["ipynb", "html", "docx"]
+    "formats": ["ipynb", "html", "markdown", "docx"]
   }'
 ```
 
@@ -210,6 +212,7 @@ Format-specific errors are captured gracefully:
 {
   "notebook_path": "./output/notebook.ipynb",
   "html_path": "./output/notebook.html",
+  "markdown_path": "./output/notebook.md",
   "pdf_error": "webpdf export failed: jupyter command not found"
 }
 ```
@@ -310,7 +313,7 @@ Potential improvements identified:
 
 All requirements from the issue have been met:
 - ✅ Convert generated cells to notebooks using NotebookComposer
-- ✅ Export to multiple formats (IPYNB, HTML, PDF, DOCX, ZIP)
+- ✅ Export to multiple formats (IPYNB, HTML, Markdown, PDF, DOCX, ZIP)
 - ✅ Update manifest with artifact paths
 - ✅ CLI format selection support
 - ✅ API format selection support
