@@ -43,7 +43,7 @@ npm install langsmith openai
 2. **Inspect the output** - print it, query LangSmith traces, understand the exact structure
 3. **Only then** write code that processes that output
 
-Output structures vary significantly by framework, agent type, and configuration. Never assume the shape - always verify first. Query LangSmith traces to when outputs don't contain needed data to understand how to extract from execution.
+Output structures vary significantly by framework, agent type, and configuration. Never assume the shape - always verify first. Query LangSmith traces when outputs don't contain needed data to understand how to extract from execution.
 </crucial_requirement>
 
 <evaluator_format>
