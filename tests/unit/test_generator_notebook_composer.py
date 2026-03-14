@@ -21,25 +21,32 @@ class DummyLLM:
                 self.content = content
 
         return Response("")
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    "architecture_type, state_marker",
+    "architecture_type, state_marker, expected_execution_markers",
     [
-        ("router", "route: str"),
-        ("subagents", "next: str"),
+        ("router", "route: str", ['"route": ""', '"results": {}', '"final_output": ""']),
+        (
+            "subagents",
+            "next: str",
+            ['"next": "supervisor"', '"instructions": ""', '"task_results": {}'],
+        ),
+        (
+            "critique_loop",
+            "revision_count: int",
+            ['"revision_count": 0', '"quality_score": 0.0', '"approved": False'],
+        ),
     ],
 )
 async def test_compose_notebook_sections_and_packages(
     monkeypatch: pytest.MonkeyPatch,
     architecture_type: str,
     state_marker: str,
+    expected_execution_markers: list[str],
 ):
     monkeypatch.setattr(composer_module, "ChatOpenAI", DummyLLM)
-    monkeypatch.setattr(
-        composer_module.NotebookComposer,
-        "_generate_tool_implementation",
-        lambda self, tool: "# tool stub",
-    )
 
     composer = composer_module.NotebookComposer()
 
@@ -55,10 +62,16 @@ async def test_compose_notebook_sections_and_packages(
             {"name": "router", "purpose": "Route requests"},
             {"name": "search", "purpose": "Search documents"},
         ]
-    else:
+    elif architecture_type == "subagents":
         nodes = [
             {"name": "supervisor", "purpose": "Coordinate agents"},
             {"name": "researcher", "purpose": "Research documents"},
+        ]
+    else:
+        nodes = [
+            {"name": "generate", "purpose": "Generate an initial draft"},
+            {"name": "critique", "purpose": "Critique the current draft"},
+            {"name": "revise", "purpose": "Revise the draft using feedback"},
         ]
 
     workflow_design = {
@@ -123,11 +136,14 @@ async def test_compose_notebook_sections_and_packages(
     state_cell = state_cells[0]
     assert state_marker in state_cell.content, f"State cell should contain '{state_marker}' marker"
 
-    # 4. Verify tool cells exist and contain stub content
+    # 4. Verify tool cells exist and contain deterministic fallback content
     tool_cells = [cell for cell in cells if cell.section == "tools" and cell.cell_type == "code"]
     assert len(tool_cells) > 0, "Expected at least one tool code cell"
     tool_cell = tool_cells[0]
-    assert "# tool stub" in tool_cell.content, "Tool cell should contain stubbed implementation"
+    assert "def file_reader" in tool_cell.content, "Tool cell should contain a real fallback implementation"
+    assert "Path(" in tool_cell.content, "File tool fallback should use pathlib-based logic"
+    assert "pass" not in tool_cell.content, "Tool fallback should not use pass"
+    assert "TODO" not in tool_cell.content, "Tool fallback should not contain TODO placeholders"
 
     # 5. Verify graph cells contain expected LangGraph code
     graph_cells = [cell for cell in cells if cell.section == "graph" and cell.cell_type == "code"]
@@ -142,6 +158,8 @@ async def test_compose_notebook_sections_and_packages(
     assert len(execution_cells) > 0, "Expected at least one execution code cell"
     execution_cell = execution_cells[0]
     assert "stream" in execution_cell.content or "invoke" in execution_cell.content, "Execution cell should contain graph execution code"
+    for marker in expected_execution_markers:
+        assert marker in execution_cell.content, f"Execution cell should contain architecture-aware marker {marker!r}"
 
     # 7. Verify all expected sections exist
     sections = {cell.section for cell in cells}
@@ -178,3 +196,28 @@ async def test_compose_notebook_sections_and_packages(
             f"Section '{section}' appears out of order. Expected sections in order: {expected_order}"
         )
         prev_expected_pos = current_expected_pos
+
+
+def test_generate_node_implementation_falls_back_to_meaningful_state_updates(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """Custom architectures should fall back to runnable node code, not bare return-state stubs."""
+    monkeypatch.setattr(composer_module, "ChatOpenAI", DummyLLM)
+    composer = composer_module.NotebookComposer()
+
+    node_code = composer._generate_node_implementation(
+        {"name": "enrich", "purpose": "Enrich the current workflow results"},
+        {
+            "architecture_type": "custom",
+            "state_schema": {"results": "Collected outputs"},
+            "nodes": [{"name": "enrich", "purpose": "Enrich the current workflow results"}],
+        },
+    )
+
+    assert "def enrich_node" in node_code
+    assert 'updates["messages"]' in node_code
+    assert 'updates["results"]' in node_code
+    assert "return updates" in node_code
+    assert "return state" not in node_code
+    assert "pass" not in node_code
+    assert "TODO" not in node_code
