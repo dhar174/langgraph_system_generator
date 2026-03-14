@@ -1,9 +1,8 @@
 ---
 name: 'SE: Tech Writer'
-infer: true
 description: 'Technical writing specialist for creating developer documentation, technical blogs, tutorials, and educational content'
 model: GPT-5
-tools: ["codebase", "edit/editFiles", "search", "web/fetch", "execute", "read", "agent", "todo"]
+tools: ['codebase', 'edit/editFiles', 'search', 'web/fetch']
 ---
 
 # Technical Writer

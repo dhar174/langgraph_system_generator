@@ -8,12 +8,12 @@ import os
 from pathlib import Path
 from typing import Any, Dict, Optional
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import FileResponse, HTMLResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from langgraph_system_generator.constants import _BASE_OUTPUT
+from langgraph_system_generator.constants import _BASE_OUTPUT, resolve_under_base
 from langgraph_system_generator.cli import (
     GenerationArtifacts,
     GenerationMode,
@@ -66,6 +66,22 @@ def _resolve_output_dir(path: str | os.PathLike[str] | None) -> Path:
         )
 
     return target
+
+
+def _resolve_artifact_path(path: str | os.PathLike[str]) -> Path:
+    """Resolve and validate an artifact path under the trusted base output root."""
+    try:
+        artifact_path = resolve_under_base(Path(path))
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail="Artifact path must reside within the allowed base directory.",
+        ) from exc
+
+    if not artifact_path.is_file():
+        raise HTTPException(status_code=404, detail="Artifact not found.")
+
+    return artifact_path
 
 
 class GenerationRequest(BaseModel):
@@ -180,6 +196,15 @@ async def health() -> Dict[str, str]:
     """Simple health check."""
 
     return {"status": "ok"}
+
+
+@app.get("/artifacts")
+async def download_artifact(
+    path: str = Query(..., description="Artifact path returned by the generation API"),
+):
+    """Download a generated artifact from the trusted output directory."""
+    artifact_path = _resolve_artifact_path(path)
+    return FileResponse(artifact_path, filename=artifact_path.name)
 
 
 @app.get("/.well-known/appspecific/com.chrome.devtools.json")
