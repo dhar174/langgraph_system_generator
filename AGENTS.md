@@ -145,11 +145,16 @@ Common settings:
 - `DEFAULT_MODEL`
 - `MAX_REPAIR_ATTEMPTS`
 - `DEFAULT_BUDGET_TOKENS`
-- `LNF_OUTPUT_BASE`
 
 Output paths are validated against the configured base directory. Prefer
-repo-relative paths such as `./output/demo`. If you need outputs rooted
-somewhere else, set `LNF_OUTPUT_BASE` first.
+repo-relative paths such as `./output/demo`.
+
+- `LNF_OUTPUT_BASE` is a production-facing override for the base output
+  directory, but it must still resolve **under the current working directory**
+  or the application will reject it.
+- `BASE_OUTPUT_DIR` is the broader override used primarily for test isolation;
+  it is not a normal contributor setting and is mainly intended for pytest
+  `tmp_path` workflows.
 
 ## Local development workflow
 
