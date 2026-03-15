@@ -256,7 +256,9 @@ async def test_runtime_qa_node_reports_kernel_failure(monkeypatch):
 
     report = result["qa_reports"][-1]
     assert "Runtime validation unavailable" in report.message
-    assert report.passed is False
+    # Kernel unavailability is treated as a skipped (non-failing) runtime check
+    # to prevent generation from failing in environments without Jupyter kernels.
+    assert report.passed is True
 
 
 @pytest.mark.asyncio
