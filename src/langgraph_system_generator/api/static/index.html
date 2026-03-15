@@ -11,7 +11,7 @@
     <a href="#main-content" class="skip-link">Skip to main content</a>
     <div class="container">
         <header>
-            <h1>🚀 LangGraph System Generator</h1>
+            <h1>LangGraph System Generator</h1>
             <p class="subtitle">Generate complete multi-agent systems from natural language prompts</p>
             <div class="header-controls">
                 <div class="health-status" id="healthStatus">
@@ -19,10 +19,10 @@
                     <span id="statusText">Checking status...</span>
                 </div>
                 <button type="button" class="btn-secondary btn-icon" id="historyToggleBtn" aria-label="Toggle generation history" title="Show history">
-                    📜
+                    History
                 </button>
                 <button type="button" class="theme-toggle" id="themeToggle" aria-label="Toggle dark/light theme" title="Toggle theme">
-                    <span class="theme-icon">🌙</span>
+                    <span class="theme-icon">Dark</span>
                 </button>
             </div>
         </header>
@@ -89,7 +89,7 @@
                     <!-- Advanced Options Panel -->
                     <div class="advanced-options" id="advancedOptions">
                         <button type="button" class="advanced-toggle" id="advancedToggle" aria-expanded="false" aria-controls="advancedPanel">
-                            <span class="toggle-icon">▶</span>
+                            <span class="toggle-icon">></span>
                             <span class="toggle-text">Advanced Options</span>
                         </button>
                         
@@ -99,7 +99,7 @@
                                 <div class="form-group">
                                     <label for="model">
                                         Model
-                                        <span class="tooltip" tabindex="0" role="button" aria-label="Help: Select the LLM model to use for generation. Different models have different capabilities, speeds, and costs." data-tooltip="Select the LLM model to use for generation">ⓘ</span>
+                                        <span class="tooltip" tabindex="0" role="button" aria-label="Help: Select the LLM model to use for generation. Different models have different capabilities, speeds, and costs." data-tooltip="Select the LLM model to use for generation">i</span>
                                     </label>
                                     <select id="model" name="model">
                                         <option value="">Default (gpt-5-nano)</option>
@@ -129,7 +129,7 @@
                                 <div class="form-group form-group-full" id="customEndpointGroup" style="display: none;">
                                     <label for="customEndpoint">
                                         Custom API Endpoint
-                                        <span class="tooltip" tabindex="0" role="button" aria-label="Help: Enter custom API endpoint URL (e.g., http://localhost:8000/v1 for local models)" data-tooltip="Enter custom API endpoint URL">ⓘ</span>
+                                        <span class="tooltip" tabindex="0" role="button" aria-label="Help: Enter custom API endpoint URL (e.g., http://localhost:8000/v1 for local models)" data-tooltip="Enter custom API endpoint URL">i</span>
                                     </label>
                                     <input 
                                         type="url" 
@@ -147,7 +147,7 @@
                                 <div class="form-group">
                                     <label for="preset">
                                         Task Preset
-                                        <span class="tooltip" tabindex="0" role="button" aria-label="Help: Choose a preset optimized for specific use cases" data-tooltip="Choose a preset optimized for specific use cases">ⓘ</span>
+                                        <span class="tooltip" tabindex="0" role="button" aria-label="Help: Choose a preset optimized for specific use cases" data-tooltip="Choose a preset optimized for specific use cases">i</span>
                                     </label>
                                     <select id="preset" name="preset">
                                         <option value="">None (Custom)</option>
@@ -164,7 +164,7 @@
                                 <div class="form-group">
                                     <label for="temperature">
                                         Temperature: <span id="tempValue">0.7</span>
-                                        <span class="tooltip" tabindex="0" role="button" aria-label="Help: Controls randomness. Lower = more focused, Higher = more creative" data-tooltip="Controls randomness. Lower = more focused, Higher = more creative">ⓘ</span>
+                                        <span class="tooltip" tabindex="0" role="button" aria-label="Help: Controls randomness. Lower = more focused, Higher = more creative" data-tooltip="Controls randomness. Lower = more focused, Higher = more creative">i</span>
                                     </label>
                                     <input 
                                         type="range" 
@@ -182,7 +182,7 @@
                                 <div class="form-group">
                                     <label for="maxTokens">
                                         Max Tokens
-                                        <span class="tooltip" tabindex="0" role="button" aria-label="Help: Maximum length of generated output" data-tooltip="Maximum length of generated output">ⓘ</span>
+                                        <span class="tooltip" tabindex="0" role="button" aria-label="Help: Maximum length of generated output" data-tooltip="Maximum length of generated output">i</span>
                                     </label>
                                     <input 
                                         type="number" 
@@ -199,7 +199,7 @@
                                 <div class="form-group">
                                     <label for="agentType">
                                         Agent Type
-                                        <span class="tooltip" tabindex="0" role="button" aria-label="Help: Architecture pattern for the agent system" data-tooltip="Architecture pattern for the agent system">ⓘ</span>
+                                        <span class="tooltip" tabindex="0" role="button" aria-label="Help: Architecture pattern for the agent system" data-tooltip="Architecture pattern for the agent system">i</span>
                                     </label>
                                     <select id="agentType" name="agentType">
                                         <option value="">Auto-detect</option>
@@ -213,7 +213,7 @@
                                 <div class="form-group">
                                     <label for="memoryConfig">
                                         Memory Configuration
-                                        <span class="tooltip" tabindex="0" role="button" aria-label="Help: How much context the agent should retain" data-tooltip="How much context the agent should retain">ⓘ</span>
+                                        <span class="tooltip" tabindex="0" role="button" aria-label="Help: How much context the agent should retain" data-tooltip="How much context the agent should retain">i</span>
                                     </label>
                                     <select id="memoryConfig" name="memoryConfig">
                                         <option value="">None</option>
@@ -227,7 +227,7 @@
                                 <div class="form-group">
                                     <label for="graphStyle">
                                         Graph Style
-                                        <span class="tooltip" tabindex="0" role="button" aria-label="Help: Visual and execution style for the LangGraph workflow" data-tooltip="Visual and execution style for the workflow">ⓘ</span>
+                                        <span class="tooltip" tabindex="0" role="button" aria-label="Help: Visual and execution style for the LangGraph workflow" data-tooltip="Visual and execution style for the workflow">i</span>
                                     </label>
                                     <select id="graphStyle" name="graphStyle">
                                         <option value="">Default (Auto)</option>
@@ -242,7 +242,7 @@
                                 <div class="form-group">
                                     <label for="retrieverType">
                                         Retriever Type
-                                        <span class="tooltip" tabindex="0" role="button" aria-label="Help: Document retrieval method for RAG-based agents" data-tooltip="Document retrieval method for RAG">ⓘ</span>
+                                        <span class="tooltip" tabindex="0" role="button" aria-label="Help: Document retrieval method for RAG-based agents" data-tooltip="Document retrieval method for RAG">i</span>
                                     </label>
                                     <select id="retrieverType" name="retrieverType">
                                         <option value="">None</option>
@@ -257,7 +257,7 @@
                                 <div class="form-group">
                                     <label for="documentLoader">
                                         Document Loader
-                                        <span class="tooltip" tabindex="0" role="button" aria-label="Help: Source types for loading documents into the system" data-tooltip="Source types for loading documents">ⓘ</span>
+                                        <span class="tooltip" tabindex="0" role="button" aria-label="Help: Source types for loading documents into the system" data-tooltip="Source types for loading documents">i</span>
                                     </label>
                                     <select id="documentLoader" name="documentLoader">
                                         <option value="">Auto-detect</option>
@@ -274,7 +274,7 @@
                                 <div class="form-group form-group-full">
                                     <label>
                                         Output Formats
-                                        <span class="tooltip" tabindex="0" role="button" aria-label="Help: Select file formats to generate. PDF requires additional dependencies." data-tooltip="Select file formats to generate. PDF requires additional dependencies.">ⓘ</span>
+                                        <span class="tooltip" tabindex="0" role="button" aria-label="Help: Select file formats to generate. PDF requires additional dependencies." data-tooltip="Select file formats to generate. PDF requires additional dependencies.">i</span>
                                     </label>
                                     <div class="checkbox-group">
                                         <label class="checkbox-label">
@@ -284,6 +284,10 @@
                                         <label class="checkbox-label">
                                             <input type="checkbox" name="formats" value="html" checked>
                                             <span>HTML (.html)</span>
+                                        </label>
+                                        <label class="checkbox-label">
+                                            <input type="checkbox" name="formats" value="markdown">
+                                            <span>Markdown (.md)</span>
                                         </label>
                                         <label class="checkbox-label">
                                             <input type="checkbox" name="formats" value="docx" checked>
@@ -322,13 +326,13 @@
                 </div>
                 <div class="progress-steps" id="progressSteps">
                     <div class="progress-step">
-                        <span class="step-icon">⏳</span>
+                        <span class="step-icon">...</span>
                         <span class="step-text">Validating input...</span>
                     </div>
                 </div>
                 <div class="logs-container" id="logsContainer" style="display: none;">
                     <button type="button" class="logs-toggle" id="logsToggle">
-                        <span class="toggle-icon">▶</span>
+                        <span class="toggle-icon">></span>
                         <span class="toggle-text">Show Logs</span>
                     </button>
                     <pre class="logs-content" id="logsContent" style="display: none;"></pre>
@@ -341,7 +345,7 @@
             </div>
 
             <div class="card error-card" id="errorCard" style="display: none;" aria-live="polite" aria-atomic="true">
-                <h2>⚠️ Error</h2>
+                <h2>Error</h2>
                 <div id="errorContent"></div>
             </div>
 
@@ -349,7 +353,11 @@
             <div class="card history-card" id="historyCard" style="display: none;">
                 <div class="history-header">
                     <h2>📜 Recent Generations</h2>
-                    <button type="button" class="btn btn-secondary btn-small" id="clearHistoryBtn">Clear History</button>
+                    <div class="history-actions">
+                        <button type="button" class="btn btn-secondary btn-small" id="rerunLastBtn" disabled>Rerun Last</button>
+                        <button type="button" class="btn btn-secondary btn-small" id="copyLastPromptBtn" disabled>Copy Last Prompt</button>
+                        <button type="button" class="btn btn-secondary btn-small" id="clearHistoryBtn">Clear History</button>
+                    </div>
                 </div>
                 <div id="historyContent" class="history-content"></div>
             </div>
@@ -358,15 +366,15 @@
         <footer>
             <div class="features">
                 <div class="feature">
-                    <h3>📚 RAG-Powered</h3>
+                    <h3>RAG-Powered</h3>
                     <p>Uses precached LangGraph documentation</p>
                 </div>
                 <div class="feature">
-                    <h3>🎨 Pattern Library</h3>
+                    <h3>Pattern Library</h3>
                     <p>Built-in multi-agent patterns</p>
                 </div>
                 <div class="feature">
-                    <h3>📓 Production-ready</h3>
+                    <h3>Production-ready</h3>
                     <p>Generates runnable Jupyter notebooks</p>
                 </div>
             </div>

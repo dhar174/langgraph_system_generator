@@ -275,7 +275,7 @@ async def generate_artifacts(
         prompt: User prompt describing the desired system
         output_dir: Directory to write generation artifacts
         mode: Generation mode ('stub' or 'live')
-        formats: List of output formats to generate (ipynb, html, pdf, docx, zip).
+        formats: List of output formats to generate (ipynb, html, markdown, pdf, docx, zip).
                  If None or empty, generates all formats.
         model: LLM model to use (optional, uses default if not specified)
         temperature: Temperature for LLM sampling (0.0-2.0, optional)
@@ -413,7 +413,16 @@ async def generate_artifacts(
                 manifest["html_path"] = str(html_path)
             except Exception as e:
                 manifest["html_error"] = str(e)
-        
+
+        if "markdown" in formats:
+            try:
+                _report_progress("export_markdown", 81, "Exporting to Markdown...")
+                markdown_path = target / "notebook.md"
+                exporter.export_to_markdown(notebook, markdown_path)
+                manifest["markdown_path"] = str(markdown_path)
+            except Exception as e:
+                manifest["markdown_error"] = str(e)
+
         if "docx" in formats:
             try:
                 _report_progress("export_docx", 84, "Exporting to Word document...")
@@ -505,6 +514,8 @@ def _run_generate(args: argparse.Namespace) -> int:
         print(f"  Notebook: {artifacts['manifest']['notebook_path']}")
     if artifacts["manifest"].get("html_path"):
         print(f"  HTML: {artifacts['manifest']['html_path']}")
+    if artifacts["manifest"].get("markdown_path"):
+        print(f"  Markdown: {artifacts['manifest']['markdown_path']}")
     if artifacts["manifest"].get("docx_path"):
         print(f"  DOCX: {artifacts['manifest']['docx_path']}")
     if artifacts["manifest"].get("pdf_path"):
@@ -553,7 +564,7 @@ def build_parser() -> argparse.ArgumentParser:
     gen.add_argument(
         "--formats",
         nargs="+",
-        choices=["ipynb", "html", "pdf", "docx", "zip"],
+        choices=["ipynb", "html", "markdown", "pdf", "docx", "zip"],
         default=None,
         help="Output formats to generate (default: all formats). Specify one or more.",
     )
