@@ -10,6 +10,7 @@ from langgraph_system_generator.generator.agents import (
     toolchain_engineer,
 )
 from langgraph_system_generator.generator.nodes import (
+    _runtime_qa_suggestions,
     architecture_selection_node,
     graph_design_node,
     intake_node,
@@ -224,7 +225,16 @@ async def test_runtime_qa_node_message_empty_cells():
 
 
 @pytest.mark.asyncio
-async def test_runtime_qa_node_message_with_cells():
+async def test_runtime_qa_node_message_with_cells(monkeypatch):
+    monkeypatch.setattr(
+        "langgraph_system_generator.generator.nodes.inspect_kernel_spec",
+        lambda: (True, "kernel ok"),
+    )
+    monkeypatch.setattr(
+        "langgraph_system_generator.generator.nodes.run_notebook_smoke_test",
+        lambda: (True, "Runtime execution environment validated using the 'python3' kernel."),
+    )
+
     state = {
         "generated_cells": [CellSpec(cell_type="markdown", content="Hi", metadata={})],
         "qa_reports": [],
@@ -232,7 +242,83 @@ async def test_runtime_qa_node_message_with_cells():
     result = await runtime_qa_node(state)
 
     report = result["qa_reports"][-1]
-    assert "not yet implemented" in report.message
+    assert "validated" in report.message
+    assert report.passed is True
+
+
+@pytest.mark.asyncio
+async def test_runtime_qa_node_reports_kernel_failure(monkeypatch):
+    """When the kernel is unavailable, runtime QA is treated as skipped (passed=True)."""
+    monkeypatch.setattr(
+        "langgraph_system_generator.generator.nodes.inspect_kernel_spec",
+        lambda: (
+            False,
+            "Runtime validation unavailable: kernel 'python3' is not registered.",
+        ),
+    )
+
+    state = {
+        "generated_cells": [CellSpec(cell_type="markdown", content="Hi", metadata={})],
+        "qa_reports": [],
+    }
+    result = await runtime_qa_node(state)
+
+    report = result["qa_reports"][-1]
+    assert "Runtime validation unavailable" in report.message
+    # Unavailable runtime is treated as skipped (passed=True) so repair loops
+    # are not triggered in environments without a registered kernel.
+    assert report.passed is True
+
+
+@pytest.mark.asyncio
+async def test_runtime_qa_node_reports_smoke_test_failure(monkeypatch):
+    """When kernel is available but execution fails, passed should be False."""
+    monkeypatch.setattr(
+        "langgraph_system_generator.generator.nodes.inspect_kernel_spec",
+        lambda: (True, "kernel ok"),
+    )
+    monkeypatch.setattr(
+        "langgraph_system_generator.generator.nodes.run_notebook_smoke_test",
+        lambda: (False, "Cell execution error: NameError in cell 1"),
+    )
+
+    state = {
+        "generated_cells": [CellSpec(cell_type="markdown", content="Hi", metadata={})],
+        "qa_reports": [],
+    }
+    result = await runtime_qa_node(state)
+
+    report = result["qa_reports"][-1]
+    assert "Cell execution error" in report.message
+    assert report.passed is False
+    assert report.suggestions == _runtime_qa_suggestions(report.message)
+
+
+@pytest.mark.asyncio
+async def test_runtime_qa_node_reports_dependency_failure(monkeypatch):
+    monkeypatch.setattr(
+        "langgraph_system_generator.generator.nodes.inspect_kernel_spec",
+        lambda: (True, "kernel ok"),
+    )
+    monkeypatch.setattr(
+        "langgraph_system_generator.generator.nodes.run_notebook_smoke_test",
+        lambda: (
+            False,
+            "Runtime validation unavailable: missing notebook execution dependency (No module named 'nbclient')",
+        ),
+    )
+
+    state = {
+        "generated_cells": [CellSpec(cell_type="markdown", content="Hi", metadata={})],
+        "qa_reports": [],
+    }
+    result = await runtime_qa_node(state)
+
+    report = result["qa_reports"][-1]
+    assert report.passed is False
+    assert report.suggestions == _runtime_qa_suggestions(report.message)
+    assert any("nbclient" in suggestion or "jupyter_client" in suggestion for suggestion in report.suggestions)
+    assert all("kernel spec" not in suggestion.lower() for suggestion in report.suggestions)
 
 
 @pytest.mark.asyncio

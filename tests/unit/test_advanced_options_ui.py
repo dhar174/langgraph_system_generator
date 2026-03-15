@@ -19,7 +19,7 @@ def test_advanced_options_html_structure():
     """Verify HTML structure is correct for Advanced Options toggle."""
     repo_root = Path(__file__).resolve().parent.parent.parent
     html_file = repo_root / "src/langgraph_system_generator/api/static/index.html"
-    content = html_file.read_text()
+    content = html_file.read_text(encoding="utf-8")
     soup = BeautifulSoup(content, "html.parser")
     
     # Check button exists with correct attributes
@@ -81,7 +81,7 @@ def test_advanced_options_javascript():
     """
     repo_root = Path(__file__).resolve().parent.parent.parent
     js_file = repo_root / "src/langgraph_system_generator/api/static/app.js"
-    content = js_file.read_text()
+    content = js_file.read_text(encoding="utf-8")
     
     # Check event listener exists
     assert "advancedToggle.addEventListener('click'" in content, \
@@ -110,7 +110,7 @@ def test_advanced_options_css():
     """Verify CSS styling for toggle icon and panel animation."""
     repo_root = Path(__file__).resolve().parent.parent.parent
     css_file = repo_root / "src/langgraph_system_generator/api/static/style.css"
-    content = css_file.read_text()
+    content = css_file.read_text(encoding="utf-8")
     
     # Check toggle icon rotation
     assert ".toggle-icon" in content, "Missing .toggle-icon class"
