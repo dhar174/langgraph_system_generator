@@ -1,6 +1,5 @@
 ---
 description: 'An agent that helps plan and execute multi-file changes by identifying relevant context and dependencies'
-tools: ['codebase', 'terminalCommand']
 name: 'Context Architect'
 ---
 
