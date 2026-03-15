@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+import re
 from typing import Any, Dict, List
 
 from langchain_core.messages import HumanMessage, SystemMessage
@@ -21,6 +23,37 @@ class NotebookComposer:
 
     def __init__(self, model: str | None = None):
         self.llm = ChatOpenAI(model=model or settings.default_model, temperature=0)
+
+    @staticmethod
+    def _safe_identifier(value: Any, fallback: str) -> str:
+        """Return a strict Python identifier derived from arbitrary input."""
+
+        text = str(value or "").strip()
+        slug = re.sub(r"[^a-zA-Z0-9]", "_", text)
+        slug = re.sub(r"_+", "_", slug).strip("_")
+        if not slug:
+            slug = fallback
+        if slug[0].isdigit():
+            slug = f"_{slug}"
+        return slug
+
+    @staticmethod
+    def _normalize_inline_text(value: Any, fallback: str) -> str:
+        """Normalize arbitrary text for safe single-line comments/messages."""
+
+        text = str(value or fallback).replace("\r\n", "\n").replace("\r", "\n")
+        text = " ".join(part.strip() for part in text.split("\n") if part.strip())
+        return text or fallback
+
+    @staticmethod
+    def _normalize_docstring_text(value: Any, fallback: str) -> str:
+        """Normalize arbitrary text for safe inclusion inside generated docstrings."""
+
+        text = str(value or fallback).replace("\r\n", "\n").replace("\r", "\n")
+        text = text.replace('"""', '\\"\\"\\"')
+        lines = [line.rstrip() for line in text.split("\n")]
+        normalized = "\n    ".join(lines).strip()
+        return normalized or fallback
 
     async def compose_notebook(
         self,
@@ -310,7 +343,15 @@ Generate the complete Python function implementation."""
         tool_name = tool.get("name", "unknown_tool")
         tool_purpose = tool.get("purpose", "")
         tool_category = tool.get("category", "").lower()
-        func_name = tool_name.lower().replace(" ", "_").replace("-", "_")
+        safe_tool_name = self._normalize_inline_text(tool_name, "unknown_tool")
+        safe_tool_purpose = self._normalize_docstring_text(
+            tool_purpose, "Fallback tool implementation."
+        )
+        safe_tool_purpose_comment = self._normalize_inline_text(
+            tool_purpose, "Fallback tool implementation."
+        )
+        safe_tool_category = self._normalize_inline_text(tool_category, "general")
+        func_name = self._safe_identifier(tool_name, "unknown_tool")
 
         # Provide category-specific implementation hints
         implementation_hint = ""
@@ -341,21 +382,21 @@ Generate the complete Python function implementation."""
             implementation_hint = """    # Implement your tool logic here
     # Return appropriate results"""
 
-        return f"""# Tool: {tool_name}
-# Purpose: {tool_purpose}
-# Category: {tool_category}
+        return f"""# Tool: {safe_tool_name}
+# Purpose: {safe_tool_purpose_comment}
+# Category: {safe_tool_category}
 
 def {func_name}(*args, **kwargs):
     \"\"\"
-    {tool_purpose}
+    {safe_tool_purpose}
 
     Fallback implementation that returns a structured payload so the notebook
     remains runnable even when a richer tool implementation is unavailable.
     \"\"\"
     primary_input = args[0] if args else kwargs.get("input")
     result = {{
-        "tool": "{tool_name}",
-        "category": "{tool_category or 'general'}",
+        "tool": {json.dumps(safe_tool_name)},
+        "category": {json.dumps(safe_tool_category)},
         "status": "fallback",
         "input": primary_input,
         "options": kwargs,
@@ -408,17 +449,21 @@ def {func_name}(*args, **kwargs):
         """
         node_name = node.get("name", "unknown")
         node_purpose = node.get("purpose", "")
+        safe_node_identifier = self._safe_identifier(node_name, "unknown")
         state_schema = workflow_design.get("state_schema", {})
+        function_signature = (
+            f"def {safe_node_identifier}_node(state: WorkflowState) -> WorkflowState"
+        )
 
         try:
             # Build prompt for LLM
             system_prompt = SystemMessage(
-                content="""You are an expert Python developer specializing in LangGraph node implementations.
+                content=f"""You are an expert Python developer specializing in LangGraph node implementations.
 
 Generate a complete, production-ready Python function for a LangGraph node.
 
 Requirements:
-- Function signature: def {node_name}_node(state: WorkflowState) -> WorkflowState
+- Function signature: {function_signature}
 - The function MUST return an updated state dictionary (not just 'return state')
 - Include proper LLM initialization and invocation if needed
 - Use MessagesState pattern with proper message handling
@@ -481,10 +526,18 @@ Generate the complete Python function implementation."""
         """
         node_name = node.get("name", "unknown")
         node_purpose = node.get("purpose", "")
+        safe_node_identifier = self._safe_identifier(node_name, "unknown")
+        safe_node_purpose = self._normalize_docstring_text(
+            node_purpose, "Fallback node implementation."
+        )
 
-        return f"""def {node_name}_node(state: WorkflowState) -> WorkflowState:
+        safe_content = repr(
+            f"{node_name} completed a fallback step for: {node_purpose or node_name}"
+        )
+
+        return f"""def {safe_node_identifier}_node(state: WorkflowState) -> WorkflowState:
     \"\"\"
-    {node_purpose}
+    {safe_node_purpose}
 
     Fallback implementation that appends a trace message so the generated graph
     remains executable when richer node synthesis is unavailable.
@@ -494,7 +547,7 @@ Generate the complete Python function implementation."""
     messages = list(state.get("messages", []))
     messages.append(
         AIMessage(
-            content="{node_name} completed a fallback step for: {node_purpose or node_name}"
+            content={safe_content}
         )
     )
 
@@ -648,10 +701,17 @@ Generate the complete Python function implementation."""
         conditional_edges = workflow_design.get("conditional_edges", [])
 
         # Generate node additions
+        node_bindings = [
+            (
+                json.dumps(str(node.get("name", "unknown"))),
+                self._safe_identifier(node.get("name", "unknown"), "unknown"),
+            )
+            for node in nodes
+        ]
         node_additions = "\n".join(
             [
-                f'workflow.add_node("{node.get("name")}", {node.get("name")}_node)'
-                for node in nodes
+                f"workflow.add_node({display_name}, {function_name}_node)"
+                for display_name, function_name in node_bindings
             ]
         )
 
@@ -669,12 +729,21 @@ Generate the complete Python function implementation."""
             conditional_blocks = []
             for ce in conditional_edges:
                 source = ce.get("from", "node")
-                function_name = f"_route_from_{source}".replace("-", "_").replace(" ", "_")
+                # Produce a valid Python identifier: replace every non-alphanumeric
+                # character with '_' and ensure the result doesn't start with a digit.
+                source_slug = re.sub(r"[^a-zA-Z0-9]", "_", source)
+                if source_slug and source_slug[0].isdigit():
+                    source_slug = "_" + source_slug
+                source_slug = source_slug or "node"
+                function_name = f"_route_from_{source_slug}"
+                # Serialize source safely for use inside a string literal in the
+                # generated code (handles quotes, backslashes, newlines, etc.).
+                safe_source = json.dumps(source)
                 conditional_blocks.append(
                     f"""def {function_name}(state: WorkflowState) -> str:
     return "__end__"
 
-workflow.add_conditional_edges("{source}", {function_name}, {{"__end__": END}})"""
+workflow.add_conditional_edges({safe_source}, {function_name}, {{"__end__": END}})"""
                 )
             conditional_code = "\n\n# Add conditional edges\n" + "\n\n".join(conditional_blocks)
 

@@ -9,7 +9,13 @@ supports `--mode live` for `ChatOpenAI` execution when `OPENAI_API_KEY` is set.
 
 ## Quick Start
 
-From the repository root:
+From the repository root, install the package first (if you haven't already):
+
+```bash
+pip install -e ".[full]"
+```
+
+Then run the examples:
 
 ```bash
 python examples/router_pattern_example.py --mode stub
