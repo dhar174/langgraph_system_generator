@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import keyword
 import re
 from typing import Any, Dict, List
 
@@ -33,8 +34,13 @@ class NotebookComposer:
         slug = re.sub(r"_+", "_", slug).strip("_")
         if not slug:
             slug = fallback
-        if slug[0].isdigit():
+        if slug and slug[0].isdigit():
             slug = f"_{slug}"
+        # Ensure the result is a valid, non-keyword Python identifier
+        if not slug or not slug.isidentifier() or keyword.iskeyword(slug):
+            slug = f"_{slug}" if slug else "_identifier"
+            if not slug.isidentifier() or keyword.iskeyword(slug):
+                slug = "_identifier"
         return slug
 
     @staticmethod
