@@ -13,7 +13,7 @@ from __future__ import annotations
 import argparse
 import operator
 import os
-from typing import Annotated, Literal
+from typing import Annotated, List, Literal, Optional
 
 from langchain_core.messages import AIMessage, AnyMessage, HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
@@ -242,7 +242,7 @@ def run_critique_example(
     )
 
 
-def main(argv: list[str] | None = None) -> None:
+def main(argv: Optional[List[str]] = None) -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--mode", choices=["stub", "live"], default="stub")
     parser.add_argument("--input", default=DEFAULT_INPUT)
