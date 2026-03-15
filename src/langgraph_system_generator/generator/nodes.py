@@ -338,13 +338,27 @@ async def runtime_qa_node(state: GeneratorState) -> Dict[str, Any]:
         # First check whether the runtime is even available (non-blocking).
         kernel_ok, kernel_message = inspect_kernel_spec()
         if not kernel_ok:
-            # Kernel/runtime is unavailable in this environment.  Treat this as
-            # a skipped check so generation does not enter unnecessary repair loops.
-            report = QAReport(
-                check_name="Runtime Check",
-                passed=True,
-                message=f"Runtime QA skipped (environment unavailable): {kernel_message}",
-            )
+            # Distinguish between a genuinely unavailable kernel (skip) and
+            # missing runtime dependencies (fail with suggestions).
+            normalized = kernel_message.lower()
+            if "missing jupyter_client" in normalized or "missing notebook execution dependency" in normalized:
+                # Notebook execution dependencies are missing; surface this as a
+                # failed runtime QA so users get actionable guidance.
+                suggestions = _runtime_qa_suggestions(kernel_message)
+                report = QAReport(
+                    check_name="Runtime Check",
+                    passed=False,
+                    message=kernel_message,
+                    suggestions=suggestions,
+                )
+            else:
+                # Kernel/runtime is unavailable in this environment.  Treat this as
+                # a skipped check so generation does not enter unnecessary repair loops.
+                report = QAReport(
+                    check_name="Runtime Check",
+                    passed=True,
+                    message=f"Runtime QA skipped (environment unavailable): {kernel_message}",
+                )
         else:
             # Run the potentially long-running smoke test off the event loop so
             # the async workflow (API/SSE) remains responsive.
