@@ -564,11 +564,15 @@ Generate the complete Python function implementation."""
         default_route = routes[0] if routes else "complete"
         supervisor_target = default_route if routes else "FINISH"
 
+        # Serialize values as safe Python string literals for generated code.
+        node_name_literal = json.dumps(str(node_name or ""))
+        node_purpose_literal = json.dumps(str(node_purpose or ""))
+
         update_lines = [
             "    updates: dict[str, object] = dict(state)",
             "    messages = list(state.get(\"messages\", []))",
             "    last_content = messages[-1].content if messages else \"\"",
-            f'    node_summary = f"{node_name} completed: {{last_content or {node_purpose!r}}}"',
+            f"    node_summary = {node_name_literal} + \" completed: \" + (last_content or {node_purpose_literal})",
             "    updates[\"messages\"] = messages + [HumanMessage(content=node_summary)]",
         ]
 
