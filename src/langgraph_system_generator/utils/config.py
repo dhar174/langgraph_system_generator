@@ -40,7 +40,8 @@ class ModelConfig(BaseModel):
         default=None,
         description=(
             "Optional model identifier for lightweight summarization steps. "
-            "Defaults to the primary model when omitted."
+            "When omitted, uses 'gpt-4o-mini' with the default API base, or "
+            "the primary model when a custom api_base is configured."
         ),
     )
 
