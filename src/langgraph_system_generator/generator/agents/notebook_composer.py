@@ -635,6 +635,8 @@ Generate the complete Python function implementation."""
             f"{node_name} completed a fallback step for: {node_purpose or node_name}"
         )
 
+        safe_node_identifier = self._safe_identifier(node_name, "unknown")
+
         return f"""def {safe_node_identifier}_node(state: WorkflowState) -> WorkflowState:
     \"\"\"
     {node_purpose or f"Process workflow state in the {node_name} node."}
