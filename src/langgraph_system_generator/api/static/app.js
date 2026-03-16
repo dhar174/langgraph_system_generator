@@ -576,13 +576,6 @@ function showResult(data) {
         const resultText = JSON.stringify(manifest, null, 2);
         // Use the shared clipboard helper so toasts and errors are handled consistently
         copyTextToClipboard(resultText, 'Result info copied to clipboard');
-    };
-    exportButtons.appendChild(copyBtn);
-    
-    exportSection.appendChild(exportHeading);
-    exportSection.appendChild(exportButtons);
-    resultWrapper.appendChild(exportSection);
-    
     // Add to DOM
     resultContent.appendChild(resultWrapper);
     resultCard.style.display = 'block';
