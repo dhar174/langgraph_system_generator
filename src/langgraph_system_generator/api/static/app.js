@@ -574,15 +574,8 @@ function showResult(data) {
     copyBtn.textContent = 'Copy Result Info';
     copyBtn.onclick = () => {
         const resultText = JSON.stringify(manifest, null, 2);
-        navigator.clipboard.writeText(resultText).then(() => {
-            const originalText = copyBtn.textContent;
-            copyBtn.textContent = 'Copied!';
-            setTimeout(() => {
-                copyBtn.textContent = originalText;
-            }, 2000);
-        }).catch(err => {
-            console.error('Failed to copy:', err);
-        });
+        // Use the shared clipboard helper so toasts and errors are handled consistently
+        copyTextToClipboard(resultText, 'Result info copied to clipboard');
     };
     exportButtons.appendChild(copyBtn);
     
