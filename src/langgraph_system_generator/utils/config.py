@@ -146,6 +146,8 @@ def get_settings(env_file: Union[str, Path, None, object] = _DEFAULT_ENV_FILE) -
 
     return _cached_settings(resolved_env_file)
 
+def _pytest_is_active() -> bool:
+    """Return True when running under pytest collection or execution."""
 
 def reset_settings_cache(
     env_file: Union[str, Path, None, object] = _DEFAULT_ENV_FILE,

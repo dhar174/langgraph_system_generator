@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -28,13 +29,42 @@ from langgraph_system_generator.generator.state import (
 from langgraph_system_generator.notebook.composer import (
     NotebookComposer as NotebookFileComposer,
 )
-from langgraph_system_generator.notebook.runtime import run_notebook_smoke_test
+from langgraph_system_generator.notebook.runtime import (
+    inspect_kernel_spec,
+    run_notebook_smoke_test,
+)
 from langgraph_system_generator.qa import NotebookRepairAgent, NotebookValidator
 from langgraph_system_generator.rag.embeddings import VectorStoreManager
 from langgraph_system_generator.rag.retriever import DocsRetriever
 from langgraph_system_generator.utils.config import settings
 
 logger = logging.getLogger(__name__)
+
+
+def _runtime_qa_suggestions(message: str) -> List[str]:
+    """Return remediation guidance tailored to the runtime QA failure message."""
+
+    normalized = message.lower()
+    if "kernel" in normalized and (
+        "not registered" in normalized
+        or "no launch command" in normalized
+        or "missing executable" in normalized
+    ):
+        return [
+            "Install a healthy python3 Jupyter kernel before running runtime QA.",
+            "Refresh the kernel spec with: python -m ipykernel install --user --name python3",
+        ]
+
+    if "missing jupyter_client" in normalized or "missing notebook execution dependency" in normalized:
+        return [
+            "Install notebook runtime dependencies such as jupyter_client and nbclient.",
+            'Reinstall the project extras with: pip install -e ".[full]"',
+        ]
+
+    return [
+        "Review the runtime QA error details and rerun notebook execution after fixing the reported issue.",
+        "If the environment is managed externally, verify the selected python3 kernel can execute notebooks successfully.",
+    ]
 
 
 async def intake_node(state: GeneratorState) -> Dict[str, Any]:

@@ -10,6 +10,7 @@ from langgraph_system_generator.generator.agents import (
     toolchain_engineer,
 )
 from langgraph_system_generator.generator.nodes import (
+    _runtime_qa_suggestions,
     architecture_selection_node,
     graph_design_node,
     intake_node,
@@ -58,7 +59,7 @@ async def test_intake_node_sets_constraints(monkeypatch):
     result = await intake_node({"user_prompt": "Build a test workflow"})
 
     assert result["constraints"] == constraints
-
+r
 
 @pytest.mark.asyncio
 async def test_rag_retrieval_node_falls_back_on_failure(monkeypatch):
