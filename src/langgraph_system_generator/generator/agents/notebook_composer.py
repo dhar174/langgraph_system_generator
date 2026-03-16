@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from typing import Any, Dict, List
-
+import re
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
 
@@ -669,7 +669,11 @@ Generate the complete Python function implementation."""
             conditional_blocks = []
             for ce in conditional_edges:
                 source = ce.get("from", "node")
-                function_name = f"_route_from_{source}".replace("-", "_").replace(" ", "_")
+                # Sanitize source into a valid Python identifier fragment
+                safe_source = re.sub(r"\W", "_", str(source))
+                if safe_source and safe_source[0].isdigit():
+                    safe_source = f"n_{safe_source}"
+                function_name = f"_route_from_{safe_source}"
                 conditional_blocks.append(
                     f"""def {function_name}(state: WorkflowState) -> str:
     return "__end__"
