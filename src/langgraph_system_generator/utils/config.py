@@ -36,6 +36,13 @@ class ModelConfig(BaseModel):
         default=None,
         description="Maximum tokens for LLM response",
     )
+    summary_model: Optional[str] = Field(
+        default=None,
+        description=(
+            "Optional model identifier for lightweight summarization steps. "
+            "Defaults to the primary model when omitted."
+        ),
+    )
 
     @classmethod
     def from_dict(cls, config: dict) -> "ModelConfig":

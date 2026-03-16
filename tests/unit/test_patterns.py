@@ -194,7 +194,20 @@ class TestSubagentsPattern:
         assert "RECENT_FULL_RESULTS = 2" in code
         assert "def _summarize_older_results" in code
         assert "def _prepare_task_results_context" in code
+        assert "remaining_summary_budget" in code
         assert '"task_results_summary": task_results_summary' in code
+
+    def test_generate_supervisor_code_supports_summary_model_override(self):
+        """Test supervisor summarization model can be configured explicitly."""
+        from langgraph_system_generator.utils.config import ModelConfig
+
+        config = ModelConfig(model="gpt-5-mini", summary_model="gpt-5-nano")
+        code = SubagentsPattern.generate_supervisor_code(
+            ["researcher"],
+            model_config=config,
+        )
+
+        assert "model='gpt-5-nano'" in code
 
     def test_generate_complete_example(self):
         """Test complete example generation."""

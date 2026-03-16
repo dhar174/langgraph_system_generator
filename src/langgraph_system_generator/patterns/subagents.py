@@ -101,9 +101,12 @@ class WorkflowState(MessagesState):
         # Supervisor uses temperature=0 for deterministic routing decisions
         api_base = config.api_base
         max_tokens = config.max_tokens
+        summary_model = config.summary_model or (
+            "gpt-4o-mini" if api_base is None else llm_model
+        )
         
         llm_init = build_llm_init(llm_model, 0, api_base, max_tokens)
-        summary_llm_init = build_llm_init("gpt-4o-mini", 0, api_base, max_tokens)
+        summary_llm_init = build_llm_init(summary_model, 0, api_base, max_tokens)
         
         if subagent_descriptions is None:
             subagent_descriptions = {
@@ -203,6 +206,10 @@ def _prepare_task_results_context(task_results: dict, existing_summary: str):
         _format_results(older_items),
     )
     recent_results = _format_results(recent_items)
+    remaining_summary_budget = max(MAX_TOTAL_RESULT_CHARS - len(recent_results), 0)
+    if remaining_summary_budget == 0:
+        return "", _truncate_result(recent_results, MAX_TOTAL_RESULT_CHARS)
+    updated_summary = _truncate_result(updated_summary, remaining_summary_budget)
     return updated_summary, recent_results
 '''
 
