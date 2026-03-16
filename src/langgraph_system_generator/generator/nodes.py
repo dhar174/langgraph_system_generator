@@ -7,6 +7,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Any, Dict, List
 
+import asyncio
 import nbformat
 
 from langgraph_system_generator.generator.agents import (
@@ -305,7 +306,7 @@ async def runtime_qa_node(state: GeneratorState) -> Dict[str, Any]:
             message=message,
         )
     else:
-        passed, message = run_notebook_smoke_test()
+        passed, message = await asyncio.to_thread(run_notebook_smoke_test)
         suggestions: List[str] = []
         if not passed:
             suggestions = [
