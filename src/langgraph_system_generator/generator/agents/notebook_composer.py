@@ -51,6 +51,16 @@ class NotebookComposer:
         return slug
 
     @staticmethod
+    def _normalize_docstring_text(text: Any) -> str:
+        """Normalize arbitrary text for safe inclusion in a Python docstring."""
+
+        # Coerce to string and collapse excessive whitespace/newlines
+        normalized = re.sub(r"\s+", " ", str(text or "")).strip()
+        # Avoid accidentally closing triple-quoted strings
+        normalized = normalized.replace('"""', '\\"""')
+        return normalized
+
+    @staticmethod
     def _normalize_inline_text(value: Any, fallback: str) -> str:
         """Normalize arbitrary text for safe single-line comments/messages."""
 
@@ -403,9 +413,12 @@ Generate the complete Python function implementation."""
         "item_types": [type(data).__name__],
         "preview": data,
     }}'''
-        elif "api" in tool_category:
+        elif "api" in safe_tool_category:
+            api_docstring = NotebookComposer._normalize_docstring_text(
+                tool_purpose or "Fetch data from an HTTP API endpoint."
+            )
             implementation = f'''def {func_name}(url: str, params: dict[str, object] | None = None, timeout: int = 10) -> object:
-    """{tool_purpose or "Fetch data from an HTTP API endpoint."}"""
+    """{api_docstring}"""
     import requests
 
     response = requests.get(url, params=params, timeout=timeout)
@@ -415,11 +428,14 @@ Generate the complete Python function implementation."""
         return response.json()
     return response.text'''
         else:
+            fallback_docstring = NotebookComposer._normalize_docstring_text(
+                tool_purpose or "Capture tool inputs in a structured result."
+            )
             implementation = f'''def {func_name}(*args: object, **kwargs: object) -> dict[str, object]:
-    """{tool_purpose or "Capture tool inputs in a structured result."}"""
+    """{fallback_docstring}"""
     return {{
-        "tool_name": "{tool_name}",
-        "purpose": "{tool_purpose}",
+        "tool_name": {json.dumps(safe_tool_name)},
+        "purpose": {json.dumps(tool_purpose or "")},
         "args": list(args),
         "kwargs": kwargs,
     }}'''
