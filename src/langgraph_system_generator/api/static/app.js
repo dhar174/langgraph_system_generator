@@ -551,7 +551,8 @@ function showResult(data) {
         { key: 'html_path', label: 'HTML' },
         { key: 'docx_path', label: 'Word Doc' },
         { key: 'pdf_path', label: 'PDF' },
-        { key: 'zip_path', label: 'ZIP Bundle' }
+        { key: 'zip_path', label: 'ZIP Bundle' },
+        { key: 'markdown_path', label: 'Markdown (.md)' }
     ];
     
     formats.forEach(format => {
