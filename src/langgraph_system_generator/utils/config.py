@@ -36,6 +36,14 @@ class ModelConfig(BaseModel):
         default=None,
         description="Maximum tokens for LLM response",
     )
+    summary_model: Optional[str] = Field(
+        default=None,
+        description=(
+            "Optional model identifier for lightweight summarization steps. "
+            "When omitted, uses 'gpt-4o-mini' with the default API base, or "
+            "the primary model when a custom api_base is configured."
+        ),
+    )
 
     @classmethod
     def from_dict(cls, config: dict) -> "ModelConfig":
