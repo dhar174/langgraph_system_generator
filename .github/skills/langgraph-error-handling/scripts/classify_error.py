@@ -23,6 +23,7 @@ Notes:
 import argparse
 import importlib
 import sys
+from typing import Optional
 
 # Known exception classifications
 TRANSIENT_PATTERNS = {
@@ -115,7 +116,7 @@ def classify_exception_class(exc_class: type) -> tuple[str, str]:
     return classify_exception_name(exc_class.__name__)
 
 
-def format_exception_reference(exc_class: type | None, name: str) -> str:
+def format_exception_reference(exc_class: Optional[type], name: str) -> str:
     """Return a Python reference string for snippets."""
     if exc_class is None:
         return name
@@ -124,7 +125,7 @@ def format_exception_reference(exc_class: type | None, name: str) -> str:
     return f"{exc_class.__module__}.{exc_class.__name__}"
 
 
-def resolve_exception(spec: str) -> tuple[str, type | None]:
+def resolve_exception(spec: str) -> tuple[str, Optional[type]]:
     """Resolve 'module:ClassName' or 'ClassName' to (name, class_or_None)."""
     if ":" in spec:
         module_path, class_name = spec.rsplit(":", 1)

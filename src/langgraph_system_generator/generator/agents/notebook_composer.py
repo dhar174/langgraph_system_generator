@@ -410,7 +410,7 @@ Generate the complete Python function implementation."""
             )
             implementation = f'''def {func_name}(
     url: str,
-    params: dict[str, object] | None = None,
+    params: dict[str, object] = None,
     timeout: int = 10,
 ) -> dict[str, object]:
     """{api_docstring}"""
