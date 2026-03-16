@@ -262,6 +262,29 @@ async def test_runtime_qa_node_reports_kernel_failure(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_runtime_qa_node_reports_missing_dependency_skipped(monkeypatch):
+    """Missing nbclient/nbformat should also be treated as skipped, not a failure."""
+    monkeypatch.setattr(
+        "langgraph_system_generator.generator.nodes.run_notebook_smoke_test",
+        lambda kernel_name="python3", timeout=60: (
+            False,
+            "Runtime validation unavailable: missing notebook execution dependency (No module named 'nbclient').",
+        ),
+    )
+
+    state = {
+        "generated_cells": [CellSpec(cell_type="markdown", content="Hi", metadata={})],
+        "qa_reports": [],
+    }
+    result = await runtime_qa_node(state)
+
+    report = result["qa_reports"][-1]
+    assert "Runtime validation unavailable" in report.message
+    # Missing execution dependency is non-fatal – treated as a skip/warning
+    assert report.passed is True
+
+
+@pytest.mark.asyncio
 async def test_runtime_qa_node_reports_actual_failure(monkeypatch):
     """Actual smoke-test failures (not 'unavailable') should still fail the check."""
     monkeypatch.setattr(

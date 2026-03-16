@@ -343,9 +343,11 @@ async def runtime_qa_node(state: GeneratorState) -> Dict[str, Any]:
                 "Install a healthy python3 Jupyter kernel before running runtime QA.",
                 "Refresh the kernel spec with: python -m ipykernel install --user --name python3",
             ]
-            # Treat missing kernels/runtime dependencies as a non-failing, skipped runtime QA
-            message_text = (message or "").lower()
-            if "kernel" in message_text or "jupyter" in message_text:
+            # Treat *any* "Runtime validation unavailable: ..." result as a
+            # skipped/warning check so that environments without Jupyter kernels
+            # or notebook execution deps don't trigger the repair loop and block
+            # generation entirely.
+            if (message or "").startswith("Runtime validation unavailable"):
                 logger.warning(
                     "Runtime QA skipped due to missing notebook kernel/runtime: %s",
                     message,
