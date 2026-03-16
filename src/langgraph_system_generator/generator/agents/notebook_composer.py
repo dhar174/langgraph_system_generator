@@ -930,20 +930,31 @@ print(final_state)"""
     @staticmethod
     def _is_meaningful_tool_code(content: str) -> bool:
         """Return True when generated tool code looks runnable and non-placeholder."""
-        lowered = content.lower()
-        if not content or "def " not in content:
+        normalized = content.strip()
+        lowered = normalized.lower()
+        # Require at least one function definition.
+        if not normalized or "def " not in normalized:
             return False
-        placeholder_markers = ["\npass", "todo", "implement your", "placeholder"]
+        # Treat any standalone `pass` statement (including indented variants and
+        # trailing comments) as a placeholder.
+        if re.search(r"^\s*pass\s*(#.*)?$", normalized, re.MULTILINE):
+            return False
+        placeholder_markers = ["todo", "implement your", "placeholder"]
         return not any(marker in lowered for marker in placeholder_markers)
 
     @staticmethod
     def _is_meaningful_node_code(content: str) -> bool:
         """Return True when generated node code contains non-placeholder logic."""
-        lowered = content.lower()
-        if not content or "def " not in content:
+        normalized = content.strip()
+        lowered = normalized.lower()
+        # Require at least one function definition.
+        if not normalized or "def " not in normalized:
+            return False
+        # Treat any standalone `pass` statement (including indented variants and
+        # trailing comments) as a placeholder.
+        if re.search(r"^\s*pass\s*(#.*)?$", normalized, re.MULTILINE):
             return False
         placeholder_markers = [
-            "\npass",
             "todo",
             "implement the actual node logic",
             "return state",
