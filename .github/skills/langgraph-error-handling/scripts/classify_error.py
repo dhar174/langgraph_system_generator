@@ -138,7 +138,10 @@ def resolve_exception(spec: str) -> tuple[str, type | None]:
             return class_name, None
     else:
         # Try builtins
-        builtin_exc = getattr(__builtins__, spec, None) if isinstance(__builtins__, dict) else getattr(__builtins__, spec, None)
+        if isinstance(__builtins__, dict):
+            builtin_exc = __builtins__.get(spec)
+        else:
+            builtin_exc = getattr(__builtins__, spec, None)
         if builtin_exc and isinstance(builtin_exc, type) and issubclass(builtin_exc, BaseException):
             return spec, builtin_exc
         return spec, None
@@ -177,17 +180,17 @@ def main():
     print()
     if category == "transient":
         print("Suggested code:")
-        print(f"  # Ensure this exception class is imported in your node module")
+        print("  # Ensure this exception class is imported in your node module")
         print(f"  retry_policy=RetryPolicy(max_attempts=3, retry_on={exc_ref})")
     elif category == "recoverable":
         print("Suggested code:")
         print(f"  except {exc_ref} as e:")
-        print(f'      return Command(update={{"error": str(e)}}, goto="agent")')
+        print('      return Command(update={"error": str(e)}, goto="agent")')
     elif category == "user-fixable":
         print("Suggested code:")
         print(f"  except {exc_ref} as e:")
-        print(f'      response = interrupt({{"error": str(e), "need": "user input"}})')
-        print(f'      # interrupt() requires compile(checkpointer=...) and thread_id')
+        print('      response = interrupt({"error": str(e), "need": "user input"})')
+        print("      # interrupt() requires compile(checkpointer=...) and thread_id")
     elif category == "fatal":
         print("Suggested code:")
         print(f"  # Let {exc_ref} bubble up - do not catch")

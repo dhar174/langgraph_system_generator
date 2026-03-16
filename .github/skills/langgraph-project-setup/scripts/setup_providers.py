@@ -14,7 +14,7 @@ Creates or updates .env file with provider API keys.
 import argparse
 import sys
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List
 
 
 class ProviderSetup:
@@ -171,7 +171,7 @@ class ProviderSetup:
 
             # Special handling for certain variables
             if env_var == "LANGSMITH_TRACING":
-                value = input(f"   Enable tracing? (y/N): ").strip().lower()
+                value = input("   Enable tracing? (y/N): ").strip().lower()
                 self.new_env[env_var] = "true" if value == "y" else "false"
             elif env_var == "AWS_DEFAULT_REGION":
                 default = "us-east-1"

@@ -104,14 +104,18 @@ async def test_compose_notebook_sections_and_packages(
 
     # 1. Verify intro cells content and structure
     intro_cells = [cell for cell in cells if cell.section == "intro"]
-    assert len(intro_cells) >= 2, "Expected at least 2 intro cells (title + overview)"
-    
+    assert (
+        len(intro_cells) >= 2
+    ), "Expected at least 2 intro cells (title + overview)"
+
     # Check first cell contains title and is markdown
     title_cell = intro_cells[0]
     assert title_cell.cell_type == "markdown", "Title cell should be markdown"
     assert plan.title in title_cell.content, "Title should appear in first intro cell"
-    assert plan.architecture_type in title_cell.content, "Architecture type should appear in title cell"
-    
+    assert (
+        plan.architecture_type in title_cell.content
+    ), "Architecture type should appear in title cell"
+
     # Check overview cell contains sections and is markdown
     overview_cell = intro_cells[1]
     assert overview_cell.cell_type == "markdown", "Overview cell should be markdown"
@@ -139,7 +143,11 @@ async def test_compose_notebook_sections_and_packages(
     assert state_marker in state_cell.content, f"State cell should contain '{state_marker}' marker"
 
     # 4. Verify tool cells exist and contain deterministic fallback content
-    tool_cells = [cell for cell in cells if cell.section == "tools" and cell.cell_type == "code"]
+    tool_cells = [
+        cell
+        for cell in cells
+        if cell.section == "tools" and cell.cell_type == "code"
+    ]
     assert len(tool_cells) > 0, "Expected at least one tool code cell"
     tool_cell = tool_cells[0]
     assert "def File_Reader" in tool_cell.content, "Tool cell should contain a real fallback implementation"
@@ -156,46 +164,62 @@ async def test_compose_notebook_sections_and_packages(
     assert "compile" in graph_cell.content, "Graph cell should contain compile call"
 
     # 6. Verify execution cells contain expected execution code
-    execution_cells = [cell for cell in cells if cell.section == "execution" and cell.cell_type == "code"]
+    execution_cells = [
+        cell
+        for cell in cells
+        if cell.section == "execution" and cell.cell_type == "code"
+    ]
     assert len(execution_cells) > 0, "Expected at least one execution code cell"
     execution_cell = execution_cells[0]
-    assert "stream" in execution_cell.content or "invoke" in execution_cell.content, "Execution cell should contain graph execution code"
+    assert (
+        "stream" in execution_cell.content or "invoke" in execution_cell.content
+    ), "Execution cell should contain graph execution code"
     for marker in expected_execution_markers:
-        assert marker in execution_cell.content, f"Execution cell should contain architecture-aware marker {marker!r}"
+        assert (
+            marker in execution_cell.content
+        ), f"Execution cell should contain architecture-aware marker {marker!r}"
 
     # 7. Verify all expected sections exist
     sections = {cell.section for cell in cells}
-    assert {"intro", "setup", "state", "tools", "graph", "execution"}.issubset(sections), "All expected sections should exist"
+    assert {
+        "intro",
+        "setup",
+        "state",
+        "tools",
+        "graph",
+        "execution",
+    }.issubset(sections), "All expected sections should exist"
 
     # 8. Verify cell ordering - cells should appear in expected sequence
     section_order = [cell.section for cell in cells if cell.section]
-    
+
     # Define expected section order
     expected_order = ["intro", "setup", "state", "tools", "nodes", "graph", "execution"]
-    
+
     # Extract unique sections while preserving order
     unique_sections: list[str] = []
     for section in section_order:
         if section not in unique_sections:
             unique_sections.append(section)
-    
+
     # Build position map for expected order
     expected_positions = {s: i for i, s in enumerate(expected_order)}
-    
+
     # Fail fast if any unexpected sections are present
     unexpected_sections = [s for s in unique_sections if s not in expected_positions]
     assert not unexpected_sections, (
         f"Unexpected sections found: {unexpected_sections}. "
         f"Allowed sections (in order) are: {expected_order}"
     )
-    
+
     # Verify sections appear in correct order by checking that each section's
     # expected position is greater than the previous section's expected position
     prev_expected_pos = -1
     for section in unique_sections:
         current_expected_pos = expected_positions[section]
         assert current_expected_pos > prev_expected_pos, (
-            f"Section '{section}' appears out of order. Expected sections in order: {expected_order}"
+            f"Section '{section}' appears out of order. "
+            f"Expected sections in order: {expected_order}"
         )
         prev_expected_pos = current_expected_pos
 
@@ -223,6 +247,8 @@ def test_generate_node_implementation_falls_back_to_meaningful_state_updates(
     assert "return state" not in node_code
     assert "pass" not in node_code
     assert "TODO" not in node_code
+
+
 def test_tool_fallback_sanitizes_identifier_and_compiles(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(composer_module, "ChatOpenAI", DummyLLM)
     composer = composer_module.NotebookComposer()
