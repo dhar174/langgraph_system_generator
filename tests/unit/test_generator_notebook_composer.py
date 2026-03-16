@@ -142,7 +142,7 @@ async def test_compose_notebook_sections_and_packages(
     tool_cells = [cell for cell in cells if cell.section == "tools" and cell.cell_type == "code"]
     assert len(tool_cells) > 0, "Expected at least one tool code cell"
     tool_cell = tool_cells[0]
-    assert "def file_reader" in tool_cell.content, "Tool cell should contain a real fallback implementation"
+    assert "def File_Reader" in tool_cell.content, "Tool cell should contain a real fallback implementation"
     assert "Path(" in tool_cell.content, "File tool fallback should use pathlib-based logic"
     assert "pass" not in tool_cell.content, "Tool fallback should not use pass"
     assert "TODO" not in tool_cell.content, "Tool fallback should not contain TODO placeholders"
