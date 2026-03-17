@@ -296,15 +296,15 @@ workflow = StateGraph(WorkflowState)
 memory = InMemorySaver()
 
 # Add router node
-workflow.add_node("router", router_node)
+workflow.add_node('router', router_node)
 
-workflow.add_node("{entry_node}", router_node)
+workflow.add_node('{entry_node}', router_node)
 {node_additions}
 
-workflow.add_edge(START, "{entry_node}")
+workflow.add_edge(START, '{entry_node}')
 {terminal_edges}
 
-graph = workflow.compile(checkpointer=checkpointer)'''
+graph = workflow.compile(checkpointer=checkpointer)"""
 
     @staticmethod
     def generate_complete_example(
@@ -386,5 +386,4 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
-'''
+    main()'''
