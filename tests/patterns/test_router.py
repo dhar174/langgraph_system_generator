@@ -55,7 +55,7 @@ class TestRouterPatternCodeGeneration:
             routes, use_structured_output=True
         )
 
-        assert "def router_node(state: WorkflowState)" in code
+        assert "def router_node(state: WorkflowState, window_size: int = 5)" in code
         assert "class RouteDecision(BaseModel):" in code
         assert '"search"' in code
         assert '"analyze"' in code
@@ -63,6 +63,8 @@ class TestRouterPatternCodeGeneration:
         assert "with_structured_output" in code
         assert "ChatOpenAI" in code
         assert "Literal" in code
+        assert "Recent conversation (last {window_size} messages):" in code
+        assert 'Resolve coreferences such as "it", "that", and "the one"' in code
 
     def test_generate_router_node_code_simple_output(self):
         """Test router node generation without structured output."""
@@ -71,11 +73,13 @@ class TestRouterPatternCodeGeneration:
             routes, use_structured_output=False
         )
 
-        assert "def router_node(state: WorkflowState)" in code
+        assert "def router_node(state: WorkflowState, window_size: int = 5)" in code
         assert "SystemMessage" in code
         assert "ChatOpenAI" in code
         assert "with_structured_output" not in code
         assert "valid_routes" in code.lower()
+        assert "Recent conversation (last {window_size} messages):" in code
+        assert 'Resolve coreferences such as "it", "that", and "the one"' in code
 
     def test_generate_router_node_code_custom_model(self):
         """Test router node generation with custom LLM model."""
@@ -172,7 +176,7 @@ class TestRouterPatternEdgeCases:
         """Test router generation handles empty routes gracefully."""
         code = RouterPattern.generate_router_node_code([])
 
-        assert "def router_node(state: WorkflowState)" in code
+        assert "def router_node(state: WorkflowState, window_size: int = 5)" in code
         # Should still be valid Python
         compile(code, "<string>", "exec")
 
@@ -180,7 +184,7 @@ class TestRouterPatternEdgeCases:
         """Test router generation with only one route."""
         code = RouterPattern.generate_router_node_code(["search"])
 
-        assert "def router_node(state: WorkflowState)" in code
+        assert "def router_node(state: WorkflowState, window_size: int = 5)" in code
         assert '"search"' in code
         compile(code, "<string>", "exec")
 
@@ -189,7 +193,7 @@ class TestRouterPatternEdgeCases:
         many_routes = [f"route_{i}" for i in range(20)]
         code = RouterPattern.generate_router_node_code(many_routes)
 
-        assert "def router_node(state: WorkflowState)" in code
+        assert "def router_node(state: WorkflowState, window_size: int = 5)" in code
         for route in many_routes[:5]:  # Check first few routes
             assert f'"{route}"' in code or route in code
 
@@ -278,6 +282,15 @@ class TestRouterPatternCodeQuality:
 
         # Should guard messages[-1] access with an emptiness check via ternary
         assert "messages[-1].content if messages else" in router_code
+        assert 'conversation_history = "\\n".join(' in router_code
+
+    def test_generated_code_uses_windowed_conversation_history(self):
+        """Test generated router code formats a configurable message window."""
+        router_code = RouterPattern.generate_router_node_code(["test"])
+
+        assert "window_size: int = 5" in router_code
+        assert "window_size = max(window_size, 1)" in router_code
+        assert "recent_messages = messages[-window_size:] if messages else []" in router_code
 
     def test_generated_code_includes_error_handling(self):
         """Test generated code includes appropriate error handling."""

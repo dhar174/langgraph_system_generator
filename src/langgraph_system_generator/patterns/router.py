@@ -180,7 +180,7 @@ class WorkflowState(MessagesState):
 
         if use_structured_output:
             return f'''from langchain_openai import ChatOpenAI
-from langchain_core.messages import HumanMessage
+from langchain_core.messages import HumanMessage, SystemMessage
 from pydantic import BaseModel, Field
 from typing import Literal
 
@@ -195,7 +195,7 @@ class RouteDecision(BaseModel):
     )
 
 
-def router_node(state: WorkflowState) -> WorkflowState:
+def router_node(state: WorkflowState, window_size: int = 5) -> WorkflowState:
     """Routes requests to appropriate specialist based on input classification.
     
     Analyzes the user's message and determines which specialized agent
@@ -203,6 +203,12 @@ def router_node(state: WorkflowState) -> WorkflowState:
     """
     messages = state["messages"]
     last_message = messages[-1].content if messages else ""
+    window_size = max(window_size, 1)
+    recent_messages = messages[-window_size:] if messages else []
+    conversation_history = "\\n".join(
+        f"{{getattr(message, 'type', message.__class__.__name__)}}: {{message.content}}"
+        for message in recent_messages
+    ) or "No prior conversation available."
     
     # Initialize LLM with structured output
     # Keep explicit double-quoted model hint for compatibility checks in generated code tests.
@@ -210,17 +216,25 @@ def router_node(state: WorkflowState) -> WorkflowState:
     structured_llm = llm.with_structured_output(RouteDecision)
     
     # Classification prompt
-    classification_prompt = f"""Analyze the following request and determine which route should handle it.
+    system_prompt = SystemMessage(content="""You are a routing classifier.
+Analyze the recent conversation and select the most appropriate route.
+Resolve coreferences such as "it", "that", and "the one" using the conversation history.
+Respond using the provided schema.""")
+
+    classification_prompt = f"""Analyze the following conversation and determine which route should handle the user's latest request.
 
 Available routes:
 {routes_list_str}
 
-User request: {{last_message}}
+Recent conversation (last {{window_size}} messages):
+{{conversation_history}}
+
+Latest user request: {{last_message}}
 
 Select the most appropriate route and explain your reasoning."""
     
     # Get classification
-    decision = structured_llm.invoke([HumanMessage(content=classification_prompt)])
+    decision = structured_llm.invoke([system_prompt, HumanMessage(content=classification_prompt)])
     
     return {{
         **state,
@@ -232,20 +246,31 @@ Select the most appropriate route and explain your reasoning."""
 from langchain_core.messages import HumanMessage, SystemMessage
 
 
-def router_node(state: WorkflowState) -> WorkflowState:
+def router_node(state: WorkflowState, window_size: int = 5) -> WorkflowState:
     """Routes requests to appropriate specialist based on input classification."""
     messages = state["messages"]
     last_message = messages[-1].content if messages else ""
+    window_size = max(window_size, 1)
+    recent_messages = messages[-window_size:] if messages else []
+    conversation_history = "\\n".join(
+        f"{{getattr(message, 'type', message.__class__.__name__)}}: {{message.content}}"
+        for message in recent_messages
+    ) or "No prior conversation available."
     
     # Keep explicit double-quoted model hint for compatibility checks in generated code tests.
     llm = {llm_init}  # model={llm_model_hint}
     
     # Classification prompt
     system_prompt = SystemMessage(content=f"""You are a routing classifier.
-Analyze requests and select the appropriate route from: {routes_str}
+Analyze the recent conversation and select the appropriate route from: {routes_str}
+Resolve coreferences such as "it", "that", and "the one" using the conversation history.
 Respond with ONLY the route name.""")
     
-    user_prompt = HumanMessage(content=f"Request: {{last_message}}\\nRoute:")
+    user_prompt = HumanMessage(content=f"""Recent conversation (last {{window_size}} messages):
+{{conversation_history}}
+
+Latest user request: {{last_message}}
+Route:""")
     
     # Get classification
     response = llm.invoke([system_prompt, user_prompt])

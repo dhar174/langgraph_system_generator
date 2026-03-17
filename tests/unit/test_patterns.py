@@ -36,7 +36,7 @@ class TestRouterPattern:
             routes, use_structured_output=True
         )
 
-        assert "def router_node(state: WorkflowState)" in code
+        assert "def router_node(state: WorkflowState, window_size: int = 5)" in code
         assert "class RouteDecision(BaseModel):" in code
         assert '"search"' in code
         assert '"analyze"' in code
@@ -50,7 +50,7 @@ class TestRouterPattern:
             routes, use_structured_output=False
         )
 
-        assert "def router_node(state: WorkflowState)" in code
+        assert "def router_node(state: WorkflowState, window_size: int = 5)" in code
         assert "SystemMessage" in code
         assert "with_structured_output" not in code
 
@@ -420,12 +420,12 @@ class TestRouterPatternEdgeCases:
         """Test router generation handles empty routes gracefully."""
         code = RouterPattern.generate_router_node_code([])
         # Should still generate valid code structure
-        assert "def router_node(state: WorkflowState)" in code
+        assert "def router_node(state: WorkflowState, window_size: int = 5)" in code
 
     def test_generate_router_with_single_route(self):
         """Test router generation with only one route."""
         code = RouterPattern.generate_router_node_code(["search"])
-        assert "def router_node(state: WorkflowState)" in code
+        assert "def router_node(state: WorkflowState, window_size: int = 5)" in code
         assert '"search"' in code
 
     def test_generate_router_with_special_model_name(self):
@@ -680,7 +680,7 @@ class TestPatternModelConfig:
             ["search"], model_config=config
         )
 
-        assert "def router_node(state: WorkflowState)" in code
+        assert "def router_node(state: WorkflowState, window_size: int = 5)" in code
         assert "model='gpt-5-mini'" in code
         # Router always uses temperature=0 for deterministic routing
         assert "temperature=0" in code
@@ -702,7 +702,7 @@ class TestPatternModelConfig:
         """Test RouterPattern uses default config when None provided."""
         code = RouterPattern.generate_router_node_code(["search"])
 
-        assert "def router_node(state: WorkflowState)" in code
+        assert "def router_node(state: WorkflowState, window_size: int = 5)" in code
         assert "model='gpt-5-mini'" in code
         assert "temperature=" in code
 
