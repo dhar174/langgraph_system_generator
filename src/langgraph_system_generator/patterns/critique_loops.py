@@ -701,7 +701,7 @@ graph = workflow.compile(checkpointer=checkpointer)"""
             human_feedback_example = '''
 def collect_human_feedback(
     draft: str,
-    criteria: list[str],
+    criteria: List[str],
     revision_count: int,
     previous_feedback: str,
 ) -> dict:
