@@ -39,7 +39,7 @@ def installation_and_imports(
 
         from langgraph.graph import END, START, MessagesState, StateGraph
         from langgraph.types import Command
-        from langgraph.checkpoint.memory import MemorySaver
+        from langgraph.checkpoint.memory import InMemorySaver
         from langgraph.prebuilt import create_react_agent
         from langchain_openai import ChatOpenAI
         from langchain_core.messages import HumanMessage
@@ -108,7 +108,7 @@ def build_graph_cells() -> List[CellSpec]:
         """
         from langgraph.types import Command
         from langgraph.graph import END, START, MessagesState, StateGraph
-        from langgraph.checkpoint.memory import MemorySaver
+        from langgraph.checkpoint.memory import InMemorySaver
         from langgraph.prebuilt import create_react_agent
         from langchain_core.messages import HumanMessage
         from langchain_openai import ChatOpenAI
@@ -136,7 +136,7 @@ def build_graph_cells() -> List[CellSpec]:
         graph.add_node("router_node", router_node)
         graph.add_edge(START, "router_node")
 
-        memory = MemorySaver()
+        memory = InMemorySaver()
         app = graph.compile(checkpointer=memory)
         """
     ).strip()

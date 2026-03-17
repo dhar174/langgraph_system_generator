@@ -67,8 +67,10 @@ def test_settings_defaults(monkeypatch):
     ]:
         monkeypatch.delenv(key, raising=False)
 
-    reset_settings_cache()
-    loaded = get_settings()
+    monkeypatch.setenv("LNF_DISABLE_DOTENV", "1")
+
+    reset_settings_cache(env_file=None)
+    loaded = get_settings(env_file=None)
 
     assert loaded.openai_api_key is None
     assert loaded.anthropic_api_key is None
@@ -88,15 +90,17 @@ def test_settings_cached_instance_is_reused(monkeypatch):
     ]:
         monkeypatch.delenv(key, raising=False)
 
-    reset_settings_cache()
-    first = get_settings()
-    second = get_settings()
+    monkeypatch.setenv("LNF_DISABLE_DOTENV", "1")
+
+    reset_settings_cache(env_file=None)
+    first = get_settings(env_file=None)
+    second = get_settings(env_file=None)
 
     assert first is second
 
-    third = reset_settings_cache()
+    third = reset_settings_cache(env_file=None)
     assert third is not first
-    assert get_settings() is third
+    assert get_settings(env_file=None) is third
 
 
 def test_model_config_defaults():
