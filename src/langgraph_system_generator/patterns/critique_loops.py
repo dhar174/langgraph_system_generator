@@ -35,7 +35,7 @@ class CritiqueLoopPattern:
 
         Architecture:
             START -> generate -> critique -> [revise -> critique] -> END
-        (loops until approval or max iterations)
+            (loops until approval or max iterations)
 
     The generated critique node can be configured for:
     - Automated LLM-based critique
