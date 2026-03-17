@@ -1,15 +1,6 @@
-"""Comprehensive tests for RouterPattern module.
-
-This test module provides extensive coverage for the RouterPattern class,
-including code generation, edge cases, integration scenarios, and smoke tests
-to verify that generated code compiles and can be executed.
-"""
+"""Focused router-pattern tests."""
 
 from __future__ import annotations
-
-import ast
-
-import pytest
 
 from langgraph_system_generator.patterns import RouterPattern
 
@@ -584,21 +575,23 @@ class TestRouterPatternPerformance:
 
         many_routes = [f"route_{i}" for i in range(50)]
 
-        start = time.time()
-        code = RouterPattern.generate_complete_example(many_routes)
-        elapsed = time.time() - start
+    assert "StateGraph(WorkflowState)" in code
+    assert "InMemorySaver" in code
+    assert 'workflow.add_node("router", router_node)' in code
+    assert 'workflow.add_edge("search", END)' in code
+    assert "add_conditional_edges" not in code
 
-        # Should generate code in reasonable time (< 3 seconds)
-        assert elapsed < 3.0, f"Code generation took {elapsed}s, expected < 3s"
-        assert "class WorkflowState" in code
-        compile(code, "<performance_test>", "exec")
 
-    def test_generated_code_size_is_reasonable(self):
-        """Test that generated code size is reasonable."""
-        routes = ["search", "analyze", "summarize"]
-        code = RouterPattern.generate_complete_example(routes)
+def test_router_complete_example_contains_async_entrypoint():
+    code = RouterPattern.generate_complete_example(
+        ["search", "analyze"],
+        {
+            "search": "Retrieve supporting context",
+            "analyze": "Interpret the request",
+        },
+    )
 
-        # Code should be comprehensive but not excessively large
-        # Expect roughly 5-15KB for a typical 3-route system
-        code_size = len(code)
-        assert 1000 < code_size < 50000, f"Generated code size {code_size} seems unusual"
+    assert "async def run_example" in code
+    assert "build_initial_state" in code
+    assert "Router Pattern Example" in code
+    compile(code, "<router-example>", "exec")

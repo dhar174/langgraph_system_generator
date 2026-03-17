@@ -1,269 +1,244 @@
-"""Runnable router pattern demo built with current LangGraph state patterns.
-
-The example defaults to ``stub`` mode so it can run without network access.
-Use ``--mode live`` to switch to ``ChatOpenAI``-backed routing and handlers.
-
-Examples:
-    python examples/router_pattern_example.py --mode stub
-    python examples/router_pattern_example.py --mode live --input "Analyze this incident report"
-"""
+"""Runnable router-pattern example aligned with current LangGraph idioms."""
 
 from __future__ import annotations
 
-import argparse
 import operator
-import os
-from typing import Annotated, Literal, Optional
+import sys
+from pathlib import Path
+from typing import Annotated, Dict, List, Literal
 
-from langchain_core.messages import AIMessage, AnyMessage, HumanMessage, SystemMessage
-from langchain_openai import ChatOpenAI
-from langgraph.graph import END, START, StateGraph
-from langgraph.graph.message import add_messages
-from langgraph.types import Command
 from pydantic import BaseModel, Field
 from typing_extensions import TypedDict
 
-ExampleMode = Literal["stub", "live"]
-RouteName = Literal["search", "analyze", "summarize"]
+if __package__ in (None, ""):
+    REPO_ROOT = Path(__file__).resolve().parents[1]
+    for path in (REPO_ROOT, REPO_ROOT / "src"):
+        if str(path) not in sys.path:
+            sys.path.insert(0, str(path))
 
-DEFAULT_INPUT = "Analyze the attached customer feedback themes and summarize the biggest risks."
-DEFAULT_MODEL = os.environ.get("LNF_EXAMPLE_MODEL", "gpt-5-mini")
+from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
+from langchain_openai import ChatOpenAI
+from langgraph.checkpoint.memory import InMemorySaver
+from langgraph.graph import END, START, StateGraph
+from langgraph.graph.message import add_messages
+from langgraph.types import Command
+
+from langgraph_system_generator.examples_support import (
+    build_example_parser,
+    build_metrics,
+    ensure_live_credentials,
+    make_thread_config,
+    trace_step,
+)
+
+ROUTES = ("search", "analyze", "summarize")
 
 
-class RouteDecision(BaseModel):
-    """Structured routing output used by the router node."""
+def merge_dicts(left: Dict[str, str], right: Dict[str, str]) -> Dict[str, str]:
+    """Merge route outputs into a single state field."""
+    merged = dict(left or {})
+    merged.update(right or {})
+    return merged
 
-    route: RouteName = Field(description="The specialist route that should handle the request.")
-    reason: str = Field(description="Short explanation for the chosen route.")
 
+class RouterState(TypedDict, total=False):
+    """State for the router example."""
 
-class RouterState(TypedDict):
-    """Shared graph state for the router example."""
-
-    messages: Annotated[list[AnyMessage], add_messages]
-    route_trace: Annotated[list[str], operator.add]
+    messages: Annotated[List[BaseMessage], add_messages]
     route: str
-    route_reason: str
+    route_reasoning: str
+    route_history: Annotated[List[str], operator.add]
+    results: Annotated[Dict[str, str], merge_dicts]
     final_output: str
 
 
-def _require_live_api_key(mode: ExampleMode) -> None:
-    if mode == "live" and not os.getenv("OPENAI_API_KEY"):
-        raise SystemExit("OPENAI_API_KEY is required for --mode live.")
+class RouteDecision(BaseModel):
+    """Structured router output."""
+
+    route: Literal["search", "analyze", "summarize"] = Field(
+        description="Specialist that should handle the request."
+    )
+    reasoning: str = Field(description="Why the route matches the request.")
 
 
-def _build_live_model(*, temperature: float) -> ChatOpenAI:
-    return ChatOpenAI(model=DEFAULT_MODEL, temperature=temperature)
-
-
-def _route_stub(user_input: str) -> RouteDecision:
-    lowered = user_input.lower()
-    if any(token in lowered for token in ("find", "lookup", "search", "research")):
-        return RouteDecision(
-            route="search",
-            reason="Stub router detected a retrieval-style request.",
-        )
-    if any(token in lowered for token in ("analyze", "pattern", "trend", "compare", "risk")):
+def _stub_route_decision(task: str) -> RouteDecision:
+    lowered = task.lower()
+    if any(token in lowered for token in ("find", "research", "search", "lookup")):
+        return RouteDecision(route="search", reasoning="The task asks for retrieval.")
+    if any(token in lowered for token in ("analyze", "compare", "pattern", "trend")):
         return RouteDecision(
             route="analyze",
-            reason="Stub router detected an analysis-focused request.",
+            reasoning="The task asks for interpretation.",
         )
     return RouteDecision(
         route="summarize",
-        reason="Stub router fell back to summarization for a broad request.",
+        reasoning="The task asks for concise synthesis.",
     )
 
 
-def _route_live(user_input: str) -> RouteDecision:
-    model = _build_live_model(temperature=0)
-    structured_model = model.with_structured_output(RouteDecision)
-    return structured_model.invoke(
-        [
-            SystemMessage(
-                content=(
-                    "You are a deterministic router for a LangGraph demo. "
-                    "Choose exactly one route: search, analyze, or summarize."
-                )
-            ),
-            HumanMessage(content=user_input),
-        ]
-    )
-
-
-def _run_search(mode: ExampleMode, user_input: str) -> str:
-    if mode == "stub":
+def _stub_specialist_output(route: str, task: str) -> str:
+    if route == "search":
         return (
-            "Stub search report:\n"
-            "- Gathered three representative customer comments.\n"
-            "- Retrieved two competitor notes.\n"
-            "- Highlighted a recent churn trend tied to onboarding friction."
+            "Stub search result:\n"
+            "- Source A: Current LangGraph docs emphasize Command for dynamic routing.\n"
+            "- Source B: Reducers keep shared state merges explicit.\n"
+            f"- Query handled: {task}"
         )
-
-    model = _build_live_model(temperature=0.2)
-    response = model.invoke(
-        [
-            SystemMessage(
-                content=(
-                    "You are a retrieval specialist. Return concise research notes that a downstream "
-                    "analyst can use immediately."
-                )
-            ),
-            HumanMessage(content=user_input),
-        ]
-    )
-    return response.content
-
-
-def _run_analysis(mode: ExampleMode, user_input: str) -> str:
-    if mode == "stub":
+    if route == "analyze":
         return (
             "Stub analysis:\n"
-            "- The dominant risk is onboarding confusion during the first session.\n"
-            "- A secondary risk is missing follow-up nudges for inactive users.\n"
-            "- The highest-leverage fix is a guided checklist plus a day-two reminder."
+            "- Pattern fit: Command-based router keeps control flow inside the node.\n"
+            "- Trade-off: deterministic routing is faster, semantic routing is more flexible.\n"
+            f"- Task analyzed: {task}"
         )
-
-    model = _build_live_model(temperature=0.2)
-    response = model.invoke(
-        [
-            SystemMessage(
-                content=(
-                    "You are an analyst. Explain patterns, risks, and recommended next steps in a tight "
-                    "operator-facing format."
-                )
-            ),
-            HumanMessage(content=user_input),
-        ]
+    return (
+        "Stub summary:\n"
+        "- Use a small specialist graph when the request has a clear dominant intent.\n"
+        "- Promote to supervisor/subagents when multiple specialties must collaborate.\n"
+        f"- Task summarized: {task}"
     )
-    return response.content
 
 
-def _run_summary(mode: ExampleMode, user_input: str) -> str:
-    if mode == "stub":
-        return (
-            "Stub summary:\n"
-            "The request should be condensed into a short executive update with one key risk, one key "
-            "opportunity, and one immediate action."
-        )
-
-    model = _build_live_model(temperature=0.2)
-    response = model.invoke(
-        [
-            SystemMessage(
-                content=(
-                    "You are a summarization specialist. Produce a short, polished summary with a clear "
-                    "takeaway."
-                )
-            ),
-            HumanMessage(content=user_input),
-        ]
-    )
-    return response.content
-
-
-def build_router_graph(mode: ExampleMode = "stub"):
-    """Build a runnable router graph using current LangGraph patterns."""
-
-    _require_live_api_key(mode)
+def build_graph(mode: str, model: str):
+    """Build the runnable router graph for the selected mode."""
+    llm = ChatOpenAI(model=model, temperature=0) if mode == "live" else None
 
     def router_node(
         state: RouterState,
     ) -> Command[Literal["search", "analyze", "summarize"]]:
-        user_input = state["messages"][0].content if state["messages"] else DEFAULT_INPUT
-        decision = _route_stub(user_input) if mode == "stub" else _route_live(user_input)
-
-        # Returning Command keeps the state update and the dynamic route selection in one node.
+        task = state["messages"][-1].content if state.get("messages") else ""
+        decision = (
+            llm.with_structured_output(RouteDecision).invoke(
+                [
+                    SystemMessage(
+                        content=(
+                            "You route requests to one specialist.\n"
+                            "- search: retrieval, sourcing, lookup\n"
+                            "- analyze: comparisons, trend detection, interpretation\n"
+                            "- summarize: concise synthesis\n"
+                        )
+                    ),
+                    HumanMessage(content=f"Task: {task}"),
+                ]
+            )
+            if llm
+            else _stub_route_decision(task)
+        )
         return Command(
             update={
                 "route": decision.route,
-                "route_reason": decision.reason,
-                "route_trace": [f"router->{decision.route}"],
+                "route_reasoning": decision.reasoning,
+                "route_history": [decision.route],
                 "messages": [
                     AIMessage(
-                        content=f"Router selected {decision.route}: {decision.reason}"
+                        content=f"Router selected {decision.route}: {decision.reasoning}"
                     )
                 ],
             },
             goto=decision.route,
         )
 
-    def search_node(state: RouterState):
-        user_input = state["messages"][0].content if state["messages"] else DEFAULT_INPUT
-        result = _run_search(mode, user_input)
-        return {
-            "final_output": result,
-            "route_trace": ["search"],
-            "messages": [AIMessage(content=result)],
-        }
+    def specialist_node(route: str, purpose: str):
+        def _node(state: RouterState) -> Dict[str, object]:
+            task = state["messages"][0].content if state.get("messages") else ""
+            if llm:
+                response = llm.invoke(
+                    [
+                        SystemMessage(
+                            content=(
+                                f"You are the {route} specialist.\n"
+                                f"Purpose: {purpose}\n"
+                                "Respond with a useful answer for the task."
+                            )
+                        ),
+                        *state.get("messages", []),
+                    ]
+                )
+                content = response.content
+            else:
+                content = _stub_specialist_output(route, task)
+            return {
+                "results": {route: content},
+                "final_output": content,
+                "messages": [
+                    AIMessage(content=f"{route} specialist completed the task.")
+                ],
+            }
 
-    def analyze_node(state: RouterState):
-        user_input = state["messages"][0].content if state["messages"] else DEFAULT_INPUT
-        result = _run_analysis(mode, user_input)
-        return {
-            "final_output": result,
-            "route_trace": ["analyze"],
-            "messages": [AIMessage(content=result)],
-        }
-
-    def summarize_node(state: RouterState):
-        user_input = state["messages"][0].content if state["messages"] else DEFAULT_INPUT
-        result = _run_summary(mode, user_input)
-        return {
-            "final_output": result,
-            "route_trace": ["summarize"],
-            "messages": [AIMessage(content=result)],
-        }
+        return _node
 
     workflow = StateGraph(RouterState)
     workflow.add_node("router", router_node)
-    workflow.add_node("search", search_node)
-    workflow.add_node("analyze", analyze_node)
-    workflow.add_node("summarize", summarize_node)
-    workflow.add_edge(START, "router")
-    workflow.add_edge("search", END)
-    workflow.add_edge("analyze", END)
-    workflow.add_edge("summarize", END)
-    return workflow.compile()
-
-
-def run_router_example(
-    user_input: str = DEFAULT_INPUT,
-    mode: ExampleMode = "stub",
-) -> RouterState:
-    """Execute the router demo and return the final graph state."""
-
-    graph = build_router_graph(mode)
-    return graph.invoke(
-        {
-            "messages": [HumanMessage(content=user_input)],
-            "route_trace": [],
-            "route": "",
-            "route_reason": "",
-            "final_output": "",
-        }
+    workflow.add_node(
+        "search",
+        specialist_node("search", "Gather a grounded answer with cited-style notes."),
     )
+    workflow.add_node(
+        "analyze",
+        specialist_node(
+            "analyze",
+            "Interpret the request and explain patterns or trade-offs.",
+        ),
+    )
+    workflow.add_node(
+        "summarize",
+        specialist_node(
+            "summarize",
+            "Create a concise answer highlighting only key takeaways.",
+        ),
+    )
+    workflow.add_edge(START, "router")
+    for route in ROUTES:
+        workflow.add_edge(route, END)
+    return workflow.compile(checkpointer=InMemorySaver())
 
 
-def main(argv: Optional[list[str]] = None) -> None:
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--mode", choices=["stub", "live"], default="stub")
-    parser.add_argument("--input", default=DEFAULT_INPUT)
-    args = parser.parse_args(argv)
+def run_demo(
+    task: str,
+    *,
+    mode: str = "stub",
+    model: str = "gpt-4.1-mini",
+) -> Dict[str, object]:
+    """Execute the router example and print a trace."""
+    ensure_live_credentials(mode)
+    graph = build_graph(mode, model)
+    config = make_thread_config()
+    state: RouterState = {
+        "messages": [HumanMessage(content=task)],
+        "results": {},
+        "route_history": [],
+        "final_output": "",
+    }
 
-    result = run_router_example(args.input, args.mode)
+    import time
 
+    start = time.perf_counter()
+    final_state: Dict[str, object] = {}
+    for step in graph.stream(state, config=config, stream_mode="values"):
+        snapshot = {
+            "route": step.get("route"),
+            "route_reasoning": step.get("route_reasoning"),
+            "results": step.get("results", {}),
+            "final_output": step.get("final_output", ""),
+        }
+        trace_step("router-step", snapshot)
+        final_state = dict(step)
+    trace_step("router-metrics", build_metrics(model, start).to_dict())
+    return final_state
+
+
+def main() -> None:
+    parser = build_example_parser(
+        "Run a router-pattern example.",
+        "Search the docs and summarize when Command is preferable to conditional edges.",
+    )
+    args = parser.parse_args()
+    result = run_demo(args.task, mode=args.mode, model=args.model)
     print("Router Pattern Example")
     print(f"Mode: {args.mode}")
-    print(f"Route selected: {result['route']}")
-    print(f"Reason: {result['route_reason']}")
-    print("Trace:")
-    for entry in result["route_trace"]:
-        print(f"- {entry}")
-    print("Final output:")
-    print(result["final_output"])
-
-    if args.mode == "stub":
-        print("Live mode note: rerun with --mode live and OPENAI_API_KEY to use ChatOpenAI.")
+    print("Route selected:", result.get("route"))
+    print("Final route:", result.get("route"))
+    print("Final output:\n", result.get("final_output", ""))
 
 
 if __name__ == "__main__":

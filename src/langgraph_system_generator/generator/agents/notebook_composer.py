@@ -880,9 +880,11 @@ graph = workflow.compile(checkpointer=memory)"""
         elif architecture_type == "subagents":
             initial_state_block = """initial_state: WorkflowState = {
     "messages": [HumanMessage(content="Research the topic, draft a response, and review it before finishing.")],
-    "next": "supervisor",
+    "next_agent": "supervisor",
     "instructions": "",
     "task_results": {},
+    "dispatch_log": [],
+    "iterations": 0,
 }"""
         elif architecture_type == "critique_loop":
             initial_state_block = """initial_state: WorkflowState = {

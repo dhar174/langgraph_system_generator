@@ -11,7 +11,6 @@ Examples:
 
 from __future__ import annotations
 
-import argparse
 import operator
 import os
 import sys
@@ -59,17 +58,19 @@ class CritiqueState(TypedDict):
     latest_feedback: str
     quality_score: float
     approved: bool
-    revision_count: int
+    criteria: List[str]
+    revision_history: Annotated[List[str], operator.add]
     final_output: str
 
 
-def _require_live_api_key(mode: ExampleMode) -> None:
-    if mode == "live" and not os.getenv("OPENAI_API_KEY"):
-        raise SystemExit("OPENAI_API_KEY is required for --mode live.")
+class CritiqueAssessment(BaseModel):
+    """Structured rubric assessment."""
 
-
-def _build_live_model(*, temperature: float) -> ChatOpenAI:
-    return ChatOpenAI(model=DEFAULT_MODEL, temperature=temperature)
+    quality_score: float = Field(ge=0.0, le=1.0)
+    approved: bool
+    strengths: List[str]
+    weaknesses: List[str]
+    suggestions: str
 
 
 def _generate_stub_draft(
@@ -179,18 +180,35 @@ def build_critique_graph(mode: ExampleMode = "stub"):
     _require_live_api_key(mode)
 
     def generate_node(state: CritiqueState):
-        user_input = state["messages"][0].content if state["messages"] else DEFAULT_INPUT
+        task = state["messages"][0].content if state.get("messages") else ""
         revision_count = state.get("revision_count", 0)
-        latest_feedback = state.get("latest_feedback", "")
-        draft = (
-            _generate_stub_draft(user_input, revision_count, latest_feedback)
-            if mode == "stub"
-            else _generate_live_draft(user_input, revision_count, latest_feedback)
-        )
-        label = "Initial draft" if revision_count == 0 else f"Revision {revision_count}"
+        if llm:
+            response = llm.invoke(
+                [
+                    SystemMessage(
+                        content=(
+                            "Write or revise a response so it becomes clear, concrete, "
+                            "and implementation-aware."
+                        )
+                    ),
+                    HumanMessage(
+                        content=(
+                            f"Task: {task}\n\n"
+                            f"Revision count: {revision_count}\n"
+                            f"Feedback: {state.get('critique_feedback', 'No critique yet.')}"
+                        )
+                    ),
+                ]
+            )
+            draft = response.content
+        else:
+            draft = _stub_generate(task, revision_count)
         return {
-            "draft": draft,
-            "messages": [AIMessage(content=f"{label} generated.\n{draft}")],
+            "current_draft": draft,
+            "revision_history": [draft],
+            "messages": [
+                AIMessage(content=f"Draft revision {revision_count + 1} prepared.")
+            ],
         }
 
     def critique_node(state: CritiqueState) -> Command:
@@ -201,12 +219,27 @@ def build_critique_graph(mode: ExampleMode = "stub"):
             if mode == "stub"
             else _critique_live(draft)
         )
-        feedback = (
-            f"Score: {assessment.quality_score}\n"
-            f"Approved: {assessment.approved}\n"
-            f"Strengths: {', '.join(assessment.strengths)}\n"
-            f"Improvements: {', '.join(assessment.improvements) or 'None'}\n"
-            f"Revision focus: {assessment.revision_focus}"
+        should_finalize = (
+            assessment.approved
+            or state.get("revision_count", 0) >= max_revisions
+            or assessment.quality_score >= min_quality_score
+        )
+        return Command(
+            update={
+                "critique_feedback": feedback,
+                "quality_score": assessment.quality_score,
+                "approved": assessment.approved,
+                "messages": [
+                    AIMessage(
+                        content=(
+                            "Critique complete. Finalizing."
+                            if should_finalize
+                            else "Critique complete. Revising."
+                        )
+                    )
+                ],
+            },
+            goto="finalize" if should_finalize else "revise",
         )
         if (
             assessment.approved
@@ -230,12 +263,17 @@ def build_critique_graph(mode: ExampleMode = "stub"):
     def revise_node(state: CritiqueState):
         return {
             "revision_count": state.get("revision_count", 0) + 1,
+            "messages": [
+                AIMessage(
+                    content="Applying critique feedback to prepare the next revision."
+                )
+            ],
         }
 
-    def finish_node(state: CritiqueState):
+    def finalize_node(state: CritiqueState):
         return {
-            "final_output": state.get("draft", ""),
-            "messages": [AIMessage(content=f"Workflow complete.\n{state.get('draft', '')}")],
+            "final_output": state.get("current_draft", ""),
+            "messages": [AIMessage(content="Final draft approved.")],
         }
 
     checkpointer = InMemorySaver()
@@ -243,7 +281,7 @@ def build_critique_graph(mode: ExampleMode = "stub"):
     workflow.add_node("generate", generate_node)
     workflow.add_node("critique", critique_node)
     workflow.add_node("revise", revise_node)
-    workflow.add_node("finish", finish_node)
+    workflow.add_node("finalize", finalize_node)
     workflow.add_edge(START, "generate")
     workflow.add_edge("generate", "critique")
     # critique_node uses Command(goto=...) for routing -- no add_conditional_edges needed
@@ -252,11 +290,47 @@ def build_critique_graph(mode: ExampleMode = "stub"):
     return workflow.compile(checkpointer=checkpointer)
 
 
-def run_critique_example(
-    user_input: str = DEFAULT_INPUT,
-    mode: ExampleMode = "stub",
-) -> CritiqueState:
-    """Execute the critique-revise example and return the final graph state."""
+def run_demo(
+    task: str,
+    *,
+    mode: str = "stub",
+    model: str = "gpt-4.1-mini",
+    max_steps: int = 3,
+):
+    """Execute the critique-revise example and print a trace."""
+    ensure_live_credentials(mode)
+    graph = build_graph(mode, model, max_revisions=max_steps)
+    config = make_thread_config()
+    initial_state: CritiqueState = {
+        "messages": [HumanMessage(content=task)],
+        "criteria": [
+            "Explain the pattern clearly.",
+            "Include practical implementation guidance.",
+            "Stay concise but concrete.",
+        ],
+        "revision_count": 0,
+        "revision_history": [],
+        "final_output": "",
+    }
+
+    import time
+
+    start = time.perf_counter()
+    final_state = {}
+    for step in graph.stream(initial_state, config=config, stream_mode="values"):
+        trace_step(
+            "critique-step",
+            {
+                "revision_count": step.get("revision_count"),
+                "quality_score": step.get("quality_score"),
+                "approved": step.get("approved"),
+                "current_draft": step.get("current_draft", ""),
+            },
+        )
+        final_state = dict(step)
+    trace_step("critique-metrics", build_metrics(model, start).to_dict())
+    return final_state
+
 
     graph = build_critique_graph(mode)
     return graph.invoke(
@@ -271,31 +345,23 @@ def run_critique_example(
             "final_output": "",
         },
         config={"configurable": {"thread_id": "example-run"}},
+def main() -> None:
+    parser = build_example_parser(
+        "Run a critique-revise pattern example.",
+        "Write a crisp explanation of why reducer-backed state matters in LangGraph.",
+        include_max_steps=True,
     )
-
-
-def main(argv: Optional[List[str]] = None) -> None:
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--mode", choices=["stub", "live"], default="stub")
-    parser.add_argument("--input", default=DEFAULT_INPUT)
-    args = parser.parse_args(argv)
-
-    result = run_critique_example(args.input, args.mode)
-
+    args = parser.parse_args()
+    result = run_demo(
+        args.task,
+        mode=args.mode,
+        model=args.model,
+        max_steps=args.max_steps,
+    )
     print("Critique-Revise Pattern Example")
     print(f"Mode: {args.mode}")
-    print(f"Revision count: {result['revision_count']}")
-    print(f"Quality score: {result['quality_score']}")
-    print(f"Approved: {result['approved']}")
-    print("Critique history:")
-    for entry in result["critique_history"]:
-        print("-")
-        print(entry)
-    print("Final output:")
-    print(result["final_output"])
-
-    if args.mode == "stub":
-        print("Live mode note: rerun with --mode live and OPENAI_API_KEY to use ChatOpenAI.")
+    print("Quality score:", result.get("quality_score"))
+    print("Final output:\n", result.get("final_output", ""))
 
 
 if __name__ == "__main__":

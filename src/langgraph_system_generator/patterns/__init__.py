@@ -1,12 +1,9 @@
-"""Pattern library for LangGraph multi-agent architectures.
+"""Generator-backed pattern library for core LangGraph workflow templates.
 
-This module provides reusable templates and code generators for common
-multi-agent patterns in LangGraph workflows.
-
-Available Patterns:
-    - RouterPattern: Dynamic routing to specialized agents
-    - SubagentsPattern: Supervisor-subagent coordination
-    - CritiqueLoopPattern: Iterative refinement through critique-revise cycles
+Advanced patterns such as hierarchical teams, plan-and-execute, REWOO-style
+speculation, HITL approval, judge loops, and compiler-style dependency graphs
+live as runnable references under ``examples/`` rather than additional public
+code-generation classes.
 """
 
 from langgraph_system_generator.patterns.critique_loops import CritiqueLoopPattern

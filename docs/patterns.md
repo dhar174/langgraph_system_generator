@@ -1,131 +1,58 @@
 # Pattern Library Guide
 
-The LangGraph System Generator includes a powerful pattern library that provides reusable templates and code generators for common multi-agent architectures. This guide covers the three core patterns and how to use them effectively.
+The repository exposes two related pattern surfaces:
 
-## Overview
+- Public generator-backed helpers in `src/langgraph_system_generator/patterns/`
+- Runnable reference implementations in [`examples/`](../examples/README.md)
 
-The pattern library simplifies the creation of complex multi-agent LangGraph workflows by providing:
+The public package intentionally keeps the generator-backed API small:
 
-- **Reusable Templates**: Pre-built code generators for common patterns
-- **Type-Safe State Management**: Structured state schemas for each pattern
-- **Customizable Components**: Flexible configuration options
-- **Complete Examples**: Ready-to-run workflow implementations
+- `RouterPattern`
+- `SubagentsPattern`
+- `CritiqueLoopPattern`
 
-## Available Patterns
+Those generators now emit LangGraph code in the current docs-aligned style:
 
-### 1. Router Pattern
+- `TypedDict` state schemas
+- `Annotated` reducers for message and accumulator fields
+- structured outputs for routing and evaluation decisions
+- `Command` for dynamic control flow
+- `InMemorySaver` in compiled examples where checkpointing is useful
 
-**Use Case**: Dynamic routing to specialized agents based on input classification
+## Core Generator-Backed Patterns
 
-The Router Pattern is ideal for scenarios where:
-- Different types of requests need specialized handling
-- Input classification determines workflow routing
-- You need modular, domain-specific agents
-- Conditional execution based on input content
+### RouterPattern
 
-**Architecture**:
-```
-START → router_node → [route_a, route_b, route_c, ...] → END
-```
-
-**Key Features**:
-- Dynamic route selection based on LLM classification
-- Support for structured output with Pydantic models
-- Customizable routes and routing logic
-- Validation for invalid route selections
-
-**Example Usage**:
+Use when a request should be handled by exactly one specialist.
 
 ```python
 from langgraph_system_generator.patterns import RouterPattern
 
-# Generate complete router system
-routes = ["search", "analyze", "summarize"]
-route_purposes = {
-    "search": "Search for information",
-    "analyze": "Analyze data and identify patterns",
-    "summarize": "Condense content into summaries",
-}
-
-# Generate complete, runnable code
-code = RouterPattern.generate_complete_example(routes, route_purposes)
-
-# Or generate individual components
-state_code = RouterPattern.generate_state_code()
-router_code = RouterPattern.generate_router_node_code(routes)
-graph_code = RouterPattern.generate_graph_code(routes)
+code = RouterPattern.generate_complete_example(
+    ["search", "analyze", "summarize"],
+    {
+        "search": "Retrieve supporting context",
+        "analyze": "Interpret the available information",
+        "summarize": "Compress the answer into key takeaways",
+    },
+)
 ```
 
-**See Also**: `examples/router_pattern_example.py` for comprehensive examples
+### SubagentsPattern
 
----
-
-### 2. Subagents Pattern
-
-**Use Case**: Supervisor-based coordination of specialized agents
-
-The Subagents Pattern is ideal for scenarios where:
-- Complex tasks need decomposition across multiple agents
-- A supervisor coordinates workflow and delegates tasks
-- Agents may need to work sequentially or collaboratively
-- You need centralized decision-making and state management
-
-**Architecture**:
-```
-START → supervisor → [agent_a, agent_b, agent_c, ...] → supervisor → END
-                ↑_____________________________________________↓
-                            (loop until FINISH)
-```
-
-**Key Features**:
-- Supervisor coordinates task delegation
-- Agents report results back to supervisor
-- Flexible iteration control with max_iterations
-- Support for tool-enabled agents
-- Structured decision-making with reasoning
-
-**Example Usage**:
+Use when a supervisor must coordinate multiple specialists over several steps.
 
 ```python
 from langgraph_system_generator.patterns import SubagentsPattern
 
-# Generate research team system
-subagents = ["researcher", "analyst", "writer"]
-descriptions = {
-    "researcher": "Gathers information from multiple sources",
-    "analyst": "Analyzes data and identifies patterns",
-    "writer": "Creates comprehensive reports",
-}
-
-# Generate complete system
-code = SubagentsPattern.generate_complete_example(subagents, descriptions)
-
-# Or generate individual components
-state_code = SubagentsPattern.generate_state_code()
-supervisor_code = SubagentsPattern.generate_supervisor_code(subagents, descriptions)
-agent_code = SubagentsPattern.generate_subagent_code("researcher", "Research specialist")
-graph_code = SubagentsPattern.generate_graph_code(subagents)
-```
-
-**See Also**: `examples/subagents_pattern_example.py` for comprehensive examples
-
----
-
-### 3. Critique-Revise Loop Pattern
-
-**Use Case**: Iterative quality improvement through critique and revision cycles
-
-The Critique-Revise Pattern is ideal for scenarios where:
-- Output quality needs iterative refinement
-- Expert critique guides improvements
-- Multiple revision cycles are acceptable
-- Quality standards must be met before completion
-
-**Architecture**:
-```
-START → generate → critique → [revise → critique] → END
-                        ↑___________↓
-                    (loop until approved or max revisions)
+code = SubagentsPattern.generate_complete_example(
+    ["researcher", "analyst", "writer"],
+    {
+        "researcher": "Gather evidence",
+        "analyst": "Interpret findings",
+        "writer": "Produce the final brief",
+    },
+)
 ```
 
 **Key Features**:
@@ -137,35 +64,22 @@ START → generate → critique → [revise → critique] → END
 - Detailed feedback with strengths, weaknesses, and suggestions
 - Approval-based workflow termination
 
-**Example Usage**:
+Use when a draft should be reviewed against explicit criteria before it ships.
 
 ```python
 from langgraph_system_generator.patterns import CritiqueLoopPattern
 
-# Generate content refinement system
-task = "Write technical documentation"
-criteria = [
-    "Technical accuracy",
-    "Clarity and readability",
-    "Completeness",
-    "Code examples quality",
-]
-
-# Generate complete system
 code = CritiqueLoopPattern.generate_complete_example(
-    task_description=task,
-    criteria=criteria,
+    task_description="Write a concise implementation guide",
+    criteria=[
+        "Accuracy",
+        "Concrete implementation guidance",
+        "Clear structure",
+    ],
     max_revisions=3,
     min_quality_score=0.85,
     failure_conditions={"fail_on_no_improvement": True},
 )
-
-# Or generate individual components
-state_code = CritiqueLoopPattern.generate_state_code()
-generate_code = CritiqueLoopPattern.generate_generation_node_code(task)
-critique_code = CritiqueLoopPattern.generate_critique_node_code(criteria)
-revise_code = CritiqueLoopPattern.generate_revise_node_code()
-graph_code = CritiqueLoopPattern.generate_graph_code(max_revisions=3)
 ```
 
 **Human Feedback Variant**:
@@ -531,20 +445,20 @@ To add new patterns to the library:
 
 ---
 
-## Resources
+These patterns are intentionally shipped as runnable examples rather than new public code-generation classes:
 
-- **LangGraph Documentation**: https://langchain-ai.github.io/langgraph/
-- **LangChain Documentation**: https://python.langchain.com/
-- **Pattern Examples**: `examples/` directory
-- **Test Suite**: `tests/unit/test_patterns.py`
-- **Source Code**: `src/langgraph_system_generator/patterns/`
+- Hierarchical agent teams
+- Plan-and-execute
+- REWOO-style speculation and reconciliation
+- Human approval / HITL interrupt flows
+- LLM-as-a-judge reflection
+- LLMCompiler-style dependency-graph execution
 
----
+Use the example assets when you want a working reference implementation or notebook walkthrough without expanding the package API surface.
 
-## Support
+## Where To Go Next
 
-For issues or questions:
-- Open an issue on GitHub
-- Review existing examples in `examples/`
-- Check test cases in `tests/` for usage patterns
-- Consult LangGraph documentation for framework details
+- Pattern showcase and selection matrix: [`examples/README.md`](../examples/README.md)
+- Runnable notebooks: `examples/*.ipynb`
+- Example scripts: `examples/*.py`
+- Unit coverage for the generator-backed APIs: [`tests/unit/test_patterns.py`](../tests/unit/test_patterns.py)
