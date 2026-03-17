@@ -1,7 +1,8 @@
-"""Runnable critique-revise loop demo using current LangGraph APIs.
+"""Runnable critique-revise loop demo using current LangGraph state patterns.
 
-The graph defaults to ``stub`` mode so it can run offline. The same graph can
-use ``ChatOpenAI`` in ``live`` mode for real structured critiques.
+The script defaults to ``stub`` mode so it can run without network access.
+Use ``--mode live`` to swap the generation and critique steps onto
+``ChatOpenAI``.
 
 Examples:
     python examples/critique_revise_pattern_example.py --mode stub
@@ -13,7 +14,14 @@ from __future__ import annotations
 import argparse
 import operator
 import os
+import sys
+from pathlib import Path
 from typing import Annotated, List, Literal, Optional
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+SRC_ROOT = REPO_ROOT / "src"
+if str(SRC_ROOT) not in sys.path:
+    sys.path.insert(0, str(SRC_ROOT))
 
 from langchain_core.messages import AIMessage, AnyMessage, HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
@@ -24,27 +32,27 @@ from typing_extensions import TypedDict
 
 ExampleMode = Literal["stub", "live"]
 
-DEFAULT_INPUT = "Draft a short onboarding guide for a new analytics dashboard."
+DEFAULT_INPUT = "Draft a release announcement for the new critique-revise workflow."
 DEFAULT_MODEL = os.environ.get("LNF_EXAMPLE_MODEL", "gpt-5-mini")
-MAX_REVISIONS = 2
-MIN_QUALITY_SCORE = 0.85
+MAX_REVISIONS = 3
+MIN_QUALITY_SCORE = 0.8
 
 
 class CritiqueAssessment(BaseModel):
-    """Structured quality review returned by the critique node."""
+    """Structured critique output for the demo workflow."""
 
     quality_score: float = Field(ge=0.0, le=1.0)
     approved: bool
-    strengths: list[str]
-    improvements: list[str]
+    strengths: List[str]
+    improvements: List[str]
     revision_focus: str
 
 
 class CritiqueState(TypedDict):
-    """Shared graph state for the critique/revise example."""
+    """Shared graph state for the critique example."""
 
     messages: Annotated[list[AnyMessage], add_messages]
-    critique_history: Annotated[list[str], operator.add]
+    critique_history: Annotated[List[str], operator.add]
     draft: str
     latest_feedback: str
     quality_score: float
@@ -62,40 +70,58 @@ def _build_live_model(*, temperature: float) -> ChatOpenAI:
     return ChatOpenAI(model=DEFAULT_MODEL, temperature=temperature)
 
 
-def _generate_stub_draft(user_input: str, revision_count: int, latest_feedback: str) -> str:
+def _generate_stub_draft(
+    user_input: str,
+    revision_count: int,
+    latest_feedback: str,
+) -> str:
     if revision_count == 0:
         return (
-            "Draft guide:\n"
-            "1. Connect your data source.\n"
-            "2. Open the dashboard home page.\n"
-            "3. Review the headline metrics.\n"
-            "4. Share a dashboard link with your team."
+            "Release announcement draft:\n"
+            f"Product update: {user_input}\n"
+            "Highlights:\n"
+            "- Teams can now choose automated or human critique paths.\n"
+            "- Failure policies are configurable for tighter review workflows.\n"
+            "- Pattern coverage includes deterministic tests and docs."
         )
+
     return (
-        "Revised guide:\n"
-        "1. Connect your data source and confirm the sync banner is green.\n"
-        "2. Review headline metrics, trends, and anomaly alerts on the home page.\n"
-        "3. Save a filtered view for your team and share the dashboard link.\n"
-        f"Revision focus applied: {latest_feedback}"
+        "Revised release announcement:\n"
+        f"Product update: {user_input}\n"
+        "Highlights:\n"
+        "- Teams can now choose automated or human critique paths.\n"
+        "- Review failure policies are configurable for predictable exits.\n"
+        "- Updated docs and tests make the pattern easier to adopt safely.\n"
+        f"Revision guidance applied: {latest_feedback or 'Improve clarity and specificity.'}"
     )
 
 
-def _generate_live_draft(user_input: str, revision_count: int, latest_feedback: str) -> str:
-    model = _build_live_model(temperature=0.3)
-    prompt = (
-        f"User request:\n{user_input}\n\nCreate a concise, practical draft."
-        if revision_count == 0
-        else (
-            f"User request:\n{user_input}\n\nCurrent feedback:\n{latest_feedback}\n\n"
-            "Revise the draft to address the feedback."
-        )
+def _generate_live_draft(
+    user_input: str,
+    revision_count: int,
+    latest_feedback: str,
+) -> str:
+    model = _build_live_model(temperature=0.2)
+    revision_context = (
+        f"Existing critique feedback:\n{latest_feedback}\n\n"
+        if revision_count > 0 and latest_feedback
+        else ""
     )
     response = model.invoke(
         [
             SystemMessage(
-                content="You write concise product documentation that is actionable and easy to skim."
+                content=(
+                    "You draft concise release announcements with clear product value, "
+                    "customer impact, and rollout clarity."
+                )
             ),
-            HumanMessage(content=prompt),
+            HumanMessage(
+                content=(
+                    f"Prepare a release announcement for:\n{user_input}\n\n"
+                    f"{revision_context}"
+                    "Keep it structured and customer-facing."
+                )
+            ),
         ]
     )
     return response.content
@@ -104,21 +130,28 @@ def _generate_live_draft(user_input: str, revision_count: int, latest_feedback: 
 def _critique_stub(revision_count: int, draft: str) -> CritiqueAssessment:
     if revision_count == 0:
         return CritiqueAssessment(
-            quality_score=0.62,
+            quality_score=0.68,
             approved=False,
-            strengths=["Good high-level sequence", "Simple language"],
-            improvements=[
-                "Add a validation step after connecting data",
-                "Explain what to do on the home page",
+            strengths=[
+                "Explains the feature at a high level",
+                "Names the new review options clearly",
             ],
-            revision_focus="Add clearer verification and expected outcomes for each step.",
+            improvements=[
+                "Make the customer value more concrete",
+                "Tighten the rollout summary",
+            ],
+            revision_focus="Emphasize user impact and simplify the closing sentence.",
         )
+
     return CritiqueAssessment(
-        quality_score=0.91,
+        quality_score=0.87,
         approved=True,
-        strengths=["Instructions are more concrete", "Outcome is clearer for each step"],
+        strengths=[
+            "Customer value is explicit",
+            "Rollout summary is concise and actionable",
+        ],
         improvements=[],
-        revision_focus="No further revision required.",
+        revision_focus="No further revision needed.",
     )
 
 
@@ -129,11 +162,11 @@ def _critique_live(draft: str) -> CritiqueAssessment:
         [
             SystemMessage(
                 content=(
-                    "You are a strict reviewer. Score the draft, decide if it is ready, list strengths, "
-                    "list improvements, and suggest a single revision focus."
+                    "You are a release communications reviewer. Score the draft, decide whether "
+                    "it is approved, and provide actionable revision guidance."
                 )
             ),
-            HumanMessage(content=draft),
+            HumanMessage(content=f"Review this draft:\n\n{draft}"),
         ]
     )
 

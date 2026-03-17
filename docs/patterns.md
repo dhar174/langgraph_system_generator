@@ -130,8 +130,10 @@ START → generate → critique → [revise → critique] → END
 
 **Key Features**:
 - Structured quality assessment with scoring
+- Human-review mode via a callback stored in workflow state
 - Configurable quality thresholds
 - Maximum revision limits to prevent infinite loops
+- Custom failure conditions for missing feedback, stalled quality, or forced termination
 - Detailed feedback with strengths, weaknesses, and suggestions
 - Approval-based workflow termination
 
@@ -154,6 +156,8 @@ code = CritiqueLoopPattern.generate_complete_example(
     task_description=task,
     criteria=criteria,
     max_revisions=3,
+    min_quality_score=0.85,
+    failure_conditions={"fail_on_no_improvement": True},
 )
 
 # Or generate individual components
@@ -163,6 +167,30 @@ critique_code = CritiqueLoopPattern.generate_critique_node_code(criteria)
 revise_code = CritiqueLoopPattern.generate_revise_node_code()
 graph_code = CritiqueLoopPattern.generate_graph_code(max_revisions=3)
 ```
+
+**Human Feedback Variant**:
+
+```python
+code = CritiqueLoopPattern.generate_complete_example(
+    task_description="Draft a release announcement",
+    feedback_source="human",
+    failure_conditions={"fail_on_missing_feedback": True},
+)
+```
+
+In human-feedback mode the generated example includes a `collect_human_feedback`
+callback that you can replace with a UI approval flow, moderation queue, or
+external review service.
+
+Only inject trusted application callbacks into workflow state. Do not source
+the human feedback handler from user input, persisted checkpoints, or other
+untrusted data.
+
+Because the generated human-feedback approach stores a Python callable in
+workflow state, it is only suitable for in-memory execution or other
+non-serializing runtime contexts. For persistent checkpointers, inject the
+review handler through runtime context or closures instead of checkpointed
+state.
 
 **See Also**: `examples/critique_revise_pattern_example.py` for comprehensive examples
 
