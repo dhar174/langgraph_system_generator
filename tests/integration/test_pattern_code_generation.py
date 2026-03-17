@@ -40,7 +40,10 @@ async def test_router_pattern_notebook_generation(tmp_path: Path):
     # Verify pattern-specific code generation
     assert "class WorkflowState(MessagesState):" in all_code, "State class not found"
     assert "route:" in all_code, "Router state field missing"
-    assert "def router_node(state: WorkflowState)" in all_code, "Router node not found"
+    assert (
+        "def router_node(state: WorkflowState, window_size: int = 5)" in all_code
+    ), "Router node not found"
+    assert "Recent conversation (last {window_size} messages):" in all_code
 
     # Verify no empty implementations (no standalone 'pass' statements for nodes)
     # Note: We allow pass in fallback scenarios, but pattern code should not have it
