@@ -242,12 +242,61 @@ Responsibility:
             f'workflow.add_edge("{node_name}", END)' for _, node_name in specs
         )
 
-        return f'''from langgraph.checkpoint.memory import InMemorySaver
-from langgraph.graph import END, START, StateGraph
+        if use_conditional_edges:
+            # Generate conditional routing function
+            route_conditions = "\n    ".join(
+                [
+                    f'if route == "{route}":\n        return "{route.lower().replace(" ", "_")}"'
+                    for route in routes
+                ]
+            )
 
+            return f'''from langgraph.graph import END, START, StateGraph
+from langgraph.checkpoint.memory import InMemorySaver
+
+
+def route_decision(state: WorkflowState) -> str:
+    """Determine next node based on router decision."""
+    route = state.get("route", "")
+    {route_conditions}
+    return END
+
+
+# Create graph
+workflow = StateGraph(WorkflowState)
+memory = InMemorySaver()
+
+# Add router node
+workflow.add_node("router", router_node)
+
+# Add route-specific nodes
+{node_additions}
+
+# Connect start to router
+workflow.add_edge(START, "router")
+
+# Add conditional edges from router to routes
+workflow.add_conditional_edges(
+    "router",
+    route_decision,
+    {{{", ".join([f'"{route.lower().replace(" ", "_")}": "{route.lower().replace(" ", "_")}"' for route in routes])}, "END": END}}
+)
+
+# Connect all routes to END
+{chr(10).join([f'workflow.add_edge("{route.lower().replace(" ", "_")}", END)' for route in routes])}
+
+# Compile graph
+graph = workflow.compile(checkpointer=memory)'''
+        else:
+            # Simple edge-based routing (less common, included for completeness)
+            return f"""from langgraph.graph import END, START, StateGraph
+from langgraph.checkpoint.memory import InMemorySaver
 
 workflow = StateGraph(WorkflowState)
-checkpointer = InMemorySaver()
+memory = InMemorySaver()
+
+# Add router node
+workflow.add_node("router", router_node)
 
 workflow.add_node("{entry_node}", router_node)
 {node_additions}

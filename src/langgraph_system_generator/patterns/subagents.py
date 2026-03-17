@@ -296,8 +296,8 @@ Role:
             f'workflow.add_edge("{node_name}", "supervisor")' for _, node_name in specs
         )
 
-        return f'''from langgraph.checkpoint.memory import InMemorySaver
-from langgraph.graph import END, START, StateGraph
+        return f'''from langgraph.graph import END, START, StateGraph
+from langgraph.checkpoint.memory import InMemorySaver
 
 
 def finish_node(state: WorkflowState) -> dict:
@@ -316,6 +316,7 @@ def finish_node(state: WorkflowState) -> dict:
 
 
 workflow = StateGraph(WorkflowState)
+memory = InMemorySaver()
 checkpointer = InMemorySaver()
 
 workflow.add_node("supervisor", supervisor_node)

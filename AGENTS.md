@@ -2,7 +2,7 @@
 
 ## Overview
 
-This repository turns a plain-language prompt into a runnable LangGraph-based multi-agent system. It combines prompt analysis, architecture selection, workflow design, notebook generation, QA repair, export pipelines, and a FastAPI web UI, while also bundling cached LangGraph/LangChain docs for offline-friendly retrieval.
+This repository turns a plain-language prompt into a runnable LangGraph-based multi-agent system. It combines prompt analysis, architecture selection, workflow design, notebook generation, QA repair, export pipelines, and a FastAPI web UI, while also bundling cached LangGraph/LangChain docs for offline-friendly retrieval. AI creating AI systems!
 
 ## Folder Structure
 

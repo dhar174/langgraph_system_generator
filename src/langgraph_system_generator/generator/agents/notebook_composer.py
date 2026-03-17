@@ -847,11 +847,11 @@ workflow.add_conditional_edges({safe_source}, {function_name}, {{"__end__": END}
             conditional_code = "\n\n# Add conditional edges\n" + "\n\n".join(conditional_blocks)
 
         return f"""from langgraph.graph import END, START, StateGraph
-from langgraph.checkpoint.memory import MemorySaver
+from langgraph.checkpoint.memory import InMemorySaver
 
 # Create graph
 workflow = StateGraph(WorkflowState)
-memory = MemorySaver()
+memory = InMemorySaver()
 
 # Add nodes
 {node_additions if node_additions else "# Add your nodes here"}
