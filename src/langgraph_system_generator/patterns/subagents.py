@@ -69,7 +69,9 @@ class WorkflowState(TypedDict, total=False):
 
         specs = _agent_specs(subagents)
         if subagent_descriptions is None:
-            subagent_descriptions = {label: f"{label} specialist" for label, _ in specs}
+            subagent_descriptions = {
+                label: f"{label} specialist" for label, _ in specs
+            }
 
         agent_literals = ", ".join(double_quoted_literal(label) for label, _ in specs)
         goto_literals = ", ".join(

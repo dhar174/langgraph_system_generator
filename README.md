@@ -234,6 +234,9 @@ code = CritiqueLoopPattern.generate_complete_example(
 Run an example:
 ```bash
 python examples/router_pattern_example.py --mode stub
+# For live mode:
+# export OPENAI_API_KEY='your-key-here'
+# python examples/router_pattern_example.py --mode live
 ```
 
 ## Precached Documentation

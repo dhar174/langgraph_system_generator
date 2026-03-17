@@ -62,6 +62,11 @@ def build_example_parser(
         default=default_task,
         help="Task prompt used for the example run.",
     )
+    parser.add_argument(
+        "--input",
+        dest="task",
+        help="Alias for --task to keep older example invocations working.",
+    )
     if include_max_steps:
         parser.add_argument(
             "--max-steps",

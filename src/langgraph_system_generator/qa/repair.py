@@ -322,7 +322,7 @@ def placeholder_node(state: WorkflowState):
 graph.add_node("start", placeholder_node)
 graph.set_entry_point("start")
 graph.add_edge("start", END)
-compiled_graph = graph.compile()
+graph = graph.compile()
 """
                     existing_source = cell.source or ""
                     if existing_source.strip():
@@ -340,7 +340,7 @@ compiled_graph = graph.compile()
                 cell = nb.cells[idx]
                 if cell.cell_type == "code" and "StateGraph" in cell.source:
                     if ".compile()" not in cell.source:
-                        cell.source = cell.source.rstrip() + "\ncompiled_graph = graph.compile()"
+                        cell.source = cell.source.rstrip() + "\ngraph = graph.compile()"
                         repaired = True
                     break
 
