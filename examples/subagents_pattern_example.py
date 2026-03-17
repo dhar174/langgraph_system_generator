@@ -35,6 +35,7 @@ AGENTS = ("researcher", "analyst", "writer")
 
 
 def merge_dicts(left: Dict[str, str], right: Dict[str, str]) -> Dict[str, str]:
+    """Merge subagent outputs into a shared mapping."""
     merged = dict(left or {})
     merged.update(right or {})
     return merged
@@ -116,7 +117,9 @@ def build_graph(mode: str, model: str, *, max_iterations: int = 4):
     """Build the runnable supervisor/subagents graph."""
     llm = ChatOpenAI(model=model, temperature=0) if mode == "live" else None
 
-    def supervisor_node(state: TeamState) -> Command[Literal["researcher", "analyst", "writer", "finish"]]:
+    def supervisor_node(
+        state: TeamState,
+    ) -> Command[Literal["researcher", "analyst", "writer", "finish"]]:
         iterations = state.get("iterations", 0)
         if iterations >= max_iterations:
             return Command(
@@ -159,13 +162,18 @@ def build_graph(mode: str, model: str, *, max_iterations: int = 4):
             update={
                 "next_agent": decision.next_agent,
                 "instructions": decision.instructions,
-                "iterations": iterations + (0 if decision.next_agent == "FINISH" else 1),
+                "iterations": iterations + (
+                    0 if decision.next_agent == "FINISH" else 1
+                ),
                 "dispatch_log": [
                     f"Supervisor -> {decision.next_agent}: {decision.reasoning}"
                 ],
                 "messages": [
                     AIMessage(
-                        content=f"Supervisor selected {decision.next_agent}: {decision.instructions}"
+                        content=(
+                            f"Supervisor selected {decision.next_agent}: "
+                            f"{decision.instructions}"
+                        )
                     )
                 ],
             },
@@ -179,7 +187,9 @@ def build_graph(mode: str, model: str, *, max_iterations: int = 4):
                 response = llm.invoke(
                     [
                         SystemMessage(content=f"You are the {agent}. Role: {role}"),
-                        HumanMessage(content=f"Instructions: {state.get('instructions', '')}"),
+                        HumanMessage(
+                            content=f"Instructions: {state.get('instructions', '')}"
+                        ),
                         *state.get("messages", []),
                     ]
                 )
@@ -198,13 +208,25 @@ def build_graph(mode: str, model: str, *, max_iterations: int = 4):
         final_output = "\n\n".join(
             f"## {agent.title()}\n{output}" for agent, output in results.items()
         )
-        return {"final_output": final_output, "messages": [AIMessage(content="Team finished.")] }
+        return {
+            "final_output": final_output,
+            "messages": [AIMessage(content="Team finished.")],
+        }
 
     workflow = StateGraph(TeamState)
     workflow.add_node("supervisor", supervisor_node)
-    workflow.add_node("researcher", specialist_node("researcher", "Gather facts and context."))
-    workflow.add_node("analyst", specialist_node("analyst", "Interpret the findings."))
-    workflow.add_node("writer", specialist_node("writer", "Produce the final answer."))
+    workflow.add_node(
+        "researcher",
+        specialist_node("researcher", "Gather facts and context."),
+    )
+    workflow.add_node(
+        "analyst",
+        specialist_node("analyst", "Interpret the findings."),
+    )
+    workflow.add_node(
+        "writer",
+        specialist_node("writer", "Produce the final answer."),
+    )
     workflow.add_node("finish", finish_node)
     workflow.add_edge(START, "supervisor")
     workflow.add_edge("researcher", "supervisor")
@@ -214,7 +236,12 @@ def build_graph(mode: str, model: str, *, max_iterations: int = 4):
     return workflow.compile(checkpointer=InMemorySaver())
 
 
-def run_demo(task: str, *, mode: str = "stub", model: str = "gpt-4.1-mini") -> Dict[str, object]:
+def run_demo(
+    task: str,
+    *,
+    mode: str = "stub",
+    model: str = "gpt-4.1-mini",
+) -> Dict[str, object]:
     """Execute the supervisor example and print a trace."""
     ensure_live_credentials(mode)
     graph = build_graph(mode, model)
@@ -253,6 +280,11 @@ def main() -> None:
     )
     args = parser.parse_args()
     result = run_demo(args.task, mode=args.mode, model=args.model)
+    print("Subagents Pattern Example")
+    print(f"Mode: {args.mode}")
+    print("Agent history:")
+    for entry in result.get("dispatch_log", []):
+        print("-", entry)
     print("\nDispatch log:")
     for entry in result.get("dispatch_log", []):
         print("-", entry)

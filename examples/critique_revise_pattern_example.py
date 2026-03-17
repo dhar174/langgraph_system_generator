@@ -79,19 +79,34 @@ def _stub_assessment(state: CritiqueState) -> CritiqueAssessment:
             quality_score=0.62,
             approved=False,
             strengths=["The draft names the core framework and supervision idea."],
-            weaknesses=["It lacks explanation of why the patterns matter.", "There are no concrete implementation details."],
-            suggestions="Add practical guidance on Command, reducers, and when to choose this pattern.",
+            weaknesses=[
+                "It lacks explanation of why the patterns matter.",
+                "There are no concrete implementation details.",
+            ],
+            suggestions=(
+                "Add practical guidance on Command, reducers, and when to choose "
+                "this pattern."
+            ),
         )
     return CritiqueAssessment(
         quality_score=0.91,
         approved=True,
-        strengths=["The revision explains why Command and reducers matter.", "The draft now ties recommendations to a concrete task."],
+        strengths=[
+            "The revision explains why Command and reducers matter.",
+            "The draft now ties recommendations to a concrete task.",
+        ],
         weaknesses=["Minor room remains for extra examples."],
         suggestions="Optionally add one more concrete example, but the draft is ready.",
     )
 
 
-def build_graph(mode: str, model: str, *, max_revisions: int = 3, min_quality_score: float = 0.85):
+def build_graph(
+    mode: str,
+    model: str,
+    *,
+    max_revisions: int = 3,
+    min_quality_score: float = 0.85,
+):
     """Build the runnable critique-revise graph."""
     llm = ChatOpenAI(model=model, temperature=0) if mode == "live" else None
 
@@ -103,7 +118,8 @@ def build_graph(mode: str, model: str, *, max_revisions: int = 3, min_quality_sc
                 [
                     SystemMessage(
                         content=(
-                            "Write or revise a response so it becomes clear, concrete, and implementation-aware."
+                            "Write or revise a response so it becomes clear, concrete, "
+                            "and implementation-aware."
                         )
                     ),
                     HumanMessage(
@@ -121,7 +137,9 @@ def build_graph(mode: str, model: str, *, max_revisions: int = 3, min_quality_sc
         return {
             "current_draft": draft,
             "revision_history": [draft],
-            "messages": [AIMessage(content=f"Draft revision {revision_count + 1} prepared.")],
+            "messages": [
+                AIMessage(content=f"Draft revision {revision_count + 1} prepared.")
+            ],
         }
 
     def critique_node(state: CritiqueState) -> Command[Literal["revise", "finalize"]]:
@@ -130,10 +148,7 @@ def build_graph(mode: str, model: str, *, max_revisions: int = 3, min_quality_sc
             assessment = llm.with_structured_output(CritiqueAssessment).invoke(
                 [
                     SystemMessage(
-                        content=(
-                            "Review the draft using the rubric below.\n"
-                            f"{criteria}"
-                        )
+                        content=("Review the draft using the rubric below.\n" f"{criteria}")
                     ),
                     HumanMessage(content=f"Draft:\n\n{state.get('current_draft', '')}"),
                 ]
@@ -163,7 +178,11 @@ def build_graph(mode: str, model: str, *, max_revisions: int = 3, min_quality_sc
                 "approved": assessment.approved,
                 "messages": [
                     AIMessage(
-                        content="Critique complete. Finalizing." if should_finalize else "Critique complete. Revising."
+                        content=(
+                            "Critique complete. Finalizing."
+                            if should_finalize
+                            else "Critique complete. Revising."
+                        )
                     )
                 ],
             },
@@ -173,7 +192,11 @@ def build_graph(mode: str, model: str, *, max_revisions: int = 3, min_quality_sc
     def revise_node(state: CritiqueState):
         return {
             "revision_count": state.get("revision_count", 0) + 1,
-            "messages": [AIMessage(content="Applying critique feedback to prepare the next revision.")],
+            "messages": [
+                AIMessage(
+                    content="Applying critique feedback to prepare the next revision."
+                )
+            ],
         }
 
     def finalize_node(state: CritiqueState):
@@ -194,7 +217,13 @@ def build_graph(mode: str, model: str, *, max_revisions: int = 3, min_quality_sc
     return workflow.compile(checkpointer=InMemorySaver())
 
 
-def run_demo(task: str, *, mode: str = "stub", model: str = "gpt-4.1-mini", max_steps: int = 3):
+def run_demo(
+    task: str,
+    *,
+    mode: str = "stub",
+    model: str = "gpt-4.1-mini",
+    max_steps: int = 3,
+):
     """Execute the critique-revise example and print a trace."""
     ensure_live_credentials(mode)
     graph = build_graph(mode, model, max_revisions=max_steps)
@@ -237,8 +266,15 @@ def main() -> None:
         include_max_steps=True,
     )
     args = parser.parse_args()
-    result = run_demo(args.task, mode=args.mode, model=args.model, max_steps=args.max_steps)
-    print("\nQuality score:", result.get("quality_score"))
+    result = run_demo(
+        args.task,
+        mode=args.mode,
+        model=args.model,
+        max_steps=args.max_steps,
+    )
+    print("Critique-Revise Pattern Example")
+    print(f"Mode: {args.mode}")
+    print("Quality score:", result.get("quality_score"))
     print("Final output:\n", result.get("final_output", ""))
 
 

@@ -66,8 +66,14 @@ def _stub_route_decision(task: str) -> RouteDecision:
     if any(token in lowered for token in ("find", "research", "search", "lookup")):
         return RouteDecision(route="search", reasoning="The task asks for retrieval.")
     if any(token in lowered for token in ("analyze", "compare", "pattern", "trend")):
-        return RouteDecision(route="analyze", reasoning="The task asks for interpretation.")
-    return RouteDecision(route="summarize", reasoning="The task asks for concise synthesis.")
+        return RouteDecision(
+            route="analyze",
+            reasoning="The task asks for interpretation.",
+        )
+    return RouteDecision(
+        route="summarize",
+        reasoning="The task asks for concise synthesis.",
+    )
 
 
 def _stub_specialist_output(route: str, task: str) -> str:
@@ -97,7 +103,9 @@ def build_graph(mode: str, model: str):
     """Build the runnable router graph for the selected mode."""
     llm = ChatOpenAI(model=model, temperature=0) if mode == "live" else None
 
-    def router_node(state: RouterState) -> Command[Literal["search", "analyze", "summarize"]]:
+    def router_node(
+        state: RouterState,
+    ) -> Command[Literal["search", "analyze", "summarize"]]:
         task = state["messages"][-1].content if state.get("messages") else ""
         decision = (
             llm.with_structured_output(RouteDecision).invoke(
@@ -152,7 +160,9 @@ def build_graph(mode: str, model: str):
             return {
                 "results": {route: content},
                 "final_output": content,
-                "messages": [AIMessage(content=f"{route} specialist completed the task.")],
+                "messages": [
+                    AIMessage(content=f"{route} specialist completed the task.")
+                ],
             }
 
         return _node
@@ -165,11 +175,17 @@ def build_graph(mode: str, model: str):
     )
     workflow.add_node(
         "analyze",
-        specialist_node("analyze", "Interpret the request and explain patterns or trade-offs."),
+        specialist_node(
+            "analyze",
+            "Interpret the request and explain patterns or trade-offs.",
+        ),
     )
     workflow.add_node(
         "summarize",
-        specialist_node("summarize", "Create a concise answer highlighting only key takeaways."),
+        specialist_node(
+            "summarize",
+            "Create a concise answer highlighting only key takeaways.",
+        ),
     )
     workflow.add_edge(START, "router")
     for route in ROUTES:
@@ -177,7 +193,12 @@ def build_graph(mode: str, model: str):
     return workflow.compile(checkpointer=InMemorySaver())
 
 
-def run_demo(task: str, *, mode: str = "stub", model: str = "gpt-4.1-mini") -> Dict[str, object]:
+def run_demo(
+    task: str,
+    *,
+    mode: str = "stub",
+    model: str = "gpt-4.1-mini",
+) -> Dict[str, object]:
     """Execute the router example and print a trace."""
     ensure_live_credentials(mode)
     graph = build_graph(mode, model)
@@ -213,7 +234,10 @@ def main() -> None:
     )
     args = parser.parse_args()
     result = run_demo(args.task, mode=args.mode, model=args.model)
-    print("\nFinal route:", result.get("route"))
+    print("Router Pattern Example")
+    print(f"Mode: {args.mode}")
+    print("Route selected:", result.get("route"))
+    print("Final route:", result.get("route"))
     print("Final output:\n", result.get("final_output", ""))
 
 

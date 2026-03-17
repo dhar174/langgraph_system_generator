@@ -10,6 +10,7 @@ from langgraph_system_generator.generator.agents import (
     toolchain_engineer,
 )
 from langgraph_system_generator.generator.nodes import (
+    _runtime_qa_suggestions,
     architecture_selection_node,
     graph_design_node,
     intake_node,
@@ -58,7 +59,6 @@ async def test_intake_node_sets_constraints(monkeypatch):
     result = await intake_node({"user_prompt": "Build a test workflow"})
 
     assert result["constraints"] == constraints
-
 
 @pytest.mark.asyncio
 async def test_rag_retrieval_node_falls_back_on_failure(monkeypatch):
@@ -227,7 +227,7 @@ async def test_runtime_qa_node_message_empty_cells():
 async def test_runtime_qa_node_message_with_cells(monkeypatch):
     monkeypatch.setattr(
         "langgraph_system_generator.generator.nodes.run_notebook_smoke_test",
-        lambda: (True, "Runtime execution environment validated using the 'python3' kernel."),
+        lambda kernel_name="python3", timeout=60: (True, "Runtime execution environment validated using the 'python3' kernel."),
     )
 
     state = {
@@ -245,7 +245,7 @@ async def test_runtime_qa_node_message_with_cells(monkeypatch):
 async def test_runtime_qa_node_reports_kernel_failure(monkeypatch):
     monkeypatch.setattr(
         "langgraph_system_generator.generator.nodes.run_notebook_smoke_test",
-        lambda: (False, "Runtime validation unavailable: kernel 'python3' is not registered."),
+        lambda kernel_name="python3", timeout=60: (False, "Runtime validation unavailable: kernel 'python3' is not registered."),
     )
 
     state = {
@@ -256,6 +256,49 @@ async def test_runtime_qa_node_reports_kernel_failure(monkeypatch):
 
     report = result["qa_reports"][-1]
     assert "Runtime validation unavailable" in report.message
+    # Kernel/runtime unavailability is treated as a skipped/warning, not a failure
+    assert report.passed is True
+
+
+@pytest.mark.asyncio
+async def test_runtime_qa_node_reports_missing_dependency_skipped(monkeypatch):
+    """Missing nbclient/nbformat should also be treated as skipped, not a failure."""
+    monkeypatch.setattr(
+        "langgraph_system_generator.generator.nodes.run_notebook_smoke_test",
+        lambda kernel_name="python3", timeout=60: (
+            False,
+            "Runtime validation unavailable: missing notebook execution dependency (No module named 'nbclient').",
+        ),
+    )
+
+    state = {
+        "generated_cells": [CellSpec(cell_type="markdown", content="Hi", metadata={})],
+        "qa_reports": [],
+    }
+    result = await runtime_qa_node(state)
+
+    report = result["qa_reports"][-1]
+    assert "Runtime validation unavailable" in report.message
+    # Missing execution dependency is non-fatal – treated as a skip/warning
+    assert report.passed is True
+
+
+@pytest.mark.asyncio
+async def test_runtime_qa_node_reports_actual_failure(monkeypatch):
+    """Actual smoke-test failures (not 'unavailable') should still fail the check."""
+    monkeypatch.setattr(
+        "langgraph_system_generator.generator.nodes.run_notebook_smoke_test",
+        lambda kernel_name="python3", timeout=60: (False, "Runtime validation failed: smoke notebook executed without the expected output."),
+    )
+
+    state = {
+        "generated_cells": [CellSpec(cell_type="markdown", content="Hi", metadata={})],
+        "qa_reports": [],
+    }
+    result = await runtime_qa_node(state)
+
+    report = result["qa_reports"][-1]
+    assert "Runtime validation failed" in report.message
     assert report.passed is False
 
 

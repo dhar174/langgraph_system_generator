@@ -551,7 +551,8 @@ function showResult(data) {
         { key: 'html_path', label: 'HTML' },
         { key: 'docx_path', label: 'Word Doc' },
         { key: 'pdf_path', label: 'PDF' },
-        { key: 'zip_path', label: 'ZIP Bundle' }
+        { key: 'zip_path', label: 'ZIP Bundle' },
+        { key: 'markdown_path', label: 'Markdown (.md)' }
     ];
     
     formats.forEach(format => {
@@ -573,22 +574,8 @@ function showResult(data) {
     copyBtn.textContent = 'Copy Result Info';
     copyBtn.onclick = () => {
         const resultText = JSON.stringify(manifest, null, 2);
-        navigator.clipboard.writeText(resultText).then(() => {
-            const originalText = copyBtn.textContent;
-            copyBtn.textContent = 'Copied!';
-            setTimeout(() => {
-                copyBtn.textContent = originalText;
-            }, 2000);
-        }).catch(err => {
-            console.error('Failed to copy:', err);
-        });
-    };
-    exportButtons.appendChild(copyBtn);
-    
-    exportSection.appendChild(exportHeading);
-    exportSection.appendChild(exportButtons);
-    resultWrapper.appendChild(exportSection);
-    
+        // Use the shared clipboard helper so toasts and errors are handled consistently
+        copyTextToClipboard(resultText, 'Result info copied to clipboard');
     // Add to DOM
     resultContent.appendChild(resultWrapper);
     resultCard.style.display = 'block';
@@ -906,6 +893,91 @@ function updateHistoryDisplay() {
         
         historyContent.appendChild(item);
     });
+}
+
+function copyLastPromptFromHistory() {
+    try {
+        const rawHistory = typeof localStorage !== 'undefined'
+            ? localStorage.getItem('generationHistory')
+            : null;
+
+        let entries = [];
+        if (rawHistory) {
+            try {
+                const parsed = JSON.parse(rawHistory);
+                if (Array.isArray(parsed)) {
+                    entries = parsed;
+                }
+            } catch (e) {
+                console.error('Failed to parse generationHistory from localStorage', e);
+            }
+        }
+
+        if (!entries.length) {
+            const notification = document.createElement('div');
+            notification.style.cssText = 'position: fixed; top: 20px; right: 20px; background: var(--error-color); color: white; padding: 1rem; border-radius: 0.5rem; z-index: 1000; opacity: 1; transition: opacity 0.3s ease; animation: slideDown 0.3s ease;';
+            notification.textContent = 'No history entries available to copy';
+            document.body.appendChild(notification);
+
+            setTimeout(() => {
+                notification.style.opacity = '0';
+                setTimeout(() => notification.remove(), 300);
+            }, 2000);
+            return;
+        }
+
+        const lastEntry = entries[entries.length - 1];
+        const prompt =
+            (lastEntry && lastEntry.fullData && lastEntry.fullData.prompt) ||
+            (lastEntry && lastEntry.prompt);
+
+        if (!prompt) {
+            const notification = document.createElement('div');
+            notification.style.cssText = 'position: fixed; top: 20px; right: 20px; background: var(--error-color); color: white; padding: 1rem; border-radius: 0.5rem; z-index: 1000; opacity: 1; transition: opacity 0.3s ease; animation: slideDown 0.3s ease;';
+            notification.textContent = 'Last history entry has no prompt to copy';
+            document.body.appendChild(notification);
+
+            setTimeout(() => {
+                notification.style.opacity = '0';
+                setTimeout(() => notification.remove(), 300);
+            }, 2000);
+            return;
+        }
+
+        if (typeof copyTextToClipboard === 'function') {
+            copyTextToClipboard(prompt);
+        } else if (navigator && navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+            navigator.clipboard.writeText(prompt).catch((err) => {
+                console.error('Failed to write prompt to clipboard via navigator.clipboard', err);
+            });
+        } else {
+            // Fallback: temporary textarea
+            const textarea = document.createElement('textarea');
+            textarea.value = prompt;
+            textarea.style.position = 'fixed';
+            textarea.style.opacity = '0';
+            document.body.appendChild(textarea);
+            textarea.select();
+            try {
+                document.execCommand('copy');
+            } catch (err) {
+                console.error('Fallback clipboard copy failed', err);
+            }
+            textarea.remove();
+        }
+
+        const notification = document.createElement('div');
+        notification.style.cssText = 'position: fixed; top: 20px; right: 20px; background: var(--success-color); color: white; padding: 1rem; border-radius: 0.5rem; z-index: 1000; opacity: 1; transition: opacity 0.3s ease; animation: slideDown 0.3s ease;';
+        notification.textContent = 'Last prompt copied from history';
+        document.body.appendChild(notification);
+
+        setTimeout(() => {
+            notification.style.opacity = '0';
+            setTimeout(() => notification.remove(), 300);
+        }, 2000);
+    } catch (err) {
+        console.error('copyLastPromptFromHistory failed', err);
+    }
 }
 
 function rerunFromHistory(entry) {
