@@ -219,7 +219,7 @@ def router_node(state: WorkflowState, window_size: int = 5) -> WorkflowState:
     system_prompt = SystemMessage(content="""You are a routing classifier.
 Analyze the recent conversation and select the most appropriate route.
 Resolve coreferences such as "it", "that", and "the one" using the conversation history.
-Respond using the provided schema.""")
+Respond using the provided RouteDecision schema.""")
 
     classification_prompt = f"""Analyze the following conversation and determine which route should handle the user's latest request.
 
