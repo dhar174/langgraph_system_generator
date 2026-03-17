@@ -431,7 +431,7 @@ Format: SCORE|APPROVED or NEEDS_REVISION|feedback""")
         "approved": approved,
         "previous_quality_score": previous_quality_score,
         "messages": messages + [HumanMessage(content=f"Critique: {{feedback}}")],
-    }}'''
+    }}
 
     @staticmethod
     def generate_revise_node_code(model_config: Optional[Union[ModelConfig, dict]] = None) -> str:
@@ -766,8 +766,6 @@ This example demonstrates an iterative refinement workflow where:
 - Revisions are made based on feedback
 - The cycle repeats until approval or max iterations
 """
-
-        return f'''"""Critique-Revise Loop Pattern Example."""
 
 from __future__ import annotations
 
