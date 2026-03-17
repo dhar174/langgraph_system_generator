@@ -1,6 +1,8 @@
 """Router pattern generator aligned with current LangGraph graph APIs."""
 
 from __future__ import annotations
+import pytest import ast
+
 
 from typing import Dict, List, Optional, Union
 
@@ -231,7 +233,6 @@ Responsibility:
         use_conditional_edges: bool = True,
     ) -> str:
         """Generate a graph using dynamic ``Command``-based routing."""
-        del use_conditional_edges
         specs = _route_specs(routes)
         entry_node = sanitize_identifier(entry_point or "router")
         node_additions = "\n".join(
