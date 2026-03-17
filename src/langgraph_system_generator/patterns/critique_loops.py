@@ -337,27 +337,18 @@ Status: {{"APPROVED" if assessment.approved else "NEEDS REVISION"}}
 
 Strengths:
 {{chr(10).join([f"- {{s}}" for s in assessment.strengths])}}
+
+Suggestions for improvement:
+{{assessment.suggestions}}
+
     revision_count = state.get("revision_count", 0)
+    max_revisions = revision
     llm = {llm_init}
 
     assessment = llm.with_structured_output(CritiqueAssessment).invoke([
         SystemMessage(
             content="""You are an expert reviewer in a critique-revise loop.
 
-Suggestions for improvement:
-{{assessment.suggestions}}"""
-    
-    return {{
-        **state,
-        "critique_feedback": feedback,
-        "quality_score": assessment.quality_score,
-        "approved": assessment.approved,
-        "previous_quality_score": previous_quality_score,
-        "messages": messages + [HumanMessage(content=f"Critique: {{feedback}}")],
-    }}'''
-        else:
-            return f'''from langchain_openai import ChatOpenAI
-from langchain_core.messages import HumanMessage, SystemMessage
 Evaluate the draft against:
 {criteria_lines}
 """
@@ -374,7 +365,8 @@ Evaluate the draft against:
         "Suggestions:",
         assessment.suggestions,
     ])
-
+    max_revisions = 5  # or import from relevant module before usage
+    min_quality_score = 0.8
     should_finalize = assessment.approved or revision_count >= {max_revisions} or assessment.quality_score >= {min_quality_score}
     return Command(
         update={{
@@ -389,6 +381,9 @@ Evaluate the draft against:
         }},
         goto="finalize" if should_finalize else "revise",
     )'''
+    
+
+
 
         return f'''from typing import Literal
 
