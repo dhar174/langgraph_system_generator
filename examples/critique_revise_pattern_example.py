@@ -344,7 +344,7 @@ def run_demo(
             "revision_count": 0,
             "final_output": "",
         },
-        config={"configurable": {"thread_id": "example-run"}},
+        config={"configurable": {"thread_id": "example-run"}})
 def main() -> None:
     parser = build_example_parser(
         "Run a critique-revise pattern example.",
