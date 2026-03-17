@@ -17,7 +17,6 @@ Generates Python code for a LangGraph node with:
 """
 
 import argparse
-import sys
 
 
 def _literal_annotation(destinations: list[str]) -> str:
@@ -25,22 +24,16 @@ def _literal_annotation(destinations: list[str]) -> str:
     return f" -> Command[Literal[{quoted}]]"
 
 
-def generate_retry_node(
+def _append_imports_and_state(
+    lines: list[str],
     node_name: str,
-    max_attempts: int = 3,
-    initial_interval: float = 1.0,
-    backoff_factor: float = 2.0,
-    with_fallback: bool = False,
-    with_llm_recovery: bool = False,
-    with_human_escalation: bool = False,
-) -> str:
-    """Generate Python code for a LangGraph node with error handling."""
-    uses_command = with_llm_recovery or with_fallback or with_human_escalation
-    lines = []
+    uses_command: bool,
+    with_human_escalation: bool,
+    with_llm_recovery: bool,
+) -> None:
+    """Append imports and state definitions."""
     lines.append(f'"""Auto-generated error handling for {node_name} node."""')
     lines.append("")
-
-    # Imports
     if uses_command:
         lines.append("from typing import Literal")
     lines.append("from langgraph.graph import StateGraph, MessagesState, START, END")
@@ -51,8 +44,6 @@ def generate_retry_node(
     if with_human_escalation:
         lines.append("from langgraph.types import interrupt")
     lines.append("")
-
-    # State
     lines.append("")
     lines.append("class State(MessagesState, total=False):")
     lines.append(f"    {node_name}_result: str")
@@ -60,13 +51,21 @@ def generate_retry_node(
     if with_llm_recovery:
         lines.append("    retry_count: int")
     lines.append("")
-
     if uses_command:
         lines.append("# Update this tuple to match your app's recoverable errors.")
         lines.append("RECOVERABLE_EXCEPTIONS = (ValueError, KeyError)")
         lines.append("")
 
-    # Main node function
+
+def _append_main_node_block(
+    lines: list[str],
+    node_name: str,
+    uses_command: bool,
+    with_fallback: bool,
+    with_llm_recovery: bool,
+    with_human_escalation: bool,
+) -> None:
+    """Append the primary node function."""
     lines.append("")
     if uses_command:
         main_destinations = ["__end__"]
@@ -82,155 +81,218 @@ def generate_retry_node(
     lines.append(f'    """Execute {node_name} with error handling."""')
     lines.append("    try:")
     lines.append(f"        # TODO: Implement {node_name} logic")
-    lines.append(f'        result = "success"')
+    lines.append('        result = "success"')
     if uses_command:
-        lines.append("        return Command(")
-        lines.append(
-            f'            update={{"{node_name}_result": result, "{node_name}_error": ""}},'
+        lines.extend(
+            [
+                "        return Command(",
+                f'            update={{"{node_name}_result": result, "{node_name}_error": ""}},',
+                "            goto=END,",
+                "        )",
+            ]
         )
-        lines.append("            goto=END,")
-        lines.append("        )")
     else:
         lines.append(
             f'        return {{"{node_name}_result": result, "{node_name}_error": ""}}'
         )
 
     if with_llm_recovery:
-        lines.append("    except RECOVERABLE_EXCEPTIONS as e:")
-        lines.append("        # Store error for LLM recovery")
-        lines.append("        return Command(")
-        lines.append(
-            f'            update={{"{node_name}_error": str(e), "retry_count": state.get("retry_count", 0)}},'
+        lines.extend(
+            [
+                "    except RECOVERABLE_EXCEPTIONS as e:",
+                "        # Store error for LLM recovery",
+                "        return Command(",
+                f'            update={{"{node_name}_error": str(e), "retry_count": state.get("retry_count", 0)}},',
+                f'            goto="handle_{node_name}_error"',
+                "        )",
+                "    # Let transient/fatal exceptions bubble up for RetryPolicy and visibility.",
+            ]
         )
-        lines.append(f'            goto="handle_{node_name}_error"')
-        lines.append("        )")
-        lines.append("    # Let transient/fatal exceptions bubble up for RetryPolicy and visibility.")
     elif with_human_escalation:
-        lines.append("    except RECOVERABLE_EXCEPTIONS as e:")
-        lines.append("        # Escalate to human")
-        lines.append("        response = interrupt({")
-        lines.append(f'            "error": str(e),')
-        lines.append(f'            "node": "{node_name}",')
-        lines.append(f'            "question": "How should we handle this error?"')
-        lines.append("        })")
-        lines.append("        return Command(")
-        lines.append(
-            f'            update={{"{node_name}_result": str(response), "{node_name}_error": str(e)}},'
+        lines.extend(
+            [
+                "    except RECOVERABLE_EXCEPTIONS as e:",
+                "        # Escalate to human",
+                "        response = interrupt({",
+                '            "error": str(e),',
+                f'            "node": "{node_name}",',
+                '            "question": "How should we handle this error?"',
+                "        })",
+                "        return Command(",
+                f'            update={{"{node_name}_result": str(response), "{node_name}_error": str(e)}},',
+                "            goto=END,",
+                "        )",
+                "    # Let transient/fatal exceptions bubble up for RetryPolicy and visibility.",
+            ]
         )
-        lines.append("            goto=END,")
-        lines.append("        )")
-        lines.append("    # Let transient/fatal exceptions bubble up for RetryPolicy and visibility.")
     elif with_fallback:
-        lines.append("    except RECOVERABLE_EXCEPTIONS as e:")
-        lines.append("        return Command(")
-        lines.append(f'            update={{"{node_name}_error": str(e)}},')
-        lines.append(f'            goto="{node_name}_fallback",')
-        lines.append("        )")
-        lines.append("    # Let transient/fatal exceptions bubble up for RetryPolicy and visibility.")
-    else:
-        lines.append("    except Exception as e:")
-        lines.append(f'        return {{"{node_name}_result": "", "{node_name}_error": str(e)}}')
-    lines.append("")
-
-    # LLM recovery handler
-    if with_llm_recovery:
-        lines.append("")
-        handler_destinations = [node_name, "__end__"]
-        if with_fallback:
-            handler_destinations.append(f"{node_name}_fallback")
-        lines.append(
-            f"def handle_{node_name}_error(state: State){_literal_annotation(handler_destinations)}:"
+        lines.extend(
+            [
+                "    except RECOVERABLE_EXCEPTIONS as e:",
+                "        return Command(",
+                f'            update={{"{node_name}_error": str(e)}},',
+                f'            goto="{node_name}_fallback",',
+                "        )",
+                "    # Let transient/fatal exceptions bubble up for RetryPolicy and visibility.",
+            ]
         )
-        lines.append(f'    """LLM-based error recovery for {node_name}."""')
-        lines.append(f'    error = state.get("{node_name}_error", "")')
-        lines.append(f'    retry_count = state.get("retry_count", 0)')
-        lines.append("")
-        lines.append(f"    if retry_count >= {max_attempts}:")
-        if with_human_escalation:
-            lines.append("        # Escalate to human after max retries")
-            lines.append("        response = interrupt({")
-            lines.append(f'            "error": error,')
-            lines.append(f'            "retries_exhausted": True,')
-            if with_fallback:
-                lines.append(
-                    '            "question": "LLM recovery failed. Reply \\"fallback\\" to use fallback, or provide manual instructions."'
-                )
-            else:
-                lines.append(
-                    '            "question": "LLM recovery failed. Provide manual instructions."'
-                )
-            lines.append("        })")
-            if with_fallback:
-                lines.append(
-                    '        if isinstance(response, str) and response.strip().lower() == "fallback":'
-                )
-                lines.append("            return Command(")
-                lines.append(
-                    f'                update={{"{node_name}_error": error, "retry_count": 0}},'
-                )
-                lines.append(f'                goto="{node_name}_fallback",')
-                lines.append("            )")
-            lines.append("        return Command(")
-            lines.append(
-                f'            update={{"{node_name}_result": str(response), "{node_name}_error": error, "retry_count": 0}},'
-            )
-            lines.append("            goto=END,")
-            lines.append("        )")
-        elif with_fallback:
-            lines.append("        return Command(")
-            lines.append(
-                f'            update={{"{node_name}_error": error, "retry_count": 0}},'
-            )
-            lines.append(f'            goto="{node_name}_fallback",')
-            lines.append("        )")
-        else:
-            lines.append("        return Command(")
-            lines.append(
-                f'            update={{"{node_name}_error": error, "retry_count": retry_count}},'
-            )
-            lines.append("            goto=END,")
-            lines.append("        )")
-        lines.append("")
-        lines.append("    # TODO: Add LLM call to analyze error and suggest fix")
-        lines.append("    return Command(")
-        lines.append(f'        update={{"retry_count": retry_count + 1}},')
-        lines.append(f'        goto="{node_name}",')
-        lines.append("    )")
-        lines.append("")
+    else:
+        lines.extend(
+            [
+                "    except Exception as e:",
+                f'        return {{"{node_name}_result": "", "{node_name}_error": str(e)}}',
+            ]
+        )
+    lines.append("")
 
-    # Fallback handler
+
+def _append_llm_recovery_block(
+    lines: list[str],
+    node_name: str,
+    max_attempts: int,
+    with_fallback: bool,
+    with_human_escalation: bool,
+) -> None:
+    """Append the LLM recovery handler."""
+    handler_destinations = [node_name, "__end__"]
     if with_fallback:
-        lines.append("")
-        lines.append(f"def {node_name}_fallback(state: State):")
-        lines.append(f'    """Fallback strategy for {node_name}."""')
-        lines.append(f'    # TODO: Implement fallback logic')
-        lines.append(f'    return {{"{node_name}_result": "fallback_result", "{node_name}_error": ""}}')
-        lines.append("")
+        handler_destinations.append(f"{node_name}_fallback")
+    lines.extend(
+        [
+            "",
+            f"def handle_{node_name}_error(state: State){_literal_annotation(handler_destinations)}:",
+            f'    """LLM-based error recovery for {node_name}."""',
+            f'    error = state.get("{node_name}_error", "")',
+            '    retry_count = state.get("retry_count", 0)',
+            "",
+            f"    if retry_count >= {max_attempts}:",
+        ]
+    )
+    if with_human_escalation:
+        lines.extend(
+            [
+                "        # Escalate to human after max retries",
+                "        response = interrupt({",
+                '            "error": error,',
+                '            "retries_exhausted": True,',
+            ]
+        )
+        if with_fallback:
+            lines.append(
+                '            "question": "LLM recovery failed. Reply \\"fallback\\" to use fallback,"'
+            )
+            lines.append('            " or provide manual instructions.",')
+        else:
+            lines.append(
+                '            "question": "LLM recovery failed. Provide manual instructions.",'
+            )
+        lines.extend(
+            [
+                "        })",
+            ]
+        )
+        if with_fallback:
+            lines.extend(
+                [
+                    '        if isinstance(response, str) and response.strip().lower() == "fallback":',
+                    "            return Command(",
+                    f'                update={{"{node_name}_error": error, "retry_count": 0}},',
+                    f'                goto="{node_name}_fallback",',
+                    "            )",
+                ]
+            )
+        lines.extend(
+            [
+                "        return Command(",
+                f'            update={{"{node_name}_result": str(response), "{node_name}_error": error, "retry_count": 0}},',
+                "            goto=END,",
+                "        )",
+            ]
+        )
+    elif with_fallback:
+        lines.extend(
+            [
+                "        return Command(",
+                f'            update={{"{node_name}_error": error, "retry_count": 0}},',
+                f'            goto="{node_name}_fallback",',
+                "        )",
+            ]
+        )
+    else:
+        lines.extend(
+            [
+                "        return Command(",
+                f'            update={{"{node_name}_error": error, "retry_count": retry_count}},',
+                "            goto=END,",
+                "        )",
+            ]
+        )
+    lines.extend(
+        [
+            "",
+            "    # TODO: Add LLM call to analyze error and suggest fix",
+            "    return Command(",
+            '        update={"retry_count": retry_count + 1},',
+            f'        goto="{node_name}",',
+            "    )",
+            "",
+        ]
+    )
 
-    # Graph assembly
-    lines.append("")
-    lines.append("# --- Graph Assembly ---")
-    lines.append("builder = StateGraph(State)")
-    lines.append("")
-    lines.append(f"builder.add_node(")
-    lines.append(f'    "{node_name}",')
-    lines.append(f"    {node_name},")
-    lines.append(f"    retry_policy=RetryPolicy(")
-    lines.append(f"        max_attempts={max_attempts},")
-    lines.append(f"        initial_interval={initial_interval},")
-    lines.append(f"        backoff_factor={backoff_factor},")
-    lines.append(f"    ),")
-    lines.append(f")")
 
+def _append_fallback_block(lines: list[str], node_name: str) -> None:
+    """Append fallback handler block."""
+    lines.extend(
+        [
+            "",
+            f"def {node_name}_fallback(state: State):",
+            f'    """Fallback strategy for {node_name}."""',
+            f"    # TODO: Implement fallback logic for {node_name}",
+            f'    return {{"{node_name}_result": "fallback_result", "{node_name}_error": ""}}',
+            "",
+        ]
+    )
+
+
+def _append_graph_assembly(
+    lines: list[str],
+    node_name: str,
+    max_attempts: int,
+    initial_interval: float,
+    backoff_factor: float,
+    uses_command: bool,
+    with_llm_recovery: bool,
+    with_fallback: bool,
+    with_human_escalation: bool,
+) -> None:
+    """Append graph assembly code."""
+    lines.extend(
+        [
+            "",
+            "# --- Graph Assembly ---",
+            "builder = StateGraph(State)",
+            "",
+            "builder.add_node(",
+            f'    "{node_name}",',
+            f"    {node_name},",
+            "    retry_policy=RetryPolicy(",
+            f"        max_attempts={max_attempts},",
+            f"        initial_interval={initial_interval},",
+            f"        backoff_factor={backoff_factor},",
+            "    ),",
+            ")",
+        ]
+    )
     if with_llm_recovery:
         lines.append(f'builder.add_node("handle_{node_name}_error", handle_{node_name}_error)')
-
     if with_fallback:
         lines.append(f'builder.add_node("{node_name}_fallback", {node_name}_fallback)')
-
-    lines.append("")
-    lines.append(f'builder.add_edge(START, "{node_name}")')
-
+    lines.extend(
+        [
+            "",
+            f'builder.add_edge(START, "{node_name}")',
+        ]
+    )
     if not uses_command:
         lines.append(f'builder.add_edge("{node_name}", END)')
     else:
@@ -239,17 +301,68 @@ def generate_retry_node(
         )
     if with_fallback:
         lines.append(f'builder.add_edge("{node_name}_fallback", END)')
-
     lines.append("")
-
     if with_human_escalation:
-        lines.append("# Requires checkpointer for interrupt()")
-        lines.append("from langgraph.checkpoint.memory import InMemorySaver")
-        lines.append("graph = builder.compile(checkpointer=InMemorySaver())")
+        lines.extend(
+            [
+                "# Requires checkpointer for interrupt()",
+                "from langgraph.checkpoint.memory import InMemorySaver",
+                "graph = builder.compile(checkpointer=InMemorySaver())",
+            ]
+        )
     else:
         lines.append("graph = builder.compile()")
-
     lines.append("")
+
+
+def generate_retry_node(
+    node_name: str,
+    max_attempts: int = 3,
+    initial_interval: float = 1.0,
+    backoff_factor: float = 2.0,
+    with_fallback: bool = False,
+    with_llm_recovery: bool = False,
+    with_human_escalation: bool = False,
+) -> str:
+    """Generate Python code for a LangGraph node with error handling."""
+    uses_command = with_llm_recovery or with_fallback or with_human_escalation
+    lines = []
+    _append_imports_and_state(
+        lines,
+        node_name,
+        uses_command,
+        with_human_escalation,
+        with_llm_recovery,
+    )
+    _append_main_node_block(
+        lines,
+        node_name,
+        uses_command,
+        with_fallback,
+        with_llm_recovery,
+        with_human_escalation,
+    )
+    if with_llm_recovery:
+        _append_llm_recovery_block(
+            lines,
+            node_name,
+            max_attempts,
+            with_fallback,
+            with_human_escalation,
+        )
+    if with_fallback:
+        _append_fallback_block(lines, node_name)
+    _append_graph_assembly(
+        lines,
+        node_name,
+        max_attempts,
+        initial_interval,
+        backoff_factor,
+        uses_command,
+        with_llm_recovery,
+        with_fallback,
+        with_human_escalation,
+    )
     return "\n".join(lines)
 
 
