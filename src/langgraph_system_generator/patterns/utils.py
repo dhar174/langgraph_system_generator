@@ -38,8 +38,8 @@ def double_quoted_literal(value: str) -> str:
     return json.dumps(value)
 
 
-def normalize_inline_comment(value: str) -> str:
-    """Return safe single-line text for inline generated comments."""
+def collapse_whitespace(value: str) -> str:
+    """Return text with internal whitespace normalized to single spaces."""
     return " ".join(str(value).split())
 
 
@@ -49,6 +49,6 @@ def render_additional_fields(additional_fields: Optional[Dict[str, str]]) -> str
         return ""
     rendered = []
     for field_name, description in additional_fields.items():
-        comment = normalize_inline_comment(description)
+        comment = collapse_whitespace(description)
         rendered.append(f"    {sanitize_identifier(field_name)}: str  # {comment}")
     return "\n".join(rendered) + "\n"
