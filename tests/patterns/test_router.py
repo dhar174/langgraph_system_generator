@@ -1,7 +1,8 @@
 """Focused router-pattern tests."""
 
 from __future__ import annotations
-
+import pytest
+import ast
 from langgraph_system_generator.patterns import RouterPattern
 
 
