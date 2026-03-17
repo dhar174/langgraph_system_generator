@@ -119,7 +119,7 @@ Validate existing agentic project structure (focus on structure, not deep file i
 
    Agents Layer:
      ✅ .github/agents/reviewer.md
-     ⚠️ .github/agents/architect.md - missing 'model' field
+     ⚠️ .github/agents/architect.md - missing 'tools' field
 
    Skills Layer:
      ✅ .github/skills/git-workflow.md
@@ -237,7 +237,6 @@ Would you like to install any of these? (Provide install links)
 ```markdown
 ---
 description: '{DESCRIPTION}'
-model: GPT-4.1
 tools: [{RELEVANT_TOOLS}]
 ---
 
@@ -343,8 +342,8 @@ These are the official requirements from awesome-copilot. The agent does NOT dee
 
 | File Type | Required Fields | Recommended |
 |-----------|-----------------|-------------|
-| `.agent.md` | `description` | `model`, `tools`, `name` |
-| `.prompt.md` | `agent`, `description` | `model`, `tools`, `name` |
+| `.agent.md` | `description` | `tools`, `name` |
+| `.prompt.md` | `agent`, `description` | `tools`, `name` |
 | `.instructions.md` | `description`, `applyTo` | - |
 | `SKILL.md` | `name`, `description` | - |
 
