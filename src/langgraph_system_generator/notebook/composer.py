@@ -73,12 +73,13 @@ class NotebookComposer:
         """Ensure required sections are present and ordered for Colab-friendly execution."""
         provided_sections = {c.section for c in cells if c.section}
         scaffold: List[CellSpec] = []
+        architecture_type = self._infer_architecture_type(cells)
 
         required: Iterable[tuple[str, Iterable[CellSpec]]] = [
             ("setup", templates.installation_and_imports()),
             ("config", templates.configuration_cell()),
             ("graph", templates.build_graph_cells()),
-            ("execution", templates.run_graph_cells()),
+            ("execution", templates.run_graph_cells(architecture_type)),
             ("export", templates.export_results_cells()),
             ("troubleshooting", templates.troubleshooting_cell()),
         ]
@@ -89,3 +90,19 @@ class NotebookComposer:
 
         scaffold.extend(cells)
         return scaffold
+
+    @staticmethod
+    def _infer_architecture_type(cells: Sequence[CellSpec]) -> str | None:
+        """Infer the generated architecture from state/node cells."""
+        combined_content = "\n".join(
+            cell.content for cell in cells if cell.section in {"state", "state_definition", "nodes", "graph"}
+        )
+        lowered = combined_content.lower()
+
+        if "revision_count:" in lowered and "critique_feedback:" in lowered:
+            return "critique_loop"
+        if "task_results:" in lowered and "instructions:" in lowered:
+            return "subagents"
+        if "route:" in lowered and "final_output:" in lowered:
+            return "router"
+        return None
