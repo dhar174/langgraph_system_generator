@@ -3,7 +3,6 @@ description: "Testing mode for Playwright tests"
 infer: true
 name: "Playwright Tester Mode"
 tools: ["changes", "codebase", "edit/editFiles", "fetch", "findTestFiles", "problems", "runCommands", "runTasks", "runTests", "search", "searchResults", "terminalLastCommand", "terminalSelection", "testFailure", "playwright", "execute", "read", "agent", "todo"]
-model: Claude Sonnet 4
 ---
 
 ## Core Responsibilities
