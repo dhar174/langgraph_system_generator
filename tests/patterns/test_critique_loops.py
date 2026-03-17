@@ -33,7 +33,8 @@ class TestCritiqueLoopPatternCodeGeneration:
             include_failure_tracking=True,
         )
 
-        assert "human_feedback_handler: object" in code
+        assert "human_feedback_handler: Callable[..., Dict[str, Any]]" in code
+        assert "quality_score, approved, and feedback" in code
         assert "previous_quality_score: float" in code
         compile(code, "<critique_state_extensions>", "exec")
 
@@ -136,6 +137,13 @@ class TestCritiqueLoopPatternFailureConditions:
         assert "return \"max_revisions_failed\"" in code
         assert "quality_delta <= 0.05" in code
         compile(code, "<custom_failure_routing>", "exec")
+
+    def test_invalid_min_quality_improvement_raises_clear_value_error(self):
+        """Test invalid improvement thresholds fail with a named error."""
+        with pytest.raises(ValueError, match="min_quality_improvement"):
+            CritiqueLoopPattern.generate_conditional_edge_code(
+                failure_conditions={"min_quality_improvement": "five"}
+            )
 
     def test_generate_graph_code_maps_extended_failure_outcomes(self):
         """Test graph generation includes all termination outcomes."""
@@ -272,6 +280,13 @@ class TestCritiqueLoopPatternDocumentation:
         with pytest.raises(ValueError, match="identifier"):
             CritiqueLoopPattern.generate_state_code(
                 additional_fields={"not-valid-field": "Invalid field"}
+            )
+
+    def test_keyword_additional_field_name_raises_value_error(self):
+        """Test Python keywords are rejected as generated field names."""
+        with pytest.raises(ValueError, match="keywords are not allowed"):
+            CritiqueLoopPattern.generate_state_code(
+                additional_fields={"class": "Reserved keyword"}
             )
 
 

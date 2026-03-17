@@ -17,6 +17,7 @@ Example Usage:
     >>> graph_code = CritiqueLoopPattern.generate_graph_code(max_revisions=3)
 """
 
+import keyword
 from typing import Any, Dict, List, Optional, Union
 
 from langgraph_system_generator.patterns.utils import build_llm_init
@@ -59,7 +60,21 @@ class CritiqueLoopPattern:
             raise ValueError(
                 f"Invalid additional field name {field_name!r}; expected a Python identifier"
             )
+        if keyword.iskeyword(field_name):
+            raise ValueError(
+                f"Invalid additional field name {field_name!r}; Python keywords are not allowed"
+            )
         return field_name
+
+    @staticmethod
+    def _coerce_float_setting(value: Any, setting_name: str) -> float:
+        """Parse a float setting with a clear error for invalid inputs."""
+        try:
+            return float(value)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(
+                f"{setting_name} must be numeric, got {value!r} ({type(value).__name__})"
+            ) from exc
 
     @staticmethod
     def generate_state_code(
@@ -80,7 +95,7 @@ class CritiqueLoopPattern:
         built_in = ""
         if include_human_feedback:
             built_in += (
-                "    human_feedback_handler: object  # Callback that returns human review feedback\n"
+                "    human_feedback_handler: Callable[..., Dict[str, Any]]  # Trusted callback returning quality_score, approved, and feedback\n"
             )
         if include_failure_tracking:
             built_in += (
@@ -94,7 +109,7 @@ class CritiqueLoopPattern:
                 safe_description = str(description).replace("\n", " ").replace("\r", " ")
                 additional += f"    {safe_name}: str  # {safe_description}\n"
 
-        return f'''from typing import Annotated, List
+        return f'''from typing import Annotated, Any, Callable, Dict, List
 from langgraph.graph import MessagesState
 
 
@@ -515,8 +530,9 @@ Revise the draft to address the feedback.""")
         fail_on_no_improvement = bool(
             failure_conditions.get("fail_on_no_improvement", False)
         )
-        min_quality_improvement = float(
-            failure_conditions.get("min_quality_improvement", 0.0)
+        min_quality_improvement = CritiqueLoopPattern._coerce_float_setting(
+            failure_conditions.get("min_quality_improvement", 0.0),
+            "min_quality_improvement",
         )
         fail_on_missing_feedback = bool(
             failure_conditions.get("fail_on_missing_feedback", False)

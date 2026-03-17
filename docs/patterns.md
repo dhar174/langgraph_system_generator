@@ -186,6 +186,12 @@ Only inject trusted application callbacks into workflow state. Do not source
 the human feedback handler from user input, persisted checkpoints, or other
 untrusted data.
 
+Because the generated human-feedback approach stores a Python callable in
+workflow state, it is only suitable for in-memory execution or other
+non-serializing runtime contexts. For persistent checkpointers, inject the
+review handler through runtime context or closures instead of checkpointed
+state.
+
 **See Also**: `examples/critique_revise_pattern_example.py` for comprehensive examples
 
 ---
