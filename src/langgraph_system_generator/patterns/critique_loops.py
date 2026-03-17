@@ -750,9 +750,9 @@ This example demonstrates an iterative refinement workflow where:
 {revise_code}
 
 
-{graph_code}
 {human_feedback_example}
 
+{graph_code}
 
 # Example usage
 if __name__ == "__main__":
