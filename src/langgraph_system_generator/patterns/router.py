@@ -365,7 +365,7 @@ Provide helpful, accurate, and detailed responses.""")
             )
 
             return f'''from langgraph.graph import END, START, StateGraph
-from langgraph.checkpoint.memory import MemorySaver
+from langgraph.checkpoint.memory import InMemorySaver
 
 
 def route_decision(state: WorkflowState) -> str:
@@ -377,7 +377,7 @@ def route_decision(state: WorkflowState) -> str:
 
 # Create graph
 workflow = StateGraph(WorkflowState)
-memory = MemorySaver()
+memory = InMemorySaver()
 
 # Add router node
 workflow.add_node("router", router_node)
@@ -403,11 +403,11 @@ graph = workflow.compile(checkpointer=memory)'''
         else:
             # Simple edge-based routing (less common, included for completeness)
             return f"""from langgraph.graph import END, START, StateGraph
-from langgraph.checkpoint.memory import MemorySaver
+from langgraph.checkpoint.memory import InMemorySaver
 
 # Create graph
 workflow = StateGraph(WorkflowState)
-memory = MemorySaver()
+memory = InMemorySaver()
 
 # Add router node
 workflow.add_node("router", router_node)

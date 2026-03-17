@@ -74,7 +74,7 @@ class TestRouterPattern:
         assert "StateGraph(WorkflowState)" in code
         assert 'workflow.add_node("router", router_node)' in code
         assert "add_conditional_edges" in code
-        assert "MemorySaver()" in code
+        assert "InMemorySaver()" in code
 
     def test_generate_complete_example(self):
         """Test complete example generation."""

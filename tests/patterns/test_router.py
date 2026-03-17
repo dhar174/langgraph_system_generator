@@ -124,7 +124,7 @@ class TestRouterPatternCodeGeneration:
         assert "StateGraph(WorkflowState)" in code
         assert 'workflow.add_node("router", router_node)' in code
         assert "add_conditional_edges" in code
-        assert "MemorySaver()" in code
+        assert "InMemorySaver()" in code
         assert "compile" in code
 
     def test_generate_graph_code_without_conditional_edges(self):
