@@ -11,7 +11,7 @@ from langgraph_system_generator.utils.config import (
 )
 
 
-def test_settings_loads_from_env_file(tmp_path):
+def test_settings_loads_from_env_file(tmp_path, monkeypatch):
     env_path = Path(tmp_path) / ".env"
     env_path.write_text(
         "\n".join(
@@ -26,6 +26,16 @@ def test_settings_loads_from_env_file(tmp_path):
         ),
         encoding="utf-8",
     )
+
+    for key in [
+        "OPENAI_API_KEY",
+        "LANGSMITH_PROJECT",
+        "VECTOR_STORE_TYPE",
+        "DEFAULT_MODEL",
+        "MAX_REPAIR_ATTEMPTS",
+        "DEFAULT_BUDGET_TOKENS",
+    ]:
+        monkeypatch.delenv(key, raising=False)
 
     class FileSettings(Settings):
         model_config = SettingsConfigDict(

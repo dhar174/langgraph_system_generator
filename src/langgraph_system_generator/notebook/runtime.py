@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from functools import lru_cache
 from pathlib import Path
 from shutil import which
 
@@ -34,7 +35,10 @@ def inspect_kernel_spec(kernel_name: str = "python3") -> tuple[bool, str]:
     return True, f"Kernel '{kernel_name}' is available for notebook execution."
 
 
-def run_notebook_smoke_test(kernel_name: str = "python3", timeout: int = 60) -> tuple[bool, str]:
+@lru_cache(maxsize=8)
+def run_notebook_smoke_test(
+    kernel_name: str = "python3", timeout: int = 60
+) -> tuple[bool, str]:
     """Execute a tiny notebook to verify notebook runtime support."""
 
     kernel_ok, kernel_message = inspect_kernel_spec(kernel_name)
@@ -45,7 +49,10 @@ def run_notebook_smoke_test(kernel_name: str = "python3", timeout: int = 60) -> 
         from nbclient.client import NotebookClient
         from nbformat.v4 import new_code_cell, new_notebook
     except ImportError as exc:
-        return False, f"Runtime validation unavailable: missing notebook execution dependency ({exc})."
+        return (
+            False,
+            f"Runtime validation unavailable: missing notebook execution dependency ({exc}).",
+        )
 
     notebook = new_notebook(cells=[new_code_cell("value = 2 + 2\nprint(value)")])
     client = NotebookClient(notebook, timeout=timeout, kernel_name=kernel_name)
