@@ -68,6 +68,7 @@ async def test_tooling_plan_node_returns_tools_plan():
     constraints = [Constraint(type="goal", value="Build agents", priority=5)]
     workflow_design = {"nodes": [{"name": "agent", "purpose": "coordinate"}]}
     expected_tools = [{"name": "search", "category": "search"}]
+    expected_tools = [{"name": "search", "category": "search"}]
 
     # Patch ChatOpenAI used inside ToolchainEngineer.__init__ to avoid requiring OPENAI_API_KEY
     with patch(

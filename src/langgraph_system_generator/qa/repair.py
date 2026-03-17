@@ -248,22 +248,35 @@ class NotebookRepairAgent:
         missing_sections_str = match.group(1)
         missing_sections = [sec.strip() for sec in missing_sections_str.split(",")]
 
-        # Create placeholder cells for missing sections
         repaired = False
         for section in missing_sections:
             section = section.strip()
-            
-            # Add a markdown header cell
             header_cell = nbformat.v4.new_markdown_cell(
-                source=f"## {section.title()}\n\nGenerated section placeholder."
+                source=f"## {section.title()}\n\nRecovered automatically during notebook repair."
             )
             header_cell.metadata["section"] = section
 
-            # Add a code placeholder
-            code_cell = nbformat.v4.new_code_cell(source="# Section implementation here\npass")
+            code_templates = {
+                "setup": "from pathlib import Path\n\nworkspace_dir = Path.cwd()\nworkspace_dir",
+                "config": 'MODEL = "gpt-5-mini"\nMAX_ITERATIONS = 10',
+                "graph": (
+                    "from langgraph.graph import END, START, StateGraph\n\n"
+                    "workflow = StateGraph(dict)\n"
+                    "workflow.add_node(\"start\", lambda state: state)\n"
+                    "workflow.add_edge(START, \"start\")\n"
+                    "workflow.add_edge(\"start\", END)\n"
+                    "graph = workflow.compile()"
+                ),
+                "execution": 'result = graph.invoke({})\nprint(result)',
+            }
+            code_cell = nbformat.v4.new_code_cell(
+                source=code_templates.get(
+                    section,
+                    f'section_status = "Recovered {section}"\nprint(section_status)',
+                )
+            )
             code_cell.metadata["section"] = section
 
-            # Append to notebook
             nb.cells.extend([header_cell, code_cell])
             repaired = True
 
@@ -309,6 +322,7 @@ def placeholder_node(state: WorkflowState):
 graph.add_node("start", placeholder_node)
 graph.set_entry_point("start")
 graph.add_edge("start", END)
+graph = graph.compile()
 """
                     existing_source = cell.source or ""
                     if existing_source.strip():
@@ -326,7 +340,7 @@ graph.add_edge("start", END)
                 cell = nb.cells[idx]
                 if cell.cell_type == "code" and "StateGraph" in cell.source:
                     if ".compile()" not in cell.source:
-                        cell.source = cell.source.rstrip() + "\ncompiled_graph = graph.compile()"
+                        cell.source = cell.source.rstrip() + "\ngraph = graph.compile()"
                         repaired = True
                     break
 

@@ -102,6 +102,7 @@ class TestSubagentsPattern:
         assert "next: str" in code
         assert "instructions: str" in code
         assert "task_results: dict" in code
+        assert "task_results_summary: str" in code
 
     def test_generate_state_code_with_additional_fields(self):
         """Test state code generation with additional fields."""
@@ -129,6 +130,10 @@ class TestSubagentsPattern:
         assert '"reviewer"' in code
         assert '"FINISH"' in code
         assert "with_structured_output" in code
+        assert "gpt-4o-mini" in code
+        assert "task_results_summary" in code
+        assert "Older summarized results" in code
+        assert "Recent full results" in code
 
     def test_generate_supervisor_code_simple(self):
         """Test supervisor node generation without structured output."""
@@ -139,6 +144,11 @@ class TestSubagentsPattern:
 
         assert "def supervisor_node(state: WorkflowState)" in code
         assert "with_structured_output" not in code
+        assert "gpt-4o-mini" in code
+        assert "task_results_summary" in code
+        assert "Older summarized results" in code
+        assert "Recent full results" in code
+        assert "results_summary = str(task_results)" not in code
 
     def test_generate_subagent_code(self):
         """Test subagent node generation."""
@@ -174,6 +184,30 @@ class TestSubagentsPattern:
         assert 'workflow.add_node("researcher", researcher_node)' in code
         assert 'workflow.add_node("writer", writer_node)' in code
         assert "add_conditional_edges" in code
+
+    def test_generate_supervisor_code_includes_context_window_management(self):
+        """Test supervisor code includes bounded task result context management."""
+        code = SubagentsPattern.generate_supervisor_code(["researcher", "writer"])
+
+        assert "MAX_RESULT_CHARS = 2000" in code
+        assert "MAX_TOTAL_RESULT_CHARS = 8000" in code
+        assert "RECENT_FULL_RESULTS = 2" in code
+        assert "def _summarize_older_results" in code
+        assert "def _prepare_task_results_context" in code
+        assert "remaining_summary_budget" in code
+        assert '"task_results_summary": task_results_summary' in code
+
+    def test_generate_supervisor_code_supports_summary_model_override(self):
+        """Test supervisor summarization model can be configured explicitly."""
+        from langgraph_system_generator.utils.config import ModelConfig
+
+        config = ModelConfig(model="gpt-5-mini", summary_model="gpt-5-nano")
+        code = SubagentsPattern.generate_supervisor_code(
+            ["researcher"],
+            model_config=config,
+        )
+
+        assert "model='gpt-5-nano'" in code
 
     def test_generate_complete_example(self):
         """Test complete example generation."""

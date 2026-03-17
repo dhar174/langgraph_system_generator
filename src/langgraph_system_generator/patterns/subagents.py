@@ -68,6 +68,7 @@ class WorkflowState(MessagesState):
     next: str  # Next agent to execute or "FINISH"
     instructions: str  # Supervisor's instructions to the next agent
     task_results: dict  # Results from each subagent
+    task_results_summary: str  # Summarized older task results
 {additional}'''
 
     @staticmethod
@@ -100,8 +101,12 @@ class WorkflowState(MessagesState):
         # Supervisor uses temperature=0 for deterministic routing decisions
         api_base = config.api_base
         max_tokens = config.max_tokens
+        summary_model = config.summary_model or (
+            "gpt-4o-mini" if api_base is None else llm_model
+        )
         
         llm_init = build_llm_init(llm_model, 0, api_base, max_tokens)
+        summary_llm_init = build_llm_init(summary_model, 0, api_base, max_tokens)
         
         if subagent_descriptions is None:
             subagent_descriptions = {
@@ -116,6 +121,97 @@ class WorkflowState(MessagesState):
         )
 
         agents_list = ", ".join([f'"{agent}"' for agent in subagents])
+        context_window_helpers = f'''
+MAX_RESULT_CHARS = 2000
+MAX_TOTAL_RESULT_CHARS = 8000
+RECENT_FULL_RESULTS = 2
+
+
+def _truncate_result(result: str, limit: int = MAX_RESULT_CHARS) -> str:
+    """Limit stored task result text to keep supervisor prompts bounded."""
+    result_text = str(result)
+    return f"{{result_text[:limit]}}..." if len(result_text) > limit else result_text
+
+
+def _format_results(results) -> str:
+    """Render task results into a supervisor-friendly bullet list."""
+    if not results:
+        return "No results yet."
+
+    return "\\n".join(
+        [f"- {{agent}}: {{_truncate_result(result)}}" for agent, result in results]
+    )
+
+
+def _summarize_older_results(existing_summary: str, older_results_text: str) -> str:
+    """Condense older task results into a compact summary."""
+    if not older_results_text:
+        return _truncate_result(existing_summary, MAX_TOTAL_RESULT_CHARS)
+
+    summarizer = {summary_llm_init}
+    summary_prompt = (
+        "Summarize the older agent results into concise supervisor context. "
+        "Preserve completed work, important findings, unresolved issues, "
+        "and constraints that future agents should know."
+    )
+    summary_input = "\\n\\n".join(
+        [
+            section
+            for section in [
+                f"Existing summary:\\n{{existing_summary}}" if existing_summary else "",
+                f"Older agent results:\\n{{older_results_text}}",
+            ]
+            if section
+        ]
+    )
+
+    try:
+        response = summarizer.invoke(
+            [
+                SystemMessage(content=summary_prompt),
+                HumanMessage(content=summary_input),
+            ]
+        )
+        return _truncate_result(response.content.strip(), MAX_TOTAL_RESULT_CHARS)
+    except Exception:
+        fallback_sections = [
+            existing_summary,
+            _truncate_result(older_results_text, MAX_TOTAL_RESULT_CHARS // 2),
+        ]
+        fallback = "\\n\\n".join([section for section in fallback_sections if section])
+        return _truncate_result(fallback, MAX_TOTAL_RESULT_CHARS)
+
+
+def _prepare_task_results_context(task_results: dict, existing_summary: str):
+    """Return summarized older results plus recent full results."""
+    items = list(task_results.items())
+    all_results = _format_results(items)
+
+    if len(existing_summary) + len(all_results) <= MAX_TOTAL_RESULT_CHARS:
+        return existing_summary, all_results
+
+    if len(items) <= RECENT_FULL_RESULTS:
+        truncated_recent = _truncate_result(all_results, MAX_TOTAL_RESULT_CHARS // 2)
+        updated_summary = _truncate_result(existing_summary, MAX_TOTAL_RESULT_CHARS // 2)
+        if not updated_summary:
+            updated_summary = (
+                "Earlier results were truncated to fit the supervisor context window."
+            )
+        return updated_summary, truncated_recent
+
+    recent_items = items[-RECENT_FULL_RESULTS:]
+    older_items = items[:-RECENT_FULL_RESULTS]
+    updated_summary = _summarize_older_results(
+        existing_summary,
+        _format_results(older_items),
+    )
+    recent_results = _format_results(recent_items)
+    remaining_summary_budget = max(MAX_TOTAL_RESULT_CHARS - len(recent_results), 0)
+    if remaining_summary_budget == 0:
+        return "", _truncate_result(recent_results, MAX_TOTAL_RESULT_CHARS)
+    updated_summary = _truncate_result(updated_summary, remaining_summary_budget)
+    return updated_summary, recent_results
+'''
 
         if use_structured_output:
             return f'''from langchain_openai import ChatOpenAI
@@ -136,6 +232,8 @@ class SupervisorDecision(BaseModel):
         description="Explanation for this decision"
     )
 
+{context_window_helpers}
+
 
 def supervisor_node(state: WorkflowState) -> WorkflowState:
     """Supervisor coordinates subagents and delegates tasks.
@@ -146,6 +244,7 @@ def supervisor_node(state: WorkflowState) -> WorkflowState:
     """
     messages = state["messages"]
     task_results = state.get("task_results", {{}})
+    task_results_summary = state.get("task_results_summary", "")
     
     # Initialize LLM with structured output
     llm = {llm_init}
@@ -164,16 +263,18 @@ Your role is to:
 
 Consider the results from previous agents when making decisions."""
     
-    # Build context from task results
-    results_summary = "\\n".join([
-        f"- {{agent}}: {{result[:200]}}..." if len(result) > 200 else f"- {{agent}}: {{result}}"
-        for agent, result in task_results.items()
-    ]) if task_results else "No results yet."
+    task_results_summary, recent_results = _prepare_task_results_context(
+        task_results,
+        task_results_summary,
+    )
     
     user_prompt = f"""Current conversation: {{messages[-1].content if messages else "Starting task"}}
 
-Previous agent results:
-{{results_summary}}
+Older summarized results:
+{{task_results_summary or "No summarized results yet."}}
+
+Recent full results:
+{{recent_results}}
 
 Decide which agent should act next and provide instructions."""
     
@@ -192,17 +293,21 @@ Decide which agent should act next and provide instructions."""
         **state,
         "next": decision.next,
         "instructions": decision.instructions,
+        "task_results_summary": task_results_summary,
         "messages": messages + [next_message],
     }}'''
         else:
             return f'''from langchain_openai import ChatOpenAI
 from langchain_core.messages import HumanMessage, SystemMessage
 
+{context_window_helpers}
+
 
 def supervisor_node(state: WorkflowState) -> WorkflowState:
     """Supervisor coordinates subagents and delegates tasks."""
     messages = state["messages"]
     task_results = state.get("task_results", {{}})
+    task_results_summary = state.get("task_results_summary", "")
     
     llm = {llm_init}
     
@@ -213,9 +318,20 @@ Available agents: {agents_list}, or FINISH to complete.
 Respond with: AGENT_NAME|instructions
 Example: researcher|Find information about X""")
     
-    results_summary = str(task_results) if task_results else "No results yet"
+    task_results_summary, recent_results = _prepare_task_results_context(
+        task_results,
+        task_results_summary,
+    )
     user_prompt = HumanMessage(
-        content=f"Task: {{messages[-1].content if messages else 'Start'}}\\nResults: {{results_summary}}\\nDecision:"
+        content=f"""Task: {{messages[-1].content if messages else 'Start'}}
+
+Older summarized results:
+{{task_results_summary or "No summarized results yet."}}
+
+Recent full results:
+{{recent_results}}
+
+Decision:"""
     )
     
     # Get decision
@@ -228,6 +344,7 @@ Example: researcher|Find information about X""")
         **state,
         "next": next_agent,
         "instructions": instructions,
+        "task_results_summary": task_results_summary,
     }}'''
 
     @staticmethod

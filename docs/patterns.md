@@ -130,8 +130,10 @@ START → generate → critique → [revise → critique] → END
 
 **Key Features**:
 - Structured quality assessment with scoring
+- Human-review mode via a callback stored in workflow state
 - Configurable quality thresholds
 - Maximum revision limits to prevent infinite loops
+- Custom failure conditions for missing feedback, stalled quality, or forced termination
 - Detailed feedback with strengths, weaknesses, and suggestions
 - Approval-based workflow termination
 
@@ -154,6 +156,8 @@ code = CritiqueLoopPattern.generate_complete_example(
     task_description=task,
     criteria=criteria,
     max_revisions=3,
+    min_quality_score=0.85,
+    failure_conditions={"fail_on_no_improvement": True},
 )
 
 # Or generate individual components
@@ -163,6 +167,30 @@ critique_code = CritiqueLoopPattern.generate_critique_node_code(criteria)
 revise_code = CritiqueLoopPattern.generate_revise_node_code()
 graph_code = CritiqueLoopPattern.generate_graph_code(max_revisions=3)
 ```
+
+**Human Feedback Variant**:
+
+```python
+code = CritiqueLoopPattern.generate_complete_example(
+    task_description="Draft a release announcement",
+    feedback_source="human",
+    failure_conditions={"fail_on_missing_feedback": True},
+)
+```
+
+In human-feedback mode the generated example includes a `collect_human_feedback`
+callback that you can replace with a UI approval flow, moderation queue, or
+external review service.
+
+Only inject trusted application callbacks into workflow state. Do not source
+the human feedback handler from user input, persisted checkpoints, or other
+untrusted data.
+
+Because the generated human-feedback approach stores a Python callable in
+workflow state, it is only suitable for in-memory execution or other
+non-serializing runtime contexts. For persistent checkpointers, inject the
+review handler through runtime context or closures instead of checkpointed
+state.
 
 **See Also**: `examples/critique_revise_pattern_example.py` for comprehensive examples
 
@@ -329,15 +357,25 @@ Each example includes:
 
 ### Running Examples
 
-```bash
-# Set your OpenAI API key
-export OPENAI_API_KEY='your-key-here'
+The critique-revise example runs in stub mode by default (no API key needed):
 
-# Run an example
+```bash
+# Run in stub mode (offline, no API key required)
+python examples/critique_revise_pattern_example.py --mode stub
+
+# Run in live mode (requires OPENAI_API_KEY)
+export OPENAI_API_KEY='your-key-here'
+python examples/critique_revise_pattern_example.py --mode live --input "Draft onboarding docs"
+
+# Router and subagents examples also require an API key for live mode
+export OPENAI_API_KEY='your-key-here'
 python examples/router_pattern_example.py
 python examples/subagents_pattern_example.py
-python examples/critique_revise_pattern_example.py
 ```
+
+The critique-revise example uses LangGraph v1 idioms:
+- `Command`-based routing from the critique node (replaces `add_conditional_edges`)
+- `InMemorySaver` checkpointer on the compiled graph
 
 ---
 
@@ -424,44 +462,57 @@ class SubagentsPattern:
 class CritiqueLoopPattern:
     @staticmethod
     def generate_state_code(
-        additional_fields: Optional[Dict[str, str]] = None
+        additional_fields: Optional[Dict[str, str]] = None,
+        include_human_feedback: bool = False,
+        include_failure_tracking: bool = False,
     ) -> str
-    
+
     @staticmethod
     def generate_generation_node_code(
         task_description: str = "Generate initial output",
         llm_model: str = "gpt-5-mini",
+        model_config: Optional[Union[ModelConfig, dict]] = None,
     ) -> str
-    
+
     @staticmethod
     def generate_critique_node_code(
         criteria: Optional[List[str]] = None,
         llm_model: str = "gpt-5-mini",
         use_structured_output: bool = True,
+        feedback_source: str = "automated",
+        model_config: Optional[Union[ModelConfig, dict]] = None,
     ) -> str
-    
+
     @staticmethod
     def generate_revise_node_code(
         llm_model: str = "gpt-5-mini",
+        model_config: Optional[Union[ModelConfig, dict]] = None,
     ) -> str
-    
+
     @staticmethod
     def generate_conditional_edge_code(
         max_revisions: int = 3,
         min_quality_score: float = 0.8,
+        failure_conditions: Optional[Dict[str, Any]] = None,
     ) -> str
-    
+
     @staticmethod
     def generate_graph_code(
         max_revisions: int = 3,
         min_quality_score: float = 0.8,
+        failure_conditions: Optional[Dict[str, Any]] = None,
     ) -> str
-    
+
     @staticmethod
     def generate_complete_example(
         task_description: str = "Write a technical article",
         criteria: Optional[List[str]] = None,
         max_revisions: int = 3,
+        min_quality_score: float = 0.8,
+        model_config: Optional[Union[ModelConfig, dict]] = None,
+        use_structured_output: bool = True,
+        feedback_source: str = "automated",
+        failure_conditions: Optional[Dict[str, Any]] = None,
     ) -> str
 ```
 
