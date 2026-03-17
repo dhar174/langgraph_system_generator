@@ -16,7 +16,8 @@ pip install -e .
 Live mode requires `OPENAI_API_KEY`:
 
 ```bash
-$env:OPENAI_API_KEY="sk-..."
+export OPENAI_API_KEY="sk-..."  # Linux/macOS (bash/zsh)
+$env:OPENAI_API_KEY="sk-..."    # Windows (PowerShell)
 python examples/router_pattern_example.py --mode live
 ```
 
