@@ -147,6 +147,13 @@ def test_generated_pattern_sections_compile_as_python():
         compile(snippet, "<generated-pattern>", "exec")
 
 
+def test_generated_pattern_state_normalizes_multiline_field_descriptions():
+    snippet = RouterPattern.generate_state_code(
+        additional_fields={"user_id": "User identifier\nfrom prompt context"}
+    )
+
+    assert "user_id: str  # User identifier from prompt context" in snippet
+    compile(snippet, "<generated-pattern>", "exec")
 def test_pattern_generators_accept_model_config_dicts_and_api_base():
     config = {
         "model": "gpt-5-mini",
