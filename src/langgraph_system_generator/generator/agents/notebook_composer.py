@@ -362,9 +362,6 @@ Generate the complete Python function implementation."""
 # Purpose: {safe_tool_purpose_comment}
 # Category: {safe_tool_category}
 
-def {func_name}(*args, **kwargs):
-    \"\"\
-    {safe_tool_purpose}
 """
 
         if "search" in tool_category:
