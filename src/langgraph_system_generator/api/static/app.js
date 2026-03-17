@@ -551,7 +551,8 @@ function showResult(data) {
         { key: 'html_path', label: 'HTML' },
         { key: 'docx_path', label: 'Word Doc' },
         { key: 'pdf_path', label: 'PDF' },
-        { key: 'zip_path', label: 'ZIP Bundle' }
+        { key: 'zip_path', label: 'ZIP Bundle' },
+        { key: 'markdown_path', label: 'Markdown (.md)' }
     ];
     
     formats.forEach(format => {
@@ -573,22 +574,8 @@ function showResult(data) {
     copyBtn.textContent = 'Copy Result Info';
     copyBtn.onclick = () => {
         const resultText = JSON.stringify(manifest, null, 2);
-        navigator.clipboard.writeText(resultText).then(() => {
-            const originalText = copyBtn.textContent;
-            copyBtn.textContent = 'Copied!';
-            setTimeout(() => {
-                copyBtn.textContent = originalText;
-            }, 2000);
-        }).catch(err => {
-            console.error('Failed to copy:', err);
-        });
-    };
-    exportButtons.appendChild(copyBtn);
-    
-    exportSection.appendChild(exportHeading);
-    exportSection.appendChild(exportButtons);
-    resultWrapper.appendChild(exportSection);
-    
+        // Use the shared clipboard helper so toasts and errors are handled consistently
+        copyTextToClipboard(resultText, 'Result info copied to clipboard');
     // Add to DOM
     resultContent.appendChild(resultWrapper);
     resultCard.style.display = 'block';

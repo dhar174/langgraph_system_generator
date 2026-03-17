@@ -111,11 +111,7 @@ def _pytest_is_active() -> bool:
 
 
 def _resolve_default_env_file() -> Optional[str]:
-    """Resolve the default dotenv path for application usage.
-
-    Tests should remain deterministic and therefore do not implicitly load the
-    repository root `.env` file unless they ask for one explicitly.
-    """
+    """Resolve the default dotenv path for application usage."""
 
     configured_env_file = os.environ.get("LNF_ENV_FILE")
     if configured_env_file is not None:
@@ -147,13 +143,7 @@ def _cached_settings(env_file: Optional[str]) -> Settings:
 
 
 def get_settings(env_file: Union[str, Path, None, object] = _DEFAULT_ENV_FILE) -> Settings:
-    """Return a cached settings instance.
-
-    Args:
-        env_file: Optional dotenv file path. Pass `None` to disable dotenv
-            loading explicitly. When omitted, the app auto-loads `.env` outside
-            pytest and skips it during tests.
-    """
+    """Return a cached settings instance."""
 
     if env_file is _DEFAULT_ENV_FILE:
         resolved_env_file = _resolve_default_env_file()
@@ -164,6 +154,8 @@ def get_settings(env_file: Union[str, Path, None, object] = _DEFAULT_ENV_FILE) -
 
     return _cached_settings(resolved_env_file)
 
+def _pytest_is_active() -> bool:
+    """Return True when running under pytest collection or execution."""
 
 def reset_settings_cache(
     env_file: Union[str, Path, None, object] = _DEFAULT_ENV_FILE,

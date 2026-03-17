@@ -189,7 +189,7 @@
 </head>
 <body>
     <div class="container">
-        <h1>🧪 SSE Progress Streaming Test</h1>
+        <h1>SSE Progress Streaming Test</h1>
         <p class="description">
             Test the new Server-Sent Events (SSE) progress streaming functionality for async generation.
         </p>
@@ -239,7 +239,7 @@
             html += `<span class="event-data">${message}</span>`;
             
             if (data) {
-                html += `<br><span class="event-time">└─</span><span class="event-data" style="color: #aaa;">${JSON.stringify(data, null, 2)}</span>`;
+                html += `<br><span class="event-time">|-</span><span class="event-data" style="color: #aaa;">${JSON.stringify(data, null, 2)}</span>`;
             }
             
             entry.innerHTML = html;
@@ -322,7 +322,7 @@
                     const elapsed = ((Date.now() - startTime) / 1000).toFixed(2);
                     log('complete', `Generation completed in ${elapsed}s`, data);
                     updateProgress(100, 'Complete!');
-                    showStatus(`✓ Generation completed successfully in ${elapsed}s`);
+                    showStatus(`OK: Generation completed successfully in ${elapsed}s`);
                     stopTest();
                 });
                 
@@ -330,10 +330,10 @@
                     if (e.data) {
                         const data = JSON.parse(e.data);
                         log('error', data.error, data.details);
-                        showStatus(`✗ Error: ${data.error}`, true);
+                        showStatus(`ERROR: ${data.error}`, true);
                     } else {
                         log('error', 'SSE connection error');
-                        showStatus('✗ SSE connection error', true);
+                        showStatus('ERROR: SSE connection error', true);
                     }
                     stopTest();
                 });
@@ -343,13 +343,13 @@
                         log('info', 'SSE stream closed');
                     } else {
                         log('error', 'SSE connection lost');
-                        showStatus('✗ SSE connection lost', true);
+                        showStatus('ERROR: SSE connection lost', true);
                     }
                 };
                 
             } catch (error) {
                 log('error', error.message);
-                showStatus(`✗ Failed: ${error.message}`, true);
+                showStatus(`ERROR: ${error.message}`, true);
                 startBtn.disabled = false;
                 stopBtn.disabled = true;
             }

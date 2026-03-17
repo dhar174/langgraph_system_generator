@@ -8,6 +8,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Any, Dict, List
 
+import asyncio
 import nbformat
 
 from langgraph_system_generator.generator.agents import (
@@ -335,40 +336,39 @@ async def runtime_qa_node(state: GeneratorState) -> Dict[str, Any]:
             message=message,
         )
     else:
-        # First check whether the runtime is even available (non-blocking).
-        kernel_ok, kernel_message = inspect_kernel_spec()
-        if not kernel_ok:
-            # Distinguish between a genuinely unavailable kernel (skip) and
-            # missing runtime dependencies (fail with suggestions).
-            normalized = kernel_message.lower()
-            if "missing jupyter_client" in normalized or "missing notebook execution dependency" in normalized:
-                # Notebook execution dependencies are missing; surface this as a
-                # failed runtime QA so users get actionable guidance.
-                suggestions = _runtime_qa_suggestions(kernel_message)
-                report = QAReport(
-                    check_name="Runtime Check",
-                    passed=False,
-                    message=kernel_message,
-                    suggestions=suggestions,
+        passed, message = await asyncio.to_thread(run_notebook_smoke_test)
+        suggestions: List[str] = []
+        if not passed:
+            suggestions = [
+                "Install a healthy python3 Jupyter kernel before running runtime QA.",
+                "Refresh the kernel spec with: python -m ipykernel install --user --name python3",
+            ]
+            # Treat *any* "Runtime validation unavailable: ..." result as a
+            # skipped/warning check so that environments without Jupyter kernels
+            # or notebook execution deps don't trigger the repair loop and block
+            # generation entirely.
+            if (message or "").startswith("Runtime validation unavailable"):
+                logger.warning(
+                    "Runtime QA skipped due to missing notebook kernel/runtime: %s",
+                    message,
                 )
-            else:
-                # Kernel/runtime is unavailable in this environment.  Treat this as
-                # a skipped check so generation does not enter unnecessary repair loops.
                 report = QAReport(
                     check_name="Runtime Check",
                     passed=True,
-                    message=f"Runtime QA skipped (environment unavailable): {kernel_message}",
+                    message=f"Runtime checks skipped: {message}",
+                    suggestions=suggestions,
+                )
+            else:
+                report = QAReport(
+                    check_name="Runtime Check",
+                    passed=False,
+                    message=message,
+                    suggestions=suggestions,
                 )
         else:
-            # Run the potentially long-running smoke test off the event loop so
-            # the async workflow (API/SSE) remains responsive.
-            passed, message = await asyncio.to_thread(run_notebook_smoke_test)
-            suggestions = []
-            if not passed:
-                suggestions = _runtime_qa_suggestions(message)
             report = QAReport(
                 check_name="Runtime Check",
-                passed=passed,
+                passed=True,
                 message=message,
                 suggestions=suggestions,
             )
