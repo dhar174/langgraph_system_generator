@@ -26,7 +26,7 @@ class DummyLLM:
     "architecture_type, state_marker",
     [
         ("router", "route: str"),
-        ("subagents", "next: str"),
+        ("subagents", "next_agent: str"),
     ],
 )
 async def test_compose_notebook_sections_and_packages(

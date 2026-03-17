@@ -38,9 +38,10 @@ async def test_router_pattern_notebook_generation(tmp_path: Path):
     all_code = "\n\n".join([cell.source for cell in code_cells])
 
     # Verify pattern-specific code generation
-    assert "class WorkflowState(MessagesState):" in all_code, "State class not found"
-    assert "route:" in all_code, "Router state field missing"
+    assert "TypedDict" in all_code, "TypedDict state not found"
+    assert "route_history" in all_code, "Router reducer-backed state field missing"
     assert "def router_node(state: WorkflowState)" in all_code, "Router node not found"
+    assert "Command" in all_code, "Router should use Command-based routing"
 
     # Verify no empty implementations (no standalone 'pass' statements for nodes)
     # Note: We allow pass in fallback scenarios, but pattern code should not have it
@@ -48,10 +49,9 @@ async def test_router_pattern_notebook_generation(tmp_path: Path):
     router_related = [s for s in code_sections if "def router_node" in s]
     if router_related:
         # Router node should have actual implementation, not just pass
-        assert any(
-            "ChatOpenAI" in section or "llm" in section.lower()
-            for section in router_related
-        ), "Router node has no LLM implementation"
+        assert "with_structured_output" in all_code or "ChatOpenAI" in all_code, (
+            "Router notebook should include model-backed routing logic"
+        )
 
     # Verify graph construction
     assert "StateGraph(WorkflowState)" in all_code, "Graph construction missing"
@@ -86,13 +86,14 @@ async def test_subagents_pattern_notebook_generation(tmp_path: Path):
     all_code = "\n\n".join([cell.source for cell in code_cells])
 
     # Verify pattern-specific code generation
-    assert "class WorkflowState(MessagesState):" in all_code, "State class not found"
-    assert "next:" in all_code, "Supervisor state field 'next' missing"
+    assert "TypedDict" in all_code, "TypedDict state not found"
+    assert "next_agent:" in all_code, "Supervisor state field 'next_agent' missing"
     assert "instructions:" in all_code, "Supervisor state field 'instructions' missing"
+    assert "Command" in all_code, "Supervisor should use Command-based routing"
 
     # Verify graph construction
     assert "StateGraph(WorkflowState)" in all_code, "Graph construction missing"
-    assert "add_conditional_edges" in all_code, "Conditional edges missing"
+    assert "finish_node" in all_code, "Finish node missing"
 
 
 @pytest.mark.asyncio

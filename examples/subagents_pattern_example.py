@@ -1,296 +1,262 @@
-"""Subagents Pattern Example - Supervisor-Based Multi-Agent System
+"""Runnable supervisor/subagents example aligned with current LangGraph idioms."""
 
-This example demonstrates how to use the SubagentsPattern from the
-langgraph_system_generator pattern library to create a supervisor-subagent
-coordination system.
+from __future__ import annotations
 
-The subagents pattern is ideal for:
-- Decomposing complex tasks across specialized agents
-- Coordinating multi-step workflows with a supervisor
-- Building collaborative agent systems
+import operator
+import sys
+from pathlib import Path
+from typing import Annotated, Dict, List, Literal
 
-Usage:
-    python examples/subagents_pattern_example.py
+from pydantic import BaseModel, Field
+from typing_extensions import TypedDict
 
-Requirements:
-    - langchain-openai
-    - langgraph
-    - OPENAI_API_KEY environment variable
-"""
+if __package__ in (None, ""):
+    REPO_ROOT = Path(__file__).resolve().parents[1]
+    for path in (REPO_ROOT, REPO_ROOT / "src"):
+        if str(path) not in sys.path:
+            sys.path.insert(0, str(path))
 
-import os
+from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
+from langchain_openai import ChatOpenAI
+from langgraph.checkpoint.memory import InMemorySaver
+from langgraph.graph import END, START, StateGraph
+from langgraph.graph.message import add_messages
+from langgraph.types import Command
 
-from langgraph_system_generator.patterns import SubagentsPattern
+from langgraph_system_generator.examples_support import (
+    build_example_parser,
+    build_metrics,
+    ensure_live_credentials,
+    make_thread_config,
+    trace_step,
+)
+
+AGENTS = ("researcher", "analyst", "writer")
 
 
-def generate_research_team_system():
-    """Generate a research team with supervisor coordination.
-    
-    This example creates a system with:
-    - Supervisor: Coordinates the research workflow
-    - Researcher: Gathers information and data
-    - Analyst: Analyzes findings and identifies patterns
-    - Writer: Creates comprehensive reports
-    """
-    
-    subagents = ["researcher", "analyst", "writer"]
-    subagent_descriptions = {
-        "researcher": "Expert at finding and gathering information from multiple sources. "
-                      "Skilled in web search, database queries, and literature review.",
-        "analyst": "Specializes in data analysis, pattern recognition, and insight generation. "
-                   "Provides statistical analysis and data interpretation.",
-        "writer": "Professional technical writer who creates clear, comprehensive reports. "
-                  "Excels at synthesizing complex information into readable content.",
+def merge_dicts(left: Dict[str, str], right: Dict[str, str]) -> Dict[str, str]:
+    merged = dict(left or {})
+    merged.update(right or {})
+    return merged
+
+
+class TeamState(TypedDict, total=False):
+    """Shared supervisor/subagent state."""
+
+    messages: Annotated[List[BaseMessage], add_messages]
+    next_agent: str
+    instructions: str
+    iterations: int
+    dispatch_log: Annotated[List[str], operator.add]
+    task_results: Annotated[Dict[str, str], merge_dicts]
+    final_output: str
+
+
+class SupervisorDecision(BaseModel):
+    """Typed supervisor decision."""
+
+    next_agent: Literal["researcher", "analyst", "writer", "FINISH"] = Field(
+        description="Which specialist should act next."
+    )
+    instructions: str = Field(description="Specific instructions for the specialist.")
+    reasoning: str = Field(description="Why this next step is useful.")
+
+
+def _stub_supervisor(state: TeamState) -> SupervisorDecision:
+    results = state.get("task_results", {})
+    if "researcher" not in results:
+        return SupervisorDecision(
+            next_agent="researcher",
+            instructions="Gather the most relevant facts and sources for the request.",
+            reasoning="The team needs raw facts before analysis.",
+        )
+    if "analyst" not in results:
+        return SupervisorDecision(
+            next_agent="analyst",
+            instructions="Turn the research findings into concrete insights and trade-offs.",
+            reasoning="The team now has enough evidence to analyze.",
+        )
+    if "writer" not in results:
+        return SupervisorDecision(
+            next_agent="writer",
+            instructions="Synthesize the research and analysis into a polished final brief.",
+            reasoning="All prerequisite inputs are ready for final synthesis.",
+        )
+    return SupervisorDecision(
+        next_agent="FINISH",
+        instructions="Combine the specialist outputs into the final answer.",
+        reasoning="The team has completed all planned stages.",
+    )
+
+
+def _stub_agent_output(agent: str, task: str, state: TeamState) -> str:
+    if agent == "researcher":
+        return (
+            "Research notes:\n"
+            "- LangGraph v1 docs keep graph primitives stable while improving ergonomics.\n"
+            "- Command centralizes state updates and control flow.\n"
+            f"- Source task: {task}"
+        )
+    if agent == "analyst":
+        return (
+            "Analysis:\n"
+            "- Router is ideal for one-shot delegation.\n"
+            "- Supervisor/subagents work better when task decomposition depends on prior outputs.\n"
+            f"- Available context keys: {', '.join(sorted(state.get('task_results', {})))}"
+        )
+    return (
+        "Final brief:\n"
+        "- Start with a supervisor when you need sequential collaboration.\n"
+        "- Keep specialist responsibilities non-overlapping and pass forward only needed state.\n"
+        f"- Original task: {task}"
+    )
+
+
+def build_graph(mode: str, model: str, *, max_iterations: int = 4):
+    """Build the runnable supervisor/subagents graph."""
+    llm = ChatOpenAI(model=model, temperature=0) if mode == "live" else None
+
+    def supervisor_node(state: TeamState) -> Command[Literal["researcher", "analyst", "writer", "finish"]]:
+        iterations = state.get("iterations", 0)
+        if iterations >= max_iterations:
+            return Command(
+                update={
+                    "next_agent": "FINISH",
+                    "instructions": "Maximum iterations reached; synthesize current work.",
+                    "dispatch_log": ["Supervisor stopped at max_iterations."],
+                },
+                goto="finish",
+            )
+
+        if llm:
+            summary = "\n".join(
+                f"- {agent}: {output[:160]}"
+                for agent, output in state.get("task_results", {}).items()
+            ) or "No results yet."
+            decision = llm.with_structured_output(SupervisorDecision).invoke(
+                [
+                    SystemMessage(
+                        content=(
+                            "You supervise a specialist team.\n"
+                            "- researcher: gather evidence\n"
+                            "- analyst: interpret findings\n"
+                            "- writer: produce the final brief\n"
+                        )
+                    ),
+                    HumanMessage(
+                        content=(
+                            f"Task: {state['messages'][0].content if state.get('messages') else ''}\n\n"
+                            f"Current results:\n{summary}"
+                        )
+                    ),
+                ]
+            )
+        else:
+            decision = _stub_supervisor(state)
+
+        target = "finish" if decision.next_agent == "FINISH" else decision.next_agent
+        return Command(
+            update={
+                "next_agent": decision.next_agent,
+                "instructions": decision.instructions,
+                "iterations": iterations + (0 if decision.next_agent == "FINISH" else 1),
+                "dispatch_log": [
+                    f"Supervisor -> {decision.next_agent}: {decision.reasoning}"
+                ],
+                "messages": [
+                    AIMessage(
+                        content=f"Supervisor selected {decision.next_agent}: {decision.instructions}"
+                    )
+                ],
+            },
+            goto=target,
+        )
+
+    def specialist_node(agent: str, role: str):
+        def _node(state: TeamState) -> Dict[str, object]:
+            task = state["messages"][0].content if state.get("messages") else ""
+            if llm:
+                response = llm.invoke(
+                    [
+                        SystemMessage(content=f"You are the {agent}. Role: {role}"),
+                        HumanMessage(content=f"Instructions: {state.get('instructions', '')}"),
+                        *state.get("messages", []),
+                    ]
+                )
+                content = response.content
+            else:
+                content = _stub_agent_output(agent, task, state)
+            return {
+                "task_results": {agent: content},
+                "messages": [AIMessage(content=f"{agent} completed the task.")],
+            }
+
+        return _node
+
+    def finish_node(state: TeamState) -> Dict[str, object]:
+        results = state.get("task_results", {})
+        final_output = "\n\n".join(
+            f"## {agent.title()}\n{output}" for agent, output in results.items()
+        )
+        return {"final_output": final_output, "messages": [AIMessage(content="Team finished.")] }
+
+    workflow = StateGraph(TeamState)
+    workflow.add_node("supervisor", supervisor_node)
+    workflow.add_node("researcher", specialist_node("researcher", "Gather facts and context."))
+    workflow.add_node("analyst", specialist_node("analyst", "Interpret the findings."))
+    workflow.add_node("writer", specialist_node("writer", "Produce the final answer."))
+    workflow.add_node("finish", finish_node)
+    workflow.add_edge(START, "supervisor")
+    workflow.add_edge("researcher", "supervisor")
+    workflow.add_edge("analyst", "supervisor")
+    workflow.add_edge("writer", "supervisor")
+    workflow.add_edge("finish", END)
+    return workflow.compile(checkpointer=InMemorySaver())
+
+
+def run_demo(task: str, *, mode: str = "stub", model: str = "gpt-4.1-mini") -> Dict[str, object]:
+    """Execute the supervisor example and print a trace."""
+    ensure_live_credentials(mode)
+    graph = build_graph(mode, model)
+    config = make_thread_config()
+    initial_state: TeamState = {
+        "messages": [HumanMessage(content=task)],
+        "task_results": {},
+        "dispatch_log": [],
+        "iterations": 0,
+        "final_output": "",
     }
-    
-    # Generate complete example code
-    complete_code = SubagentsPattern.generate_complete_example(
-        subagents, subagent_descriptions
+
+    import time
+
+    start = time.perf_counter()
+    final_state: Dict[str, object] = {}
+    for step in graph.stream(initial_state, config=config, stream_mode="values"):
+        trace_step(
+            "subagents-step",
+            {
+                "next_agent": step.get("next_agent"),
+                "dispatch_log": step.get("dispatch_log", []),
+                "task_results": step.get("task_results", {}),
+                "final_output": step.get("final_output", ""),
+            },
+        )
+        final_state = dict(step)
+    trace_step("subagents-metrics", build_metrics(model, start).to_dict())
+    return final_state
+
+
+def main() -> None:
+    parser = build_example_parser(
+        "Run a supervisor/subagents example.",
+        "Prepare a short best-practices brief on when to use multi-agent supervision.",
     )
-    
-    print("=" * 80)
-    print("Generated Supervisor-Subagent Research Team")
-    print("=" * 80)
-    print(complete_code)
-    print("=" * 80)
-    
-    return complete_code
-
-
-def generate_custom_supervisor_system():
-    """Generate a custom supervisor-subagent system.
-    
-    This demonstrates customization of the subagents pattern.
-    """
-    
-    print("\n" + "=" * 80)
-    print("Custom Supervisor-Subagent Configuration")
-    print("=" * 80)
-    
-    # Step 1: Generate custom state
-    additional_fields = {
-        "task_priority": "Priority level of the current task",
-        "deadline": "Task completion deadline",
-    }
-    state_code = SubagentsPattern.generate_state_code(additional_fields=additional_fields)
-    print("\n1. Custom State Schema:")
-    print("-" * 40)
-    print(state_code)
-    
-    # Step 2: Generate supervisor with structured output
-    subagents = ["data_collector", "data_processor", "report_generator"]
-    subagent_descriptions = {
-        "data_collector": "Collects raw data from various sources",
-        "data_processor": "Cleans and processes collected data",
-        "report_generator": "Generates final reports and visualizations",
-    }
-    
-    supervisor_code = SubagentsPattern.generate_supervisor_code(
-        subagents=subagents,
-        subagent_descriptions=subagent_descriptions,
-        llm_model="gpt-4",
-        use_structured_output=True,
-    )
-    print("\n2. Supervisor Node with Structured Decision Making:")
-    print("-" * 40)
-    print(supervisor_code[:600] + "...")
-    
-    # Step 3: Generate subagent with tool integration
-    print("\n3. Subagent with Tool Integration:")
-    print("-" * 40)
-    
-    subagent_with_tools = SubagentsPattern.generate_subagent_code(
-        agent_name="data_collector",
-        agent_description="Collects data using various tools and APIs",
-        llm_model="gpt-4",
-        include_tools=True,
-    )
-    print(subagent_with_tools[:500] + "...")
-    
-    # Step 4: Generate graph construction
-    graph_code = SubagentsPattern.generate_graph_code(
-        subagents=subagents, max_iterations=10
-    )
-    print("\n4. Graph Construction with Max Iterations:")
-    print("-" * 40)
-    print(graph_code[:500] + "...")
-
-
-def demonstrate_collaborative_workflow():
-    """Demonstrate a collaborative content creation workflow.
-    
-    Shows how multiple agents work together under supervisor coordination.
-    """
-    
-    print("\n" + "=" * 80)
-    print("Collaborative Content Creation Workflow")
-    print("=" * 80)
-    
-    # Define content creation team
-    subagents = ["topic_researcher", "outline_creator", "content_writer", "editor"]
-    descriptions = {
-        "topic_researcher": "Researches the topic and gathers relevant information and sources",
-        "outline_creator": "Creates structured outlines based on research findings",
-        "content_writer": "Writes the main content following the outline",
-        "editor": "Reviews and refines the content for quality and clarity",
-    }
-    
-    # Generate the system
-    SubagentsPattern.generate_complete_example(subagents, descriptions)
-    
-    print("\nGenerated Collaborative Content Creation System:")
-    print("-" * 40)
-    print("System includes:")
-    print(f"  - 1 Supervisor agent (coordinates workflow)")
-    print(f"  - {len(subagents)} Specialized subagents:")
-    for agent in subagents:
-        print(f"    • {agent}: {descriptions[agent]}")
-    print("\n" + "=" * 40)
-    print("Sample workflow:")
-    print("""
-    1. User submits content request to supervisor
-    2. Supervisor assigns topic_researcher to gather information
-    3. topic_researcher returns findings to supervisor
-    4. Supervisor assigns outline_creator to structure content
-    5. outline_creator returns outline to supervisor
-    6. Supervisor assigns content_writer to write draft
-    7. content_writer returns draft to supervisor
-    8. Supervisor assigns editor to review and refine
-    9. editor returns final content
-    10. Supervisor marks task as FINISH
-    """)
-    
-    # Show key components
-    print("\nKey Code Components Generated:")
-    print("-" * 40)
-    
-    # Show supervisor decision logic
-    supervisor = SubagentsPattern.generate_supervisor_code(
-        subagents, descriptions, use_structured_output=True
-    )
-    print("\nSupervisor Decision Structure:")
-    if "class SupervisorDecision" in supervisor:
-        print("✓ Structured output with Pydantic models")
-        print("✓ Next agent selection with reasoning")
-        print("✓ Specific instructions for each agent")
-    
-    print("\nSubagent Capabilities:")
-    print("✓ Access to full conversation history")
-    print("✓ Specialized system prompts")
-    print("✓ Result tracking in shared state")
-    print("✓ Seamless supervisor handoff")
-
-
-def demonstrate_scalability():
-    """Demonstrate how the pattern scales to many agents.
-    
-    Shows that the pattern can handle complex workflows with many subagents.
-    """
-    
-    print("\n" + "=" * 80)
-    print("Scalability Example - Large Agent Team")
-    print("=" * 80)
-    
-    # Create a larger team
-    large_team = [
-        "requirements_analyst",
-        "architect",
-        "backend_developer",
-        "frontend_developer",
-        "database_designer",
-        "qa_tester",
-        "security_auditor",
-        "documentation_writer",
-    ]
-    
-    print(f"\nGenerating system with {len(large_team)} specialized agents...")
-    
-    # Generate graph code for large team
-    graph_code = SubagentsPattern.generate_graph_code(
-        subagents=large_team, max_iterations=20
-    )
-    
-    print("\n✓ Successfully generated supervisor system for large team")
-    print(f"  - Team size: {len(large_team)} agents")
-    print(f"  - Max iterations: 20")
-    print(f"  - Conditional routing: ✓")
-    print(f"  - Supervisor coordination: ✓")
-    
-    print("\nScalability Features:")
-    print("-" * 40)
-    print("""
-1. Dynamic Agent Selection: Supervisor chooses appropriate agent per task
-2. Iteration Control: Prevents infinite loops with max_iterations
-3. State Management: Shared state tracks all agent results
-4. Flexible Workflow: Agents can be invoked in any order
-5. Easy Extension: Add new agents without changing core logic
-    """)
-
-
-def main():
-    """Run all subagents pattern examples."""
-    
-    print("\n" + "=" * 80)
-    print("LangGraph Subagents Pattern Examples")
-    print("Pattern Library - langgraph_system_generator")
-    print("=" * 80)
-    
-    # Check for API key
-    if not os.getenv("OPENAI_API_KEY"):
-        print("\n⚠️  WARNING: OPENAI_API_KEY not found in environment")
-        print("The generated code requires an API key to run.")
-        print("Set it with: export OPENAI_API_KEY='your-key-here'\n")
-    
-    # Example 1: Research team system
-    print("\n" + "=" * 80)
-    print("Example 1: Research Team with Supervisor")
-    print("=" * 80)
-    print("Generating a research team coordination system...")
-    generate_research_team_system()
-    
-    # Example 2: Custom configuration
-    print("\n" + "=" * 80)
-    print("Example 2: Custom Supervisor Configuration")
-    print("=" * 80)
-    print("Demonstrating customization options...")
-    generate_custom_supervisor_system()
-    
-    # Example 3: Collaborative workflow
-    print("\n" + "=" * 80)
-    print("Example 3: Collaborative Workflow")
-    print("=" * 80)
-    print("Creating a content creation workflow...")
-    demonstrate_collaborative_workflow()
-    
-    # Example 4: Scalability
-    print("\n" + "=" * 80)
-    print("Example 4: Scalability with Many Agents")
-    print("=" * 80)
-    print("Demonstrating large-scale agent coordination...")
-    demonstrate_scalability()
-    
-    print("\n" + "=" * 80)
-    print("Examples Complete!")
-    print("=" * 80)
-    print("""
-Next Steps:
-1. Copy the generated code into your project
-2. Customize the subagent descriptions and capabilities
-3. Add tools to subagents as needed
-4. Adjust max_iterations based on your workflow complexity
-5. Test with various task types
-
-Pattern Advantages:
-- Clear task delegation and coordination
-- Modular agent design (easy to add/remove agents)
-- Supervisor maintains workflow state and decisions
-- Agents can be specialized for specific tasks
-- Scalable to large teams
-
-For more information, see:
-- Pattern documentation: docs/patterns.md
-- LangGraph documentation: https://langchain-ai.github.io/langgraph/
-    """)
+    args = parser.parse_args()
+    result = run_demo(args.task, mode=args.mode, model=args.model)
+    print("\nDispatch log:")
+    for entry in result.get("dispatch_log", []):
+        print("-", entry)
+    print("\nFinal output:\n", result.get("final_output", ""))
 
 
 if __name__ == "__main__":

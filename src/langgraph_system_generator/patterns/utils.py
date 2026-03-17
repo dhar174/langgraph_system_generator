@@ -1,6 +1,10 @@
 """Shared utilities for pattern generators."""
 
-from typing import Optional
+from __future__ import annotations
+
+import json
+import re
+from typing import Dict, Optional
 
 
 def build_llm_init(
@@ -9,26 +13,36 @@ def build_llm_init(
     api_base: Optional[str] = None,
     max_tokens: Optional[int] = None,
 ) -> str:
-    """Build ChatOpenAI initialization string with optional parameters.
-    
-    Args:
-        model: The LLM model identifier
-        temperature: Temperature for LLM sampling (0.0-2.0)
-        api_base: Optional custom API base URL
-        max_tokens: Optional maximum tokens for LLM response
-        
-    Returns:
-        String representation of ChatOpenAI initialization code
-        
-    Example:
-        >>> build_llm_init("gpt-5-mini", 0.7)
-        "ChatOpenAI(model='gpt-5-mini', temperature=0.7)"
-        >>> build_llm_init("gpt-5-mini", 0, api_base="https://custom.api", max_tokens=1000)
-        "ChatOpenAI(model='gpt-5-mini', temperature=0, base_url='https://custom.api', max_tokens=1000)"
-    """
-    params = [f'model={repr(model)}', f'temperature={temperature}']
+    """Build a ChatOpenAI initialization expression."""
+    params = [f"model={repr(model)}", f"temperature={temperature}"]
     if api_base:
-        params.append(f'base_url={repr(api_base)}')
+        params.append(f"base_url={repr(api_base)}")
     if max_tokens:
-        params.append(f'max_tokens={max_tokens}')
+        params.append(f"max_tokens={max_tokens}")
     return f"ChatOpenAI({', '.join(params)})"
+
+
+def sanitize_identifier(value: str) -> str:
+    """Return a stable snake_case identifier for generated node names."""
+    identifier = re.sub(r"[^0-9A-Za-z_]+", "_", value.strip().lower())
+    identifier = re.sub(r"_+", "_", identifier).strip("_")
+    if not identifier:
+        return "default"
+    if identifier[0].isdigit():
+        return f"node_{identifier}"
+    return identifier
+
+
+def double_quoted_literal(value: str) -> str:
+    """Return a safely escaped double-quoted Python string literal."""
+    return json.dumps(value)
+
+
+def render_additional_fields(additional_fields: Optional[Dict[str, str]]) -> str:
+    """Render optional TypedDict fields with inline descriptions."""
+    if not additional_fields:
+        return ""
+    rendered = []
+    for field_name, description in additional_fields.items():
+        rendered.append(f"    {sanitize_identifier(field_name)}: str  # {description}")
+    return "\n".join(rendered) + "\n"

@@ -19,10 +19,10 @@ API_DEPENDENCIES = [
 ]
 
 FULL_DEPENDENCIES = [
-    "langgraph>=0.2.0,<1.0.0",
-    "langchain>=0.3.0,<1.0.0",
-    "langchain-openai>=0.2.0,<1.0.0",
-    "langchain-community>=0.3.0,<1.0.0",
+    "langgraph>=1.0.0,<2.0.0",
+    "langchain>=1.0.0,<2.0.0",
+    "langchain-openai>=1.0.0,<2.0.0",
+    "langchain-community>=0.4.1,<1.0.0",
     "nbformat>=5.9.0",
     "nbconvert>=7.14.0",
     "python-docx>=1.1.0",
@@ -67,7 +67,7 @@ setup(
             "lnf=langgraph_system_generator.cli:main",
         ],
     },
-    python_requires=">=3.9",
+    python_requires=">=3.10",
     author="LangGraph Contributors",
     author_email="support@langgraph.dev",
     url="https://github.com/langchain-ai/langgraph-system-generator",
@@ -75,7 +75,6 @@ setup(
     classifiers=[
         "License :: OSI Approved :: MIT License",
         "Programming Language :: Python :: 3",
-        "Programming Language :: Python :: 3.9",
         "Programming Language :: Python :: 3.10",
         "Programming Language :: Python :: 3.11",
         "Programming Language :: Python :: 3.12",
