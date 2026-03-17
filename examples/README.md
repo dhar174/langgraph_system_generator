@@ -8,7 +8,7 @@ Use Python `3.10+`.
 
 ```bash
 python -m venv .venv
-.venv\Scripts\activate  # Windows
+source .venv/bin/activate  # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 pip install -e .
 ```
