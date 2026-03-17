@@ -1,19 +1,24 @@
-"""Runnable critique-revise loop demo using current LangGraph APIs.
+"""Critique-Revise Loop Pattern Example - Iterative Refinement System
 
-The graph defaults to ``stub`` mode so it can run offline. The same graph can
-use ``ChatOpenAI`` in ``live`` mode for real structured critiques.
+This example demonstrates how to use the CritiqueLoopPattern from the
+langgraph_system_generator pattern library to create systems with
+iterative quality improvement through critique and revision cycles.
 
-Examples:
-    python examples/critique_revise_pattern_example.py --mode stub
-    python examples/critique_revise_pattern_example.py --mode live --input "Draft onboarding docs"
+The critique-revise pattern is ideal for:
+- Improving output quality through iteration
+- Implementing quality control workflows
+- Creating self-improving agent systems
+
+Usage:
+    python examples/critique_revise_pattern_example.py
+
+Requirements:
+    - langchain-openai
+    - langgraph
+    - OPENAI_API_KEY environment variable
 """
 
-from __future__ import annotations
-
-import argparse
-import operator
 import os
-from typing import Annotated, List, Literal, Optional
 
 from langgraph_system_generator.patterns import CritiqueLoopPattern
 from langgraph_system_generator.utils.config import ModelConfig
@@ -80,13 +85,21 @@ def generate_custom_quality_system():
         task_description=task,
         model_config=ModelConfig(model="gpt-4", temperature=0.3),
     )
-    response = model.invoke(
-        [
-            SystemMessage(
-                content="You write concise product documentation that is actionable and easy to skim."
-            ),
-            HumanMessage(content=prompt),
-        ]
+    print("\n2. Generation Node:")
+    print("-" * 40)
+    print(generation_code[:500] + "...")
+    
+    # Step 3: Generate critique with custom criteria
+    custom_criteria = [
+        "API endpoint documentation completeness",
+        "Request/response examples provided",
+        "Error handling documented",
+        "Authentication methods explained",
+        "Rate limiting information included",
+    ]
+    
+    critique_code = CritiqueLoopPattern.generate_critique_node_code(
+        criteria=custom_criteria, use_structured_output=True
     )
     print("\n3. Critique Node with Structured Assessment:")
     print("-" * 40)
@@ -195,134 +208,219 @@ WORKFLOW STAGES:
     CritiqueLoopPattern.generate_graph_code(
         max_revisions=3, min_quality_score=0.8
     )
+    
+    print("\n✓ Generated critique-revise loop system")
+    print(f"  - Task: {task}")
+    print(f"  - Quality criteria: {len(criteria)} items")
+    print(f"  - Max revisions: 3")
+    print(f"  - Quality threshold: 0.8 (80%)")
+    
+    print("\nExpected Behavior:")
+    print("-" * 40)
+    print("""
+Iteration 1:
+  Generate → Critique (score: 0.6) → Needs Revision
+  
+Iteration 2:
+  Revise → Critique (score: 0.75) → Needs Revision
+  
+Iteration 3:
+  Revise → Critique (score: 0.85) → APPROVED ✓
+  
+Result: Final output with quality score ≥ 0.8
+    """)
 
 
-def build_critique_graph(mode: ExampleMode = "stub"):
-    """Build a runnable critique-revise graph."""
-
-    _require_live_api_key(mode)
-
-    def generate_node(state: CritiqueState):
-        user_input = state["messages"][0].content if state["messages"] else DEFAULT_INPUT
-        revision_count = state.get("revision_count", 0)
-        latest_feedback = state.get("latest_feedback", "")
-        draft = (
-            _generate_stub_draft(user_input, revision_count, latest_feedback)
-            if mode == "stub"
-            else _generate_live_draft(user_input, revision_count, latest_feedback)
+def demonstrate_quality_criteria():
+    """Demonstrate different quality criteria for various use cases.
+    
+    Shows how to customize evaluation criteria for different content types.
+    """
+    
+    print("\n" + "=" * 80)
+    print("Quality Criteria Examples for Different Use Cases")
+    print("=" * 80)
+    
+    use_cases = {
+        "Technical Documentation": [
+            "Accuracy of technical information",
+            "Completeness of coverage",
+            "Clear step-by-step instructions",
+            "Working code examples",
+            "Proper formatting and structure",
+            "Searchable and navigable",
+        ],
+        "Marketing Content": [
+            "Engaging and persuasive language",
+            "Clear value proposition",
+            "Target audience alignment",
+            "Call-to-action effectiveness",
+            "Brand voice consistency",
+            "SEO optimization",
+        ],
+        "Research Reports": [
+            "Data accuracy and citations",
+            "Methodology transparency",
+            "Logical argument flow",
+            "Visual data representation",
+            "Unbiased analysis",
+            "Reproducible results",
+        ],
+        "Code Generation": [
+            "Syntactic correctness",
+            "Best practices adherence",
+            "Code readability",
+            "Error handling",
+            "Performance considerations",
+            "Security vulnerabilities check",
+        ],
+    }
+    
+    for use_case, criteria in use_cases.items():
+        print(f"\n{use_case}:")
+        print("-" * 40)
+        for i, criterion in enumerate(criteria, 1):
+            print(f"  {i}. {criterion}")
+        
+        # Generate example for this use case
+        print(f"\n  Generating critique node for {use_case}...")
+        CritiqueLoopPattern.generate_critique_node_code(
+            criteria=criteria, use_structured_output=True
         )
-        label = "Initial draft" if revision_count == 0 else f"Revision {revision_count}"
-        return {
-            "draft": draft,
-            "messages": [AIMessage(content=f"{label} generated.\n{draft}")],
-        }
+        print(f"  ✓ Generated with {len(criteria)} evaluation criteria")
 
-    def critique_node(state: CritiqueState):
-        draft = state.get("draft", "")
-        revision_count = state.get("revision_count", 0)
-        assessment = (
-            _critique_stub(revision_count, draft)
-            if mode == "stub"
-            else _critique_live(draft)
-        )
-        feedback = (
-            f"Score: {assessment.quality_score}\n"
-            f"Approved: {assessment.approved}\n"
-            f"Strengths: {', '.join(assessment.strengths)}\n"
-            f"Improvements: {', '.join(assessment.improvements) or 'None'}\n"
-            f"Revision focus: {assessment.revision_focus}"
-        )
-        return {
-            "latest_feedback": feedback,
-            "quality_score": assessment.quality_score,
-            "approved": assessment.approved,
-            "critique_history": [feedback],
-            "messages": [AIMessage(content=f"Critique complete.\n{feedback}")],
-        }
 
-    def revise_node(state: CritiqueState):
-        return {
-            "revision_count": state.get("revision_count", 0) + 1,
-        }
-
-    def finish_node(state: CritiqueState):
-        return {
-            "final_output": state.get("draft", ""),
-            "messages": [AIMessage(content=f"Workflow complete.\n{state.get('draft', '')}")],
-        }
-
-    def should_continue(state: CritiqueState) -> Literal["revise", "finish"]:
-        if state.get("approved", False):
-            return "finish"
-        if state.get("revision_count", 0) >= MAX_REVISIONS:
-            return "finish"
-        if state.get("quality_score", 0.0) >= MIN_QUALITY_SCORE:
-            return "finish"
-        return "revise"
-
-    workflow = StateGraph(CritiqueState)
-    workflow.add_node("generate", generate_node)
-    workflow.add_node("critique", critique_node)
-    workflow.add_node("revise", revise_node)
-    workflow.add_node("finish", finish_node)
-    workflow.add_edge(START, "generate")
-    workflow.add_edge("generate", "critique")
-    workflow.add_conditional_edges(
-        "critique",
-        should_continue,
+def demonstrate_advanced_configurations():
+    """Demonstrate advanced configuration options.
+    
+    Shows various ways to customize the pattern for specific needs.
+    """
+    
+    print("\n" + "=" * 80)
+    print("Advanced Configuration Options")
+    print("=" * 80)
+    
+    configurations = [
         {
-            "revise": "revise",
-            "finish": "finish",
+            "name": "Strict Quality Control",
+            "max_revisions": 5,
+            "min_quality_score": 0.95,
+            "description": "High quality threshold with multiple revision opportunities",
         },
-    )
-    workflow.add_edge("revise", "generate")
-    workflow.add_edge("finish", END)
-    return workflow.compile()
-
-
-def run_critique_example(
-    user_input: str = DEFAULT_INPUT,
-    mode: ExampleMode = "stub",
-) -> CritiqueState:
-    """Execute the critique-revise example and return the final graph state."""
-
-    graph = build_critique_graph(mode)
-    return graph.invoke(
         {
-            "messages": [HumanMessage(content=user_input)],
-            "critique_history": [],
-            "draft": "",
-            "latest_feedback": "",
-            "quality_score": 0.0,
-            "approved": False,
-            "revision_count": 0,
-            "final_output": "",
-        }
-    )
+            "name": "Fast Iteration",
+            "max_revisions": 2,
+            "min_quality_score": 0.7,
+            "description": "Quick turnaround with acceptable quality",
+        },
+        {
+            "name": "Single-Pass Review",
+            "max_revisions": 1,
+            "min_quality_score": 0.8,
+            "description": "One revision attempt with moderate quality bar",
+        },
+        {
+            "name": "Continuous Improvement",
+            "max_revisions": 10,
+            "min_quality_score": 0.9,
+            "description": "Extensive refinement for critical content",
+        },
+    ]
+    
+    for config in configurations:
+        print(f"\n{config['name']}:")
+        print("-" * 40)
+        print(f"Description: {config['description']}")
+        print(f"Max Revisions: {config['max_revisions']}")
+        print(f"Quality Threshold: {config['min_quality_score']} "
+              f"({config['min_quality_score']*100}%)")
+        
+        # Generate conditional edge code
+        CritiqueLoopPattern.generate_conditional_edge_code(
+            max_revisions=config["max_revisions"],
+            min_quality_score=config["min_quality_score"],
+        )
+        print("✓ Generated conditional routing logic")
 
 
-def main(argv: Optional[List[str]] = None) -> None:
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--mode", choices=["stub", "live"], default="stub")
-    parser.add_argument("--input", default=DEFAULT_INPUT)
-    args = parser.parse_args(argv)
+def main():
+    """Run all critique-revise pattern examples."""
+    
+    print("\n" + "=" * 80)
+    print("LangGraph Critique-Revise Loop Pattern Examples")
+    print("Pattern Library - langgraph_system_generator")
+    print("=" * 80)
+    
+    # Check for API key
+    if not os.getenv("OPENAI_API_KEY"):
+        print("\n⚠️  WARNING: OPENAI_API_KEY not found in environment")
+        print("The generated code requires an API key to run.")
+        print("Set it with: export OPENAI_API_KEY='your-key-here'\n")
+    
+    # Example 1: Content refinement system
+    print("\n" + "=" * 80)
+    print("Example 1: Content Refinement System")
+    print("=" * 80)
+    print("Generating a content refinement system with critique loops...")
+    generate_content_refinement_system()
+    
+    # Example 2: Custom quality system
+    print("\n" + "=" * 80)
+    print("Example 2: Custom Quality Assurance System")
+    print("=" * 80)
+    print("Demonstrating customization options...")
+    generate_custom_quality_system()
+    
+    # Example 3: Iterative improvement
+    print("\n" + "=" * 80)
+    print("Example 3: Iterative Improvement Workflow")
+    print("=" * 80)
+    print("Understanding the improvement cycle...")
+    demonstrate_iterative_improvement()
+    
+    # Example 4: Quality criteria
+    print("\n" + "=" * 80)
+    print("Example 4: Domain-Specific Quality Criteria")
+    print("=" * 80)
+    print("Customizing evaluation for different content types...")
+    demonstrate_quality_criteria()
+    
+    # Example 5: Advanced configurations
+    print("\n" + "=" * 80)
+    print("Example 5: Advanced Configuration Patterns")
+    print("=" * 80)
+    print("Exploring different quality control strategies...")
+    demonstrate_advanced_configurations()
+    
+    print("\n" + "=" * 80)
+    print("Examples Complete!")
+    print("=" * 80)
+    print("""
+Next Steps:
+1. Copy the generated code into your project
+2. Define quality criteria specific to your use case
+3. Set appropriate max_revisions and min_quality_score
+4. Customize generation and critique prompts
+5. Test with sample inputs and monitor quality improvements
 
-    result = run_critique_example(args.input, args.mode)
+Pattern Advantages:
+- Automated quality improvement through iteration
+- Structured feedback with specific suggestions
+- Configurable quality thresholds
+- Prevents over-iteration with max_revisions
+- Transparent quality scoring
 
-    print("Critique-Revise Pattern Example")
-    print(f"Mode: {args.mode}")
-    print(f"Revision count: {result['revision_count']}")
-    print(f"Quality score: {result['quality_score']}")
-    print(f"Approved: {result['approved']}")
-    print("Critique history:")
-    for entry in result["critique_history"]:
-        print("-")
-        print(entry)
-    print("Final output:")
-    print(result["final_output"])
+Use Cases:
+- Content creation and refinement
+- Code generation with review cycles
+- Documentation quality assurance
+- Report writing and editing
+- Any task requiring iterative improvement
 
-    if args.mode == "stub":
-        print("Live mode note: rerun with --mode live and OPENAI_API_KEY to use ChatOpenAI.")
+For more information, see:
+- Pattern documentation: docs/patterns.md
+- LangGraph documentation: https://langchain-ai.github.io/langgraph/
+    """)
 
 
 if __name__ == "__main__":
