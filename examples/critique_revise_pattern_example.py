@@ -25,8 +25,10 @@ if str(SRC_ROOT) not in sys.path:
 
 from langchain_core.messages import AIMessage, AnyMessage, HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
+from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.message import add_messages
+from langgraph.types import Command
 from pydantic import BaseModel, Field
 from typing_extensions import TypedDict
 
@@ -191,7 +193,7 @@ def build_critique_graph(mode: ExampleMode = "stub"):
             "messages": [AIMessage(content=f"{label} generated.\n{draft}")],
         }
 
-    def critique_node(state: CritiqueState):
+    def critique_node(state: CritiqueState) -> Command:
         draft = state.get("draft", "")
         revision_count = state.get("revision_count", 0)
         assessment = (
@@ -206,13 +208,24 @@ def build_critique_graph(mode: ExampleMode = "stub"):
             f"Improvements: {', '.join(assessment.improvements) or 'None'}\n"
             f"Revision focus: {assessment.revision_focus}"
         )
-        return {
-            "latest_feedback": feedback,
-            "quality_score": assessment.quality_score,
-            "approved": assessment.approved,
-            "critique_history": [feedback],
-            "messages": [AIMessage(content=f"Critique complete.\n{feedback}")],
-        }
+        if (
+            assessment.approved
+            or revision_count >= MAX_REVISIONS
+            or assessment.quality_score >= MIN_QUALITY_SCORE
+        ):
+            goto: Literal["finish", "revise"] = "finish"
+        else:
+            goto = "revise"
+        return Command(
+            update={
+                "latest_feedback": feedback,
+                "quality_score": assessment.quality_score,
+                "approved": assessment.approved,
+                "critique_history": [feedback],
+                "messages": [AIMessage(content=f"Critique complete.\n{feedback}")],
+            },
+            goto=goto,
+        )
 
     def revise_node(state: CritiqueState):
         return {
@@ -225,15 +238,7 @@ def build_critique_graph(mode: ExampleMode = "stub"):
             "messages": [AIMessage(content=f"Workflow complete.\n{state.get('draft', '')}")],
         }
 
-    def should_continue(state: CritiqueState) -> Literal["revise", "finish"]:
-        if state.get("approved", False):
-            return "finish"
-        if state.get("revision_count", 0) >= MAX_REVISIONS:
-            return "finish"
-        if state.get("quality_score", 0.0) >= MIN_QUALITY_SCORE:
-            return "finish"
-        return "revise"
-
+    checkpointer = InMemorySaver()
     workflow = StateGraph(CritiqueState)
     workflow.add_node("generate", generate_node)
     workflow.add_node("critique", critique_node)
@@ -241,17 +246,10 @@ def build_critique_graph(mode: ExampleMode = "stub"):
     workflow.add_node("finish", finish_node)
     workflow.add_edge(START, "generate")
     workflow.add_edge("generate", "critique")
-    workflow.add_conditional_edges(
-        "critique",
-        should_continue,
-        {
-            "revise": "revise",
-            "finish": "finish",
-        },
-    )
+    # critique_node uses Command(goto=...) for routing -- no add_conditional_edges needed
     workflow.add_edge("revise", "generate")
     workflow.add_edge("finish", END)
-    return workflow.compile()
+    return workflow.compile(checkpointer=checkpointer)
 
 
 def run_critique_example(
@@ -271,7 +269,8 @@ def run_critique_example(
             "approved": False,
             "revision_count": 0,
             "final_output": "",
-        }
+        },
+        config={"configurable": {"thread_id": "example-run"}},
     )
 
 

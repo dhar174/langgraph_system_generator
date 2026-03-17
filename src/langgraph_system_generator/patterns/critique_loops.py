@@ -597,7 +597,7 @@ Revise the draft to address the feedback.""")
             Python code string for building the complete graph
         """
         return f"""from langgraph.graph import END, START, StateGraph
-from langgraph.checkpoint.memory import MemorySaver
+from langgraph.checkpoint.memory import InMemorySaver
 
 
 {CritiqueLoopPattern.generate_conditional_edge_code(max_revisions, min_quality_score, failure_conditions)}
@@ -605,7 +605,7 @@ from langgraph.checkpoint.memory import MemorySaver
 
 # Create graph
 workflow = StateGraph(WorkflowState)
-memory = MemorySaver()
+checkpointer = InMemorySaver()
 
 # Add nodes
 workflow.add_node("generate", generate_node)
@@ -636,7 +636,7 @@ workflow.add_conditional_edges(
 workflow.add_edge("revise", "critique")
 
 # Compile graph
-graph = workflow.compile(checkpointer=memory)"""
+graph = workflow.compile(checkpointer=checkpointer)"""
 
     @staticmethod
     def generate_complete_example(
