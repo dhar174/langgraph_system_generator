@@ -460,7 +460,7 @@ Execute the supervisor's instructions carefully and provide detailed results."""
         )
 
         return f'''from langgraph.graph import END, START, StateGraph
-from langgraph.checkpoint.memory import MemorySaver
+from langgraph.checkpoint.memory import InMemorySaver
 
 
 def supervisor_router(state: WorkflowState) -> str:
@@ -476,7 +476,7 @@ def supervisor_router(state: WorkflowState) -> str:
 
 # Create graph
 workflow = StateGraph(WorkflowState)
-memory = MemorySaver()
+memory = InMemorySaver()
 
 # Add supervisor node
 workflow.add_node("supervisor", supervisor_node)
