@@ -38,11 +38,17 @@ def double_quoted_literal(value: str) -> str:
     return json.dumps(value)
 
 
+def normalize_inline_comment(value: str) -> str:
+    """Return safe single-line text for inline generated comments."""
+    return " ".join(str(value).split())
+
+
 def render_additional_fields(additional_fields: Optional[Dict[str, str]]) -> str:
     """Render optional TypedDict fields with inline descriptions."""
     if not additional_fields:
         return ""
     rendered = []
     for field_name, description in additional_fields.items():
-        rendered.append(f"    {sanitize_identifier(field_name)}: str  # {description}")
+        comment = normalize_inline_comment(description)
+        rendered.append(f"    {sanitize_identifier(field_name)}: str  # {comment}")
     return "\n".join(rendered) + "\n"

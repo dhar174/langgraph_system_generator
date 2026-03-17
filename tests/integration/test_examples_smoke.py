@@ -75,6 +75,10 @@ def test_example_notebooks_execute_in_stub_mode(notebook_name: str):
     if notebook_name == "benchmark_critique_vs_judge.ipynb":
         assert "rows" in namespace
         assert namespace["rows"]
+        assert "MARKDOWN_TABLE" in namespace
+        assert namespace["MARKDOWN_TABLE"]
+        assert "summary" in namespace
+        assert namespace["summary"]
     else:
         assert "RESULT" in namespace
         assert namespace["RESULT"]
