@@ -33,8 +33,8 @@ start with `README.md` and `CONTRIBUTING.md`.
 
 | Agent family | Primary purpose | Main locations |
 | --- | --- | --- |
-| Runtime product agents | Turn a natural-language prompt into a notebook, exported artifacts, and QA results | `src/langgraph_system_generator/generator/`, `src/langgraph_system_generator/generator/agents/`, `src/langgraph_system_generator/patterns/`, `src/langgraph_system_generator/qa/`, `src/langgraph_system_generator/notebook/`, `src/langgraph_system_generator/rag/` |
-| Contributor-facing Copilot assets | Help contributors plan, implement, review, document, and validate changes | `.github/agents/`, `.github/skills/`, `.github/prompts/`, `.github/instructions/`, and some mirrored skills under `skills/` |
+| Runtime product agents | Turn a natural-language prompt into a notebook, exported artifacts, and QA results | `src/langgraph_system_generator/generator/agents/` plus adjacent `generator/`, `patterns/`, `qa/`, `notebook/`, and `rag/` modules |
+| Contributor-facing Copilot assets | Help contributors plan, implement, review, document, and validate changes | `.github/agents/`, `.github/skills/`, `.github/prompts/`, `.github/instructions/`, plus some mirrored skills under `skills/` |
 
 ## Repository surfaces that agents must respect
 
