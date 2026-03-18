@@ -6,6 +6,7 @@ import re
 REPO_ROOT = Path(__file__).resolve().parents[2]
 AGENTS_DIR = REPO_ROOT / ".github" / "agents"
 EXPECTED_KEYS = {"description", "name", "tools", "target", "infer"}
+EXPECTED_KEYS_DISPLAY = sorted(EXPECTED_KEYS)
 
 
 def _read_frontmatter(path: Path) -> dict[str, str]:
@@ -34,7 +35,10 @@ def _strip_yaml_quotes(value: str) -> str:
         return value[1:-1].replace("''", "'")
 
     if len(value) >= 2 and value[0] == value[-1] and value[0] == '"':
-        parsed = ast.literal_eval(value)
+        try:
+            parsed = ast.literal_eval(value)
+        except (SyntaxError, ValueError) as exc:
+            raise AssertionError("Double-quoted YAML scalar must parse cleanly") from exc
         assert isinstance(parsed, str), "Quoted YAML scalar should parse to a string"
         return parsed
 
@@ -70,7 +74,7 @@ def test_agent_frontmatter_matches_copilot_requirements() -> None:
 
         assert set(frontmatter) == EXPECTED_KEYS, (
             f"{path.name} should only use the supported frontmatter keys "
-            f"{sorted(EXPECTED_KEYS)}"
+            f"{EXPECTED_KEYS_DISPLAY}"
         )
         assert "model" not in frontmatter, f"{path.name} must not declare model in frontmatter"
         assert _parse_tools(frontmatter["tools"]) == ["*"], (
