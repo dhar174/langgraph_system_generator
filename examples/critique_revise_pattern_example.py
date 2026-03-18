@@ -38,7 +38,9 @@ DEFAULT_MODEL = os.environ.get("LNF_EXAMPLE_MODEL", "gpt-5-mini")
 MAX_REVISIONS = 3
 MIN_QUALITY_SCORE = 0.8
 
-
+def _build_live_model(*, temperature: float) -> ChatOpenAI:
+    return ChatOpenAI(model=DEFAULT_MODEL, temperature=temperature)
+    
 class CritiqueAssessment(BaseModel):
     """Structured critique output for the demo workflow."""
 
