@@ -21,6 +21,9 @@ $env:OPENAI_API_KEY="sk-..."    # Windows (PowerShell)
 python examples/router_pattern_example.py --mode live
 ```
 
+For notebooks, set `OPENAI_API_KEY` in the Jupyter or Colab kernel environment
+before switching `MODE` to `live`.
+
 Stub mode is the default for every script and notebook:
 
 ```bash
@@ -82,3 +85,6 @@ Use [benchmark_critique_vs_judge.ipynb](./benchmark_critique_vs_judge.ipynb) wit
 
 - The three public generator-backed patterns remain `RouterPattern`, `SubagentsPattern`, and `CritiqueLoopPattern` under `src/langgraph_system_generator/patterns/`.
 - The advanced assets in this folder are example-only references for current LangGraph design patterns; they are intentionally not exported as new public code-generation classes in `src/`.
+- The plan-and-execute example exposes `--planner-model` and `--executor-model`
+  for live runs, and the paired notebook mirrors those controls with
+  `PLANNER_MODEL` and `EXECUTOR_MODEL`.
