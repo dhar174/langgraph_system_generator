@@ -13,6 +13,19 @@ pip install -U langchain-google-genai
 
 ## Vector store integrations
 
+First, create or load some `Document` objects. For example:
+
+```python
+from langchain_core.documents import Document
+
+docs = [
+    Document(
+        page_content="LangChain makes it easy to build LLM-powered applications.",
+        metadata={"source": "integration_guide"},
+    )
+]
+```
+
 ```python
 from langchain_chroma import Chroma
 from langchain_openai import OpenAIEmbeddings
