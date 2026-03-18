@@ -1,301 +1,304 @@
-"""Runnable critique-revise loop demo using current LangGraph state patterns.
-
-The script defaults to ``stub`` mode so it can run without network access.
-Use ``--mode live`` to swap the generation and critique steps onto
-``ChatOpenAI``.
-
-Examples:
-    python examples/critique_revise_pattern_example.py --mode stub
-    python examples/critique_revise_pattern_example.py --mode live --input "Draft onboarding docs"
-"""
+"""Runnable critique-revise loop demo using current LangGraph state patterns."""
 
 from __future__ import annotations
 
-import argparse
 import operator
-import os
 import sys
+import time
 from pathlib import Path
-from typing import Annotated, List, Literal, Optional
+from typing import Annotated, Dict, List, Literal
 
-REPO_ROOT = Path(__file__).resolve().parents[1]
-SRC_ROOT = REPO_ROOT / "src"
-if str(SRC_ROOT) not in sys.path:
-    sys.path.insert(0, str(SRC_ROOT))
+from pydantic import BaseModel, Field
+from typing_extensions import TypedDict
 
-from langchain_core.messages import AIMessage, AnyMessage, HumanMessage, SystemMessage
+if __package__ in (None, ""):
+    REPO_ROOT = Path(__file__).resolve().parents[1]
+    for path in (REPO_ROOT, REPO_ROOT / "src"):
+        if str(path) not in sys.path:
+            sys.path.insert(0, str(path))
+
+from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.message import add_messages
 from langgraph.types import Command
-from pydantic import BaseModel, Field
-from typing_extensions import TypedDict
 
-ExampleMode = Literal["stub", "live"]
+from langgraph_system_generator.examples_support import (
+    build_example_parser,
+    build_metrics,
+    ensure_live_credentials,
+    make_thread_config,
+    trace_step,
+)
 
-DEFAULT_INPUT = "Draft a release announcement for the new critique-revise workflow."
-DEFAULT_MODEL = os.environ.get("LNF_EXAMPLE_MODEL", "gpt-5-mini")
-MAX_REVISIONS = 3
+DEFAULT_TASK = "Draft a release announcement for the new critique-revise workflow."
 MIN_QUALITY_SCORE = 0.8
 
 
+class CritiqueState(TypedDict, total=False):
+    """State for the critique-revise example."""
+
+    messages: Annotated[List[BaseMessage], add_messages]
+    current_draft: str
+    critique_feedback: str
+    revision_count: int
+    quality_score: float
+    approved: bool
+    criteria: List[str]
+    revision_history: Annotated[List[str], operator.add]
+    final_output: str
+
+
 class CritiqueAssessment(BaseModel):
-    """Structured critique output for the demo workflow."""
+    """Structured critique output."""
 
     quality_score: float = Field(ge=0.0, le=1.0)
     approved: bool
     strengths: List[str]
-    improvements: List[str]
-    revision_focus: str
+    weaknesses: List[str]
+    suggestions: str
 
 
-class CritiqueState(TypedDict):
-    """Shared graph state for the critique example."""
-
-    messages: Annotated[list[AnyMessage], add_messages]
-    critique_history: Annotated[List[str], operator.add]
-    draft: str
-    latest_feedback: str
-    quality_score: float
-    approved: bool
-    revision_count: int
-    final_output: str
-
-
-def _require_live_api_key(mode: ExampleMode) -> None:
-    if mode == "live" and not os.getenv("OPENAI_API_KEY"):
-        raise SystemExit("OPENAI_API_KEY is required for --mode live.")
-
-
-def _build_live_model(*, temperature: float) -> ChatOpenAI:
-    return ChatOpenAI(model=DEFAULT_MODEL, temperature=temperature)
-
-
-def _generate_stub_draft(
-    user_input: str,
-    revision_count: int,
-    latest_feedback: str,
-) -> str:
+def _stub_generate(task: str, revision_count: int, feedback: str) -> str:
     if revision_count == 0:
         return (
             "Release announcement draft:\n"
-            f"Product update: {user_input}\n"
+            f"Product update: {task}\n"
             "Highlights:\n"
             "- Teams can now choose automated or human critique paths.\n"
-            "- Failure policies are configurable for tighter review workflows.\n"
-            "- Pattern coverage includes deterministic tests and docs."
+            "- Review policies are configurable for predictable approval loops.\n"
+            "- Updated examples and docs make the pattern easier to adopt."
         )
-
     return (
         "Revised release announcement:\n"
-        f"Product update: {user_input}\n"
+        f"Product update: {task}\n"
         "Highlights:\n"
-        "- Teams can now choose automated or human critique paths.\n"
-        "- Review failure policies are configurable for predictable exits.\n"
-        "- Updated docs and tests make the pattern easier to adopt safely.\n"
-        f"Revision guidance applied: {latest_feedback or 'Improve clarity and specificity.'}"
+        "- Customer value is explicit and the rollout is easy to understand.\n"
+        "- Approval criteria are easier to audit across iterations.\n"
+        "- The example suite demonstrates both deterministic and live review paths.\n"
+        f"Applied revision guidance: {feedback or 'Tighten the customer-facing summary.'}"
     )
 
 
-def _generate_live_draft(
-    user_input: str,
-    revision_count: int,
-    latest_feedback: str,
-) -> str:
-    model = _build_live_model(temperature=0.2)
-    revision_context = (
-        f"Existing critique feedback:\n{latest_feedback}\n\n"
-        if revision_count > 0 and latest_feedback
-        else ""
-    )
-    response = model.invoke(
-        [
-            SystemMessage(
-                content=(
-                    "You draft concise release announcements with clear product value, "
-                    "customer impact, and rollout clarity."
-                )
-            ),
-            HumanMessage(
-                content=(
-                    f"Prepare a release announcement for:\n{user_input}\n\n"
-                    f"{revision_context}"
-                    "Keep it structured and customer-facing."
-                )
-            ),
-        ]
-    )
-    return response.content
-
-
-def _critique_stub(revision_count: int, draft: str) -> CritiqueAssessment:
+def _stub_critique(revision_count: int, draft: str) -> CritiqueAssessment:
     if revision_count == 0:
         return CritiqueAssessment(
-            quality_score=0.68,
+            quality_score=0.67,
             approved=False,
             strengths=[
-                "Explains the feature at a high level",
-                "Names the new review options clearly",
+                "The draft identifies the workflow clearly.",
+                "The announcement mentions rollout-related benefits.",
             ],
-            improvements=[
-                "Make the customer value more concrete",
-                "Tighten the rollout summary",
+            weaknesses=[
+                "Customer impact is still abstract.",
+                "The closing sentence is more verbose than needed.",
             ],
-            revision_focus="Emphasize user impact and simplify the closing sentence.",
+            suggestions="Emphasize user value and shorten the final paragraph.",
         )
-
     return CritiqueAssessment(
-        quality_score=0.87,
+        quality_score=0.9,
         approved=True,
         strengths=[
-            "Customer value is explicit",
-            "Rollout summary is concise and actionable",
+            "The user impact is now explicit.",
+            "The structure is concise and easy to scan.",
         ],
-        improvements=[],
-        revision_focus="No further revision needed.",
+        weaknesses=[],
+        suggestions="No further revision required.",
     )
 
 
-def _critique_live(draft: str) -> CritiqueAssessment:
-    model = _build_live_model(temperature=0)
-    structured_model = model.with_structured_output(CritiqueAssessment)
-    return structured_model.invoke(
-        [
-            SystemMessage(
-                content=(
-                    "You are a release communications reviewer. Score the draft, decide whether "
-                    "it is approved, and provide actionable revision guidance."
-                )
-            ),
-            HumanMessage(content=f"Review this draft:\n\n{draft}"),
-        ]
-    )
+def build_graph(
+    mode: str,
+    model: str,
+    *,
+    max_revisions: int = 3,
+    min_quality_score: float = MIN_QUALITY_SCORE,
+):
+    """Build the runnable critique-revise graph for the selected mode."""
+    llm = ChatOpenAI(model=model, temperature=0) if mode == "live" else None
 
-
-def build_critique_graph(mode: ExampleMode = "stub"):
-    """Build a runnable critique-revise graph."""
-
-    _require_live_api_key(mode)
-
-    def generate_node(state: CritiqueState):
-        user_input = state["messages"][0].content if state["messages"] else DEFAULT_INPUT
+    def generate_node(state: CritiqueState) -> Dict[str, object]:
+        task = state["messages"][0].content if state.get("messages") else ""
         revision_count = state.get("revision_count", 0)
-        latest_feedback = state.get("latest_feedback", "")
-        draft = (
-            _generate_stub_draft(user_input, revision_count, latest_feedback)
-            if mode == "stub"
-            else _generate_live_draft(user_input, revision_count, latest_feedback)
-        )
-        label = "Initial draft" if revision_count == 0 else f"Revision {revision_count}"
+        critique_feedback = state.get("critique_feedback", "")
+        if llm:
+            response = llm.invoke(
+                [
+                    SystemMessage(
+                        content=(
+                            "You write concise release announcements with clear product value, "
+                            "customer impact, and rollout clarity."
+                        )
+                    ),
+                    HumanMessage(
+                        content=(
+                            f"Task: {task}\n\n"
+                            f"Revision count: {revision_count}\n"
+                            f"Critique feedback: {critique_feedback or 'No critique yet.'}"
+                        )
+                    ),
+                ]
+            )
+            draft = response.content
+        else:
+            draft = _stub_generate(task, revision_count, critique_feedback)
         return {
-            "draft": draft,
-            "messages": [AIMessage(content=f"{label} generated.\n{draft}")],
+            "current_draft": draft,
+            "revision_history": [draft],
+            "messages": [
+                AIMessage(content=f"Draft revision {revision_count + 1} prepared.")
+            ],
         }
 
-    def critique_node(state: CritiqueState) -> Command:
-        draft = state.get("draft", "")
+    def critique_node(
+        state: CritiqueState,
+    ) -> Command[Literal["revise", "finalize"]]:
+        draft = state.get("current_draft", "")
         revision_count = state.get("revision_count", 0)
+        criteria = state.get(
+            "criteria",
+            [
+                "Explain the feature clearly.",
+                "Make customer value concrete.",
+                "Keep the announcement concise.",
+            ],
+        )
+
         assessment = (
-            _critique_stub(revision_count, draft)
-            if mode == "stub"
-            else _critique_live(draft)
+            llm.with_structured_output(CritiqueAssessment).invoke(
+                [
+                    SystemMessage(
+                        content=(
+                            "You are a release communications reviewer.\n"
+                            "Evaluate the draft against:\n"
+                            + "\n".join(f"- {criterion}" for criterion in criteria)
+                        )
+                    ),
+                    HumanMessage(content=f"Review this draft:\n\n{draft}"),
+                ]
+            )
+            if llm
+            else _stub_critique(revision_count, draft)
         )
-        feedback = (
-            f"Score: {assessment.quality_score}\n"
-            f"Approved: {assessment.approved}\n"
-            f"Strengths: {', '.join(assessment.strengths)}\n"
-            f"Improvements: {', '.join(assessment.improvements) or 'None'}\n"
-            f"Revision focus: {assessment.revision_focus}"
+
+        feedback = "\n".join(
+            [
+                f"Quality Score: {assessment.quality_score}",
+                f"Status: {'APPROVED' if assessment.approved else 'NEEDS REVISION'}",
+                "Strengths:",
+                *[f"- {item}" for item in assessment.strengths],
+                "Weaknesses:",
+                *[f"- {item}" for item in assessment.weaknesses],
+                "Suggestions:",
+                assessment.suggestions,
+            ]
         )
-        if (
+        should_finalize = (
             assessment.approved
-            or revision_count >= MAX_REVISIONS
-            or assessment.quality_score >= MIN_QUALITY_SCORE
-        ):
-            goto: Literal["finish", "revise"] = "finish"
-        else:
-            goto = "revise"
+            or revision_count >= max_revisions
+            or assessment.quality_score >= min_quality_score
+        )
         return Command(
             update={
-                "latest_feedback": feedback,
+                "critique_feedback": feedback,
                 "quality_score": assessment.quality_score,
                 "approved": assessment.approved,
-                "critique_history": [feedback],
-                "messages": [AIMessage(content=f"Critique complete.\n{feedback}")],
+                "messages": [AIMessage(content=f"Critique: {feedback}")],
             },
-            goto=goto,
+            goto="finalize" if should_finalize else "revise",
         )
 
-    def revise_node(state: CritiqueState):
+    def revise_node(state: CritiqueState) -> Dict[str, object]:
         return {
             "revision_count": state.get("revision_count", 0) + 1,
+            "messages": [
+                AIMessage(
+                    content="Applying critique feedback to prepare the next revision."
+                )
+            ],
         }
 
-    def finish_node(state: CritiqueState):
+    def finalize_node(state: CritiqueState) -> Dict[str, object]:
         return {
-            "final_output": state.get("draft", ""),
-            "messages": [AIMessage(content=f"Workflow complete.\n{state.get('draft', '')}")],
+            "final_output": state.get("current_draft", ""),
+            "messages": [AIMessage(content="Final draft approved.")],
         }
 
-    checkpointer = InMemorySaver()
     workflow = StateGraph(CritiqueState)
     workflow.add_node("generate", generate_node)
     workflow.add_node("critique", critique_node)
     workflow.add_node("revise", revise_node)
-    workflow.add_node("finish", finish_node)
+    workflow.add_node("finalize", finalize_node)
     workflow.add_edge(START, "generate")
     workflow.add_edge("generate", "critique")
-    # critique_node uses Command(goto=...) for routing -- no add_conditional_edges needed
     workflow.add_edge("revise", "generate")
-    workflow.add_edge("finish", END)
-    return workflow.compile(checkpointer=checkpointer)
+    workflow.add_edge("finalize", END)
+    return workflow.compile(checkpointer=InMemorySaver())
 
 
-def run_critique_example(
-    user_input: str = DEFAULT_INPUT,
-    mode: ExampleMode = "stub",
-) -> CritiqueState:
-    """Execute the critique-revise example and return the final graph state."""
+def run_demo(
+    task: str,
+    *,
+    mode: str = "stub",
+    model: str = "gpt-4.1-mini",
+    max_steps: int = 3,
+) -> Dict[str, object]:
+    """Execute the critique example and print a trace."""
+    ensure_live_credentials(mode)
+    graph = build_graph(mode, model, max_revisions=max_steps)
+    config = make_thread_config()
+    state: CritiqueState = {
+        "messages": [HumanMessage(content=task)],
+        "current_draft": "",
+        "critique_feedback": "",
+        "revision_count": 0,
+        "quality_score": 0.0,
+        "approved": False,
+        "criteria": [
+            "Explain the pattern clearly.",
+            "Include practical implementation guidance.",
+            "Stay concise but concrete.",
+        ],
+        "revision_history": [],
+        "final_output": "",
+    }
 
-    graph = build_critique_graph(mode)
-    return graph.invoke(
-        {
-            "messages": [HumanMessage(content=user_input)],
-            "critique_history": [],
-            "draft": "",
-            "latest_feedback": "",
-            "quality_score": 0.0,
-            "approved": False,
-            "revision_count": 0,
-            "final_output": "",
-        },
-        config={"configurable": {"thread_id": "example-run"}},
+    start = time.perf_counter()
+    final_state: Dict[str, object] = {}
+    for step in graph.stream(state, config=config, stream_mode="values"):
+        trace_step(
+            "critique-step",
+            {
+                "revision_count": step.get("revision_count"),
+                "quality_score": step.get("quality_score"),
+                "approved": step.get("approved"),
+                "current_draft": step.get("current_draft", ""),
+                "final_output": step.get("final_output", ""),
+            },
+        )
+        final_state = dict(step)
+    trace_step("critique-metrics", build_metrics(model, start).to_dict())
+    return final_state
+
+
+def main() -> None:
+    parser = build_example_parser(
+        "Run a critique-revise pattern example.",
+        DEFAULT_TASK,
+        include_max_steps=True,
     )
-
-
-def main(argv: Optional[List[str]] = None) -> None:
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--mode", choices=["stub", "live"], default="stub")
-    parser.add_argument("--input", default=DEFAULT_INPUT)
-    args = parser.parse_args(argv)
-
-    result = run_critique_example(args.input, args.mode)
-
+    args = parser.parse_args()
+    result = run_demo(
+        args.task,
+        mode=args.mode,
+        model=args.model,
+        max_steps=args.max_steps,
+    )
     print("Critique-Revise Pattern Example")
     print(f"Mode: {args.mode}")
-    print(f"Revision count: {result['revision_count']}")
-    print(f"Quality score: {result['quality_score']}")
-    print(f"Approved: {result['approved']}")
-    print("Critique history:")
-    for entry in result["critique_history"]:
-        print("-")
-        print(entry)
-    print("Final output:")
-    print(result["final_output"])
-
-    if args.mode == "stub":
-        print("Live mode note: rerun with --mode live and OPENAI_API_KEY to use ChatOpenAI.")
+    print("Quality score:", result.get("quality_score"))
+    print("Final output:\n", result.get("final_output", ""))
 
 
 if __name__ == "__main__":

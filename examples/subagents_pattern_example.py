@@ -1,340 +1,294 @@
-"""Runnable supervisor/subagents demo using modern LangGraph state patterns.
-
-The script runs in ``stub`` mode by default with deterministic handoffs.
-Use ``--mode live`` to swap the supervisor and workers onto ``ChatOpenAI``.
-
-Examples:
-    python examples/subagents_pattern_example.py --mode stub
-    python examples/subagents_pattern_example.py --mode live --input "Draft a product launch brief"
-"""
+"""Runnable supervisor/subagents example aligned with current LangGraph idioms."""
 
 from __future__ import annotations
 
-import argparse
 import operator
-import os
-from typing import Annotated, List, Literal, Optional
+import sys
+from pathlib import Path
+from typing import Annotated, Dict, List, Literal
 
-from langchain_core.messages import AIMessage, AnyMessage, HumanMessage, SystemMessage
-from langchain_openai import ChatOpenAI
-from langgraph.graph import END, START, StateGraph
-from langgraph.graph.message import add_messages
-from langgraph.types import Command
 from pydantic import BaseModel, Field
 from typing_extensions import TypedDict
 
-ExampleMode = Literal["stub", "live"]
-AgentName = Literal["researcher", "writer", "reviewer", "finish"]
+if __package__ in (None, ""):
+    REPO_ROOT = Path(__file__).resolve().parents[1]
+    for path in (REPO_ROOT, REPO_ROOT / "src"):
+        if str(path) not in sys.path:
+            sys.path.insert(0, str(path))
 
-DEFAULT_INPUT = "Prepare a concise launch brief for a new AI note-taking product."
-DEFAULT_MODEL = os.environ.get("LNF_EXAMPLE_MODEL", "gpt-5-mini")
+from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
+from langchain_openai import ChatOpenAI
+from langgraph.checkpoint.memory import InMemorySaver
+from langgraph.graph import END, START, StateGraph
+from langgraph.graph.message import add_messages
+from langgraph.types import Command
+
+from langgraph_system_generator.examples_support import (
+    build_example_parser,
+    build_metrics,
+    ensure_live_credentials,
+    make_thread_config,
+    trace_step,
+)
+
+AGENTS = ("researcher", "analyst", "writer")
 
 
-class SupervisorDecision(BaseModel):
-    """Structured routing output for the supervisor."""
+def merge_dicts(left: Dict[str, str], right: Dict[str, str]) -> Dict[str, str]:
+    """Merge subagent outputs into a shared mapping."""
+    merged = dict(left or {})
+    merged.update(right or {})
+    return merged
 
-    next_agent: AgentName = Field(description="The next worker to run, or finish.")
-    instructions: str = Field(description="Concrete instructions for the selected worker.")
-    rationale: str = Field(description="Why this worker is the right next step.")
 
+class TeamState(TypedDict, total=False):
+    """Shared supervisor/subagent state."""
 
-class TeamState(TypedDict):
-    """Shared graph state for the supervisor/subagents example."""
-
-    messages: Annotated[list[AnyMessage], add_messages]
-    agent_history: Annotated[list[str], operator.add]
-    artifacts: dict[str, str]
-    active_agent: str
-    supervisor_instructions: str
+    messages: Annotated[List[BaseMessage], add_messages]
+    next_agent: str
+    instructions: str
+    iterations: int
+    dispatch_log: Annotated[List[str], operator.add]
+    task_results: Annotated[Dict[str, str], merge_dicts]
     final_output: str
 
 
-def _require_live_api_key(mode: ExampleMode) -> None:
-    if mode == "live" and not os.getenv("OPENAI_API_KEY"):
-        raise SystemExit("OPENAI_API_KEY is required for --mode live.")
+class SupervisorDecision(BaseModel):
+    """Typed supervisor decision."""
+
+    next_agent: Literal["researcher", "analyst", "writer", "FINISH"] = Field(
+        description="Which specialist should act next."
+    )
+    instructions: str = Field(description="Specific instructions for the specialist.")
+    reasoning: str = Field(description="Why this next step is useful.")
 
 
-def _build_live_model(*, temperature: float) -> ChatOpenAI:
-    return ChatOpenAI(model=DEFAULT_MODEL, temperature=temperature)
-
-
-def _supervisor_stub(user_input: str, artifacts: dict[str, str]) -> SupervisorDecision:
-    if "researcher" not in artifacts:
+def _stub_supervisor(state: TeamState) -> SupervisorDecision:
+    results = state.get("task_results", {})
+    if "researcher" not in results:
         return SupervisorDecision(
             next_agent="researcher",
-            instructions=f"Find the strongest positioning points for: {user_input}",
-            rationale="Research should happen before drafting.",
+            instructions="Gather the most relevant facts and sources for the request.",
+            reasoning="The team needs raw facts before analysis.",
         )
-    if "writer" not in artifacts:
+    if "analyst" not in results:
+        return SupervisorDecision(
+            next_agent="analyst",
+            instructions="Turn the research findings into concrete insights and trade-offs.",
+            reasoning="The team now has enough evidence to analyze.",
+        )
+    if "writer" not in results:
         return SupervisorDecision(
             next_agent="writer",
-            instructions="Turn the research notes into a tight launch brief with headline, proof points, and CTA.",
-            rationale="The team has enough source material to draft.",
-        )
-    if "reviewer" not in artifacts:
-        return SupervisorDecision(
-            next_agent="reviewer",
-            instructions="Polish the brief, tighten phrasing, and call out any missing evidence.",
-            rationale="A final review should improve clarity before delivery.",
+            instructions="Synthesize the research and analysis into a polished final brief.",
+            reasoning="All prerequisite inputs are ready for final synthesis.",
         )
     return SupervisorDecision(
-        next_agent="finish",
-        instructions="Deliver the reviewed brief to the user.",
-        rationale="All specialist steps are complete.",
+        next_agent="FINISH",
+        instructions="Combine the specialist outputs into the final answer.",
+        reasoning="The team has completed all planned stages.",
     )
 
 
-def _supervisor_live(user_input: str, artifacts: dict[str, str]) -> SupervisorDecision:
-    artifact_summary = "\n".join(
-        f"- {name}: {value[:200]}" for name, value in artifacts.items()
-    ) or "No worker artifacts yet."
-    model = _build_live_model(temperature=0)
-    structured_model = model.with_structured_output(SupervisorDecision)
-    return structured_model.invoke(
-        [
-            SystemMessage(
-                content=(
-                    "You are a supervisor coordinating three stateless workers: researcher, writer, "
-                    "reviewer. Choose the next agent or finish."
-                )
-            ),
-            HumanMessage(
-                content=(
-                    f"User request:\n{user_input}\n\nExisting artifacts:\n{artifact_summary}\n\n"
-                    "Select the next agent and provide focused instructions."
-                )
-            ),
-        ]
-    )
-
-
-def _research_output(mode: ExampleMode, user_input: str, instructions: str) -> str:
-    if mode == "stub":
+def _stub_agent_output(agent: str, task: str, state: TeamState) -> str:
+    if agent == "researcher":
         return (
             "Research notes:\n"
-            "- Core audience: knowledge workers who juggle scattered notes.\n"
-            "- Strong hook: AI turns messy notes into next actions.\n"
-            "- Proof point: faster meeting follow-up and easier retrieval."
+            "- LangGraph v1 docs keep graph primitives stable while improving ergonomics.\n"
+            "- Command centralizes state updates and control flow.\n"
+            f"- Source task: {task}"
         )
-
-    model = _build_live_model(temperature=0.2)
-    response = model.invoke(
-        [
-            SystemMessage(
-                content="You are a researcher. Return concise source notes that help a writer draft fast."
-            ),
-            HumanMessage(content=f"Task: {user_input}\nInstructions: {instructions}"),
-        ]
-    )
-    return response.content
-
-
-def _writer_output(
-    mode: ExampleMode,
-    user_input: str,
-    instructions: str,
-    artifacts: dict[str, str],
-) -> str:
-    if mode == "stub":
-        research = artifacts.get("researcher", "No research notes available.")
+    if agent == "analyst":
         return (
-            "Launch brief draft:\n"
-            "Headline: Notes that turn into action.\n"
-            f"Support:\n{research}\n"
-            "CTA: Start with one meeting and get a structured recap in minutes."
+            "Analysis:\n"
+            "- Router is ideal for one-shot delegation.\n"
+            "- Supervisor/subagents work better when task decomposition depends on prior outputs.\n"
+            f"- Available context keys: {', '.join(sorted(state.get('task_results', {})))}"
         )
-
-    model = _build_live_model(temperature=0.3)
-    response = model.invoke(
-        [
-            SystemMessage(
-                content="You are a product writer. Draft a polished launch brief using the research artifact."
-            ),
-            HumanMessage(
-                content=(
-                    f"Task: {user_input}\nInstructions: {instructions}\n\n"
-                    f"Research artifact:\n{artifacts.get('researcher', '')}"
-                )
-            ),
-        ]
+    return (
+        "Final brief:\n"
+        "- Start with a supervisor when you need sequential collaboration.\n"
+        "- Keep specialist responsibilities non-overlapping and pass forward only needed state.\n"
+        f"- Original task: {task}"
     )
-    return response.content
 
 
-def _reviewer_output(
-    mode: ExampleMode,
-    user_input: str,
-    instructions: str,
-    artifacts: dict[str, str],
-) -> str:
-    if mode == "stub":
-        writer_artifact = artifacts.get("writer", "No draft available.")
-        return (
-            "Reviewed launch brief:\n"
-            f"{writer_artifact}\n"
-            "Reviewer note: tighten the proof point and keep the CTA action-oriented."
-        )
-
-    model = _build_live_model(temperature=0.2)
-    response = model.invoke(
-        [
-            SystemMessage(
-                content="You are an editorial reviewer. Improve clarity, tighten claims, and flag weak evidence."
-            ),
-            HumanMessage(
-                content=(
-                    f"Task: {user_input}\nInstructions: {instructions}\n\n"
-                    f"Draft artifact:\n{artifacts.get('writer', '')}"
-                )
-            ),
-        ]
-    )
-    return response.content
-
-
-def build_subagents_graph(mode: ExampleMode = "stub"):
-    """Build a runnable supervisor/subagents graph."""
-
-    _require_live_api_key(mode)
+def build_graph(mode: str, model: str, *, max_iterations: int = 4):
+    """Build the runnable supervisor/subagents graph."""
+    llm = ChatOpenAI(model=model, temperature=0) if mode == "live" else None
 
     def supervisor_node(
         state: TeamState,
-    ) -> Command[Literal["researcher", "writer", "reviewer", "finish"]]:
-        user_input = state["messages"][0].content if state["messages"] else DEFAULT_INPUT
-        artifacts = dict(state.get("artifacts", {}))
-        decision = (
-            _supervisor_stub(user_input, artifacts)
-            if mode == "stub"
-            else _supervisor_live(user_input, artifacts)
-        )
+    ) -> Command[Literal["researcher", "analyst", "writer", "finish"]]:
+        iterations = state.get("iterations", 0)
+        if iterations >= max_iterations:
+            return Command(
+                update={
+                    "next_agent": "FINISH",
+                    "instructions": "Maximum iterations reached; synthesize current work.",
+                    "dispatch_log": ["Supervisor stopped at max_iterations."],
+                },
+                goto="finish",
+            )
 
+        if llm:
+            summary = "\n".join(
+                f"- {agent}: {output[:160]}"
+                for agent, output in state.get("task_results", {}).items()
+            ) or "No results yet."
+            decision = llm.with_structured_output(SupervisorDecision).invoke(
+                [
+                    SystemMessage(
+                        content=(
+                            "You supervise a specialist team.\n"
+                            "- researcher: gather evidence\n"
+                            "- analyst: interpret findings\n"
+                            "- writer: produce the final brief\n"
+                        )
+                    ),
+                    HumanMessage(
+                        content=(
+                            f"Task: {state['messages'][0].content if state.get('messages') else ''}\n\n"
+                            f"Current results:\n{summary}"
+                        )
+                    ),
+                ]
+            )
+        else:
+            decision = _stub_supervisor(state)
+
+        target = "finish" if decision.next_agent == "FINISH" else decision.next_agent
         return Command(
             update={
-                "active_agent": decision.next_agent,
-                "supervisor_instructions": decision.instructions,
-                "agent_history": [f"supervisor->{decision.next_agent}"],
+                "next_agent": decision.next_agent,
+                "instructions": decision.instructions,
+                "iterations": iterations + (
+                    0 if decision.next_agent == "FINISH" else 1
+                ),
+                "dispatch_log": [
+                    f"Supervisor -> {decision.next_agent}: {decision.reasoning}"
+                ],
                 "messages": [
                     AIMessage(
                         content=(
                             f"Supervisor selected {decision.next_agent}: "
-                            f"{decision.instructions} ({decision.rationale})"
+                            f"{decision.instructions}"
                         )
                     )
                 ],
             },
-            goto=decision.next_agent,
+            goto=target,
         )
 
-    def researcher_node(state: TeamState):
-        user_input = state["messages"][0].content if state["messages"] else DEFAULT_INPUT
-        artifact = _research_output(mode, user_input, state.get("supervisor_instructions", ""))
-        artifacts = dict(state.get("artifacts", {}))
-        artifacts["researcher"] = artifact
-        return {
-            "artifacts": artifacts,
-            "agent_history": ["researcher"],
-            "messages": [AIMessage(content=artifact)],
-        }
+    def specialist_node(agent: str, role: str):
+        def _node(state: TeamState) -> Dict[str, object]:
+            task = state["messages"][0].content if state.get("messages") else ""
+            if llm:
+                response = llm.invoke(
+                    [
+                        SystemMessage(content=f"You are the {agent}. Role: {role}"),
+                        HumanMessage(
+                            content=f"Instructions: {state.get('instructions', '')}"
+                        ),
+                        *state.get("messages", []),
+                    ]
+                )
+                content = response.content
+            else:
+                content = _stub_agent_output(agent, task, state)
+            return {
+                "task_results": {agent: content},
+                "messages": [AIMessage(content=f"{agent} completed the task.")],
+            }
 
-    def writer_node(state: TeamState):
-        user_input = state["messages"][0].content if state["messages"] else DEFAULT_INPUT
-        artifact = _writer_output(
-            mode,
-            user_input,
-            state.get("supervisor_instructions", ""),
-            dict(state.get("artifacts", {})),
-        )
-        artifacts = dict(state.get("artifacts", {}))
-        artifacts["writer"] = artifact
-        return {
-            "artifacts": artifacts,
-            "agent_history": ["writer"],
-            "messages": [AIMessage(content=artifact)],
-        }
+        return _node
 
-    def reviewer_node(state: TeamState):
-        user_input = state["messages"][0].content if state["messages"] else DEFAULT_INPUT
-        artifact = _reviewer_output(
-            mode,
-            user_input,
-            state.get("supervisor_instructions", ""),
-            dict(state.get("artifacts", {})),
-        )
-        artifacts = dict(state.get("artifacts", {}))
-        artifacts["reviewer"] = artifact
-        return {
-            "artifacts": artifacts,
-            "agent_history": ["reviewer"],
-            "messages": [AIMessage(content=artifact)],
-        }
-
-    def finish_node(state: TeamState):
-        final_output = (
-            state.get("artifacts", {}).get("reviewer")
-            or state.get("artifacts", {}).get("writer")
-            or state.get("artifacts", {}).get("researcher")
-            or "No artifact generated."
+    def finish_node(state: TeamState) -> Dict[str, object]:
+        results = state.get("task_results", {})
+        final_output = "\n\n".join(
+            f"## {agent.title()}\n{output}" for agent, output in results.items()
         )
         return {
             "final_output": final_output,
-            "agent_history": ["finish"],
-            "messages": [AIMessage(content=f"Final deliverable ready.\n{final_output}")],
+            "messages": [AIMessage(content="Team finished.")],
         }
 
     workflow = StateGraph(TeamState)
     workflow.add_node("supervisor", supervisor_node)
-    workflow.add_node("researcher", researcher_node)
-    workflow.add_node("writer", writer_node)
-    workflow.add_node("reviewer", reviewer_node)
+    workflow.add_node(
+        "researcher",
+        specialist_node("researcher", "Gather facts and context."),
+    )
+    workflow.add_node(
+        "analyst",
+        specialist_node("analyst", "Interpret the findings."),
+    )
+    workflow.add_node(
+        "writer",
+        specialist_node("writer", "Produce the final answer."),
+    )
     workflow.add_node("finish", finish_node)
     workflow.add_edge(START, "supervisor")
     workflow.add_edge("researcher", "supervisor")
+    workflow.add_edge("analyst", "supervisor")
     workflow.add_edge("writer", "supervisor")
-    workflow.add_edge("reviewer", "supervisor")
     workflow.add_edge("finish", END)
-    return workflow.compile()
+    return workflow.compile(checkpointer=InMemorySaver())
 
 
-def run_subagents_example(
-    user_input: str = DEFAULT_INPUT,
-    mode: ExampleMode = "stub",
-) -> TeamState:
-    """Execute the supervisor/subagents example and return the final state."""
+def run_demo(
+    task: str,
+    *,
+    mode: str = "stub",
+    model: str = "gpt-4.1-mini",
+) -> Dict[str, object]:
+    """Execute the supervisor example and print a trace."""
+    ensure_live_credentials(mode)
+    graph = build_graph(mode, model)
+    config = make_thread_config()
+    initial_state: TeamState = {
+        "messages": [HumanMessage(content=task)],
+        "task_results": {},
+        "dispatch_log": [],
+        "iterations": 0,
+        "final_output": "",
+    }
 
-    graph = build_subagents_graph(mode)
-    return graph.invoke(
-        {
-            "messages": [HumanMessage(content=user_input)],
-            "agent_history": [],
-            "artifacts": {},
-            "active_agent": "",
-            "supervisor_instructions": "",
-            "final_output": "",
-        }
+    import time
+
+    start = time.perf_counter()
+    final_state: Dict[str, object] = {}
+    for step in graph.stream(initial_state, config=config, stream_mode="values"):
+        trace_step(
+            "subagents-step",
+            {
+                "next_agent": step.get("next_agent"),
+                "dispatch_log": step.get("dispatch_log", []),
+                "task_results": step.get("task_results", {}),
+                "final_output": step.get("final_output", ""),
+            },
+        )
+        final_state = dict(step)
+    trace_step("subagents-metrics", build_metrics(model, start).to_dict())
+    return final_state
+
+
+def main() -> None:
+    parser = build_example_parser(
+        "Run a supervisor/subagents example.",
+        "Prepare a short best-practices brief on when to use multi-agent supervision.",
     )
-
-
-def main(argv: Optional[List[str]] = None) -> None:
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--mode", choices=["stub", "live"], default="stub")
-    parser.add_argument("--input", default=DEFAULT_INPUT)
-    args = parser.parse_args(argv)
-
-    result = run_subagents_example(args.input, args.mode)
-
+    args = parser.parse_args()
+    result = run_demo(args.task, mode=args.mode, model=args.model)
     print("Subagents Pattern Example")
     print(f"Mode: {args.mode}")
     print("Agent history:")
-    for entry in result["agent_history"]:
-        print(f"- {entry}")
-    print("Artifacts generated:")
-    for name in result["artifacts"]:
-        print(f"- {name}")
-    print("Final output:")
-    print(result["final_output"])
-
-    if args.mode == "stub":
-        print("Live mode note: rerun with --mode live and OPENAI_API_KEY to use ChatOpenAI.")
+    for entry in result.get("dispatch_log", []):
+        print("-", entry)
+    print("\nDispatch log:")
+    for entry in result.get("dispatch_log", []):
+        print("-", entry)
+    print("\nFinal output:\n", result.get("final_output", ""))
 
 
 if __name__ == "__main__":

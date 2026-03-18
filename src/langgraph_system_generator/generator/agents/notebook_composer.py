@@ -847,11 +847,11 @@ workflow.add_conditional_edges({safe_source}, {function_name}, {{"__end__": END}
             conditional_code = "\n\n# Add conditional edges\n" + "\n\n".join(conditional_blocks)
 
         return f"""from langgraph.graph import END, START, StateGraph
-from langgraph.checkpoint.memory import MemorySaver
+from langgraph.checkpoint.memory import InMemorySaver
 
 # Create graph
 workflow = StateGraph(WorkflowState)
-memory = MemorySaver()
+memory = InMemorySaver()
 
 # Add nodes
 {node_additions if node_additions else "# Add your nodes here"}
@@ -880,9 +880,11 @@ graph = workflow.compile(checkpointer=memory)"""
         elif architecture_type == "subagents":
             initial_state_block = """initial_state: WorkflowState = {
     "messages": [HumanMessage(content="Research the topic, draft a response, and review it before finishing.")],
-    "next": "supervisor",
+    "next_agent": "supervisor",
     "instructions": "",
     "task_results": {},
+    "dispatch_log": [],
+    "iterations": 0,
 }"""
         elif architecture_type == "critique_loop":
             initial_state_block = """initial_state: WorkflowState = {
