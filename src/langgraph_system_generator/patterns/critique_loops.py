@@ -245,7 +245,7 @@ Criteria Reviewed:
         "quality_score": quality_score,
         "approved": approved,
         "previous_quality_score": previous_quality_score,
-        "messages": messages + [
+        "messages": [
             HumanMessage(content=f"Human critique: {normalized_feedback}")
         ],
     }
