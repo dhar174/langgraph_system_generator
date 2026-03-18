@@ -508,7 +508,7 @@ workflow.add_conditional_edges(
         "revise": "revise",
     }},
 )
-workflow.add_edge("revise", "generate")
+workflow.add_edge("revise", "critique")
 workflow.add_edge("finalize", END)
 
 graph = workflow.compile(checkpointer=checkpointer)
