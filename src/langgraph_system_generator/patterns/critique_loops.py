@@ -69,6 +69,7 @@ class CritiqueLoopPattern:
             "    quality_score: float  # Quality assessment score (0-1)",
             "    approved: bool  # Whether output meets quality standards",
             "    criteria: List[str]  # Quality criteria to evaluate",
+            "    draft_history: Annotated[List[DraftSnapshot], operator.add]  # Historical draft snapshots with quality scores",
             "    revision_history: Annotated[List[str], operator.add]",
             "    final_output: str",
         ]
@@ -89,9 +90,16 @@ class CritiqueLoopPattern:
 
         return textwrap.dedent(
             f'''import operator
-from typing import Annotated, Any, Callable, Dict, List
+from typing import Annotated, Any, Callable, Dict, List, TypedDict
 
 from langgraph.graph import MessagesState
+
+
+class DraftSnapshot(TypedDict):
+    """Stored draft candidate with its measured quality."""
+
+    content: str
+    quality_score: float
 
 
 class WorkflowState(MessagesState):
@@ -401,6 +409,7 @@ def revise_node(state: WorkflowState) -> dict:
     llm = {llm_init}
     current_draft = state.get("current_draft", "")
     critique_feedback = state.get("critique_feedback", "")
+    quality_score = state.get("quality_score", 0.0)
     revision_count = state.get("revision_count", 0)
 
     response = llm.invoke(
@@ -416,6 +425,11 @@ Address the critique directly while preserving good parts of the draft."""
     )
 
     return {{
+        "draft_history": (
+            [{{"content": current_draft, "quality_score": quality_score}}]
+            if current_draft
+            else []
+        ),
         "current_draft": response.content,
         "revision_count": revision_count + 1,
         "revision_history": [response.content],
@@ -496,8 +510,33 @@ from langgraph.graph import END, START, StateGraph
 
 def finalize_node(state: WorkflowState) -> dict:
     """Finalize the best available draft."""
+    current_draft = state.get("current_draft", "")
+    quality_score = state.get("quality_score", 0.0)
+    revision_count = state.get("revision_count", 0)
+    draft_history = list(state.get("draft_history", []))
+
+    if current_draft:
+        draft_history.append(
+            {{
+                "content": current_draft,
+                "quality_score": quality_score,
+            }}
+        )
+
+    final_output = current_draft
+    if revision_count >= {max_revisions} and draft_history:
+        ranked_drafts = max(
+            enumerate(draft_history),
+            key=lambda item: (
+                float(item[1].get("quality_score", 0.0)),
+                item[0],
+            ),
+        )
+        best_draft = ranked_drafts[1]
+        final_output = best_draft.get("content", current_draft)
+
     return {{
-        "final_output": state.get("current_draft", ""),
+        "final_output": final_output,
         "messages": [],
     }}
 
@@ -520,7 +559,7 @@ workflow.add_conditional_edges(
         "missing_feedback": END,
         "no_improvement": END,
         "max_revisions_failed": END,
-        "max_revisions_reached": END,
+        "max_revisions_reached": "finalize",
         "revise": "revise",
     }},
 )
@@ -639,6 +678,7 @@ def build_initial_state(user_request: str) -> WorkflowState:
         "quality_score": 0.0,
         "approved": False,
         "criteria": {criteria_literal},
+        "draft_history": [],
         "revision_history": [],
         "final_output": "",{failure_state_fields}{human_state_fields}
     }}
