@@ -79,14 +79,28 @@ def _stub_step_result(step: PlanStep, task: str) -> str:
     return "Synthesized answer: plan-and-execute is useful when planning and acting benefit from separate prompts."
 
 
-def build_graph(mode: str, model: str, *, max_steps: int = 4):
+def build_graph(
+    mode: str,
+    model: str,
+    *,
+    planner_model: str | None = None,
+    executor_model: str | None = None,
+    max_steps: int = 4,
+):
     """Build the plan-and-execute graph."""
-    llm = ChatOpenAI(model=model, temperature=0) if mode == "live" else None
+    planner_model_name = planner_model or model
+    executor_model_name = executor_model or model
+    planner_llm = (
+        ChatOpenAI(model=planner_model_name, temperature=0) if mode == "live" else None
+    )
+    executor_llm = (
+        ChatOpenAI(model=executor_model_name, temperature=0) if mode == "live" else None
+    )
 
     def planner_node(state: PlanExecuteState):
         task = state["messages"][0].content if state.get("messages") else ""
-        if llm:
-            plan = llm.with_structured_output(ExecutionPlan).invoke(
+        if planner_llm:
+            plan = planner_llm.with_structured_output(ExecutionPlan).invoke(
                 [
                     SystemMessage(
                         content=f"Create a concise actionable plan with at most {max_steps} steps."
@@ -122,8 +136,8 @@ def build_graph(mode: str, model: str, *, max_steps: int = 4):
         task = state["messages"][0].content if state.get("messages") else ""
         index = state.get("current_step_index", 0)
         step = PlanStep.model_validate(state["plan_steps"][index])
-        if llm:
-            response = llm.invoke(
+        if executor_llm:
+            response = executor_llm.invoke(
                 [
                     SystemMessage(content="Execute the planner step and return a concise result."),
                     HumanMessage(content=f"Task: {task}\nStep objective: {step.objective}"),
@@ -158,10 +172,24 @@ def build_graph(mode: str, model: str, *, max_steps: int = 4):
     return workflow.compile(checkpointer=InMemorySaver())
 
 
-def run_demo(task: str, *, mode: str = "stub", model: str = "gpt-4.1-mini", max_steps: int = 4):
+def run_demo(
+    task: str,
+    *,
+    mode: str = "stub",
+    model: str = "gpt-4.1-mini",
+    planner_model: str | None = None,
+    executor_model: str | None = None,
+    max_steps: int = 4,
+):
     """Execute the plan-and-execute example and print a trace."""
     ensure_live_credentials(mode)
-    graph = build_graph(mode, model, max_steps=max_steps)
+    graph = build_graph(
+        mode,
+        model,
+        planner_model=planner_model,
+        executor_model=executor_model,
+        max_steps=max_steps,
+    )
     config = make_thread_config()
     initial_state: PlanExecuteState = {
         "messages": [HumanMessage(content=task)],
@@ -187,7 +215,20 @@ def run_demo(task: str, *, mode: str = "stub", model: str = "gpt-4.1-mini", max_
             },
         )
         final_state = dict(step)
-    trace_step("plan-execute-metrics", build_metrics(model, start).to_dict())
+
+    effective_planner_model = planner_model or model
+    effective_executor_model = executor_model or model
+    if effective_planner_model == effective_executor_model:
+        metrics_model_label = effective_planner_model
+    else:
+        metrics_model_label = f"planner={effective_planner_model},executor={effective_executor_model}"
+
+    metrics = build_metrics(metrics_model_label, start).to_dict()
+    # Include explicit planner/executor model fields for accurate attribution.
+    metrics["planner_model"] = effective_planner_model
+    metrics["executor_model"] = effective_executor_model
+
+    trace_step("plan-execute-metrics", metrics)
     return final_state
 
 
@@ -197,8 +238,23 @@ def main() -> None:
         "Plan and execute a short answer explaining when planner/executor separation helps.",
         include_max_steps=True,
     )
+    parser.add_argument(
+        "--planner-model",
+        help="Optional live-mode override for the planner model. Defaults to --model.",
+    )
+    parser.add_argument(
+        "--executor-model",
+        help="Optional live-mode override for the executor model. Defaults to --model.",
+    )
     args = parser.parse_args()
-    result = run_demo(args.task, mode=args.mode, model=args.model, max_steps=args.max_steps)
+    result = run_demo(
+        args.task,
+        mode=args.mode,
+        model=args.model,
+        planner_model=args.planner_model,
+        executor_model=args.executor_model,
+        max_steps=args.max_steps,
+    )
     print("\nExecution trace:")
     for entry in result.get("execution_trace", []):
         print("-", entry)
