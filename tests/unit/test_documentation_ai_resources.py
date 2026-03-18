@@ -51,6 +51,8 @@ def test_agents_md_documents_shared_ai_resources() -> None:
 
 
 def test_copilot_instructions_documents_shared_ai_resources() -> None:
+    assert COPILOT_INSTRUCTIONS == REPO_ROOT / '.github' / 'copilot-instructions.md'
+    assert COPILOT_INSTRUCTIONS.parent.name == '.github'
     assert COPILOT_INSTRUCTIONS.exists(), '.github/copilot-instructions.md should exist'
     content = _read(COPILOT_INSTRUCTIONS)
 

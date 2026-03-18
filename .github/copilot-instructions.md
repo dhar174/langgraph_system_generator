@@ -49,7 +49,7 @@ Mirrored top-level `skills/` entries currently exist for `langchain`,
 - LangGraph docs (legacy redirect): https://langchain-ai.github.io/langgraph/
 - LangGraph API reference (legacy redirect): https://langchain-ai.github.io/langgraph/reference/
 - Current LangGraph overview: https://docs.langchain.com/oss/python/langgraph/overview
-- Current LangGraph Graph API guide: https://docs.langchain.com/oss/python/langgraph/use-graph-api
+- Current LangGraph "Use the Graph API" guide: https://docs.langchain.com/oss/python/langgraph/use-graph-api
 - Current unified LangChain ecosystem API reference:
   https://reference.langchain.com/python/
 - LangSmith docs: https://docs.langchain.com/langsmith
