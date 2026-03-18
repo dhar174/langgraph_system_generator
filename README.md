@@ -77,7 +77,8 @@ graph LR
    metadata.
 7. **QA / Repair**: `static_qa_node` and `runtime_qa_node` validate the notebook;
    if checks fail, `repair_node` performs a bounded repair loop.
-8. **Export**: `package_outputs_node` writes `notebook.ipynb`, manifest JSON,
+8. **Export**: `package_outputs_node` builds an in-memory `artifacts_manifest`;
+   the CLI/export layer uses this manifest to write `notebook.ipynb`, manifest JSON,
    exports, and the final bundle.
 
 For the code-level view, see
