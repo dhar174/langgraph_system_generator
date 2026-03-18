@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import ast
+
 from langgraph_system_generator.patterns import (
     CritiqueLoopPattern,
     RouterPattern,
@@ -226,12 +228,14 @@ class TestCritiqueLoopPattern:
         code = CritiqueLoopPattern.generate_state_code()
 
         assert "class WorkflowState(MessagesState):" in code
+        assert "class DraftSnapshot(TypedDict):" in code
         assert "current_draft: str" in code
         assert "critique_feedback: str" in code
         assert "revision_count: int" in code
         assert "quality_score: float" in code
         assert "approved: bool" in code
         assert "criteria: List[str]" in code
+        assert "draft_history: Annotated[List[DraftSnapshot], operator.add]" in code
 
     def test_generate_generation_node_code(self):
         """Test generation node code."""
@@ -273,6 +277,10 @@ class TestCritiqueLoopPattern:
         assert "def revise_node(state: WorkflowState)" in code
         assert "current_draft" in code
         assert "critique_feedback" in code
+        assert "quality_score" in code
+        assert '"draft_history": (' in code
+        assert '"content": current_draft' in code
+        assert '"quality_score": quality_score' in code
         assert "revision_count" in code
         assert "ChatOpenAI" in code
 
@@ -296,6 +304,9 @@ class TestCritiqueLoopPattern:
         )
 
         assert "def should_continue(state: WorkflowState)" in code
+        assert "draft_history = list(state.get(\"draft_history\", []))" in code
+        assert "revision_count >= 3 and draft_history" in code
+        assert 'max_revisions_reached": "finalize"' in code
         assert "StateGraph(WorkflowState)" in code
         assert 'workflow.add_node("generate", generate_node)' in code
         assert 'workflow.add_node("critique", critique_node)' in code
@@ -319,6 +330,7 @@ class TestCritiqueLoopPattern:
         assert "def critique_node" in code
         assert "def revise_node" in code
         assert "workflow = StateGraph" in code
+        assert '"draft_history": []' in code
         assert "if __name__ ==" in code
 
 
@@ -980,6 +992,8 @@ def test_critique_loop_pattern_emits_structured_judging_and_finalize_path():
     )
 
     assert "MessagesState" in state_code
+    assert "DraftSnapshot" in state_code
+    assert "draft_history" in state_code
     assert "revision_history" in state_code
     assert "audience: str" in state_code
 
@@ -991,11 +1005,56 @@ def test_critique_loop_pattern_emits_structured_judging_and_finalize_path():
     assert "temperature=0" in critique_code
 
     assert "temperature=0.7" in revise_code
+    assert '"draft_history": (' in revise_code
 
     assert "should_continue" in helper_code
     assert "quality_score >= 0.9" in helper_code
     assert "finalize_node" in graph_code
+    assert "draft_history = list(state.get(\"draft_history\", []))" in graph_code
+    assert 'max_revisions_reached": "finalize"' in graph_code
     assert "InMemorySaver" in graph_code
+
+
+def test_critique_loop_finalize_rolls_back_to_best_historical_draft():
+    namespace = {"WorkflowState": dict}
+    helper_code = CritiqueLoopPattern.generate_conditional_edge_code(
+        max_revisions=2,
+        min_quality_score=0.95,
+    )
+    graph_code = CritiqueLoopPattern.generate_graph_code(
+        max_revisions=2,
+        min_quality_score=0.95,
+    )
+    graph_module = ast.parse(graph_code)
+    finalize_node_ast = next(
+        node
+        for node in graph_module.body
+        if isinstance(node, ast.FunctionDef) and node.name == "finalize_node"
+    )
+    finalize_module = ast.Module(body=[finalize_node_ast], type_ignores=[])
+    module_code = "\n\n".join(
+        [
+            helper_code,
+            ast.unparse(finalize_module),
+        ]
+    )
+
+    exec(module_code, namespace)
+
+    should_continue = namespace["should_continue"]
+    finalize_node = namespace["finalize_node"]
+    state = {
+        "current_draft": "Revision 2",
+        "quality_score": 0.7,
+        "revision_count": 2,
+        "approved": False,
+        "draft_history": [
+            {"content": "Revision 1", "quality_score": 0.9},
+        ],
+    }
+
+    assert should_continue(state) == "max_revisions_reached"
+    assert finalize_node(state)["final_output"] == "Revision 1"
 
 
 def test_generated_pattern_sections_compile_as_python():
