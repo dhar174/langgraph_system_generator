@@ -30,8 +30,13 @@ def _read_frontmatter(path: Path) -> dict[str, str]:
 def _strip_yaml_quotes(value: str) -> str:
     value = value.strip()
 
-    if len(value) >= 2 and value[0] == value[-1] and value[0] in {"'", '"'}:
+    if len(value) >= 2 and value[0] == value[-1] and value[0] == "'":
         return value[1:-1].replace("''", "'")
+
+    if len(value) >= 2 and value[0] == value[-1] and value[0] == '"':
+        parsed = ast.literal_eval(value)
+        assert isinstance(parsed, str), "Quoted YAML scalar should parse to a string"
+        return parsed
 
     return value
 
@@ -42,9 +47,10 @@ def _parse_tools(value: str) -> list[str]:
     try:
         parsed = ast.literal_eval(normalized)
     except (SyntaxError, ValueError):
-        return [normalized]
+        raise AssertionError("tools must be expressed as a YAML-compatible list") from None
 
-    return parsed if isinstance(parsed, list) else [normalized]
+    assert isinstance(parsed, list), "tools must parse to a list"
+    return parsed
 
 
 def test_agent_frontmatter_matches_copilot_requirements() -> None:
