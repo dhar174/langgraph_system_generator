@@ -1,143 +1,58 @@
-"""Router pattern for multi-agent workflows.
+"""Router pattern generator aligned with current LangGraph graph APIs."""
 
-This module provides templates and code generators for implementing
-router-based LangGraph architectures where a central router node
-dynamically dispatches requests to specialized agent nodes.
+from __future__ import annotations
+import pytest
+import ast
 
-Architecture:
-    The router pattern implements a hub-and-spoke architecture:
-    
-        START -> router_node -> [route_1, route_2, ..., route_n] -> END
-    
-    The router node analyzes incoming requests and directs them to the
-    appropriate specialized agent based on content, intent, or other criteria.
-    Each route handler is optimized for a specific domain or task type.
 
-Key Features:
-    - Dynamic routing based on LLM classification
-    - Support for structured output (type-safe routing decisions)
-    - Extensible state management with custom fields
-    - Conditional edge routing for complex workflows
-    - Configurable LLM models for different performance/cost tradeoffs
-
-Use Cases:
-    - Customer support systems with specialized agents (billing, technical, general)
-    - Multi-domain question answering (search, calculation, reasoning)
-    - Content processing pipelines (analysis, summarization, translation)
-    - Task delegation in multi-agent systems
-
-Example Usage:
-    Basic router pattern generation:
-    
-        >>> from langgraph_system_generator.patterns.router import RouterPattern
-        >>>
-        >>> # Generate complete workflow
-        >>> routes = ["search", "analyze", "summarize"]
-        >>> route_purposes = {
-        ...     "search": "Search for information from various sources",
-        ...     "analyze": "Analyze data and identify patterns",
-        ...     "summarize": "Create concise summaries of content"
-        ... }
-        >>> code = RouterPattern.generate_complete_example(routes, route_purposes)
-        >>> # Save to file or execute
-        >>> with open("my_router_workflow.py", "w") as f:
-        ...     f.write(code)
-    
-    Custom state with additional fields:
-    
-        >>> # Add custom tracking fields
-        >>> custom_fields = {
-        ...     "user_id": "User identifier for personalization",
-        ...     "priority": "Request priority level",
-        ...     "metadata": "Additional context"
-        ... }
-        >>> state_code = RouterPattern.generate_state_code(
-        ...     additional_fields=custom_fields
-        ... )
-    
-    Generate individual components:
-    
-        >>> # Generate just the router node
-        >>> from langgraph_system_generator.utils.config import ModelConfig
-        >>> config = ModelConfig(model="gpt-5-mini", temperature=0.5)
-        >>> router_code = RouterPattern.generate_router_node_code(
-        ...     routes=["search", "analyze"],
-        ...     model_config=config,
-        ...     use_structured_output=True
-        ... )
-        >>>
-        >>> # Generate a specific route handler
-        >>> route_code = RouterPattern.generate_route_node_code(
-        ...     route_name="search",
-        ...     route_purpose="Perform web searches and retrieve information",
-        ...     model_config=config
-        ... )
-
-Integration with Generated Workflows:
-    The generated code is production-ready and can be integrated into
-    larger systems. Each pattern method generates syntactically valid
-    Python code that can be saved to files, executed dynamically, or
-    incorporated into notebook cells.
-
-See Also:
-    - SubagentsPattern: For supervisor-coordinated multi-agent workflows
-    - CritiqueLoopPattern: For iterative refinement workflows
-    - examples/router_pattern_example.py: Complete working examples
-"""
-
-import json
 from typing import Dict, List, Optional, Union
 
-from langgraph_system_generator.patterns.utils import build_llm_init
+from langgraph_system_generator.patterns.utils import (
+    build_llm_init,
+    double_quoted_literal,
+    render_additional_fields,
+    sanitize_identifier,
+)
 from langgraph_system_generator.utils.config import ModelConfig
 
 
-def _double_quoted_literal(value: str) -> str:
-    """Return a safely escaped double-quoted Python string literal."""
-    return json.dumps(value)
+def _route_specs(routes: List[str]) -> List[tuple[str, str]]:
+    """Return ``(label, node_name)`` pairs for generated routes."""
+    values = routes or ["default"]
+    return [(route, sanitize_identifier(route)) for route in values]
 
 
 class RouterPattern:
-    """Template generator for router-based multi-agent patterns.
-
-    The router pattern is ideal for workflows where:
-    - A central dispatcher routes requests to specialized agents
-    - Each route handles a specific type of request or domain
-    - Routing logic is based on input classification
-    - Agents can be executed conditionally based on input
-
-    Architecture:
-        START -> router_node -> [route_a_node, route_b_node, ...] -> END
-    """
+    """Template generator for router-based multi-agent patterns."""
 
     @staticmethod
     def generate_state_code(additional_fields: Optional[Dict[str, str]] = None) -> str:
-        """Generate state schema code for router pattern.
+        """Generate a TypedDict state schema for router workflows."""
+        additional = render_additional_fields(additional_fields)
+        return f'''import operator
+from typing import Annotated, Dict, List
+from typing_extensions import TypedDict
 
-        Args:
-            additional_fields: Optional dict mapping field names to descriptions
-
-        Returns:
-            Python code string defining the RouterState class
-        """
-        additional = ""
-        if additional_fields:
-            for field_name, description in additional_fields.items():
-                additional += f"    {field_name}: str  # {description}\n"
-
-        return f'''from typing import Annotated, Dict
-from langgraph.graph import MessagesState
+from langchain_core.messages import BaseMessage
+from langgraph.graph.message import add_messages
 
 
-class WorkflowState(MessagesState):
-    """State schema for router-based workflow.
-    
-    Inherits from MessagesState to maintain conversation history.
-    Additional fields track routing decisions and agent outputs.
-    """
-    route: str  # Selected route/agent for processing
-    results: Dict[str, str]  # Results from each route/agent
-    final_output: str  # Aggregated final output
+def merge_dicts(left: Dict[str, str], right: Dict[str, str]) -> Dict[str, str]:
+    """Reducer used to merge route outputs into a single state field."""
+    merged = dict(left or {{}})
+    merged.update(right or {{}})
+    return merged
+
+
+class WorkflowState(TypedDict, total=False):
+    """State schema for a router workflow."""
+
+    messages: Annotated[List[BaseMessage], add_messages]
+    route: str
+    route_reasoning: str
+    route_history: Annotated[List[str], operator.add]
+    results: Annotated[Dict[str, str], merge_dicts]
+    final_output: str
 {additional}'''
 
     @staticmethod
@@ -146,52 +61,48 @@ class WorkflowState(MessagesState):
         model_config: Optional[Union[ModelConfig, dict]] = None,
         use_structured_output: bool = True,
     ) -> str:
-        """Generate router node implementation code.
-
-        Args:
-            routes: List of available route names
-            model_config: ModelConfig instance or dict with model settings
-            use_structured_output: Whether to use structured output for routing
-
-        Returns:
-            Python code string implementing the router node
-        """
-        # Handle model_config parameter
+        """Generate a router node that returns ``Command``."""
         if model_config is None:
             config = ModelConfig()
         elif isinstance(model_config, dict):
             config = ModelConfig.from_dict(model_config)
         else:
             config = model_config
-        
-        llm_model = config.model
-        # Router uses temperature=0 for deterministic classification
-        temperature = 0
-        api_base = config.api_base
-        max_tokens = config.max_tokens
-        
-        llm_init = build_llm_init(llm_model, temperature, api_base, max_tokens)
-        llm_model_hint = _double_quoted_literal(llm_model)
-        
-        routes_str = ", ".join([f'"{r}"' for r in routes]) if routes else '"default"'
-        routes_list_str = "\n".join(
-            [f"- {route}: Handle {route}-related requests" for route in routes]
-        ) if routes else "- default: Default route handler"
+
+        specs = _route_specs(routes)
+        route_literals = ", ".join(double_quoted_literal(label) for label, _ in specs)
+        node_literals = ", ".join(double_quoted_literal(node_name) for _, node_name in specs)
+        route_map_lines = ",\n        ".join(
+            f"{double_quoted_literal(label)}: {double_quoted_literal(node_name)}"
+            for label, node_name in specs
+        )
+        route_help = "\n".join(
+            f"- {label}: Handle {label}-specific requests." for label, _ in specs
+        )
+        llm_init = build_llm_init(
+            config.model,
+            0,
+            config.api_base,
+            config.max_tokens,
+        )
 
         if use_structured_output:
-            return f'''from langchain_openai import ChatOpenAI
-from langchain_core.messages import HumanMessage, SystemMessage
+            return f'''from typing import Literal
+
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
+from langchain_openai import ChatOpenAI
+from langgraph.types import Command
 from pydantic import BaseModel, Field
-from typing import Literal
 
 
 class RouteDecision(BaseModel):
-    """Structured output for route classification."""
-    route: Literal[{routes_str}] = Field(
-        description="The selected route for processing this request"
+    """Typed routing decision returned by the classifier."""
+
+    route: Literal[{route_literals}] = Field(
+        description="Which specialist should handle the request."
     )
     reasoning: str = Field(
-        description="Explanation for why this route was selected"
+        description="Why this route is the best match for the request."
     )
 
 
@@ -294,66 +205,46 @@ Route:""")
         route_purpose: str,
         model_config: Optional[Union[ModelConfig, dict]] = None,
     ) -> str:
-        """Generate code for a specific route handler node.
-
-        Args:
-            route_name: Name of the route/agent
-            route_purpose: Description of what this route handles
-            model_config: ModelConfig instance or dict with model settings
-
-        Returns:
-            Python code string implementing the route node
-        """
-        # Handle model_config parameter
+        """Generate a specialist node for a single route."""
         if model_config is None:
             config = ModelConfig()
         elif isinstance(model_config, dict):
             config = ModelConfig.from_dict(model_config)
         else:
             config = model_config
-        
-        llm_model = config.model
-        temperature = config.temperature
-        api_base = config.api_base
-        max_tokens = config.max_tokens
-        
-        llm_init = build_llm_init(llm_model, temperature, api_base, max_tokens)
-        llm_model_hint = _double_quoted_literal(llm_model)
-        
-        node_name = route_name.lower().replace(" ", "_").replace("-", "_")
 
-        return f'''def {node_name}_node(state: WorkflowState) -> WorkflowState:
-    """Handle {route_name} requests.
-    
-    Purpose: {route_purpose}
-    """
-    from langchain_openai import ChatOpenAI
-    from langchain_core.messages import HumanMessage, SystemMessage
-    
-    messages = state["messages"]
-    
-    # Initialize specialized LLM for this route
-    # Keep explicit double-quoted model hint for compatibility checks in generated code tests.
-    llm = {llm_init}  # model={llm_model_hint}
-    
-    # System prompt for this specialist
-    system_prompt = SystemMessage(content="""You are a {route_name} specialist.
+        node_name = sanitize_identifier(route_name)
+        llm_init = build_llm_init(
+            config.model,
+            config.temperature,
+            config.api_base,
+            config.max_tokens,
+        )
+
+        return f'''from langchain_core.messages import AIMessage, SystemMessage
+from langchain_openai import ChatOpenAI
+
+
+def {node_name}_node(state: WorkflowState) -> dict:
+    """Execute the {route_name} specialist."""
+    messages = state.get("messages", [])
+    llm = {llm_init}
+
+    response = llm.invoke([
+        SystemMessage(
+            content="""You are the {route_name} specialist.
+
+Responsibility:
 {route_purpose}
+"""
+        ),
+        *messages,
+    ])
 
-Provide helpful, accurate, and detailed responses.""")
-    
-    # Get response from specialist
-    response = llm.invoke([system_prompt] + messages)
-    
-    # Update state with results
-    results = state.get("results", {{}})
-    results["{route_name}"] = response.content
-    
     return {{
-        **state,
-        "results": results,
+        "results": {{"{route_name}": response.content}},
         "final_output": response.content,
-        "messages": messages + [response],
+        "messages": [AIMessage(content=f"{route_name} specialist completed the task.")],
     }}'''
 
     @staticmethod
@@ -362,22 +253,15 @@ Provide helpful, accurate, and detailed responses.""")
         entry_point: str = "router",
         use_conditional_edges: bool = True,
     ) -> str:
-        """Generate complete router graph construction code.
-
-        Args:
-            routes: List of route names
-            entry_point: Entry point node name
-            use_conditional_edges: Whether to use conditional edges for routing
-
-        Returns:
-            Python code string for building the complete graph
-        """
-        # Generate node additions
+        """Generate a graph using dynamic ``Command``-based routing."""
+        specs = _route_specs(routes)
+        entry_node = sanitize_identifier(entry_point or "router")
         node_additions = "\n".join(
-            [
-                f'workflow.add_node("{route.lower().replace(" ", "_")}", {route.lower().replace(" ", "_")}_node)'
-                for route in routes
-            ]
+            f'workflow.add_node("{node_name}", {node_name}_node)'
+            for _, node_name in specs
+        )
+        terminal_edges = "\n".join(
+            f'workflow.add_edge("{node_name}", END)' for _, node_name in specs
         )
 
         if use_conditional_edges:
@@ -390,7 +274,7 @@ Provide helpful, accurate, and detailed responses.""")
             )
 
             return f'''from langgraph.graph import END, START, StateGraph
-from langgraph.checkpoint.memory import MemorySaver
+from langgraph.checkpoint.memory import InMemorySaver
 
 
 def route_decision(state: WorkflowState) -> str:
@@ -402,7 +286,7 @@ def route_decision(state: WorkflowState) -> str:
 
 # Create graph
 workflow = StateGraph(WorkflowState)
-memory = MemorySaver()
+memory = InMemorySaver()
 
 # Add router node
 workflow.add_node("router", router_node)
@@ -428,25 +312,21 @@ graph = workflow.compile(checkpointer=memory)'''
         else:
             # Simple edge-based routing (less common, included for completeness)
             return f"""from langgraph.graph import END, START, StateGraph
-from langgraph.checkpoint.memory import MemorySaver
+from langgraph.checkpoint.memory import InMemorySaver
 
-# Create graph
 workflow = StateGraph(WorkflowState)
-memory = MemorySaver()
+memory = InMemorySaver()
 
 # Add router node
-workflow.add_node("router", router_node)
+workflow.add_node('router', router_node)
 
-# Add route-specific nodes
+workflow.add_node('{entry_node}', router_node)
 {node_additions}
 
-# Connect nodes
-workflow.add_edge(START, "router")
-{chr(10).join([f'workflow.add_edge("router", "{route.lower().replace(" ", "_")}")' for route in routes])}
-{chr(10).join([f'workflow.add_edge("{route.lower().replace(" ", "_")}", END)' for route in routes])}
+workflow.add_edge(START, '{entry_node}')
+{terminal_edges}
 
-# Compile graph
-graph = workflow.compile(checkpointer=memory)"""
+graph = workflow.compile(checkpointer=checkpointer)"""
 
     @staticmethod
     def generate_complete_example(
@@ -454,77 +334,78 @@ graph = workflow.compile(checkpointer=memory)"""
         route_purposes: Optional[Dict[str, str]] = None,
         model_config: Optional[Union[ModelConfig, dict]] = None,
     ) -> str:
-        """Generate a complete, runnable router pattern example.
-
-        Args:
-            routes: List of route names
-            route_purposes: Optional dict mapping route names to their purposes
-            model_config: ModelConfig instance or dict with model settings
-
-        Returns:
-            Complete Python code for a router-based workflow
-        """
+        """Generate a full runnable router example."""
+        specs = _route_specs(routes)
         if route_purposes is None:
             route_purposes = {
-                route: f"Handle {route}-related tasks" for route in routes
+                label: f"Handle {label}-related tasks with clear specialist reasoning."
+                for label, _ in specs
             }
 
-        # Generate all components
         state_code = RouterPattern.generate_state_code()
-        router_code = RouterPattern.generate_router_node_code(routes, model_config=model_config)
-
-        route_nodes_code = "\n\n".join(
-            [
-                RouterPattern.generate_route_node_code(
-                    route, route_purposes.get(route, f"Handle {route}-related tasks"),
-                    model_config=model_config
-                )
-                for route in routes
-            ]
+        router_code = RouterPattern.generate_router_node_code(
+            [label for label, _ in specs],
+            model_config=model_config,
+        )
+        route_nodes = "\n\n".join(
+            RouterPattern.generate_route_node_code(
+                label,
+                route_purposes.get(
+                    label,
+                    f"Handle {label}-related tasks with clear specialist reasoning.",
+                ),
+                model_config=model_config,
+            )
+            for label, _ in specs
+        )
+        graph_code = RouterPattern.generate_graph_code(
+            [label for label, _ in specs],
         )
 
-        graph_code = RouterPattern.generate_graph_code(routes)
+        return f'''"""Router Pattern Example."""
 
-        return f'''"""
-Router Pattern Example
-Generated by LangGraph System Generator
+from __future__ import annotations
 
-This example demonstrates a router-based workflow with the following routes:
-{chr(10).join([f"- {route}: {route_purposes.get(route, f'Handle {route}-related tasks')}" for route in routes])}
-"""
+import argparse
+import asyncio
+
+from langchain_core.messages import HumanMessage
 
 {state_code}
 
-
 {router_code}
 
-
-{route_nodes_code}
-
+{route_nodes}
 
 {graph_code}
 
 
-# Example usage
+def build_initial_state(user_request: str) -> WorkflowState:
+    """Create an initial workflow state for the demo."""
+    return {{
+        "messages": [HumanMessage(content=user_request)],
+        "results": {{}},
+        "route_history": [],
+        "final_output": "",
+    }}
+
+
+async def run_example(user_request: str) -> WorkflowState:
+    """Run the router workflow and return the final state."""
+    return await graph.ainvoke(build_initial_state(user_request))
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Run the router pattern example.")
+    parser.add_argument("prompt", nargs="?", default="Summarize the latest product feedback.")
+    args = parser.parse_args()
+
+    result = asyncio.run(run_example(args.prompt))
+    print("Route:", result.get("route"))
+    print("Reasoning:", result.get("route_reasoning"))
+    print("Final Output:")
+    print(result.get("final_output", ""))
+
+
 if __name__ == "__main__":
-    import asyncio
-    from langchain_core.messages import HumanMessage
-    
-    async def run_example():
-        # Initialize state
-        initial_state = {{
-            "messages": [HumanMessage(content="Your request here")],
-            "route": "",
-            "results": {{}},
-            "final_output": "",
-        }}
-        
-        # Run workflow
-        config = {{"configurable": {{"thread_id": "example-thread"}}}}
-        result = await graph.ainvoke(initial_state, config)
-        
-        print("Final Output:", result.get("final_output"))
-        print("Route Taken:", result.get("route"))
-    
-    asyncio.run(run_example())
-'''
+    main()'''
