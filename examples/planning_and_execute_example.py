@@ -215,7 +215,20 @@ def run_demo(
             },
         )
         final_state = dict(step)
-    trace_step("plan-execute-metrics", build_metrics(model, start).to_dict())
+
+    effective_planner_model = planner_model or model
+    effective_executor_model = executor_model or model
+    if effective_planner_model == effective_executor_model:
+        metrics_model_label = effective_planner_model
+    else:
+        metrics_model_label = f"planner={effective_planner_model},executor={effective_executor_model}"
+
+    metrics = build_metrics(metrics_model_label, start).to_dict()
+    # Include explicit planner/executor model fields for accurate attribution.
+    metrics["planner_model"] = effective_planner_model
+    metrics["executor_model"] = effective_executor_model
+
+    trace_step("plan-execute-metrics", metrics)
     return final_state
 
 
