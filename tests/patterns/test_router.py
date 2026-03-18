@@ -13,12 +13,12 @@ class TestRouterPatternCodeGeneration:
         """Test basic state code generation without additional fields."""
         code = RouterPattern.generate_state_code()
 
-        assert "class WorkflowState(MessagesState):" in code
+        assert "class WorkflowState(TypedDict, total=False):" in code
         assert "route: str" in code
-        assert "results: Dict[str, str]" in code
+        assert "results: Annotated[Dict[str, str], merge_dicts]" in code
         assert "final_output: str" in code
         assert "from typing import" in code
-        assert "from langgraph.graph import MessagesState" in code
+        assert "from langgraph.graph.message import add_messages" in code
 
     def test_generate_state_code_with_additional_fields(self):
         """Test state code generation with custom additional fields."""
@@ -29,7 +29,7 @@ class TestRouterPatternCodeGeneration:
         }
         code = RouterPattern.generate_state_code(additional_fields=additional)
 
-        assert "class WorkflowState(MessagesState):" in code
+        assert "class WorkflowState(TypedDict, total=False):" in code
         assert "custom_field: str  # Custom data field" in code
         assert "counter: str  # Iteration count" in code
         assert "metadata: str  # Additional metadata" in code
@@ -37,7 +37,7 @@ class TestRouterPatternCodeGeneration:
     def test_generate_state_code_with_empty_additional_fields(self):
         """Test state generation with empty dict for additional fields."""
         code = RouterPattern.generate_state_code(additional_fields={})
-        assert "class WorkflowState(MessagesState):" in code
+        assert "class WorkflowState(TypedDict, total=False):" in code
         assert "route: str" in code
 
     def test_generate_router_node_code_structured_output(self):
@@ -76,7 +76,7 @@ class TestRouterPatternCodeGeneration:
             routes, model_config={"model": "gpt-4-turbo"}, use_structured_output=True
         )
 
-        assert 'model="gpt-4-turbo"' in code
+        assert "model='gpt-4-turbo'" in code
 
     def test_generate_route_node_code_basic(self):
         """Test generation of a single route handler node."""
@@ -87,7 +87,7 @@ class TestRouterPatternCodeGeneration:
         assert "def search_node(state: WorkflowState)" in code
         assert "Perform web searches for information" in code
         assert "ChatOpenAI" in code
-        assert 'results["search"]' in code
+        assert '"search": response.content' in code
         assert "SystemMessage" in code
 
     def test_generate_route_node_code_with_special_characters(self):
@@ -105,7 +105,7 @@ class TestRouterPatternCodeGeneration:
             "analyze", "Analyze data", model_config={"model": "gpt-4o"}
         )
 
-        assert 'model="gpt-4o"' in code
+        assert "model='gpt-4o'" in code
 
     def test_generate_graph_code_with_conditional_edges(self):
         """Test graph construction with conditional edge routing."""
@@ -125,7 +125,7 @@ class TestRouterPatternCodeGeneration:
         code = RouterPattern.generate_graph_code(routes, use_conditional_edges=False)
 
         assert "StateGraph(WorkflowState)" in code
-        assert 'workflow.add_node("router", router_node)' in code
+        assert "workflow.add_node('router', router_node)" in code
         assert "def route_decision" not in code
 
     def test_generate_complete_example_basic(self):
@@ -240,9 +240,9 @@ class TestRouterPatternCodeQuality:
 
     def test_generated_code_includes_proper_imports(self):
         """Verify generated code includes all necessary imports."""
-        # State code should import MessagesState
+        # State code should import message helpers
         state_code = RouterPattern.generate_state_code()
-        assert "from langgraph.graph import MessagesState" in state_code
+        assert "from langgraph.graph.message import add_messages" in state_code
 
         # Router node should import ChatOpenAI
         router_code = RouterPattern.generate_router_node_code(["test"])
@@ -474,12 +474,12 @@ class TestRouterPatternIntegration:
             router_code = RouterPattern.generate_router_node_code(
                 ["test"], model_config={"model": model}
             )
-            assert f'model="{model}"' in router_code
+            assert f"model='{model}'" in router_code
 
             route_code = RouterPattern.generate_route_node_code(
                 "test", "Test", model_config={"model": model}
             )
-            assert f'model="{model}"' in route_code
+            assert f"model='{model}'" in route_code
 
 
 class TestRouterPatternDocumentation:
@@ -575,12 +575,13 @@ class TestRouterPatternPerformance:
         import time
 
         many_routes = [f"route_{i}" for i in range(50)]
+        start = time.time()
+        code = RouterPattern.generate_complete_example(many_routes)
+        elapsed = time.time() - start
 
-    assert "StateGraph(WorkflowState)" in code
-    assert "InMemorySaver" in code
-    assert 'workflow.add_node("router", router_node)' in code
-    assert 'workflow.add_edge("search", END)' in code
-    assert "add_conditional_edges" not in code
+        assert elapsed < 3.0, f"Code generation took {elapsed}s, expected < 3s"
+        assert "class WorkflowState" in code
+        compile(code, "<performance_test>", "exec")
 
 
 def test_router_complete_example_contains_async_entrypoint():
