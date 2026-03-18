@@ -94,7 +94,7 @@ These node functions are the clearest map of the runtime lifecycle:
 | Notebook assembly | `notebook_assembly_node` | `NotebookComposer` | `generated_cells` |
 | Static QA | `static_qa_node` | validators under `src/langgraph_system_generator/qa/` | `qa_reports` |
 | Runtime QA | `runtime_qa_node` | notebook runtime helpers | `qa_reports` |
-| Repair | `repair_node` | `QARepairAgent` and notebook repair helpers | `generated_cells`, `repair_attempts`, `qa_reports` |
+| Repair | `repair_node` | `NotebookRepairAgent` from `langgraph_system_generator.qa.repair` and notebook repair helpers | `generated_cells`, `repair_attempts`, `qa_reports` |
 | Packaging | `package_outputs_node` | notebook/export helpers | `artifacts_manifest`, `generation_complete` |
 
 ### Shared state contract
