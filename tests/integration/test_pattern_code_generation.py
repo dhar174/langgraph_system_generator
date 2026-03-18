@@ -38,9 +38,14 @@ async def test_router_pattern_notebook_generation(tmp_path: Path):
     all_code = "\n\n".join([cell.source for cell in code_cells])
 
     # Verify pattern-specific code generation
+    assert "class WorkflowState(TypedDict, total=False):" in all_code, "State class not found"
+    assert "route:" in all_code, "Router state field missing"
+    assert (
+        "def router_node(state: WorkflowState, window_size: int = 5)" in all_code
+    ), "Router node not found"
+    assert "Recent conversation (last {window_size} messages):" in all_code
     assert "TypedDict" in all_code, "TypedDict state not found"
     assert "route_history" in all_code, "Router reducer-backed state field missing"
-    assert "def router_node(state: WorkflowState)" in all_code, "Router node not found"
     assert "Command" in all_code, "Router should use Command-based routing"
 
     # Verify no empty implementations (no standalone 'pass' statements for nodes)
