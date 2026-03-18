@@ -79,6 +79,7 @@ class WorkflowState(TypedDict, total=False):
         route_help = "\n".join(
             f"- {label}: Handle {label}-specific requests." for label, _ in specs
         )
+        route_names = ", ".join(label for label, _ in specs)
         llm_init = build_llm_init(
             config.model,
             0,
@@ -122,8 +123,7 @@ def router_node(state: WorkflowState, window_size: int = 5) -> WorkflowState:
     ) or "No prior conversation available."
     
     # Initialize LLM with structured output
-    # Keep explicit double-quoted model hint for compatibility checks in generated code tests.
-    llm = {llm_init}  # model={llm_model_hint}
+    llm = {llm_init}
     structured_llm = llm.with_structured_output(RouteDecision)
     
     # Classification prompt
@@ -135,7 +135,7 @@ Respond using the provided RouteDecision schema.""")
     classification_prompt = f"""Analyze the following conversation and determine which route should handle the user's latest request.
 
 Available routes:
-{routes_list_str}
+{route_help}
 
 Recent conversation (last {{window_size}} messages):
 {{conversation_history}}
@@ -168,12 +168,11 @@ def router_node(state: WorkflowState, window_size: int = 5) -> WorkflowState:
         for message in recent_messages
     ) or "No prior conversation available."
     
-    # Keep explicit double-quoted model hint for compatibility checks in generated code tests.
-    llm = {llm_init}  # model={llm_model_hint}
+    llm = {llm_init}
     
     # Classification prompt
     system_prompt = SystemMessage(content=f"""You are a routing classifier.
-Analyze the recent conversation and select the appropriate route from: {routes_str}
+Analyze the recent conversation and select the appropriate route from: {route_names}
 Resolve coreferences such as "it", "that", and "the one" using the conversation history.
 Respond with ONLY the route name.""")
     
