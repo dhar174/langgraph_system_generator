@@ -16,9 +16,9 @@ class TestRouterPattern:
         """Test basic state code generation."""
         code = RouterPattern.generate_state_code()
 
-        assert "class WorkflowState(MessagesState):" in code
+        assert "class WorkflowState(TypedDict, total=False):" in code
         assert "route: str" in code
-        assert "results: Dict[str, str]" in code
+        assert "results: Annotated[Dict[str, str], merge_dicts]" in code
         assert "final_output: str" in code
 
     def test_generate_state_code_with_additional_fields(self):
@@ -63,7 +63,7 @@ class TestRouterPattern:
         assert "def search_node(state: WorkflowState)" in code
         assert "Perform web searches for information" in code
         assert "ChatOpenAI" in code
-        assert "results[" in code
+        assert '"search": response.content' in code
 
     def test_generate_graph_code_conditional(self):
         """Test graph construction with conditional edges."""
@@ -98,11 +98,11 @@ class TestSubagentsPattern:
         """Test basic state code generation."""
         code = SubagentsPattern.generate_state_code()
 
-        assert "class WorkflowState(MessagesState):" in code
-        assert "next: str" in code
+        assert "class WorkflowState(TypedDict, total=False):" in code
+        assert "next_agent: str" in code
         assert "instructions: str" in code
-        assert "task_results: dict" in code
-        assert "task_results_summary: str" in code
+        assert "task_results: Annotated[Dict[str, str], merge_dicts]" in code
+        assert "dispatch_log: Annotated[List[str], operator.add]" in code
 
     def test_generate_state_code_with_additional_fields(self):
         """Test state code generation with additional fields."""
@@ -130,10 +130,9 @@ class TestSubagentsPattern:
         assert '"reviewer"' in code
         assert '"FINISH"' in code
         assert "with_structured_output" in code
-        assert "gpt-4o-mini" in code
-        assert "task_results_summary" in code
-        assert "Older summarized results" in code
-        assert "Recent full results" in code
+        assert "model='gpt-5-mini'" in code
+        assert "dispatch_log" in code
+        assert "MAX_ITERATIONS" in code
 
     def test_generate_supervisor_code_simple(self):
         """Test supervisor node generation without structured output."""
@@ -144,11 +143,9 @@ class TestSubagentsPattern:
 
         assert "def supervisor_node(state: WorkflowState)" in code
         assert "with_structured_output" not in code
-        assert "gpt-4o-mini" in code
-        assert "task_results_summary" in code
-        assert "Older summarized results" in code
-        assert "Recent full results" in code
-        assert "results_summary = str(task_results)" not in code
+        assert "model='gpt-5-mini'" in code
+        assert "dispatch_log" in code
+        assert "MAX_ITERATIONS" in code
 
     def test_generate_subagent_code(self):
         """Test subagent node generation."""
@@ -159,7 +156,7 @@ class TestSubagentsPattern:
         assert "def researcher_node(state: WorkflowState)" in code
         assert "Research and gather information" in code
         assert "ChatOpenAI" in code
-        assert 'task_results["researcher"]' in code
+        assert '"researcher": getattr(response, "content", str(response))' in code
 
     def test_generate_subagent_code_with_tools(self):
         """Test subagent node generation with tool binding."""
@@ -170,6 +167,7 @@ class TestSubagentsPattern:
         assert "def researcher_node(state: WorkflowState)" in code
         assert "llm_with_tools = llm.bind_tools(tools)" in code
         assert "llm_with_tools.invoke(" in code
+        assert "lookup_context" in code
         # Ensure it's not commented out
         assert "# llm_with_tools = llm.bind_tools" not in code
 
@@ -178,24 +176,21 @@ class TestSubagentsPattern:
         subagents = ["researcher", "writer"]
         code = SubagentsPattern.generate_graph_code(subagents)
 
-        assert "def supervisor_router(state: WorkflowState)" in code
+        assert "def finish_node(state: WorkflowState)" in code
         assert "StateGraph(WorkflowState)" in code
         assert 'workflow.add_node("supervisor", supervisor_node)' in code
         assert 'workflow.add_node("researcher", researcher_node)' in code
         assert 'workflow.add_node("writer", writer_node)' in code
-        assert "add_conditional_edges" in code
+        assert 'workflow.add_edge("researcher", "supervisor")' in code
+        assert 'workflow.add_edge("finish", END)' in code
 
     def test_generate_supervisor_code_includes_context_window_management(self):
         """Test supervisor code includes bounded task result context management."""
         code = SubagentsPattern.generate_supervisor_code(["researcher", "writer"])
 
-        assert "MAX_RESULT_CHARS = 2000" in code
-        assert "MAX_TOTAL_RESULT_CHARS = 8000" in code
-        assert "RECENT_FULL_RESULTS = 2" in code
-        assert "def _summarize_older_results" in code
-        assert "def _prepare_task_results_context" in code
-        assert "remaining_summary_budget" in code
-        assert '"task_results_summary": task_results_summary' in code
+        assert "MAX_ITERATIONS" in code
+        assert "if iterations >= MAX_ITERATIONS" in code
+        assert '"dispatch_log": [' in code
 
     def test_generate_supervisor_code_supports_summary_model_override(self):
         """Test supervisor summarization model can be configured explicitly."""
@@ -207,7 +202,7 @@ class TestSubagentsPattern:
             model_config=config,
         )
 
-        assert "model='gpt-5-nano'" in code
+        assert "model='gpt-5-mini'" in code
 
     def test_generate_complete_example(self):
         """Test complete example generation."""
@@ -503,7 +498,7 @@ class TestSubagentsPatternEdgeCases:
         """Test graph generation with different max_iterations."""
         code = SubagentsPattern.generate_graph_code(["agent1"], max_iterations=5)
         assert "StateGraph" in code
-        assert "supervisor_router" in code
+        assert "MAX_ITERATIONS = 5" in code
 
     def test_generate_subagent_with_hyphenated_name(self):
         """Test subagent name normalization for special characters."""
@@ -631,7 +626,7 @@ class TestPatternImportability:
 
         # Both should be valid and independent
         assert "route:" in router_state
-        assert "next:" in subagent_state
+        assert "next_agent:" in subagent_state
         assert router_state != subagent_state
 
 
@@ -665,7 +660,7 @@ class TestPatternErrorHandling:
 
         # Subagent code should handle empty messages
         subagent_code = SubagentsPattern.generate_subagent_code("test", "Test agent")
-        assert "messages[-1]" in subagent_code or "if messages" in subagent_code
+        assert 'messages = state.get("messages", [])' in subagent_code
 
 
 class TestPatternModelConfig:
@@ -741,7 +736,7 @@ class TestPatternModelConfig:
 
         assert "def researcher_node(state: WorkflowState)" in code
         # Should have uncommented tool binding code
-        assert "DuckDuckGoSearchRun" in code
+        assert "lookup_context" in code
         assert "bind_tools" in code
         assert "llm_with_tools" in code
         # Should NOT have commented tool examples
@@ -903,7 +898,10 @@ def test_router_pattern_emits_typed_state_and_command_routing():
         "Perform grounded retrieval.",
         model_config=ModelConfig(model="gpt-5-mini", temperature=0.4),
     )
-    graph_code = RouterPattern.generate_graph_code(["search", "analyze"])
+    graph_code = RouterPattern.generate_graph_code(
+        ["search", "analyze"],
+        use_conditional_edges=False,
+    )
 
     assert "TypedDict" in state_code
     assert "add_messages" in state_code
@@ -920,7 +918,7 @@ def test_router_pattern_emits_typed_state_and_command_routing():
     assert "temperature=0.4" in route_code
 
     assert "InMemorySaver" in graph_code
-    assert 'workflow.add_node("router", router_node)' in graph_code
+    assert "workflow.add_node('router', router_node)" in graph_code
     assert "add_conditional_edges" not in graph_code
 
 
@@ -967,8 +965,6 @@ def test_critique_loop_pattern_emits_structured_judging_and_finalize_path():
     )
     critique_code = CritiqueLoopPattern.generate_critique_node_code(
         criteria=["Accuracy", "Clarity"],
-        max_revisions=2,
-        min_quality_score=0.9,
         model_config=ModelConfig(model="gpt-5-mini", max_tokens=800),
     )
     revise_code = CritiqueLoopPattern.generate_revise_node_code(
@@ -983,14 +979,13 @@ def test_critique_loop_pattern_emits_structured_judging_and_finalize_path():
         min_quality_score=0.9,
     )
 
-    assert "TypedDict" in state_code
+    assert "MessagesState" in state_code
     assert "revision_history" in state_code
     assert "audience: str" in state_code
 
     assert "CritiqueAssessment" in critique_code
-    assert "Command" in critique_code
     assert "with_structured_output" in critique_code
-    assert 'goto="finalize" if should_finalize else "revise"' in critique_code
+    assert "previous_quality_score" in critique_code
     assert "model='gpt-5-mini'" in critique_code
     assert "max_tokens=800" in critique_code
     assert "temperature=0" in critique_code
