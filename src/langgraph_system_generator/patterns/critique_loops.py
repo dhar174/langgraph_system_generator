@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import keyword
+import textwrap
 from typing import Any, List, Optional, Union
 
 from langgraph_system_generator.patterns.utils import (
@@ -119,7 +120,8 @@ class WorkflowState(MessagesState):
         )
         safe_task_description = CritiqueLoopPattern._quote_string(task_description)
 
-        return f'''from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
+        return textwrap.dedent(
+            f'''from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
 
 
@@ -147,6 +149,7 @@ Return a polished draft that can be reviewed and revised."""
         "messages": [AIMessage(content="Initial draft generated.")],
     }}
 '''
+        )
 
     @staticmethod
     def generate_critique_node_code(
