@@ -42,7 +42,7 @@ pip install -U langchain-openai
 # Common RAG extras
 pip install -U langchain-community langchain-chroma
 
-# Optional: standalone text splitters package used by current docs examples
+# Text splitters package required for current RAG examples
 pip install -U langchain-text-splitters
 ```
 
