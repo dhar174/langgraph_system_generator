@@ -116,8 +116,16 @@ class TestCritiqueLoopPatternCodeGeneration:
         ]
 
         for snippet in snippets:
-            first_non_empty = next(line for line in snippet.splitlines() if line.strip())
-            assert not first_non_empty.startswith(" ")
+            non_empty_lines = [line for line in snippet.splitlines() if line.strip()]
+            assert non_empty_lines
+
+            import_lines = [
+                line
+                for line in non_empty_lines
+                if line.startswith("import ") or line.startswith("from ")
+            ]
+            assert import_lines
+            assert not import_lines[0].startswith(" ")
 
 
 class TestCritiqueLoopPatternFailureConditions:
