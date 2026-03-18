@@ -76,10 +76,10 @@ def test_plan_execute_notebook_includes_walkthrough_and_live_setup():
         notebook = nbformat.read(handle, as_version=4)
 
     markdown = "\n\n".join(
-        "".join(cell.source) for cell in notebook.cells if cell.cell_type == "markdown"
+        cell.source for cell in notebook.cells if cell.cell_type == "markdown"
     )
     code = "\n\n".join(
-        "".join(cell.source) for cell in notebook.cells if cell.cell_type == "code"
+        cell.source for cell in notebook.cells if cell.cell_type == "code"
     )
 
     assert "Walkthrough" in markdown
