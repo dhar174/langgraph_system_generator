@@ -1,8 +1,9 @@
 ---
 description: 'Expert assistant for generating working applications from OpenAPI specifications'
-infer: true
 name: 'OpenAPI to Application Generator'
-tools: ["codebase", "edit/editFiles", "search/codebase", "execute", "read", "agent", "todo"]
+tools: ["*"]
+target: 'github-copilot'
+infer: true
 ---
 
 # OpenAPI to Application Generator

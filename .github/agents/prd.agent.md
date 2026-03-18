@@ -1,8 +1,9 @@
 ---
-description: "Generate a comprehensive Product Requirements Document (PRD) in Markdown, detailing user stories, acceptance criteria, technical considerations, and metrics. Optionally create GitHub issues upon user confirmation."
+description: 'Optionally create GitHub issues upon user confirmation.'
+name: 'Create PRD Chat Mode'
+tools: ["*"]
+target: 'github-copilot'
 infer: true
-name: "Create PRD Chat Mode"
-tools: ["codebase", "edit/editFiles", "fetch", "findTestFiles", "list_issues", "githubRepo", "search", "add_issue_comment", "create_issue", "update_issue", "get_issue", "search_issues", "execute", "read", "agent", "todo"]
 ---
 
 # Create PRD Chat Mode

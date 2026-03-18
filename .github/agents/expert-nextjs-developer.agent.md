@@ -1,7 +1,9 @@
 ---
-description: "Expert Next.js 16 developer specializing in App Router, Server Components, Cache Components, Turbopack, and modern React patterns with TypeScript"
+description: 'Expert Next.js 16 developer specializing in App Router, Server Components, Cache Components, Turbopack, and modern React patterns with TypeScript'
+name: 'expert-nextjs-developer'
+tools: ["*"]
+target: 'github-copilot'
 infer: true
-tools: ["changes", "codebase", "edit/editFiles", "extensions", "fetch", "findTestFiles", "githubRepo", "new", "openSimpleBrowser", "problems", "runCommands", "runNotebooks", "runTasks", "runTests", "search", "searchResults", "terminalLastCommand", "terminalSelection", "testFailure", "usages", "vscodeAPI", "figma-dev-mode-mcp-server", "execute", "read", "agent", "todo"]
 ---
 
 # Expert Next.js Developer

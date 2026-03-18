@@ -1,7 +1,9 @@
 ---
-description: 'Bootstraps and validates agentic project structures for GitHub Copilot (VS Code) and OpenCode CLI workflows. Run after `opencode /init` or VS Code Copilot initialization to scaffold proper folder hierarchies, instructions, agents, skills, and prompts.'
+description: 'Bootstraps and validates agentic project structures for GitHub Copilot (VS Code) and OpenCode CLI workflows.'
 name: 'Repo Architect Agent'
-tools: ["changes", "codebase", "editFiles", "fetch", "new", "problems", "runCommands", "search", "terminalLastCommand"]
+tools: ["*"]
+target: 'github-copilot'
+infer: true
 ---
 
 # Repo Architect Agent

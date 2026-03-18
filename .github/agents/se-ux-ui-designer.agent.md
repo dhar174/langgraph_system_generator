@@ -1,8 +1,9 @@
 ---
-name: 'SE: UX Designer'
-infer: true
 description: 'Jobs-to-be-Done analysis, user journey mapping, and UX research artifacts for Figma and design workflows'
-tools: ["codebase", "edit/editFiles", "search", "web/fetch", "execute", "read", "agent", "todo"]
+name: 'SE: UX Designer'
+tools: ["*"]
+target: 'github-copilot'
+infer: true
 ---
 
 # UX/UI Designer

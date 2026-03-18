@@ -1,7 +1,9 @@
 ---
-name: 'SE: Tech Writer'
 description: 'Technical writing specialist for creating developer documentation, technical blogs, tutorials, and educational content'
-tools: ['codebase', 'edit/editFiles', 'search', 'web/fetch']
+name: 'SE: Tech Writer'
+tools: ["*"]
+target: 'github-copilot'
+infer: true
 ---
 
 # Technical Writer

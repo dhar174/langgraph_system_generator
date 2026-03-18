@@ -1,7 +1,9 @@
 ---
 description: 'Validate user understanding of code, design patterns, and implementation details through guided questioning.'
+name: 'demonstrate-understanding'
+tools: ["*"]
+target: 'github-copilot'
 infer: true
-tools: ["codebase", "web/fetch", "findTestFiles", "githubRepo", "search", "usages", "execute", "read", "agent", "todo"]
 ---
 # Demonstrate Understanding mode instructions
 

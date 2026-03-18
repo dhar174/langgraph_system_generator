@@ -1,13 +1,9 @@
 ---
-name: lnf-notebook
-description: Implements notebook composition and artifact exporting nbformat generation, templates, exporters (PDF/DOCX), and packaging outputs for download.
-target: github-copilot
+description: 'Implements notebook composition and artifact exporting nbformat generation, templates, exporters (PDF/DOCX), and packaging outputs for download.'
+name: 'lnf-notebook'
+tools: ["*"]
+target: 'github-copilot'
 infer: true
-tools: ["read", "search", "edit", "web", "execute", "github/*", "agent", "todo"]
-metadata:
-  project: "LNF"
-  role: "notebook"
-  phase: "4"
 ---
 
 You implement **Phase 4: Notebook Generation & Export**.

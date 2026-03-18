@@ -1,13 +1,9 @@
 ---
-name: lnf-generator
-description: Implements the outer generator graph (GeneratorState, nodes, edges) and subagent roles that plan and generate notebooks from user prompts.
-target: github-copilot
+description: 'Implements the outer generator graph (GeneratorState, nodes, edges) and subagent roles that plan and generate notebooks from user prompts.'
+name: 'lnf-generator'
+tools: ["*"]
+target: 'github-copilot'
 infer: true
-tools: ["read", "search", "edit", "web", "execute", "github/*", "agent", "todo"]
-metadata:
-  project: "LNF"
-  role: "generator"
-  phase: "3"
 ---
 
 You implement **Phase 3: Outer Graph Architecture (Generator)**.

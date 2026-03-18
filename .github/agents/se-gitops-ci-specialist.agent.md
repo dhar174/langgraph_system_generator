@@ -1,8 +1,9 @@
 ---
-name: 'SE: DevOps/CI'
-infer: true
 description: 'DevOps specialist for CI/CD pipelines, deployment debugging, and GitOps workflows focused on making deployments boring and reliable'
-tools: ["codebase", "edit/editFiles", "terminalCommand", "search", "githubRepo", "execute", "read", "agent", "todo"]
+name: 'SE: DevOps/CI'
+tools: ["*"]
+target: 'github-copilot'
+infer: true
 ---
 
 # GitOps & CI Specialist

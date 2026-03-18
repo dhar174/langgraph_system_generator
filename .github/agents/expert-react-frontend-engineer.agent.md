@@ -1,7 +1,9 @@
 ---
-description: "Expert React 19.2 frontend engineer specializing in modern hooks, Server Components, Actions, TypeScript, and performance optimization"
-name: "Expert React Frontend Engineer"
-tools: ["changes", "codebase", "edit/editFiles", "extensions", "fetch", "findTestFiles", "githubRepo", "new", "openSimpleBrowser", "problems", "runCommands", "runTasks", "runTests", "search", "searchResults", "terminalLastCommand", "terminalSelection", "testFailure", "usages", "vscodeAPI", "microsoft.docs.mcp"]
+description: 'Expert React 19.2 frontend engineer specializing in modern hooks, Server Components, Actions, TypeScript, and performance optimization'
+name: 'Expert React Frontend Engineer'
+tools: ["*"]
+target: 'github-copilot'
+infer: true
 ---
 
 # Expert React Frontend Engineer

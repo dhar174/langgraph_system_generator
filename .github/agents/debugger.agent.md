@@ -1,7 +1,9 @@
 ---
-description: An agent to help debug code by providing detailed error analysis and potential fixes.
+description: 'An agent to help debug code by providing detailed error analysis and potential fixes.'
+name: 'debugger'
+tools: ["*"]
+target: 'github-copilot'
 infer: true
-tools: ["edit", "search", "new", "runCommands", "runTasks", "extensions", "usages", "vscodeAPI", "problems", "changes", "testFailure", "openSimpleBrowser", "fetch", "githubRepo", "todos", "execute", "read", "agent", "todo"]
 ---
 
 # Purpose

@@ -1,8 +1,9 @@
 ---
-description: "Task planner for creating actionable implementation plans - Brought to you by microsoft/edge-ai"
+description: 'Task planner for creating actionable implementation plans - Brought to you by microsoft/edge-ai'
+name: 'Task Planner Instructions'
+tools: ["*"]
+target: 'github-copilot'
 infer: true
-name: "Task Planner Instructions"
-tools: ["changes", "search/codebase", "edit/editFiles", "extensions", "fetch", "findTestFiles", "githubRepo", "new", "openSimpleBrowser", "problems", "runCommands", "runNotebooks", "runTests", "search", "search/searchResults", "runCommands/terminalLastCommand", "runCommands/terminalSelection", "testFailure", "usages", "vscodeAPI", "terraform", "Microsoft Docs", "azure_get_schema_for_Bicep", "context7", "execute", "read", "agent", "todo"]
 ---
 
 # Task Planner Instructions

@@ -1,7 +1,9 @@
 ---
-description: "Address PR comments"
+description: 'Address PR comments. Use it for focused, repository-specific help.'
+name: 'address-comments'
+tools: ["*"]
+target: 'github-copilot'
 infer: true
-tools: ["changes", "codebase", "editFiles", "extensions", "fetch", "findTestFiles", "githubRepo", "new", "openSimpleBrowser", "problems", "runCommands", "runTasks", "runTests", "search", "searchResults", "terminalLastCommand", "terminalSelection", "testFailure", "usages", "vscodeAPI", "microsoft.docs.mcp", "github", "execute", "read", "agent", "todo"]
 ---
 
 # Universal PR Comment Addresser

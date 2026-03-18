@@ -1,7 +1,9 @@
 ---
 description: 'Help mentor the engineer by providing guidance and support.'
+name: 'mentor'
+tools: ["*"]
+target: 'github-copilot'
 infer: true
-tools: ["codebase", "web/fetch", "findTestFiles", "githubRepo", "search", "usages", "execute", "read", "agent", "todo"]
 ---
 # Mentor mode instructions
 
