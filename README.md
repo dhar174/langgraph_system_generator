@@ -237,6 +237,9 @@ python examples/router_pattern_example.py --mode stub
 # For live mode:
 # export OPENAI_API_KEY='your-key-here'
 # python examples/router_pattern_example.py --mode live
+# Planner/executor-specific live overrides:
+# python examples/planning_and_execute_example.py --mode live \
+#   --planner-model gpt-4.1-mini --executor-model gpt-5-mini
 ```
 
 ## Precached Documentation
