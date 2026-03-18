@@ -1,14 +1,15 @@
+import ast
 from pathlib import Path
 import re
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 AGENTS_DIR = REPO_ROOT / ".github" / "agents"
-EXPECTED_KEYS = ["description", "name", "tools", "target", "infer"]
+EXPECTED_KEYS = {"description", "name", "tools", "target", "infer"}
 
 
 def _read_frontmatter(path: Path) -> dict[str, str]:
-    lines = path.read_text().splitlines()
+    lines = path.read_text(encoding="utf-8").splitlines()
 
     assert lines and lines[0] == "---", f"{path} is missing opening frontmatter"
     assert "---" in lines[1:], f"{path} is missing closing frontmatter"
@@ -26,6 +27,26 @@ def _read_frontmatter(path: Path) -> dict[str, str]:
     return data
 
 
+def _strip_yaml_quotes(value: str) -> str:
+    value = value.strip()
+
+    if len(value) >= 2 and value[0] == value[-1] and value[0] in {"'", '"'}:
+        return value[1:-1].replace("''", "'")
+
+    return value
+
+
+def _parse_tools(value: str) -> list[str]:
+    normalized = value.strip()
+
+    try:
+        parsed = ast.literal_eval(normalized)
+    except (SyntaxError, ValueError):
+        return [normalized]
+
+    return parsed if isinstance(parsed, list) else [normalized]
+
+
 def test_agent_frontmatter_matches_copilot_requirements() -> None:
     agent_files = sorted(AGENTS_DIR.glob("*.agent.md"))
 
@@ -35,25 +56,32 @@ def test_agent_frontmatter_matches_copilot_requirements() -> None:
         assert re.fullmatch(r"[a-z0-9-]+\.agent\.md", path.name), (
             f"{path.name} must use lowercase-with-hyphens naming"
         )
-        assert len(path.read_text()) < 30000, f"{path.name} exceeds 30,000 characters"
+        assert len(path.read_text(encoding="utf-8")) < 30000, (
+            f"{path.name} exceeds 30,000 characters"
+        )
 
         frontmatter = _read_frontmatter(path)
 
-        assert list(frontmatter) == EXPECTED_KEYS, (
-            f"{path.name} should only use the supported frontmatter keys {EXPECTED_KEYS}"
+        assert set(frontmatter) == EXPECTED_KEYS, (
+            f"{path.name} should only use the supported frontmatter keys "
+            f"{sorted(EXPECTED_KEYS)}"
         )
         assert "model" not in frontmatter, f"{path.name} must not declare model in frontmatter"
-        assert frontmatter["tools"] == '["*"]', f"{path.name} must grant full tool access"
-        assert frontmatter["target"] == "'github-copilot'", (
+        assert _parse_tools(frontmatter["tools"]) == ["*"], (
+            f"{path.name} must grant full tool access"
+        )
+        assert _strip_yaml_quotes(frontmatter["target"]) == "github-copilot", (
             f"{path.name} must target github-copilot"
         )
-        assert frontmatter["infer"] == "true", f"{path.name} must set infer: true"
+        assert _strip_yaml_quotes(frontmatter["infer"]).lower() == "true", (
+            f"{path.name} must set infer: true"
+        )
 
         description = frontmatter["description"]
         assert description.startswith("'") and description.endswith("'"), (
             f"{path.name} description must be single-quoted"
         )
-        description_text = description[1:-1].replace("''", "'")
+        description_text = _strip_yaml_quotes(description)
         assert 50 <= len(description_text) <= 150, (
             f"{path.name} description must be 50-150 characters"
         )
