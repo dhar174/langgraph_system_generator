@@ -1,0 +1,73 @@
+{
+  "generated_at": "2026-03-16",
+  "mode": "stub-fixture",
+  "model": "gpt-4.1-mini",
+  "pricing_usd_per_1k_tokens": {
+    "input": 0.0004,
+    "output": 0.0016
+  },
+  "rubric": {
+    "factuality": 5,
+    "usefulness": 5,
+    "specificity": 5
+  },
+  "tasks": [
+    {
+      "task": "Explain when to use a router pattern in LangGraph.",
+      "critique_revise": {
+        "quality_score": 0.9,
+        "latency_seconds": 1.4,
+        "prompt_tokens": 760,
+        "completion_tokens": 340,
+        "total_tokens": 1100,
+        "estimated_cost_usd": 0.000848
+      },
+      "llm_judge": {
+        "quality_score": 0.86,
+        "latency_seconds": 1.0,
+        "prompt_tokens": 590,
+        "completion_tokens": 240,
+        "total_tokens": 830,
+        "estimated_cost_usd": 0.00062
+      }
+    },
+    {
+      "task": "Explain when to use a supervisor/subagents pattern in LangGraph.",
+      "critique_revise": {
+        "quality_score": 0.92,
+        "latency_seconds": 1.6,
+        "prompt_tokens": 810,
+        "completion_tokens": 390,
+        "total_tokens": 1200,
+        "estimated_cost_usd": 0.000948
+      },
+      "llm_judge": {
+        "quality_score": 0.88,
+        "latency_seconds": 1.1,
+        "prompt_tokens": 610,
+        "completion_tokens": 260,
+        "total_tokens": 870,
+        "estimated_cost_usd": 0.00066
+      }
+    },
+    {
+      "task": "Explain when to use rubric-based judging rather than another critique loop.",
+      "critique_revise": {
+        "quality_score": 0.89,
+        "latency_seconds": 1.5,
+        "prompt_tokens": 790,
+        "completion_tokens": 360,
+        "total_tokens": 1150,
+        "estimated_cost_usd": 0.000892
+      },
+      "llm_judge": {
+        "quality_score": 0.91,
+        "latency_seconds": 1.2,
+        "prompt_tokens": 630,
+        "completion_tokens": 280,
+        "total_tokens": 910,
+        "estimated_cost_usd": 0.0007
+      }
+    }
+  ]
+}

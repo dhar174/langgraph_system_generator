@@ -11,7 +11,7 @@ Prompt -> Full Agentic System. Generates entire multiagent systems based on user
 
 ## Quickstart
 
-1. Create a virtual environment and install dependencies:
+1. Create a Python `3.10+` virtual environment and install dependencies:
    ```bash
    python -m venv .venv
    source .venv/bin/activate  # Windows: .venv\Scripts\activate
@@ -153,7 +153,11 @@ docker run -p 8000:8000 \
 
 ## Pattern Library
 
-The system includes a powerful pattern library for generating common multi-agent architectures. Three core patterns are available:
+The system includes a generator-backed pattern library plus a broader runnable example library.
+
+### Generator-Backed Core Patterns
+
+The public Python package continues to expose three code-generation helpers:
 
 ### Router Pattern
 Dynamic routing to specialized agents based on input classification. Ideal for modular systems with domain-specific expertise.
@@ -209,14 +213,23 @@ code = CritiqueLoopPattern.generate_complete_example(
 # Returns iterative refinement workflow
 ```
 
-### Examples and Documentation
+### Runnable Pattern Examples
 
-- **Comprehensive Documentation**: See [docs/patterns.md](docs/patterns.md) for detailed pattern guide
-- **Runnable Examples**: Check `examples/` directory for practical demonstrations:
-  - `examples/router_pattern_example.py` - Router pattern usage
-  - `examples/subagents_pattern_example.py` - Subagents pattern usage
-  - `examples/critique_revise_pattern_example.py` - Critique-revise pattern usage
-- **Test Coverage**: ≥90% coverage for all pattern modules (see `tests/unit/test_patterns.py`)
+`examples/` now acts as a canonical LangGraph pattern showcase with paired notebooks, stub/live execution modes, and advanced example-only patterns such as hierarchical teams, plan-and-execute, REWOO-style speculation, HITL approval, LLM-as-a-judge, and LLMCompiler-style dependency graphs.
+
+- **Pattern Index**: [examples/README.md](examples/README.md)
+- **Core Pattern Docs**: [docs/patterns.md](docs/patterns.md)
+- **Generator-Backed Examples**:
+  - `examples/router_pattern_example.py`
+  - `examples/subagents_pattern_example.py`
+  - `examples/critique_revise_pattern_example.py`
+- **Advanced Example-Only References**:
+  - `examples/hierarchical_teams_example.py`
+  - `examples/planning_and_execute_example.py`
+  - `examples/rewoo_example.py`
+  - `examples/human_approval_pattern.py`
+  - `examples/llm_judge_example.py`
+  - `examples/llm_compiler_example.py`
 
 Run an example:
 ```bash

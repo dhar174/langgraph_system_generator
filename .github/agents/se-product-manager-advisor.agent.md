@@ -2,7 +2,6 @@
 name: 'SE: Product Manager'
 infer: true
 description: 'Product management guidance for creating GitHub issues, aligning business value with user needs, and making data-driven product decisions'
-model: GPT-5
 tools: ["codebase", "githubRepo", "create_issue", "update_issue", "list_issues", "search_issues", "execute", "read", "search", "agent", "todo"]
 ---
 

@@ -103,6 +103,30 @@ class TestCritiqueLoopPatternCodeGeneration:
         compile(generation, "<escaped_task_description>", "exec")
         compile(critique, "<escaped_criteria>", "exec")
 
+    def test_generated_templates_do_not_indent_top_level_imports(self):
+        """Test emitted snippets keep top-level imports at column zero."""
+        snippets = [
+            CritiqueLoopPattern.generate_state_code(),
+            CritiqueLoopPattern.generate_generation_node_code(),
+            CritiqueLoopPattern.generate_critique_node_code(),
+            CritiqueLoopPattern.generate_critique_node_code(use_structured_output=False),
+            CritiqueLoopPattern.generate_critique_node_code(feedback_source="human"),
+            CritiqueLoopPattern.generate_revise_node_code(),
+            CritiqueLoopPattern.generate_graph_code(),
+        ]
+
+        for snippet in snippets:
+            non_empty_lines = [line for line in snippet.splitlines() if line.strip()]
+            assert non_empty_lines
+
+            import_lines = [
+                line
+                for line in non_empty_lines
+                if line.startswith("import ") or line.startswith("from ")
+            ]
+            assert import_lines
+            assert not import_lines[0].startswith(" ")
+
 
 class TestCritiqueLoopPatternFailureConditions:
     """Test configurable failure and termination conditions."""
