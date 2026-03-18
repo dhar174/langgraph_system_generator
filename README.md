@@ -19,6 +19,7 @@ Prompt -> Full Agentic System. Generates entire multiagent systems based on user
     python -m pip install --upgrade pip
     pip install -r requirements.txt
     pip install -e ".[full]"
+    pip install flake8
     ```
 
 2. Copy `.env.example` to `.env` and add your API keys. Live generation
@@ -95,6 +96,7 @@ source .venv/bin/activate  # Windows: .venv\Scripts\activate
 python -m pip install --upgrade pip
 pip install -r requirements.txt
 pip install -e ".[full]"
+pip install flake8
 python -m flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
 python -m pytest --asyncio-mode=auto
 ```
