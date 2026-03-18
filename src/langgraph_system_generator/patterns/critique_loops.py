@@ -430,8 +430,8 @@ Format: SCORE|APPROVED or NEEDS_REVISION|feedback""")
 
     @staticmethod
     def generate_revise_node_code(model_config: Optional[Union[ModelConfig, dict]] = None) -> str:
-        """Generate code for revision node.
-
+        """Generate code for revision node."""
+    max_revisions = 5
     score_text, _, rest = response.content.partition("|")
     decision_text, _, feedback = rest.partition("|")
     quality_score = float(score_text or 0.0)
@@ -500,7 +500,7 @@ Address the critique directly while preserving good parts of the draft."""
 
     @staticmethod
     def generate_conditional_edge_code(
-        max_revisions: int = 3,
+        max_revisions: int = 5,
         min_quality_score: float = 0.8,
         failure_conditions: Optional[Dict[str, Any]] = None,
     ) -> str:
@@ -567,6 +567,7 @@ Address the critique directly while preserving good parts of the draft."""
         return "no_improvement"
 
     # Check max revisions
+    max_revisions=5
     if revision_count >= {max_revisions}:
         return "max_revisions_failed" if {fail_on_max_revisions} else "max_revisions_reached"
     
@@ -575,7 +576,7 @@ Address the critique directly while preserving good parts of the draft."""
 
     @staticmethod
     def generate_graph_code(
-        max_revisions: int = 3,
+        max_revisions: int = 5,
         min_quality_score: float = 0.8,
         failure_conditions: Optional[Dict[str, Any]] = None,
     ) -> str:
@@ -652,7 +653,7 @@ MIN_QUALITY_SCORE = {min_quality_score}'''
     def generate_complete_example(
         task_description: str = "Create a polished response for the user request.",
         criteria: Optional[List[str]] = None,
-        max_revisions: int = 3,
+        max_revisions: int = 5,
         min_quality_score: float = 0.8,
         model_config: Optional[Union[ModelConfig, dict]] = None,
         use_structured_output: bool = True,
