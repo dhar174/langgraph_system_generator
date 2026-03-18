@@ -1,7 +1,9 @@
 ---
 description: 'Challenge assumptions and encourage critical thinking to ensure the best possible solution and outcomes.'
+name: 'critical-thinking'
+tools: ["*"]
+target: 'github-copilot'
 infer: true
-tools: ["codebase", "extensions", "web/fetch", "findTestFiles", "githubRepo", "problems", "search", "searchResults", "usages", "execute", "read", "agent", "todo"]
 ---
 # Critical thinking mode instructions
 

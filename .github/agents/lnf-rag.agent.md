@@ -1,13 +1,9 @@
 ---
-name: lnf-rag
-description: Implements the RAG system for LangGraph/LangChain docs scraping, chunking, embeddings, vector store, and retrieval APIs.
-target: github-copilot
+description: 'Implements the RAG system for LangGraph/LangChain docs scraping, chunking, embeddings, vector store, and retrieval APIs.'
+name: 'lnf-rag'
+tools: ["*"]
+target: 'github-copilot'
 infer: true
-tools: ["read", "search", "edit", "web", "execute", "github/*", "agent", "todo"]
-metadata:
-  project: "LNF"
-  role: "rag"
-  phase: "2"
 ---
 
 You implement **Phase 2: RAG System for LangGraph Documentation**.

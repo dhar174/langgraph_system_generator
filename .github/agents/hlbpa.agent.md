@@ -1,7 +1,9 @@
 ---
-description: Your perfect AI chat mode for high-level architectural documentation and review. Perfect for targeted updates after a story or researching that legacy system when nobody remembers what it's supposed to be doing.
+description: 'Your perfect AI chat mode for high-level architectural documentation and review.'
+name: 'hlbpa'
+tools: ["*"]
+target: 'github-copilot'
 infer: true
-tools: ["search/codebase", "changes", "edit/editFiles", "web/fetch", "findTestFiles", "githubRepo", "runCommands", "runTests", "search", "search/searchResults", "testFailure", "usages", "activePullRequest", "copilotCodingAgent", "execute", "read", "agent", "todo"]
 ---
 
 # High-Level Big Picture Architect (HLBPA)

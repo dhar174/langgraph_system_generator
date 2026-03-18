@@ -1,22 +1,8 @@
 ---
-description: Debug your application to find and fix a bug
-tools:
-- edit/editFiles
-- search
-- execute/getTerminalOutput
-- execute/runInTerminal
-- read/terminalLastCommand
-- read/terminalSelection
-- search/usages
-- read/problems
-- execute/testFailure
-- web/fetch
-- web/githubRepo
-- execute/runTests
-- execute
-- read
-- agent
-- todo
+description: 'Debug your application to find and fix a bug. Use it for focused, repository-specific help.'
+name: 'debug'
+tools: ["*"]
+target: 'github-copilot'
 infer: true
 ---
 

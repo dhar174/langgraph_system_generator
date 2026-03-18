@@ -1,13 +1,9 @@
 ---
-name: lnf-qa
-description: Implements QA validation + repair loops notebook validation, execution checks, unit/integration tests, and automated repair prompts.
-target: github-copilot
+description: 'Implements QA validation + repair loops notebook validation, execution checks, unit/integration tests, and automated repair prompts.'
+name: 'lnf-qa'
+tools: ["*"]
+target: 'github-copilot'
 infer: true
-tools: ["read", "search", "edit", "web", "execute", "github/*", "agent", "todo"]
-metadata:
-  project: "LNF"
-  role: "qa"
-  phase: "5"
 ---
 
 You implement **Phase 5: QA & Repair**.

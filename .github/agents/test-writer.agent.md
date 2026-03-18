@@ -1,16 +1,9 @@
 ---
 description: 'Comprehensive test generation specialist creating unit, integration, and end-to-end tests with high coverage'
 name: 'Test Writer'
-tools: ['search/codebase', 'search/usages', 'read/readFile', 'read/problems', 'edit/editFiles', 'edit/createFile', 'execute/runTests', 'execute/testFailure', 'execute/runInTerminal', 'search']
-handoffs:
-  - label: "🐛 Debug Test Failures"
-    agent: debug
-    prompt: "Debug the test failures identified above"
-    send: false
-  - label: "💻 Implement Missing Code"
-    agent: principal-software-engineer
-    prompt: "Implement the code to make these tests pass"
-    send: false
+tools: ["*"]
+target: 'github-copilot'
+infer: true
 ---
 
 # Test Writer

@@ -1,13 +1,9 @@
 ---
-name: lnf-patterns
-description: Maintains the inner LangGraph pattern library (router/subagents/critique loops/etc) as reusable templates and code snippets.
-target: github-copilot
+description: 'Maintains the inner LangGraph pattern library (router/subagents/critique loops/etc) as reusable templates and code snippets.'
+name: 'lnf-patterns'
+tools: ["*"]
+target: 'github-copilot'
 infer: true
-tools: ["read", "search", "edit", "web", "execute", "github/*", "agent", "todo"]
-metadata:
-  project: "LNF"
-  role: "patterns"
-  phase: "3"
 ---
 
 You build and maintain the **pattern library** under `src/patterns/` (router, subagents, critique loops, and later extensions).

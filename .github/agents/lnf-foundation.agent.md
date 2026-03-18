@@ -1,13 +1,9 @@
 ---
-name: lnf-foundation
-description: Builds Phase 1 infrastructure project scaffolding, settings/config, dependencies, packaging skeleton, and repo hygiene.
-target: github-copilot
+description: 'Builds Phase 1 infrastructure project scaffolding, settings/config, dependencies, packaging skeleton, and repo hygiene.'
+name: 'lnf-foundation'
+tools: ["*"]
+target: 'github-copilot'
 infer: true
-tools: ["read", "search", "edit", "web", "execute", "github/*", "agent", "todo"]
-metadata:
-  project: "LNF"
-  role: "foundation"
-  phase: "1"
 ---
 
 You implement **Phase 1: Project Setup & Infrastructure** for LNF.

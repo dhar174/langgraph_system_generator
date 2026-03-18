@@ -1,13 +1,9 @@
 ---
-name: lnf-cli
-description: Implements the CLI and packaging for LNF build-index and generate commands, output folder conventions, and release-ready packaging.
-target: github-copilot
+description: 'Implements the CLI and packaging for LNF build-index and generate commands, output folder conventions, and release-ready packaging.'
+name: 'lnf-cli'
+tools: ["*"]
+target: 'github-copilot'
 infer: true
-tools: ["read", "search", "edit", "web", "execute", "github/*", "agent", "todo"]
-metadata:
-  project: "LNF"
-  role: "cli"
-  phase: "6"
 ---
 
 You implement **Phase 6: CLI & Packaging**.

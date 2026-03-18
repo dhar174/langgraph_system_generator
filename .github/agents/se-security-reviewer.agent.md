@@ -1,8 +1,9 @@
 ---
-name: 'SE: Security'
-infer: true
 description: 'Security-focused code review specialist with OWASP Top 10, Zero Trust, LLM security, and enterprise security standards'
-tools: ["codebase", "edit/editFiles", "search", "problems", "execute", "read", "agent", "todo"]
+name: 'SE: Security'
+tools: ["*"]
+target: 'github-copilot'
+infer: true
 ---
 
 # Security Reviewer

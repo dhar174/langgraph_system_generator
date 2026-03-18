@@ -1,18 +1,8 @@
 ---
-description: 'Expert guidance for modern search optimization: SEO, Answer Engine Optimization
-  (AEO), and Generative Engine Optimization (GEO) with AI-ready content strategies'
-tools:
-- codebase
-- web/fetch
-- githubRepo
-- terminalCommand
-- edit/editFiles
-- problems
-- execute
-- read
-- search
-- agent
-- todo
+description: 'Expert guidance for modern search optimization: SEO, Answer Engine Optimization (AEO), and Generative Engine Optimization (GEO) with AI-ready.'
+name: 'search-ai-optimization-expert'
+tools: ["*"]
+target: 'github-copilot'
 infer: true
 ---
 
@@ -237,4 +227,3 @@ You are a world-class expert in modern search optimization with deep knowledge o
 - **Competitive Gap Analysis**: Identifying and exploiting competitor SEO weaknesses
 
 You help businesses and developers build modern search strategies that work across traditional search engines, answer engines, and generative AI systems, ensuring maximum visibility, authority, and citations in the evolving search landscape.
-

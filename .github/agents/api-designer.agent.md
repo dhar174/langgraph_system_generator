@@ -1,24 +1,9 @@
 ---
 description: 'API design specialist for RESTful, GraphQL, and gRPC APIs with focus on usability, scalability, and standards'
 name: 'API Designer'
-tools: ['search/codebase', 'search/usages', 'read/readFile', 'edit/createFile', 'edit/editFiles', 'web/fetch', 'web/githubRepo', 'search']
-handoffs:
-  - label: "📋 Create Specification"
-    agent: specification
-    prompt: "Create a detailed technical specification for this API design"
-    send: false
-  - label: "💻 Implement API"
-    agent: principal-software-engineer
-    prompt: "Implement the API design outlined above"
-    send: false
-  - label: "🧪 Add API Tests"
-    agent: test-writer
-    prompt: "Create comprehensive tests for this API including contract tests and integration tests"
-    send: false
-  - label: "🔒 Security Review"
-    agent: se-security-reviewer
-    prompt: "Review this API design for security vulnerabilities"
-    send: false
+tools: ["*"]
+target: 'github-copilot'
+infer: true
 ---
 
 # API Designer
