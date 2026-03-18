@@ -79,6 +79,7 @@ class WorkflowState(TypedDict, total=False):
         route_help = "\n".join(
             f"- {label}: Handle {label}-specific requests." for label, _ in specs
         )
+        route_names = ", ".join(label for label, _ in specs)
         llm_init = build_llm_init(
             config.model,
             0,
@@ -106,78 +107,96 @@ class RouteDecision(BaseModel):
     )
 
 
-def router_node(state: WorkflowState) -> Command[Literal[{node_literals}]]:
-    """Classify the request and route to the matching specialist."""
-    route_map = {{
-        {route_map_lines}
-    }}
-    messages = state.get("messages", [])
-    request_text = messages[-1].content if messages else "Route the incoming request."
-
+def router_node(state: WorkflowState, window_size: int = 5) -> WorkflowState:
+    """Routes requests to appropriate specialist based on input classification.
+    
+    Analyzes the user's message and determines which specialized agent
+    should handle the request based on content and intent.
+    """
+    messages = state["messages"]
+    last_message = messages[-1].content if messages else ""
+    window_size = max(window_size, 1)
+    recent_messages = messages[-window_size:] if messages else []
+    conversation_history = "\\n".join(
+        f"{{getattr(message, 'type', message.__class__.__name__)}}: {{message.content}}"
+        for message in recent_messages
+    ) or "No prior conversation available."
+    
+    # Initialize LLM with structured output
     llm = {llm_init}
-    decision = llm.with_structured_output(RouteDecision).invoke([
-        SystemMessage(
-            content="""You are a router for a LangGraph workflow.
+    structured_llm = llm.with_structured_output(RouteDecision)
+    
+    # Classification prompt
+    system_prompt = SystemMessage(content="""You are a routing classifier.
+Analyze the recent conversation and select the most appropriate route.
+Resolve coreferences such as "it", "that", and "the one" using the conversation history.
+Respond using the provided RouteDecision schema.""")
 
-Available specialists:
+    classification_prompt = f"""Analyze the following conversation and determine which route should handle the user's latest request.
+
+Available routes:
 {route_help}
-"""
-        ),
-        HumanMessage(content=f"Request: {{request_text}}"),
-    ])
 
-    return Command(
-        update={{
-            "route": decision.route,
-            "route_reasoning": decision.reasoning,
-            "route_history": [decision.route],
-            "messages": [
-                AIMessage(
-                    content=f"Router selected {{decision.route}} because: {{decision.reasoning}}"
-                )
-            ],
-        }},
-        goto=route_map[decision.route],
-    )'''
+Recent conversation (last {{window_size}} messages):
+{{conversation_history}}
 
-        fallback_route = specs[0][0]
-        return f'''from typing import Literal
+Latest user request: {{last_message}}
 
-from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
-from langchain_openai import ChatOpenAI
-from langgraph.types import Command
+Select the most appropriate route and explain your reasoning."""
+    
+    # Get classification
+    decision = structured_llm.invoke([system_prompt, HumanMessage(content=classification_prompt)])
+    
+    return {{
+        **state,
+        "route": decision.route,
+        "messages": messages + [HumanMessage(content=f"Routing to: {{decision.route}} ({{decision.reasoning}})")],
+    }}'''
+        else:
+            return f'''from langchain_openai import ChatOpenAI
+from langchain_core.messages import HumanMessage, SystemMessage
 
 
-def router_node(state: WorkflowState) -> Command[Literal[{node_literals}]]:
-    """Fallback router that asks the model for a route label."""
-    route_map = {{
-        {route_map_lines}
-    }}
-    valid_routes = list(route_map)
-    messages = state.get("messages", [])
-    request_text = messages[-1].content if messages else "Route the incoming request."
-
+def router_node(state: WorkflowState, window_size: int = 5) -> WorkflowState:
+    """Routes requests to appropriate specialist based on input classification."""
+    messages = state["messages"]
+    last_message = messages[-1].content if messages else ""
+    window_size = max(window_size, 1)
+    recent_messages = messages[-window_size:] if messages else []
+    conversation_history = "\\n".join(
+        f"{{getattr(message, 'type', message.__class__.__name__)}}: {{message.content}}"
+        for message in recent_messages
+    ) or "No prior conversation available."
+    
     llm = {llm_init}
-    response = llm.invoke([
-        SystemMessage(
-            content="""You are a router for a LangGraph workflow.
-Reply with only one route label from: {", ".join(label for label, _ in specs)}."""
-        ),
-        HumanMessage(content=f"Request: {{request_text}}"),
-    ])
-    selected_route = response.content.strip()
-    if selected_route not in route_map:
-        selected_route = {double_quoted_literal(fallback_route)}
+    
+    # Classification prompt
+    system_prompt = SystemMessage(content=f"""You are a routing classifier.
+Analyze the recent conversation and select the appropriate route from: {route_names}
+Resolve coreferences such as "it", "that", and "the one" using the conversation history.
+Respond with ONLY the route name.""")
+    
+    user_prompt = HumanMessage(content=f"""Recent conversation (last {{window_size}} messages):
+{{conversation_history}}
 
-    return Command(
-        update={{
-            "route": selected_route,
-            "route_reasoning": f"Model selected {{selected_route}}",
-            "route_history": [selected_route],
-            "messages": [AIMessage(content=f"Router selected {{selected_route}}")],
-        }},
-        goto=route_map[selected_route],
-    )'''
+Latest user request: {{last_message}}
+Route:""")
+    
+    # Get classification
+    response = llm.invoke([system_prompt, user_prompt])
+    selected_route = response.content.strip().lower()
+    
+    # Validate route
+    valid_routes = [r.lower() for r in routes]
+    if not valid_routes:
+        raise ValueError("Router configuration must include at least one route.")
+    if selected_route not in valid_routes:
+        selected_route = valid_routes[0]  # Default to first route
+    
+    return {{
+        **state,
+        "route": selected_route,
+    }}'''
 
     @staticmethod
     def generate_route_node_code(
