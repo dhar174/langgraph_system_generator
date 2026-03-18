@@ -7,7 +7,7 @@
 1. **Install LangGraph and dependencies** – install the base libraries and your chosen LLM integration.  For Anthropic models:
 
    ```bash
-   pip install -U langgraph langchain_core langchain-anthropic
+   pip install -U langgraph langchain langchain-anthropic
    ```
 
 2. **Provide API keys** – LLM providers require an API key.  When using Anthropic, the docs recommend setting the `ANTHROPIC_API_KEY` environment variable programmatically when it’s not already defined【938974216281041†L100-L124】:
@@ -75,7 +75,7 @@ Besides the graph API, LangGraph exposes a **Functional API** that wraps tasks a
 
 ## Building Agents
 
-LangGraph does not impose a particular agent architecture; instead, it provides primitives for building your own.  However, LangChain offers several **prebuilt agent types** (e.g., ReAct) built on top of LangGraph.  The function `create_react_agent(model, tools, prompt)` returns an agent runnable that follows the ReAct pattern and uses the given prompt and tool list【524036067177045†L188-L203】.  When the agent is invoked, it returns a dictionary with a list of `messages` and any `tool_calls` made.  You can embed these agents inside LangGraph nodes or call them via the Functional API.
+LangGraph does not impose a particular agent architecture; instead, it provides primitives for building your own.  However, LangChain offers several **prebuilt agent types** (e.g., ReAct) built on top of LangGraph.  For new Python work, `langchain.agents.create_agent(...)` is the preferred LangChain v1 entry point, replacing older `create_react_agent(...)` scaffolds for most use cases.  When the agent is invoked, it returns a dictionary with a list of `messages` and any `tool_calls` made.  You can embed these agents inside LangGraph nodes or call them via the Functional API.
 
 #### Defining tools
 
@@ -109,9 +109,9 @@ You can mix patterns—e.g., a subagent architecture can embed custom workflows 
 The official tutorial demonstrates creating a **many‑to‑many network** where agents can hand control to each other【524036067177045†L173-L253】.  Two ReAct agents—a travel advisor and a hotel advisor—communicate via tools.
 
 ```python
-from langchain_core.tools import tool
+from langchain.tools import tool
 from langgraph.func import entrypoint, task
-from langgraph.prebuilt import create_react_agent
+from langchain.agents import create_agent
 from langchain_anthropic import ChatAnthropic
 
 # Tools shared across agents
@@ -122,12 +122,12 @@ def get_travel_recommendations():
 def transfer_to_hotel_advisor():
     return "Transfer to hotel advisor"
 
-# Build ReAct agents for each domain
+# Build agents for each domain
 model = ChatAnthropic(model="claude-3-5-sonnet-latest")
-travel_agent = create_react_agent(
-    model,
-    [get_travel_recommendations, transfer_to_hotel_advisor],
-    prompt="You are a travel advisor. Suggest destinations and hand off when hotels are needed."
+travel_agent = create_agent(
+    model=model,
+    tools=[get_travel_recommendations, transfer_to_hotel_advisor],
+    system_prompt="You are a travel advisor. Suggest destinations and hand off when hotels are needed."
 )
 
 @task
@@ -165,7 +165,7 @@ This example uses `@task` to wrap operations that may run multiple times, ensuri
 
 The **multi‑agent collaboration** notebook shows how to build a research + chart generator system, where each agent decides when to stop or hand off.  The system uses the graph API and the `Command` class to instruct the graph where to go next【928806101369966†L168-L233】:
 
-1. **Define specialized ReAct agents** (research and chart generator) using `create_react_agent` and custom system prompts【928806101369966†L168-L233】.
+1. **Define specialized agents** (research and chart generator) using `create_agent` and custom system prompts.
 2. **Define node functions** `research_node` and `chart_node` that:
    - Invoke the respective agent using the shared message history.
    - Wrap the agent’s last AI message as a `HumanMessage` so providers accept it.
@@ -257,3 +257,10 @@ Subgraphs support the same persistence, streaming and interrupt capabilities as 
 ## Conclusion
 
 LangGraph provides a flexible foundation for building sophisticated multi‑agent applications.  By modelling workflows as graphs, persisting state across steps and enabling streaming, durable execution, human‑in‑the‑loop interrupts, time travel and modular subgraphs, you can design reliable systems that go beyond simple prompt‑loop agents.  Whether you use the graph API or the functional API, the patterns and examples above demonstrate how to coordinate multiple specialized agents, manage stateful interactions and implement advanced capabilities such as memory and checkpointing.  With proper design, LangGraph allows AI engineers to build state‑of‑the‑art multi‑agent applications that are robust, modular and ready for production.
+
+## Official References
+
+- **LangChain docs**: <https://docs.langchain.com>
+- **LangChain Python API reference**: <https://reference.langchain.com/python>
+- **LangGraph overview**: <https://docs.langchain.com/oss/python/langgraph/overview>
+- **LangGraph persistence**: <https://docs.langchain.com/oss/python/langgraph/persistence>

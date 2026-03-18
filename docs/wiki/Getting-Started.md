@@ -255,7 +255,7 @@ Generated notebooks are Colab-ready. Upload to Google Drive and open with Colab:
 2. Right-click → Open with → Google Colaboratory
 3. Install dependencies in first cell:
    ```python
-   !pip install langgraph langchain langchain-openai
+   !pip install -qU langgraph langchain langchain-openai langchain-community
    ```
 4. Add your API key:
    ```python
@@ -272,12 +272,14 @@ For local development:
 
 1. Install development dependencies:
    ```bash
-   pip install -e ".[full,dev]"
+   python -m pip install --upgrade pip
+   pip install -r requirements.txt
+   pip install -e ".[full]"
    ```
 
 2. Run tests:
    ```bash
-   pytest tests/ --cov=src
+   python -m pytest --asyncio-mode=auto
    ```
 
 3. Run linting:
