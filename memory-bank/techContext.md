@@ -1,42 +1,28 @@
-## Technology Stack
+## Purpose
 
-- Python package with source under `src/langgraph_system_generator/`
-- Core workflow libraries: `langgraph`, `langchain`, `langchain-openai`,
-  `langchain-community`
-- API layer: `fastapi`, `uvicorn`, `sse-starlette`
-- Notebook/export tooling: `nbformat`, `nbconvert`, `python-docx`, `reportlab`
-- Retrieval/indexing: FAISS via LangChain vector store integrations,
-  `aiohttp`, `beautifulsoup4`
+Use this file to record the technical environment for the project.
+It should help an AI agent or contributor understand the stack, tooling,
+dependencies, setup expectations, and technical constraints.
 
-## Development Setup
+## When to Update It
 
-- Local setup is documented in `README.md` and `docs/dev.md`.
-- Standard setup flow is:
-  - create a virtual environment
-  - install `requirements.txt`
-  - install the package in editable mode, for example:
-    - `pip install -e .` for core functionality, or
-    - `pip install -e ".[full]"` to enable full API/RAG/export features
-  - copy `.env.example` to `.env`
-  - run `python -m pytest`
-- The `lnf` console entry point defined in `setup.py` is available only after the package has been installed.
+Update this file when:
 
-## Configuration Model
+- the stack changes
+- key dependencies are added, removed, or replaced
+- development or runtime setup changes
+- important technical constraints are discovered or updated
 
-- Environment-backed settings are defined in
-  `src/langgraph_system_generator/utils/config.py`.
-- Default model settings currently center on `gpt-5-mini`.
-- Live generation relies on environment-provided API credentials, while stub
-  mode avoids external LLM calls.
-- Output-path behavior is constrained by the base-output helpers in
-  `src/langgraph_system_generator/constants.py`.
+## What to Include
 
-## Technical Constraints
+- primary languages, frameworks, and libraries
+- important tooling and local setup expectations
+- external integrations and infrastructure dependencies
+- technical constraints that affect implementation choices
 
-- Live generation currently requires `OPENAI_API_KEY`.
-- Semantic retrieval depends on a local vector index existing at the configured
-  vector store path.
-- SSE job tracking is in-memory and therefore best suited to single-process or
-  single-server deployments.
-- PDF export depends on local `jupyter nbconvert` tooling and a working webpdf
-  or LaTeX environment.
+## What to Avoid
+
+- task-level notes
+- product or UX strategy that belongs in `productContext.md`
+- long installation logs
+- secrets, tokens, connection strings, or passwords

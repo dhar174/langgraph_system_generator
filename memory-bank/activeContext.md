@@ -1,30 +1,29 @@
-## Current Work Focus
+## Purpose
 
-- The repository currently centers on prompt-to-notebook generation with shared
-  CLI and FastAPI entry points, plus a reusable LangGraph pattern library.
-- Current maintenance work includes keeping the Memory Bank aligned with the
-  actual codebase so future sessions do not rely on template placeholders.
+Use this file as the short-term working memory for the current session or
+active workstream.
+It should tell the next AI session what is being worked on right now and what
+context matters most immediately.
 
-## Recent Changes Reflected in the Codebase
+## When to Update It
 
-- `memory-bank/systemPatterns.md` was updated to document the actual repo
-  architecture instead of template bullets.
-- The API layer includes guarded output-path resolution and bounded async job
-  concurrency.
-- Progress streaming exists through SSE with in-memory job queues.
+Update this file when:
 
-## Immediate Next Steps
+- work focus changes
+- a task starts, changes direction, or is blocked
+- important recent decisions need to be preserved between sessions
+- the next steps for the current work change
 
-- Keep the remaining Memory Bank files aligned with verified repository state.
-- Continue improving generation quality and validation without breaking the
-  deterministic stub path.
-- Preserve parity between CLI-driven and API-driven artifact generation flows.
+## What to Include
 
-## Active Considerations
+- the current work focus
+- recent meaningful changes
+- open questions, blockers, or risks
+- immediate next steps
 
-- Some advanced API parameters are currently recorded in the manifest but are
-  not yet wired into the live generation pipeline.
-- Runtime QA is intentionally minimal right now; static validation and repair
-  are the primary safeguards before packaging outputs.
-- The SSE implementation is appropriate for single-server development, but not a
-  distributed production event bus.
+## What to Avoid
+
+- long-term project goals that belong in `projectbrief.md`
+- detailed progress history that belongs in `progress.md`
+- full chat transcripts
+- raw code or sensitive information
