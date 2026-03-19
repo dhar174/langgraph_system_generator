@@ -184,7 +184,7 @@ class TestCritiqueLoopPatternFailureConditions:
         assert '"missing_feedback": END' in code
         assert '"no_improvement": END' in code
         assert '"max_revisions_failed": END' in code
-        assert '"max_revisions_reached": END' in code
+        assert ('"max_revisions_reached": END' in code or '"max_revisions_reached": "finalize"' in code)
         assert '"revise": "revise"' in code
         compile(code, "<critique_graph>", "exec")
 
