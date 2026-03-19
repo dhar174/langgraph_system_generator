@@ -72,10 +72,11 @@ This document provides a comprehensive, phase-by-phase implementation plan for b
 1. **Create `requirements.txt`:**
    ```
    # LangGraph & LangChain
-   langgraph>=0.2.0
-   langchain>=0.3.0
-   langchain-openai>=0.2.0
-   langchain-community>=0.3.0
+   langgraph>=1.0.0,<2.0.0
+   langchain>=1.0.0,<2.0.0
+   langchain-openai>=1.0.0,<2.0.0
+   langchain-community>=0.4.1,<1.0.0
+   langchain-text-splitters>=0.3.0,<1.0.0
    
    # Notebook generation
    nbformat>=5.9.0
@@ -168,18 +169,18 @@ This document provides a comprehensive, phase-by-phase implementation plan for b
    from typing import List, Dict
    import aiohttp
    from bs4 import BeautifulSoup
-   from langchain.text_splitter import RecursiveCharacterTextSplitter
-   from langchain.schema import Document
+   from langchain_core.documents import Document
+   from langchain_text_splitters import RecursiveCharacterTextSplitter
    
    class DocsIndexer:
        """Scrapes and indexes LangGraph documentation."""
        
        DOCS_URLS = [
-           "https://docs.langchain.com/oss/python/langgraph/use-graph-api",
-           "https://docs.langchain.com/oss/python/langchain/multi-agent/subagents",
-           "https://docs.langchain.com/oss/javascript/langchain/multi-agent/router",
+           "https://docs.langchain.com/oss/python/langgraph/overview",
+           "https://docs.langchain.com/oss/python/langchain/overview",
            "https://docs.langchain.com/oss/python/langchain/agents",
-           "https://docs.langchain.com/oss/javascript/langgraph/persistence",
+           "https://docs.langchain.com/oss/python/langchain/rag",
+           "https://docs.langchain.com/oss/python/langgraph/persistence",
            # Add more URLs
        ]
        
@@ -201,7 +202,7 @@ This document provides a comprehensive, phase-by-phase implementation plan for b
    from langchain_openai import OpenAIEmbeddings
    from langchain_community.vectorstores import FAISS
    from typing import List
-   from langchain.schema import Document
+   from langchain_core.documents import Document
    
    class VectorStoreManager:
        """Manages vector store for document retrieval."""
@@ -233,7 +234,7 @@ This document provides a comprehensive, phase-by-phase implementation plan for b
 1. **Create retriever (`src/rag/retriever.py`):**
    ```python
    from typing import List, Dict
-   from langchain.schema import Document
+   from langchain_core.documents import Document
    
    class DocsRetriever:
        """Retrieves relevant documentation snippets."""
@@ -1378,8 +1379,8 @@ Please suggest specific fixes for each issue. Focus on:
        version="0.1.0",
        packages=find_packages(),
        install_requires=[
-           "langgraph>=0.2.0",
-           "langchain>=0.3.0",
+           "langgraph>=1.0.0,<2.0.0",
+           "langchain>=1.0.0,<2.0.0",
            # ... other dependencies
        ],
        entry_points={
@@ -1488,9 +1489,9 @@ Please suggest specific fixes for each issue. Focus on:
 ## Appendix A: Key Dependencies
 
 ```
-langgraph>=0.2.0          # Core graph framework
-langchain>=0.3.0          # LangChain ecosystem
-langchain-openai>=0.2.0   # OpenAI integration
+langgraph>=1.0.0,<2.0.0          # Core graph framework
+langchain>=1.0.0,<2.0.0          # LangChain ecosystem
+langchain-openai>=1.0.0,<2.0.0   # OpenAI integration
 nbformat>=5.9.0           # Notebook manipulation
 nbconvert>=7.14.0         # Notebook export
 faiss-cpu>=1.7.4          # Vector similarity search
