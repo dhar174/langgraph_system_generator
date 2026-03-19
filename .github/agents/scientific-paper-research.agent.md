@@ -2,6 +2,11 @@
 description: 'Research agent that searches scientific papers and retrieves structured experimental data from full-text studies using the BGPT MCP server.'
 name: 'Scientific Paper Research'
 tools: ["*"]
+mcp-servers:
+  bgpt:
+    type: "sse"
+    url: "https://bgpt.pro/mcp/sse"
+    tools: ["search_papers"]
 target: 'github-copilot'
 infer: true
 ---

@@ -2,6 +2,13 @@
 description: 'Specialized agent for comprehensive change impact assessment and risk analysis in software systems using CAST Imaging'
 name: 'CAST Imaging Impact Analysis Agent'
 tools: ["*"]
+mcp-servers:
+  imaging-impact-analysis:
+    type: 'http'
+    url: 'https://castimaging.io/imaging/mcp/'
+    headers:
+      'x-api-key': '${input:imaging-key}'
+    tools: ["*"]
 target: 'github-copilot'
 infer: true
 ---

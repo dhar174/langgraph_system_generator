@@ -2,6 +2,12 @@
 description: 'Expert in latest library versions, best practices, and correct syntax using up-to-date documentation'
 name: 'Context7-Expert'
 tools: ["*"]
+mcp-servers:
+  context7:
+    type: http
+    url: "https://mcp.context7.com/mcp"
+    headers: {"CONTEXT7_API_KEY": "${{ secrets.COPILOT_MCP_CONTEXT7 }}"}
+    tools: ["get-library-docs", "resolve-library-id"]
 target: 'github-copilot'
 infer: true
 ---

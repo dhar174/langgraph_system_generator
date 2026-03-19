@@ -2,6 +2,13 @@
 description: 'Specialized agent for comprehensive software application discovery and architectural mapping through static code analysis using CAST Imaging'
 name: 'CAST Imaging Software Discovery Agent'
 tools: ["*"]
+mcp-servers:
+  imaging-structural-search:
+    type: 'http'
+    url: 'https://castimaging.io/imaging/mcp/'
+    headers:
+      'x-api-key': '${input:imaging-key}'
+    tools: ["*"]
 target: 'github-copilot'
 infer: true
 ---
