@@ -1,9 +1,7 @@
 ---
-description: 'Senior software engineer subagent for implementation tasks: feature development, debugging, refactoring, and testing.'
 name: 'SWE'
-tools: ["*"]
-target: 'github-copilot'
-infer: true
+description: 'Senior software engineer subagent for implementation tasks: feature development, debugging, refactoring, and testing.'
+tools: ['vscode', 'execute', 'read', 'agent', 'edit', 'search', 'web', 'todo']
 ---
 
 ## Identity

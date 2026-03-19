@@ -1,9 +1,8 @@
 ---
-description: 'Bootstraps and validates agentic project structures for GitHub Copilot (VS Code) and OpenCode CLI workflows.'
+description: 'Bootstraps and validates agentic project structures for GitHub Copilot (VS Code) and OpenCode CLI workflows. Run after `opencode /init` or VS Code Copilot initialization to scaffold proper folder hierarchies, instructions, agents, skills, and prompts.'
 name: 'Repo Architect Agent'
-tools: ["*"]
-target: 'github-copilot'
-infer: true
+model: GPT-4.1
+tools: ["changes", "codebase", "editFiles", "fetch", "new", "problems", "runCommands", "search", "terminalLastCommand"]
 ---
 
 # Repo Architect Agent
@@ -121,7 +120,7 @@ Validate existing agentic project structure (focus on structure, not deep file i
 
    Agents Layer:
      ✅ .github/agents/reviewer.md
-     ⚠️ .github/agents/architect.md - missing 'tools' field
+     ⚠️ .github/agents/architect.md - missing 'model' field
 
    Skills Layer:
      ✅ .github/skills/git-workflow.md
@@ -239,6 +238,7 @@ Would you like to install any of these? (Provide install links)
 ```markdown
 ---
 description: '{DESCRIPTION}'
+model: GPT-4.1
 tools: [{RELEVANT_TOOLS}]
 ---
 
@@ -344,8 +344,8 @@ These are the official requirements from awesome-copilot. The agent does NOT dee
 
 | File Type | Required Fields | Recommended |
 |-----------|-----------------|-------------|
-| `.agent.md` | `description` | `tools`, `name` |
-| `.prompt.md` | `agent`, `description` | `tools`, `name` |
+| `.agent.md` | `description` | `model`, `tools`, `name` |
+| `.prompt.md` | `agent`, `description` | `model`, `tools`, `name` |
 | `.instructions.md` | `description`, `applyTo` | - |
 | `SKILL.md` | `name`, `description` | - |
 

@@ -1,9 +1,7 @@
 ---
-description: 'Generate an implementation plan for new features or refactoring existing code.'
-name: 'Planning mode instructions'
-tools: ["*"]
-target: 'github-copilot'
-infer: true
+description: "Generate an implementation plan for new features or refactoring existing code."
+name: "Planning mode instructions"
+tools: ["codebase", "fetch", "findTestFiles", "githubRepo", "search", "usages"]
 ---
 
 # Planning mode instructions

@@ -1,9 +1,6 @@
 ---
 description: 'Your role is that of an API architect. Help mentor the engineer by providing guidance, support, and working code.'
 name: 'API Architect'
-tools: ["*"]
-target: 'github-copilot'
-infer: true
 ---
 # API Architect mode instructions
 

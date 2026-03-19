@@ -286,6 +286,110 @@ Use the description in `SKILL.md` to say both:
 
 That description is the main discovery signal for Copilot.
 
+## Repository AI context for LangChain/LangGraph work
+
+These resources are part of the normal contributor and agent onboarding path for
+this repository. Use them explicitly when working on runtime generation,
+retrieval, notebook composition, QA, or contributor-facing Copilot assets.
+
+### MemoryBank and persistent repository context
+
+Start substantial work by reading
+`.github/instructions/memory-bank.instructions.md` and then reviewing the active
+files under `memory-bank/`:
+
+- `memory-bank/projectbrief.md`
+- `memory-bank/productContext.md`
+- `memory-bank/activeContext.md`
+- `memory-bank/systemPatterns.md`
+- `memory-bank/techContext.md`
+- `memory-bank/progress.md`
+- `memory-bank/tasks/_index.md` and related task files
+
+The MemoryBank is the repository's persistent project memory. It preserves
+architecture decisions, active work, progress history, and task-level context so
+contributors and AI agents can resume work consistently across sessions.
+
+### LangChain/LangGraph instruction file
+
+For Python implementation work that touches LangChain, LangGraph, LangSmith,
+retrievers, prompts, tools, or evaluation workflows, follow
+`.github/instructions/langchain-python.instructions.md`.
+
+Use that instruction file as the repository-local guide for:
+
+- Runnable and agent composition patterns
+- chat models, tools, structured output, and retrievers
+- vector stores and RAG conventions
+- observability, security, and privacy expectations for LangChain-based code
+
+### Preferred docs and MCP lookup workflow
+
+For LangChain-, LangGraph-, and LangSmith-specific questions, start with the
+built-in LangChain docs MCP entry point:
+`docs-langchain-search_docs_by_lang_chain`.
+
+Use that MCP-backed docs search when you need:
+
+- official LangChain/LangGraph/LangSmith examples
+- API surface discovery and concept lookup
+- current guidance for patterns such as graphs, reducers, tool calling,
+  retrieval, memory, or evaluation
+- troubleshooting grounded in the Docs by LangChain knowledge base
+
+Usage pattern:
+
+1. Query `docs-langchain-search_docs_by_lang_chain` first for LangChain,
+   LangGraph, or LangSmith topics.
+2. Apply `.github/instructions/langchain-python.instructions.md` for repository
+   coding conventions and implementation expectations.
+3. Use Context7 or web search only when the question is outside the LangChain
+   ecosystem or needs package/version research not covered by the LangChain docs
+   corpus.
+
+For general MCP background and editor setup guidance, see:
+
+- https://modelcontextprotocol.io/docs
+- https://code.visualstudio.com/docs/copilot/chat/mcp-servers
+
+### LangChain/LangGraph/LangSmith skills inventory
+
+The primary repository skills for LangChain-adjacent work live under
+`.github/skills/`. Some are mirrored under the top-level `skills/` directory.
+
+| Skill | Primary location | Top-level mirror | Use it for |
+| --- | --- | --- | --- |
+| `langchain` | `.github/skills/langchain/` | `skills/langchain/` | Core LangChain framework usage, agents, chains, RAG |
+| `langgraph-agent-patterns` | `.github/skills/langgraph-agent-patterns/` | — | Supervisor, router, orchestrator-worker, and handoff patterns |
+| `langgraph-error-handling` | `.github/skills/langgraph-error-handling/` | — | Retry, recovery loops, interrupts, and ToolNode failures |
+| `langgraph-project-setup` | `.github/skills/langgraph-project-setup/` | — | `langgraph.json`, local dev, env setup, and project bootstrapping |
+| `langgraph-state-management` | `.github/skills/langgraph-state-management/` | — | State schemas, reducers, persistence, and checkpointers |
+| `langgraph-testing-evaluation` | `.github/skills/langgraph-testing-evaluation/` | — | Unit/integration tests, trajectory evaluation, and regression gates |
+| `langsmith-dataset` | `.github/skills/langsmith-dataset/` | `skills/langsmith-dataset/` | Dataset creation and management for evaluation |
+| `langsmith-evaluator` | `.github/skills/langsmith-evaluator/` | `skills/langsmith-evaluator/` | Evaluators, experiment setup, and scoring workflows |
+| `langsmith-fetch` | `.github/skills/langsmith-fetch/` | — | Fetching and analyzing recent traces for debugging |
+| `langsmith-trace` | `.github/skills/langsmith-trace/` | `skills/langsmith-trace/` | Tracing setup, query, and export workflows |
+
+When a mirrored skill exists in both `.github/skills/` and `skills/`, keep both
+copies aligned.
+
+### Public documentation and API references
+
+Keep these links visible in onboarding and daily workflows. The issue that added
+this section explicitly requested the legacy `python.langchain.com` and
+`langchain-ai.github.io` URLs, so both the historical links and the current
+canonical destinations are listed below.
+
+- LangChain docs: https://python.langchain.com/docs/
+- LangChain API reference: https://python.langchain.com/docs/api_reference
+- LangGraph docs (legacy redirect): https://langchain-ai.github.io/langgraph/
+- LangGraph API reference (legacy redirect): https://langchain-ai.github.io/langgraph/reference/
+- Current LangGraph overview: https://docs.langchain.com/oss/python/langgraph/overview
+- Current LangGraph "Use the Graph API" guide: https://docs.langchain.com/oss/python/langgraph/use-graph-api
+- Current unified LangChain ecosystem API reference:
+  https://reference.langchain.com/python/
+- LangSmith docs: https://docs.langchain.com/langsmith
+
 ## Agent communication and lifecycle management
 
 ### Runtime-agent communication

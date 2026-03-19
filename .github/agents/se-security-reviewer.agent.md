@@ -1,9 +1,8 @@
 ---
-description: 'Security-focused code review specialist with OWASP Top 10, Zero Trust, LLM security, and enterprise security standards'
 name: 'SE: Security'
-tools: ["*"]
-target: 'github-copilot'
-infer: true
+description: 'Security-focused code review specialist with OWASP Top 10, Zero Trust, LLM security, and enterprise security standards'
+model: GPT-5
+tools: ['codebase', 'edit/editFiles', 'search', 'problems']
 ---
 
 # Security Reviewer
