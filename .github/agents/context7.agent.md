@@ -1,20 +1,40 @@
 ---
-name: Context7-Expert
 description: 'Expert in latest library versions, best practices, and correct syntax using up-to-date documentation'
-argument-hint: 'Ask about specific libraries/frameworks (e.g., "Next.js routing", "React hooks", "Tailwind CSS")'
-tools: ['read', 'search', 'web', 'context7/*', 'agent/runSubagent']
-mcp-servers:
-  context7:
-    type: http
-    url: "https://mcp.context7.com/mcp"
-    headers: {"CONTEXT7_API_KEY": "${{ secrets.COPILOT_MCP_CONTEXT7 }}"}
-    tools: ["get-library-docs", "resolve-library-id"]
-handoffs:
-  - label: Implement with Context7
-    agent: agent
-    prompt: Implement the solution using the Context7 best practices and documentation outlined above.
-    send: false
+name: 'Context7-Expert'
+tools: ["*"]
+target: 'github-copilot'
+infer: true
 ---
+
+## Shared repository AI resources
+
+Use these repository resources before substantial work:
+
+- MemoryBank: read `.github/instructions/memory-bank.instructions.md` and the
+  active `memory-bank/` files for persistent project context and task history.
+- LangChain Python instructions: follow
+  `.github/instructions/langchain-python.instructions.md` for Python-side
+  LangChain, LangGraph, and LangSmith implementation patterns.
+- Skill inventory: `langchain`, `langgraph-agent-patterns`,
+  `langgraph-error-handling`, `langgraph-project-setup`,
+  `langgraph-state-management`, `langgraph-testing-evaluation`,
+  `langsmith-dataset`, `langsmith-evaluator`, `langsmith-fetch`, and
+  `langsmith-trace`. Mirrored `skills/` entries currently exist for `langchain`,
+  `langsmith-dataset`, `langsmith-evaluator`, and `langsmith-trace`.
+- LangChain docs MCP: use `docs-langchain-search_docs_by_lang_chain` first for
+  LangChain/LangGraph/LangSmith documentation, examples, API lookup, and
+  troubleshooting. Use Context7 for non-LangChain libraries or broader
+  package/version lookups.
+- Canonical references live in `AGENTS.md` and `.github/copilot-instructions.md`.
+  Public docs: https://python.langchain.com/docs/,
+  https://python.langchain.com/docs/api_reference,
+  https://langchain-ai.github.io/langgraph/,
+  https://langchain-ai.github.io/langgraph/reference/,
+  https://docs.langchain.com/oss/python/langgraph/overview,
+  https://reference.langchain.com/python/,
+  https://docs.langchain.com/langsmith,
+  https://modelcontextprotocol.io/docs, and
+  https://code.visualstudio.com/docs/copilot/chat/mcp-servers.
 
 # Context7 Documentation Expert
 
