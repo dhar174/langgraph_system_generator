@@ -81,7 +81,7 @@ Check all resources that should be documented or referenced.
 
 ### External documentation
 - [ ] LangChain Python docs: <https://python.langchain.com/docs/>
-- [ ] LangChain API reference: <https://python.langchain.com/api_reference/>
+- [ ] LangChain API reference: <https://python.langchain.com/docs/api_reference>
 - [ ] LangGraph docs: <https://langchain-ai.github.io/langgraph/>
 - [ ] LangGraph API reference: <https://langchain-ai.github.io/langgraph/reference/>
 - [ ] LangSmith docs: <https://docs.smith.langchain.com/>
