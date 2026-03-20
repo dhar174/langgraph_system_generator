@@ -14,13 +14,12 @@ import os
 from pathlib import Path
 from typing import Any, Dict, List, Literal, TypedDict
 
-from langchain_community.embeddings import FakeEmbeddings
-
-from langgraph_system_generator.generator.graph import create_generator_graph
 from langgraph_system_generator.generator.state import CellSpec, Constraint, NotebookPlan
-from langgraph_system_generator.patterns import RouterPattern, SubagentsPattern
-from langgraph_system_generator.rag.indexer import build_index_from_cache
 from langgraph_system_generator.utils.config import settings
+from langgraph_system_generator.utils.optional_deps import (
+    OptionalDependencyError,
+    require_optional_module,
+)
 
 BASE_DIR = Path(__file__).resolve().parents[2]
 DEFAULT_CACHE_PATH = (BASE_DIR / "data" / "cached_docs").resolve()
@@ -100,9 +99,32 @@ def _infer_stub_architecture(prompt: str) -> tuple[str, str]:
     return ("router", "Router pattern selected as a sensible default for general workflows.")
 
 
+def _load_patterns() -> tuple[Any, Any]:
+    """Import pattern generators lazily to preserve minimal installs."""
+
+    patterns_module = require_optional_module(
+        "langgraph_system_generator.patterns",
+        feature="Stub artifact generation",
+        extra="full",
+    )
+    return patterns_module.RouterPattern, patterns_module.SubagentsPattern
+
+
+def _load_generator_graph() -> Any:
+    """Import the live generator graph lazily."""
+
+    graph_module = require_optional_module(
+        "langgraph_system_generator.generator.graph",
+        feature="Live generation",
+        extra="full",
+    )
+    return graph_module.create_generator_graph
+
+
 def _build_stub_result(prompt: str) -> Dict[str, Any]:
     """Create a deterministic, offline-friendly generation result."""
 
+    RouterPattern, SubagentsPattern = _load_patterns()
     architecture_type, justification = _infer_stub_architecture(prompt)
 
     constraints = [
@@ -290,6 +312,17 @@ async def generate_artifacts(
         progress_callback: Optional callback function(node, percentage, message) for progress tracking
     """
 
+    require_optional_module(
+        "langgraph_system_generator.notebook.composer",
+        feature="Artifact generation",
+        extra="full",
+    )
+    require_optional_module(
+        "langgraph_system_generator.notebook.exporters",
+        feature="Artifact generation",
+        extra="full",
+    )
+
     from langgraph_system_generator.notebook.composer import NotebookComposer
     from langgraph_system_generator.notebook.exporters import NotebookExporter
 
@@ -311,6 +344,7 @@ async def generate_artifacts(
     _report_progress("init", 5, "Initializing generation...")
 
     if mode == "live":
+        create_generator_graph = _load_generator_graph()
         if not os.environ.get("OPENAI_API_KEY"):
             raise RuntimeError("LLM API credentials are required for live generation mode.")
         _report_progress("graph_init", 10, "Creating generator graph...")
@@ -481,10 +515,20 @@ async def _handle_build_index(
 ) -> str:
     """Build a documentation index from cached docs."""
 
+    embeddings_module = require_optional_module(
+        "langchain_community.embeddings",
+        feature="Index building",
+        extra="full",
+    )
+    indexer_module = require_optional_module(
+        "langgraph_system_generator.rag.indexer",
+        feature="Index building",
+        extra="full",
+    )
     cache = str(Path(cache_path).resolve())
     store = str(Path(store_path).resolve())
-    embeddings = None if use_openai else FakeEmbeddings(size=32)
-    manager = await build_index_from_cache(
+    embeddings = None if use_openai else embeddings_module.FakeEmbeddings(size=32)
+    manager = await indexer_module.build_index_from_cache(
         cache_path=cache,
         store_path=store,
         embeddings=embeddings,
@@ -495,14 +539,18 @@ async def _handle_build_index(
 
 
 def _run_generate(args: argparse.Namespace) -> int:
-    artifacts = asyncio.run(
-        generate_artifacts(
-            args.prompt,
-            output_dir=args.output,
-            mode=args.mode,
-            formats=args.formats,
+    try:
+        artifacts = asyncio.run(
+            generate_artifacts(
+                args.prompt,
+                output_dir=args.output,
+                mode=args.mode,
+                formats=args.formats,
+            )
         )
-    )
+    except OptionalDependencyError as exc:
+        print(f"✗ Failed to generate artifacts: {exc}")
+        return 1
 
     print(f"✓ Generated artifacts in {artifacts['output_dir']}")
     print(f"  Manifest: {artifacts['manifest_path']}")
@@ -538,7 +586,12 @@ def _run_build_index(args: argparse.Namespace) -> int:
         )
         print(f"✓ Vector index written to {path}")
         return 0
-    except (FileNotFoundError, RuntimeError, ValueError) as exc:  # pragma: no cover - defensive
+    except (
+        FileNotFoundError,
+        OptionalDependencyError,
+        RuntimeError,
+        ValueError,
+    ) as exc:  # pragma: no cover - defensive
         print(f"✗ Failed to build index: {exc}")
         return 1
 
