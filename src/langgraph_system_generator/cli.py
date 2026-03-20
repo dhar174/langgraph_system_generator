@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Literal, TypedDict
 
 from langgraph_system_generator.generator.state import CellSpec, Constraint, NotebookPlan
-from langgraph_system_generator.utils.config import settings
+from langgraph_system_generator.utils.config import GenerationConfig, settings
 from langgraph_system_generator.utils.optional_deps import (
     OptionalDependencyError,
     require_optional_module,
@@ -39,7 +39,10 @@ class GenerationArtifacts(TypedDict):
     result: Dict[str, Any]
 
 
-def _default_state(prompt: str) -> Dict[str, Any]:
+def _default_state(
+    prompt: str,
+    generation_config: GenerationConfig | None = None,
+) -> Dict[str, Any]:
     """Return a baseline GeneratorState payload."""
 
     return {
@@ -59,6 +62,7 @@ def _default_state(prompt: str) -> Dict[str, Any]:
         "artifacts_manifest": {},
         "generation_complete": False,
         "error_message": None,
+        "generation_config": generation_config,
     }
 
 
@@ -122,11 +126,19 @@ def _load_generator_graph() -> Any:
     return graph_module.create_generator_graph
 
 
-def _build_stub_result(prompt: str) -> Dict[str, Any]:
+def _build_stub_result(prompt: str, agent_type: str | None = None) -> Dict[str, Any]:
     """Create a deterministic, offline-friendly generation result."""
 
     RouterPattern, SubagentsPattern = _load_patterns()
-    architecture_type, justification = _infer_stub_architecture(prompt)
+    normalized_agent_type = (agent_type or "").strip().lower()
+    if normalized_agent_type in {"router", "subagents", "hybrid"}:
+        architecture_type = normalized_agent_type
+        justification = (
+            f"{normalized_agent_type.title()} pattern selected from the requested "
+            "agent_type override."
+        )
+    else:
+        architecture_type, justification = _infer_stub_architecture(prompt)
 
     constraints = [
         Constraint(type="goal", value=f"Deliver a notebook for: {prompt}", priority=5),
@@ -327,6 +339,14 @@ async def generate_artifacts(
     from langgraph_system_generator.notebook.composer import NotebookComposer
     from langgraph_system_generator.notebook.exporters import NotebookExporter
 
+    generation_config = GenerationConfig(
+        model=model,
+        temperature=temperature,
+        max_tokens=max_tokens,
+        api_base=custom_endpoint,
+        agent_type=agent_type,
+    )
+
     def _report_progress(node: str, percentage: int, message: str) -> None:
         """Helper to report progress if callback is provided."""
         if progress_callback:
@@ -346,16 +366,16 @@ async def generate_artifacts(
 
     if mode == "live":
         create_generator_graph = _load_generator_graph()
-        if not os.environ.get("OPENAI_API_KEY"):
+        if not custom_endpoint and not os.environ.get("OPENAI_API_KEY"):
             raise RuntimeError("LLM API credentials are required for live generation mode.")
         _report_progress("graph_init", 10, "Creating generator graph...")
-        graph = create_generator_graph()
+        graph = create_generator_graph(generation_config=generation_config)
         _report_progress("graph_invoke", 15, "Invoking generator graph...")
-        result = await graph.ainvoke(_default_state(prompt))
+        result = await graph.ainvoke(_default_state(prompt, generation_config))
         _report_progress("graph_complete", 60, "Generator graph completed")
     else:
         _report_progress("stub", 30, "Building stub result...")
-        result = _build_stub_result(prompt)
+        result = _build_stub_result(prompt, agent_type=agent_type)
         _report_progress("stub_complete", 60, "Stub generation complete")
 
     _report_progress("serialize", 62, "Serializing results...")
@@ -376,12 +396,7 @@ async def generate_artifacts(
         "plan_title": plan_title,
     }
     
-    # Add advanced options to manifest if provided.
-    # NOTE: These parameters are currently stored as metadata for tracking and
-    # reproducibility purposes. They do not directly affect the generation pipeline
-    # in the current implementation. In live mode, the generation uses the configured
-    # LLM settings from the generator graph, not these UI-provided values.
-    # Future enhancements could integrate these parameters into the generation process.
+    # Persist request metadata for reproducibility and downstream consumers.
     if model:
         manifest["model"] = model
     if temperature is not None:
