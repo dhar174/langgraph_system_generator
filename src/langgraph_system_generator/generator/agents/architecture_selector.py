@@ -11,16 +11,25 @@ from langchain_openai import ChatOpenAI
 from langgraph_system_generator.generator.state import Constraint, DocSnippet
 from langgraph_system_generator.generator.utils import extract_json_from_llm_response
 from langgraph_system_generator.rag.retriever import DocsRetriever
-from langgraph_system_generator.utils.config import settings
+from langgraph_system_generator.utils.config import ModelConfig, settings
 
 
 class ArchitectureSelector:
     """Chooses optimal LangGraph pattern architecture."""
 
     def __init__(
-        self, docs_retriever: DocsRetriever | None = None, model: str | None = None
+        self,
+        docs_retriever: DocsRetriever | None = None,
+        model: str | None = None,
+        model_config: ModelConfig | None = None,
     ):
-        self.llm = ChatOpenAI(model=model or settings.default_model, temperature=0)
+        config = model_config or ModelConfig(model=model or settings.default_model, temperature=0.0)
+        llm_kwargs = {"model": config.model, "temperature": config.temperature}
+        if config.api_base:
+            llm_kwargs["base_url"] = config.api_base
+        if config.max_tokens is not None:
+            llm_kwargs["max_tokens"] = config.max_tokens
+        self.llm = ChatOpenAI(**llm_kwargs)
         self.docs_retriever = docs_retriever
 
     async def select_architecture(

@@ -39,6 +39,19 @@ _DEFAULT_API_OUTPUT = (_BASE_OUTPUT / "api").resolve()
 # Concurrency limit for async generation (prevent resource exhaustion)
 _MAX_CONCURRENT_GENERATIONS = int(os.getenv("LNF_MAX_CONCURRENT_GENERATIONS", "5"))
 _generation_semaphore = asyncio.Semaphore(_MAX_CONCURRENT_GENERATIONS)
+_SUPPORTED_OPENAI_MODELS = {
+    "gpt-5.2",
+    "gpt-5-mini",
+    "gpt-5-nano",
+    "gpt-5.1",
+}
+_UNSUPPORTED_ADVANCED_FIELDS = (
+    "memory_config",
+    "preset",
+    "graph_style",
+    "retriever_type",
+    "document_loader",
+)
 
 
 def _resolve_output_dir(path: str | os.PathLike[str] | None) -> Path:
@@ -84,6 +97,46 @@ def _resolve_artifact_path(path: str | os.PathLike[str]) -> Path:
     return artifact_path
 
 
+def _validate_advanced_options(request: "GenerationRequest") -> None:
+    """Reject unsupported advanced options and invalid model/provider combinations."""
+
+    unsupported_fields = [
+        field_name
+        for field_name in _UNSUPPORTED_ADVANCED_FIELDS
+        if getattr(request, field_name) not in (None, "")
+    ]
+    if unsupported_fields:
+        supported_fields = "model, temperature, max_tokens, custom_endpoint, agent_type"
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Unsupported advanced options: {', '.join(unsupported_fields)}. "
+                f"Currently supported options are: {supported_fields}."
+            ),
+        )
+
+    if request.custom_endpoint and request.model in (None, "", "custom"):
+        raise HTTPException(
+            status_code=400,
+            detail="custom_endpoint requires an explicit OpenAI-compatible model identifier.",
+        )
+
+    if request.model == "custom":
+        raise HTTPException(
+            status_code=400,
+            detail="Provide an explicit model identifier instead of the placeholder value 'custom'.",
+        )
+
+    if request.model and not request.custom_endpoint and request.model not in _SUPPORTED_OPENAI_MODELS:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Unsupported model for the built-in provider. Choose an OpenAI-compatible model "
+                "or set custom_endpoint with an explicit model identifier."
+            ),
+        )
+
+
 class GenerationRequest(BaseModel):
     prompt: str = Field(
         ...,
@@ -105,15 +158,15 @@ class GenerationRequest(BaseModel):
     # Advanced options
     model: Optional[str] = Field(
         default=None,
-        description="LLM model to use (e.g., gpt-4, gpt-3.5-turbo, claude-3-opus, etc.). Uses default if not specified.",
+        description="OpenAI-compatible model to use for generation. Uses the default OpenAI-compatible model if not specified.",
     )
     custom_endpoint: Optional[str] = Field(
         default=None,
-        description="Custom API endpoint URL for self-hosted or alternative LLM providers.",
+        description="Custom OpenAI-compatible API endpoint URL for self-hosted or proxy deployments.",
     )
     preset: Optional[str] = Field(
         default=None,
-        description="Task preset (code-generation, data-analysis, customer-support, etc.) for optimized settings.",
+        description="Reserved for future support; currently rejected when set.",
     )
     temperature: Optional[float] = Field(
         default=None,
@@ -139,19 +192,19 @@ class GenerationRequest(BaseModel):
     )
     memory_config: Optional[str] = Field(
         default=None,
-        description="Memory configuration for the agent (none, short, long, full).",
+        description="Reserved for future support; currently rejected when set.",
     )
     graph_style: Optional[str] = Field(
         default=None,
-        description="Graph execution style (sequential, parallel, conditional, cyclic).",
+        description="Reserved for future support; currently rejected when set.",
     )
     retriever_type: Optional[str] = Field(
         default=None,
-        description="Document retriever type for RAG (vector, keyword, hybrid, mmr).",
+        description="Reserved for future support; currently rejected when set.",
     )
     document_loader: Optional[str] = Field(
         default=None,
-        description="Document loader type (text, pdf, web, markdown, json, csv).",
+        description="Reserved for future support; currently rejected when set.",
     )
 
 
@@ -222,6 +275,8 @@ async def chrome_devtools_endpoint():
 async def generate_notebook(request: GenerationRequest) -> GenerationResponse:
     """Generate notebook artifacts via the generator pipeline."""
 
+    _validate_advanced_options(request)
+
     # Use the secure path resolution function
     output_path = _resolve_output_dir(request.output_dir)
 
@@ -277,6 +332,8 @@ async def start_async_generation(
     Raises:
         HTTPException 503: When concurrent generation limit is reached
     """
+    _validate_advanced_options(request)
+
     # Validate output directory
     output_path = _resolve_output_dir(request.output_dir)
 
