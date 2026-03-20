@@ -1,5 +1,8 @@
 """Configuration management for LangGraph Notebook Foundry."""
 
+from __future__ import annotations
+
+from contextlib import contextmanager
 from functools import lru_cache
 import os
 from pathlib import Path
@@ -102,6 +105,17 @@ class Settings(BaseSettings):
 
 
 _DEFAULT_ENV_FILE = object()
+_TEST_SETTINGS_ENV_KEYS = (
+    "OPENAI_API_KEY",
+    "ANTHROPIC_API_KEY",
+    "LANGSMITH_API_KEY",
+    "LANGSMITH_PROJECT",
+    "VECTOR_STORE_TYPE",
+    "VECTOR_STORE_PATH",
+    "DEFAULT_MODEL",
+    "MAX_REPAIR_ATTEMPTS",
+    "DEFAULT_BUDGET_TOKENS",
+)
 
 
 def _pytest_is_active() -> bool:
@@ -139,7 +153,27 @@ def _cached_settings(env_file: Optional[str]) -> Settings:
         init_kwargs["_env_file"] = env_file
         init_kwargs["_env_file_encoding"] = "utf-8"
 
-    return Settings(**init_kwargs)
+    with _suspend_project_env_for_pytest(env_file):
+        return Settings(**init_kwargs)
+
+
+@contextmanager
+def _suspend_project_env_for_pytest(env_file: Optional[str]):
+    """Temporarily remove project env vars during default pytest loads."""
+
+    if not (_pytest_is_active() and env_file is None):
+        yield
+        return
+
+    removed_values = {
+        key: os.environ.pop(key)
+        for key in _TEST_SETTINGS_ENV_KEYS
+        if key in os.environ
+    }
+    try:
+        yield
+    finally:
+        os.environ.update(removed_values)
 
 
 def get_settings(env_file: Union[str, Path, None, object] = _DEFAULT_ENV_FILE) -> Settings:
@@ -153,6 +187,7 @@ def get_settings(env_file: Union[str, Path, None, object] = _DEFAULT_ENV_FILE) -
         resolved_env_file = str(Path(env_file))
 
     return _cached_settings(resolved_env_file)
+
 
 def reset_settings_cache(
     env_file: Union[str, Path, None, object] = _DEFAULT_ENV_FILE,

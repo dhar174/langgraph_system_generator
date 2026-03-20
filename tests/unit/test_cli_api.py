@@ -41,6 +41,33 @@ async def test_generate_artifacts_stub(tmp_path: Path, monkeypatch: pytest.Monke
 
 
 @pytest.mark.asyncio
+async def test_generate_artifacts_default_formats_include_markdown(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    monkeypatch.setenv("LNF_OUTPUT_BASE", "test_generate_artifacts_default_formats")
+
+    import importlib
+    import langgraph_system_generator.constants as constants_module
+    import langgraph_system_generator.notebook.exporters as exporters_module
+    import langgraph_system_generator.cli as cli_module
+
+    importlib.reload(constants_module)
+    importlib.reload(exporters_module)
+    importlib.reload(cli_module)
+
+    output_dir = constants_module._BASE_OUTPUT / "default_formats"
+    artifacts: GenerationArtifacts = await cli_module.generate_artifacts(
+        "Test prompt",
+        output_dir=str(output_dir),
+        mode="stub",
+    )
+
+    assert "markdown_path" in artifacts["manifest"]
+    assert Path(artifacts["manifest"]["markdown_path"]).exists()
+
+
+@pytest.mark.asyncio
 async def test_api_generate_stub(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     # Set a test output base
     monkeypatch.setenv("LNF_OUTPUT_BASE", "test_api_stub")

@@ -393,7 +393,7 @@ async def generate_artifacts(
         
         # Determine which formats to generate
         if formats is None or not formats:
-            formats = ["ipynb", "html", "docx", "zip"]
+            formats = ["ipynb", "html", "markdown", "docx", "zip"]
         
         _report_progress("export_init", 70, f"Exporting to {len(formats)} format(s)...")
         exporter = NotebookExporter()
