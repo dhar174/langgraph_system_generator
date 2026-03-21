@@ -288,6 +288,25 @@ async def test_api_rejects_disallowed_output_dir(tmp_path: Path):
 
 
 @pytest.mark.asyncio
+async def test_api_rejects_invalid_custom_endpoint():
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(
+            "/generate",
+            json={
+                "prompt": "Invalid endpoint",
+                "mode": "stub",
+                "output_dir": "./output/api",
+                "model": "gpt-5-mini",
+                "custom_endpoint": "ftp://example.test/v1",
+            },
+        )
+
+    assert response.status_code == 400
+    assert "http or https URL" in response.json()["detail"]
+
+
+@pytest.mark.asyncio
 async def test_api_generate_async_endpoint(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, reload_modules
 ):

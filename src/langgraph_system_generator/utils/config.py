@@ -83,12 +83,43 @@ class GenerationConfig(BaseModel):
     def to_model_config(self, default_model: str) -> ModelConfig:
         """Resolve a per-request model configuration for live agents."""
 
-        return ModelConfig(
-            model=self.model or default_model,
-            temperature=0.0 if self.temperature is None else self.temperature,
-            api_base=self.api_base,
-            max_tokens=self.max_tokens,
-        )
+        model_kwargs: dict[str, object] = {
+            "model": self.model or default_model,
+        }
+        if self.temperature is not None:
+            model_kwargs["temperature"] = self.temperature
+        if self.api_base is not None:
+            model_kwargs["api_base"] = self.api_base
+        if self.max_tokens is not None:
+            model_kwargs["max_tokens"] = self.max_tokens
+        return ModelConfig(**model_kwargs)
+
+
+def resolve_model_config(
+    *,
+    model: str | None = None,
+    model_config: ModelConfig | None = None,
+    temperature: float = 0.0,
+) -> ModelConfig:
+    """Return the request-scoped model config or construct a default one."""
+
+    if model_config is not None:
+        return model_config
+    return ModelConfig(model=model or settings.default_model, temperature=temperature)
+
+
+def build_chat_openai_kwargs(config: ModelConfig) -> dict[str, object]:
+    """Translate a ModelConfig into ChatOpenAI constructor kwargs."""
+
+    llm_kwargs: dict[str, object] = {
+        "model": config.model,
+        "temperature": config.temperature,
+    }
+    if config.api_base:
+        llm_kwargs["base_url"] = config.api_base
+    if config.max_tokens is not None:
+        llm_kwargs["max_tokens"] = config.max_tokens
+    return llm_kwargs
 
 
 class Settings(BaseSettings):
