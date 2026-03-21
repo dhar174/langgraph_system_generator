@@ -505,4 +505,10 @@ async def test_api_generate_async_concurrency_limit(
 
         assert response2.status_code == 503
         gate.set()
-        await aio.sleep(0.05)
+
+        for _ in range(100):
+            if server_module._active_generation_count == 0:
+                break
+            await aio.sleep(0.01)
+
+    assert server_module._active_generation_count == 0

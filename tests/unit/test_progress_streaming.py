@@ -58,3 +58,41 @@ async def test_progress_streaming_resumes_after_last_event_id():
     assert resumed[1]["data"]["success"] is True
 
     progress_streaming.cleanup_job(job_id)
+
+
+@pytest.mark.asyncio
+async def test_progress_streaming_clamps_reconnect_cursor_to_retained_events(monkeypatch):
+    """Reconnects should resume from the oldest retained event after trimming."""
+
+    monkeypatch.setattr(progress_streaming, "_MAX_PROGRESS_EVENTS", 2)
+
+    job_id = progress_streaming.create_job()
+    progress_streaming.emit_node_progress(job_id, "start", 0, "Starting generation...")
+    progress_streaming.emit_node_progress(job_id, "compose", 50, "Composing notebook...")
+    progress_streaming.emit_complete(job_id, {"success": True})
+
+    resumed = await _collect_events(job_id, last_event_id="0")
+
+    assert [event["event"] for event in resumed] == ["progress", "complete"]
+    assert resumed[0]["data"]["message"] == "Composing notebook..."
+    assert resumed[1]["data"]["success"] is True
+
+    progress_streaming.cleanup_job(job_id)
+
+
+def test_emit_progress_retains_bounded_event_log(monkeypatch):
+    """The in-memory job log should cap retained events per job."""
+
+    monkeypatch.setattr(progress_streaming, "_MAX_PROGRESS_EVENTS", 2)
+
+    job_id = progress_streaming.create_job()
+    progress_streaming.emit_node_progress(job_id, "start", 0, "Starting generation...")
+    progress_streaming.emit_node_progress(job_id, "compose", 50, "Composing notebook...")
+    progress_streaming.emit_complete(job_id, {"success": True})
+
+    record = progress_streaming._active_jobs[job_id]
+
+    assert [event["id"] for event in record.events] == [1, 2]
+    assert [event["event"] for event in record.events] == ["progress", "complete"]
+
+    progress_streaming.cleanup_job(job_id)

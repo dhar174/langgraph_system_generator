@@ -6,6 +6,7 @@ import asyncio
 from dataclasses import dataclass, field
 import json
 import logging
+import os
 import time
 from typing import Any, AsyncGenerator, Dict
 from uuid import uuid4
@@ -20,9 +21,12 @@ class JobRecord:
     """In-memory state for a single async generation job."""
 
     created_at: float
-    condition: asyncio.Condition = field(default_factory=asyncio.Condition)
+    wake_event: asyncio.Event = field(default_factory=asyncio.Event)
     events: list[Dict[str, Any]] = field(default_factory=list)
     next_event_id: int = 0
+    update_version: int = 0
+    cleanup_scheduled: bool = False
+    completed_cleanup_scheduled: bool = False
     completed: bool = False
     completed_at: float | None = None
 
@@ -35,18 +39,18 @@ _JOB_TTL_SECONDS = 3600  # 1 hour
 # Completed job retention - keep completed jobs for clients that connect late
 _COMPLETED_JOB_TTL_SECONDS = 300  # 5 minutes
 
+# Bound retained events to avoid unbounded in-memory growth per job.
+_MAX_PROGRESS_EVENTS = max(1, int(os.getenv("LNF_MAX_PROGRESS_EVENTS", "250")))
+
 
 def create_job() -> str:
     """Create a new job and return its ID."""
 
     job_id = str(uuid4())
-    _active_jobs[job_id] = JobRecord(created_at=time.time())
+    record = JobRecord(created_at=time.time())
+    _active_jobs[job_id] = record
     logger.info("Created job %s", job_id)
-
-    try:
-        asyncio.create_task(_schedule_job_cleanup(job_id))
-    except RuntimeError:
-        logger.debug("Job %s created outside event loop, cleanup will be scheduled later", job_id)
+    _ensure_job_cleanup(job_id, record)
 
     return job_id
 
@@ -84,11 +88,65 @@ def _parse_last_event_id(last_event_id: str | None) -> int:
         return 0
 
 
-async def _notify_listeners(record: JobRecord) -> None:
-    """Wake up streaming subscribers waiting on a job record."""
+def _ensure_job_cleanup(job_id: str, record: JobRecord) -> None:
+    """Schedule the TTL cleanup task when an event loop is available."""
 
-    async with record.condition:
-        record.condition.notify_all()
+    if record.cleanup_scheduled:
+        return
+
+    try:
+        loop = asyncio.get_running_loop()
+        loop.create_task(_schedule_job_cleanup(job_id))
+        record.cleanup_scheduled = True
+    except RuntimeError:
+        logger.debug(
+            "Job %s has no running event loop; automatic TTL cleanup will be retried "
+            "when progress is emitted from an async context",
+            job_id,
+        )
+
+
+def _ensure_completed_cleanup(job_id: str, record: JobRecord) -> None:
+    """Schedule completed-job cleanup when an event loop is available."""
+
+    if record.completed_cleanup_scheduled:
+        return
+
+    try:
+        loop = asyncio.get_running_loop()
+        loop.create_task(_schedule_completed_job_cleanup(job_id))
+        record.completed_cleanup_scheduled = True
+    except RuntimeError:
+        logger.debug(
+            "Job %s completed without a running event loop; completed-job cleanup "
+            "could not be scheduled automatically",
+            job_id,
+        )
+
+
+def _trim_retained_events(record: JobRecord) -> None:
+    """Drop the oldest retained events once the in-memory cap is exceeded."""
+
+    overflow = len(record.events) - _MAX_PROGRESS_EVENTS
+    if overflow > 0:
+        del record.events[:overflow]
+
+
+def _clamp_next_event_id(record: JobRecord, next_event_id: int) -> int:
+    """Clamp a replay cursor to the retained event window for a job."""
+
+    if not record.events:
+        return max(next_event_id, 0)
+
+    earliest_event_id = record.events[0]["id"]
+    latest_next_event_id = record.events[-1]["id"] + 1
+    return min(max(next_event_id, earliest_event_id), latest_next_event_id)
+
+
+def _has_pending_events(record: JobRecord, next_event_id: int) -> bool:
+    """Return True when the requested cursor can deliver retained events."""
+
+    return bool(record.events) and next_event_id <= record.events[-1]["id"]
 
 
 async def progress_generator(
@@ -107,13 +165,16 @@ async def progress_generator(
         return
 
     logger.info("Starting SSE stream for job %s", job_id)
-    next_index = _parse_last_event_id(last_event_id)
+    next_event_id = _parse_last_event_id(last_event_id)
 
     try:
         while True:
-            while next_index < len(record.events):
-                event = record.events[next_index]
-                next_index += 1
+            next_event_id = _clamp_next_event_id(record, next_event_id)
+
+            while _has_pending_events(record, next_event_id):
+                first_event_id = record.events[0]["id"]
+                event = record.events[next_event_id - first_event_id]
+                next_event_id = event["id"] + 1
                 yield {
                     "id": str(event["id"]),
                     "event": event["event"],
@@ -125,8 +186,16 @@ async def progress_generator(
                 break
 
             try:
-                async with record.condition:
-                    await asyncio.wait_for(record.condition.wait(), timeout=300.0)
+                current_version = record.update_version
+                record.wake_event.clear()
+                next_event_id = _clamp_next_event_id(record, next_event_id)
+                if (
+                    _has_pending_events(record, next_event_id)
+                    or record.completed
+                    or record.update_version != current_version
+                ):
+                    continue
+                await asyncio.wait_for(record.wake_event.wait(), timeout=300.0)
             except asyncio.TimeoutError:
                 logger.warning("Job %s timed out waiting for events", job_id)
                 yield {
@@ -159,22 +228,19 @@ def emit_progress(
         logger.warning("Cannot emit to job %s: not found", job_id)
         return
 
+    _ensure_job_cleanup(job_id, record)
+
     event_id = record.next_event_id
     record.next_event_id += 1
     record.events.append({"id": event_id, "event": event_type, "data": data})
+    _trim_retained_events(record)
+    record.update_version += 1
+    record.wake_event.set()
 
     if event_type in ("complete", "error"):
         record.completed = True
         record.completed_at = time.time()
-        try:
-            asyncio.create_task(_schedule_completed_job_cleanup(job_id))
-        except RuntimeError:
-            logger.debug("Cannot schedule completed cleanup for %s - no event loop", job_id)
-
-    try:
-        asyncio.create_task(_notify_listeners(record))
-    except RuntimeError:
-        logger.debug("Cannot notify listeners for %s - no event loop", job_id)
+        _ensure_completed_cleanup(job_id, record)
 
     if log:
         logger.debug(
