@@ -105,17 +105,7 @@ class Settings(BaseSettings):
 
 
 _DEFAULT_ENV_FILE = object()
-_TEST_SETTINGS_ENV_KEYS = (
-    "OPENAI_API_KEY",
-    "ANTHROPIC_API_KEY",
-    "LANGSMITH_API_KEY",
-    "LANGSMITH_PROJECT",
-    "VECTOR_STORE_TYPE",
-    "VECTOR_STORE_PATH",
-    "DEFAULT_MODEL",
-    "MAX_REPAIR_ATTEMPTS",
-    "DEFAULT_BUDGET_TOKENS",
-)
+_TEST_SETTINGS_ENV_KEYS = tuple(field_name.upper() for field_name in Settings.model_fields)
 
 
 def _pytest_is_active() -> bool:
@@ -127,14 +117,14 @@ def _pytest_is_active() -> bool:
 def _resolve_default_env_file() -> Optional[str]:
     """Resolve the default dotenv path for application usage."""
 
+    if _pytest_is_active():
+        return None
+
     configured_env_file = os.environ.get("LNF_ENV_FILE")
     if configured_env_file is not None:
         return configured_env_file or None
 
     if os.environ.get("LNF_DISABLE_DOTENV", "").lower() in {"1", "true", "yes", "on"}:
-        return None
-
-    if _pytest_is_active():
         return None
 
     candidate = Path(".env")

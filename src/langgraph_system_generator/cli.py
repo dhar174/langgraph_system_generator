@@ -26,6 +26,7 @@ BASE_DIR = Path(__file__).resolve().parents[2]
 DEFAULT_CACHE_PATH = (BASE_DIR / "data" / "cached_docs").resolve()
 
 GenerationMode = Literal["stub", "live"]
+DEFAULT_EXPORT_FORMATS = ("ipynb", "html", "markdown", "docx", "zip")
 
 
 class GenerationArtifacts(TypedDict):
@@ -393,7 +394,7 @@ async def generate_artifacts(
         
         # Determine which formats to generate
         if formats is None or not formats:
-            formats = ["ipynb", "html", "markdown", "docx", "zip"]
+            formats = list(DEFAULT_EXPORT_FORMATS)
         
         _report_progress("export_init", 70, f"Exporting to {len(formats)} format(s)...")
         exporter = NotebookExporter()
