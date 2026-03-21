@@ -18,12 +18,12 @@ Prompt -> Full Agentic System. Generates entire multiagent systems based on user
    pip install -r requirements.txt
    ```
 
-If you prefer extras-based installs instead of `requirements.txt`, use:
+   If you prefer extras-based installs instead of `requirements.txt`, use:
 
-- `pip install -e .` for the core Python package/config/types only
-- `pip install -e ".[api]"` for the FastAPI/web server
-- `pip install -e ".[full]"` for notebook generation, export, and live-mode dependencies
-- `pip install -e ".[full,dev]"` for contributor/test tooling
+   - `pip install -e .` for the core Python package/config/types only
+   - `pip install -e ".[api]"` for the FastAPI/web server
+   - `pip install -e ".[full]"` for notebook generation, export, and live-mode dependencies
+   - `pip install -e ".[full,dev]"` for contributor/test tooling
 
 2. Copy `.env.example` to `.env` and add your API keys.
 
