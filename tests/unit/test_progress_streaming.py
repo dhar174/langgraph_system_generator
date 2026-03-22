@@ -27,6 +27,22 @@ async def _collect_events(job_id: str, last_event_id: str | None = None):
     return events
 
 
+async def _collect_n_events(job_id: str, count: int):
+    events = []
+    async for event in progress_streaming.progress_generator(job_id):
+        payload = json.loads(event["data"])
+        events.append(
+            {
+                "id": event.get("id"),
+                "event": event["event"],
+                "data": payload,
+            }
+        )
+        if len(events) == count:
+            break
+    return events
+
+
 @pytest.mark.asyncio
 async def test_multiple_subscribers_receive_same_event_log():
     """Each subscriber should get the full event stream independently."""
@@ -127,5 +143,41 @@ async def test_progress_streaming_caps_retained_event_log(monkeypatch):
     assert retained[0]["data"]["message"] == "Step 2"
     assert retained[1]["data"]["message"] == "Step 3"
     assert retained[2]["data"]["success"] is True
+
+    progress_streaming.cleanup_job(job_id)
+
+
+@pytest.mark.asyncio
+async def test_progress_streaming_continues_after_retention_rollover(
+    monkeypatch,
+):
+    """A live subscriber should keep later events flowing after rollover."""
+
+    monkeypatch.setattr(progress_streaming, "_MAX_RECORDED_EVENTS", 2)
+    job_id = progress_streaming.create_job()
+
+    collector = asyncio.create_task(_collect_n_events(job_id, 2))
+    await asyncio.sleep(0)
+
+    progress_streaming.emit_node_progress(job_id, "step-1", 10, "Step 1")
+    progress_streaming.emit_node_progress(job_id, "step-2", 20, "Step 2")
+
+    first_batch = await collector
+
+    progress_streaming.emit_node_progress(job_id, "step-3", 30, "Step 3")
+    progress_streaming.emit_complete(job_id, {"success": True})
+
+    retained = await _collect_events(
+        job_id,
+        last_event_id=first_batch[-1]["id"],
+    )
+
+    assert [event["data"]["message"] for event in first_batch] == [
+        "Step 1",
+        "Step 2",
+    ]
+    assert [event["event"] for event in retained] == ["progress", "complete"]
+    assert retained[0]["data"]["message"] == "Step 3"
+    assert retained[-1]["data"]["success"] is True
 
     progress_streaming.cleanup_job(job_id)

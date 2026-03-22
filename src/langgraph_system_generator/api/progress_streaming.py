@@ -126,10 +126,46 @@ def _find_next_event_index(
         return len(record.events)
 
 
+def _resolve_initial_replay_state(
+    record: JobRecord,
+    last_event_id: str | None,
+) -> tuple[int, int | None]:
+    """Resolve the initial replay cursor and last-sent event id."""
+
+    parsed_last_event_id = _parse_last_event_id(last_event_id)
+    if parsed_last_event_id is None:
+        return 0, None
+
+    with record.state_lock:
+        if not record.events:
+            return 0, _MIN_EVENT_ID
+
+        latest_retained_event_id = record.events[-1]["id"]
+        if parsed_last_event_id > latest_retained_event_id:
+            return len(record.events), latest_retained_event_id
+
+    return _find_next_event_index(record, last_event_id), parsed_last_event_id
+
+
 def _clamp_event_index(next_index: int, event_count: int) -> int:
     """Clamp a replay cursor to the currently available event range."""
 
     return min(max(next_index, 0), event_count)
+
+
+def _find_unread_events(
+    events_snapshot: list[Dict[str, Any]],
+    last_sent_event_id: int | None,
+) -> list[Dict[str, Any]]:
+    """Return the unread retained events after the last-sent event id."""
+
+    if last_sent_event_id is None:
+        return events_snapshot
+
+    for index, event in enumerate(events_snapshot):
+        if event["id"] > last_sent_event_id:
+            return events_snapshot[index:]
+    return []
 
 
 async def progress_generator(
@@ -150,26 +186,32 @@ async def progress_generator(
         return
 
     logger.info("Starting SSE stream for job %s", job_id)
-    next_index = _find_next_event_index(record, last_event_id)
+    next_index, last_sent_event_id = _resolve_initial_replay_state(
+        record,
+        last_event_id,
+    )
 
     try:
         while True:
-            completed = False
             events_to_yield: list[Dict[str, Any]] = []
             wait_signal: asyncio.Event | None = None
 
             with record.state_lock:
                 events_snapshot = list(record.events)
-                next_index = _clamp_event_index(
-                    next_index,
-                    len(events_snapshot),
-                )
-                if next_index < len(events_snapshot):
-                    events_to_yield = events_snapshot[next_index:]
-                    next_index = len(events_snapshot)
+                if last_sent_event_id is None:
+                    next_index = _clamp_event_index(
+                        next_index,
+                        len(events_snapshot),
+                    )
+                    if next_index < len(events_snapshot):
+                        events_to_yield = events_snapshot[next_index:]
+                else:
+                    events_to_yield = _find_unread_events(
+                        events_snapshot,
+                        last_sent_event_id,
+                    )
 
-                completed = record.completed
-                if not events_to_yield and not completed:
+                if not events_to_yield and not record.completed:
                     wait_signal = record.update_signal
                     if wait_signal.is_set():
                         # Create a fresh Event while holding the shared lock
@@ -179,6 +221,7 @@ async def progress_generator(
                         record.update_signal = wait_signal
 
             for event in events_to_yield:
+                last_sent_event_id = event["id"]
                 yield {
                     "id": str(event["id"]),
                     "event": event["event"],
