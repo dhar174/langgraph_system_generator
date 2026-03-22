@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from collections import deque
 from dataclasses import dataclass, field
 import json
 import logging
@@ -28,7 +29,9 @@ class JobRecord:
     # The guarded sections are tiny and only protect in-process bookkeeping.
     state_lock: threading.Lock = field(default_factory=threading.Lock)
     update_signal: asyncio.Event = field(default_factory=asyncio.Event)
-    events: list[Dict[str, Any]] = field(default_factory=list)
+    events: deque[Dict[str, Any]] = field(
+        default_factory=lambda: deque(maxlen=_MAX_RECORDED_EVENTS)
+    )
     next_event_id: int = 0
     completed: bool = False
     completed_at: float | None = None
@@ -43,6 +46,9 @@ _JOB_TTL_SECONDS = 3600  # 1 hour
 # Completed job retention - keep completed jobs for clients that connect late
 _COMPLETED_JOB_TTL_SECONDS = 300  # 5 minutes
 _MAX_RECORDED_EVENTS = 1000
+# -1 means "no event has been acknowledged yet".
+# Replay should begin from the first retained event.
+_MIN_EVENT_ID = -1
 
 
 def create_job() -> str:
@@ -94,7 +100,7 @@ def _parse_last_event_id(last_event_id: str | None) -> int | None:
         return None
 
     try:
-        return max(int(last_event_id), -1)
+        return max(int(last_event_id), _MIN_EVENT_ID)
     except ValueError:
         logger.warning(
             "Ignoring invalid Last-Event-ID value: %s",
@@ -153,18 +159,22 @@ async def progress_generator(
             wait_signal: asyncio.Event | None = None
 
             with record.state_lock:
-                next_index = _clamp_event_index(next_index, len(record.events))
-                if next_index < len(record.events):
-                    events_to_yield = list(record.events[next_index:])
-                    next_index = len(record.events)
+                events_snapshot = list(record.events)
+                next_index = _clamp_event_index(
+                    next_index,
+                    len(events_snapshot),
+                )
+                if next_index < len(events_snapshot):
+                    events_to_yield = events_snapshot[next_index:]
+                    next_index = len(events_snapshot)
 
                 completed = record.completed
                 if not events_to_yield and not completed:
                     wait_signal = record.update_signal
                     if wait_signal.is_set():
-                        # Replace the consumed sticky signal while holding
-                        # the shared lock so future producer wakeups are not
-                        # lost across subscribers.
+                        # Create a fresh Event while holding the shared lock
+                        # so all subscribers transition to the same new wait
+                        # point and future producer wakeups are not lost.
                         wait_signal = asyncio.Event()
                         record.update_signal = wait_signal
 
@@ -227,8 +237,6 @@ def emit_progress(
         record.events.append(
             {"id": event_id, "event": event_type, "data": data}
         )
-        if len(record.events) > _MAX_RECORDED_EVENTS:
-            del record.events[: len(record.events) - _MAX_RECORDED_EVENTS]
 
         if event_type in ("complete", "error"):
             record.completed = True
