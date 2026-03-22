@@ -83,12 +83,16 @@ class GenerationConfig(BaseModel):
     def to_model_config(self, default_model: str) -> ModelConfig:
         """Resolve a per-request model configuration for live agents."""
 
-        return ModelConfig(
-            model=self.model or default_model,
-            temperature=0.0 if self.temperature is None else self.temperature,
-            api_base=self.api_base,
-            max_tokens=self.max_tokens,
-        )
+        config_kwargs = {
+            "model": self.model or default_model,
+            "api_base": self.api_base,
+            "max_tokens": self.max_tokens,
+        }
+        if self.temperature is not None:
+            config_kwargs["temperature"] = self.temperature
+
+        return ModelConfig(**config_kwargs)
+
 
 
 class Settings(BaseSettings):
