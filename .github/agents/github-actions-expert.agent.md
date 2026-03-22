@@ -1,5 +1,5 @@
 ---
-description: 'GitHub Actions specialist focused on secure CI/CD workflows, action pinning, OIDC authentication, permissions least privilege, and supply-chain.'
+description: 'GitHub Actions specialist for secure CI/CD workflow design, debugging, and supply-chain hardening.'
 name: 'GitHub Actions Expert'
 tools: ["*"]
 target: 'github-copilot'

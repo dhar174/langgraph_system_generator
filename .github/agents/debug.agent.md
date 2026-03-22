@@ -1,6 +1,6 @@
 ---
-description: 'Debug your application to find and fix a bug. Use it for focused, repository-specific help.'
-name: 'debug'
+description: 'Focused debugging specialist for reproducing issues, isolating root causes, and implementing safe fixes.'
+name: 'Debug Mode Instructions'
 tools: ["*"]
 target: 'github-copilot'
 infer: true

@@ -19,15 +19,23 @@ Comprehensive documentation for the LangGraph System Generator project.
 - Start with [Getting Started](Getting-Started.md) for installation and first steps
 - Review [Home](Home.md) to understand what LangGraph System Generator can do
 - Try the examples in the `examples/` directory
+- Keep the latest framework docs handy:
+  - [LangChain docs](https://docs.langchain.com)
+  - [LangChain Python API reference](https://reference.langchain.com/python)
+  - [LangGraph overview](https://docs.langchain.com/oss/python/langgraph/overview)
 
 ### For Developers
 - Read [Architecture Deep Dive](Architecture-Deep-Dive.md) to understand internals
 - Check [Pattern Library Guide](Pattern-Library-Guide.md) for pattern development
 - Review [CLI & API Reference](CLI-and-API-Reference.md) for integration options
+- Use the README's **Developing Locally** section for the current editable-install
+  and validation flow
 
 ### For Cloud Users
 - See [Colab Usage](Colab-Usage.md) for running notebooks in Google Colab
 - Check [Getting Started](Getting-Started.md) for Docker deployment
+- Use stub-mode notebooks when you want Colab execution without live provider
+  calls
 
 ## Documentation Organization
 

@@ -31,6 +31,12 @@ LNF includes precached LangGraph and LangChain documentation (~300KB, 19+ pages)
 - Include proper imports and setup
 - Follow framework best practices
 
+Official references:
+
+- **LangChain docs**: <https://docs.langchain.com>
+- **LangChain Python API reference**: <https://reference.langchain.com/python>
+- **LangGraph overview**: <https://docs.langchain.com/oss/python/langgraph/overview>
+
 #### 📦 Multi-Format Export
 Every generation produces multiple artifact formats for different use cases:
 - **Jupyter Notebooks** (`.ipynb`): Interactive, runnable notebooks for Jupyter/Colab
@@ -74,7 +80,7 @@ LangGraph System Generator excels at:
 
 LangGraph System Generator is in active development (Alpha). It includes:
 
-- ✅ Complete generation pipeline (Requirements → Architecture → Design → QA → Export)
+- ✅ Complete generation pipeline (Prompt → Requirements → RAG → Architecture → Plan → Generate → QA/Repair → Export)
 - ✅ Three core patterns with comprehensive examples
 - ✅ Web UI with advanced features
 - ✅ CLI tool with stub and live modes

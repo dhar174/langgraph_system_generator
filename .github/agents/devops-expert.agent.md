@@ -1,5 +1,5 @@
 ---
-description: 'DevOps specialist following the infinity loop principle (Plan → Code → Build → Test → Release → Deploy → Operate → Monitor) with focus on.'
+description: 'DevOps specialist for CI/CD, deployment, operations, and automation across the full software delivery lifecycle.'
 name: 'DevOps Expert'
 tools: ["*"]
 target: 'github-copilot'

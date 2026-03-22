@@ -73,7 +73,7 @@ setup(
     python_requires=">=3.10",
     author="LangGraph Contributors",
     author_email="support@langgraph.dev",
-    url="https://github.com/langchain-ai/langgraph-system-generator",
+    url="https://github.com/dhar174/langgraph_system_generator",
     license="MIT",
     classifiers=[
         "License :: OSI Approved :: MIT License",
