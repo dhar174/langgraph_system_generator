@@ -105,17 +105,7 @@ class Settings(BaseSettings):
 
 
 _DEFAULT_ENV_FILE = object()
-_TEST_SETTINGS_ENV_KEYS = (
-    "OPENAI_API_KEY",
-    "ANTHROPIC_API_KEY",
-    "LANGSMITH_API_KEY",
-    "LANGSMITH_PROJECT",
-    "VECTOR_STORE_TYPE",
-    "VECTOR_STORE_PATH",
-    "DEFAULT_MODEL",
-    "MAX_REPAIR_ATTEMPTS",
-    "DEFAULT_BUDGET_TOKENS",
-)
+_TEST_SETTINGS_ENV_KEYS = tuple(key.upper() for key in Settings.model_fields)
 
 
 def _pytest_is_active() -> bool:
@@ -180,7 +170,7 @@ def get_settings(env_file: Union[str, Path, None, object] = _DEFAULT_ENV_FILE) -
     """Return a cached settings instance."""
 
     if env_file is _DEFAULT_ENV_FILE:
-        resolved_env_file = _resolve_default_env_file()
+        resolved_env_file = None if _pytest_is_active() else _resolve_default_env_file()
     elif env_file is None:
         resolved_env_file = None
     else:

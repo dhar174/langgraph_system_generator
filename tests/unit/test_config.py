@@ -98,6 +98,19 @@ def test_settings_defaults_ignore_project_env_under_pytest(tmp_path, monkeypatch
     assert loaded.default_model == "gpt-5-mini"
 
 
+def test_settings_defaults_ignore_lnf_env_file_under_pytest(tmp_path, monkeypatch):
+    env_path = tmp_path / "custom.env"
+    env_path.write_text("OPENAI_API_KEY=from-custom-env\nDEFAULT_MODEL=from-custom-env\n", encoding="utf-8")
+
+    monkeypatch.setenv("LNF_ENV_FILE", str(env_path))
+
+    reset_settings_cache()
+    loaded = get_settings()
+
+    assert loaded.openai_api_key is None
+    assert loaded.default_model == "gpt-5-mini"
+
+
 def test_settings_cached_instance_is_reused(monkeypatch):
     for key in [
         "OPENAI_API_KEY",

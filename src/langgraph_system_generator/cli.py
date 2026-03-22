@@ -24,6 +24,7 @@ from langgraph_system_generator.utils.config import settings
 
 BASE_DIR = Path(__file__).resolve().parents[2]
 DEFAULT_CACHE_PATH = (BASE_DIR / "data" / "cached_docs").resolve()
+DEFAULT_EXPORT_FORMATS = ["ipynb", "html", "markdown", "docx", "zip"]
 
 GenerationMode = Literal["stub", "live"]
 
@@ -393,7 +394,7 @@ async def generate_artifacts(
         
         # Determine which formats to generate
         if formats is None or not formats:
-            formats = ["ipynb", "html", "markdown", "docx", "zip"]
+            formats = list(DEFAULT_EXPORT_FORMATS)
         
         _report_progress("export_init", 70, f"Exporting to {len(formats)} format(s)...")
         exporter = NotebookExporter()

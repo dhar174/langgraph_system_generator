@@ -13,20 +13,38 @@ from langgraph_system_generator.api.server import app
 from langgraph_system_generator.cli import GenerationArtifacts, generate_artifacts
 
 
+@pytest.fixture
+def reload_modules(monkeypatch: pytest.MonkeyPatch):
+    def _reload(*, output_base: str | None = None, include_server: bool = False):
+        if output_base is not None:
+            monkeypatch.setenv("LNF_OUTPUT_BASE", output_base)
+
+        import importlib
+        import langgraph_system_generator.constants as constants_module
+        import langgraph_system_generator.notebook.exporters as exporters_module
+        import langgraph_system_generator.cli as cli_module
+
+        importlib.reload(constants_module)
+        importlib.reload(exporters_module)
+        importlib.reload(cli_module)
+
+        if not include_server:
+            return constants_module, cli_module
+
+        import langgraph_system_generator.api.server as server_module
+
+        importlib.reload(server_module)
+        return constants_module, cli_module, server_module
+
+    return _reload
+
+
 @pytest.mark.asyncio
-async def test_generate_artifacts_stub(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
-    # Set a test output base
-    monkeypatch.setenv("LNF_OUTPUT_BASE", "test_generate_artifacts_stub")
-
-    # Force module reload to pick up new env var
-    import importlib
-    import langgraph_system_generator.constants as constants_module
-    import langgraph_system_generator.notebook.exporters as exporters_module
-    import langgraph_system_generator.cli as cli_module
-
-    importlib.reload(constants_module)
-    importlib.reload(exporters_module)
-    importlib.reload(cli_module)
+async def test_generate_artifacts_stub(
+    tmp_path: Path,
+    reload_modules,
+):
+    constants_module, cli_module = reload_modules(output_base="test_generate_artifacts_stub")
 
     # Use path within OUTPUT_BASE
     output_dir = constants_module._BASE_OUTPUT / "test_stub"
@@ -45,19 +63,10 @@ async def test_generate_artifacts_default_formats_include_markdown(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ):
-    monkeypatch.setenv("LNF_OUTPUT_BASE", "test_generate_artifacts_default_formats")
+    monkeypatch.setenv("BASE_OUTPUT_DIR", str(tmp_path))
 
-    import importlib
-    import langgraph_system_generator.constants as constants_module
-    import langgraph_system_generator.notebook.exporters as exporters_module
-    import langgraph_system_generator.cli as cli_module
-
-    importlib.reload(constants_module)
-    importlib.reload(exporters_module)
-    importlib.reload(cli_module)
-
-    output_dir = constants_module._BASE_OUTPUT / "default_formats"
-    artifacts: GenerationArtifacts = await cli_module.generate_artifacts(
+    output_dir = tmp_path / "default_formats"
+    artifacts: GenerationArtifacts = await generate_artifacts(
         "Test prompt",
         output_dir=str(output_dir),
         mode="stub",
@@ -68,19 +77,14 @@ async def test_generate_artifacts_default_formats_include_markdown(
 
 
 @pytest.mark.asyncio
-async def test_api_generate_stub(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
-    # Set a test output base
-    monkeypatch.setenv("LNF_OUTPUT_BASE", "test_api_stub")
-
-    # Force module reload to pick up new env var
-    import importlib
-    import langgraph_system_generator.constants as constants_module
-    import langgraph_system_generator.notebook.exporters as exporters_module
-    import langgraph_system_generator.api.server as server_module
-
-    importlib.reload(constants_module)
-    importlib.reload(exporters_module)
-    importlib.reload(server_module)
+async def test_api_generate_stub(
+    tmp_path: Path,
+    reload_modules,
+):
+    constants_module, _, server_module = reload_modules(
+        output_base="test_api_stub",
+        include_server=True,
+    )
 
     transport = httpx.ASGITransport(app=server_module.app)
     output_dir = constants_module._BASE_OUTPUT / tmp_path.name
@@ -108,21 +112,14 @@ async def test_api_generate_stub(tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 
 @pytest.mark.asyncio
 async def test_api_generate_with_formats(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path,
+    reload_modules,
 ):
     """Test API with format selection."""
-    # Set a test output base
-    monkeypatch.setenv("LNF_OUTPUT_BASE", "test_api_formats")
-
-    # Force module reload to pick up new env var
-    import importlib
-    import langgraph_system_generator.constants as constants_module
-    import langgraph_system_generator.notebook.exporters as exporters_module
-    import langgraph_system_generator.api.server as server_module
-
-    importlib.reload(constants_module)
-    importlib.reload(exporters_module)
-    importlib.reload(server_module)
+    constants_module, _, server_module = reload_modules(
+        output_base="test_api_formats",
+        include_server=True,
+    )
 
     transport = httpx.ASGITransport(app=server_module.app)
     output_dir = constants_module._BASE_OUTPUT / tmp_path.name
@@ -153,21 +150,14 @@ async def test_api_generate_with_formats(
 
 @pytest.mark.asyncio
 async def test_api_download_artifact_endpoint(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path,
+    reload_modules,
 ):
     """Test downloading a generated artifact through the API."""
-    monkeypatch.setenv("LNF_OUTPUT_BASE", "test_api_artifact_download")
-
-    import importlib
-    import langgraph_system_generator.constants as constants_module
-    import langgraph_system_generator.notebook.exporters as exporters_module
-    import langgraph_system_generator.cli as cli_module
-    import langgraph_system_generator.api.server as server_module
-
-    importlib.reload(constants_module)
-    importlib.reload(exporters_module)
-    importlib.reload(cli_module)
-    importlib.reload(server_module)
+    constants_module, cli_module, server_module = reload_modules(
+        output_base="test_api_artifact_download",
+        include_server=True,
+    )
 
     artifacts = await cli_module.generate_artifacts(
         "Artifact download prompt",
