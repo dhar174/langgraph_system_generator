@@ -21,6 +21,11 @@ class JobRecord:
     """In-memory state for a single async generation job."""
 
     created_at: float
+    # A threading lock is used here because emit_progress() must remain
+    # callable from synchronous code paths, while async stream readers need
+    # to inspect the same in-memory state without awaiting an async lock in
+    # the producer path.
+    # The guarded sections are tiny and only protect in-process bookkeeping.
     state_lock: threading.Lock = field(default_factory=threading.Lock)
     update_signal: asyncio.Event = field(default_factory=asyncio.Event)
     events: list[Dict[str, Any]] = field(default_factory=list)
@@ -115,6 +120,12 @@ def _find_next_event_index(
         return len(record.events)
 
 
+def _clamp_event_index(next_index: int, event_count: int) -> int:
+    """Clamp a replay cursor to the currently available event range."""
+
+    return min(max(next_index, 0), event_count)
+
+
 async def progress_generator(
     job_id: str,
     last_event_id: str | None = None,
@@ -142,10 +153,7 @@ async def progress_generator(
             wait_signal: asyncio.Event | None = None
 
             with record.state_lock:
-                next_index = min(
-                    max(next_index, 0),
-                    len(record.events),
-                )
+                next_index = _clamp_event_index(next_index, len(record.events))
                 if next_index < len(record.events):
                     events_to_yield = list(record.events[next_index:])
                     next_index = len(record.events)
@@ -154,6 +162,9 @@ async def progress_generator(
                 if not events_to_yield and not completed:
                     wait_signal = record.update_signal
                     if wait_signal.is_set():
+                        # Replace the consumed sticky signal while holding
+                        # the shared lock so future producer wakeups are not
+                        # lost across subscribers.
                         wait_signal = asyncio.Event()
                         record.update_signal = wait_signal
 

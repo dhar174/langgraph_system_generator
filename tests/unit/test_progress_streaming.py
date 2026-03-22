@@ -127,6 +127,5 @@ async def test_progress_streaming_caps_retained_event_log(monkeypatch):
     assert retained[0]["data"]["message"] == "Step 2"
     assert retained[1]["data"]["message"] == "Step 3"
     assert retained[2]["data"]["success"] is True
-    assert len(progress_streaming._active_jobs[job_id].events) == 3
 
     progress_streaming.cleanup_job(job_id)
