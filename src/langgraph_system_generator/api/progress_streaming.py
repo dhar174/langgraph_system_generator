@@ -6,6 +6,7 @@ import asyncio
 from dataclasses import dataclass, field
 import json
 import logging
+import threading
 import time
 from typing import Any, AsyncGenerator, Dict
 from uuid import uuid4
@@ -20,7 +21,8 @@ class JobRecord:
     """In-memory state for a single async generation job."""
 
     created_at: float
-    condition: asyncio.Condition = field(default_factory=asyncio.Condition)
+    state_lock: threading.Lock = field(default_factory=threading.Lock)
+    update_signal: asyncio.Event = field(default_factory=asyncio.Event)
     events: list[Dict[str, Any]] = field(default_factory=list)
     next_event_id: int = 0
     completed: bool = False
@@ -29,11 +31,13 @@ class JobRecord:
 
 _active_jobs: Dict[str, JobRecord] = {}
 
-# Job cleanup TTL - jobs are cleaned up after this time regardless of completion
+# Job cleanup TTL - jobs are cleaned up after this time regardless of
+# completion.
 _JOB_TTL_SECONDS = 3600  # 1 hour
 
 # Completed job retention - keep completed jobs for clients that connect late
 _COMPLETED_JOB_TTL_SECONDS = 300  # 5 minutes
+_MAX_RECORDED_EVENTS = 1000
 
 
 def create_job() -> str:
@@ -46,7 +50,11 @@ def create_job() -> str:
     try:
         asyncio.create_task(_schedule_job_cleanup(job_id))
     except RuntimeError:
-        logger.debug("Job %s created outside event loop, cleanup will be scheduled later", job_id)
+        logger.warning(
+            "Job %s created outside event loop; automatic TTL cleanup is "
+            "not scheduled for this job",
+            job_id,
+        )
 
     return job_id
 
@@ -67,28 +75,44 @@ async def _schedule_completed_job_cleanup(job_id: str) -> None:
 
     record = _active_jobs.get(job_id)
     if record and record.completed:
-        logger.info("Cleaning up completed job %s after retention period", job_id)
+        logger.info(
+            "Cleaning up completed job %s after retention period",
+            job_id,
+        )
         cleanup_job(job_id)
 
 
-def _parse_last_event_id(last_event_id: str | None) -> int:
-    """Convert the SSE Last-Event-ID header to the next event index."""
+def _parse_last_event_id(last_event_id: str | None) -> int | None:
+    """Convert Last-Event-ID to the last acknowledged event ID."""
 
     if not last_event_id:
-        return 0
+        return None
 
     try:
-        return max(int(last_event_id) + 1, 0)
+        return max(int(last_event_id), -1)
     except ValueError:
-        logger.warning("Ignoring invalid Last-Event-ID value: %s", last_event_id)
+        logger.warning(
+            "Ignoring invalid Last-Event-ID value: %s",
+            last_event_id,
+        )
+        return None
+
+
+def _find_next_event_index(
+    record: JobRecord,
+    last_event_id: str | None,
+) -> int:
+    """Resolve the next unread event index for a reconnecting subscriber."""
+
+    last_seen_event_id = _parse_last_event_id(last_event_id)
+    if last_seen_event_id is None:
         return 0
 
-
-async def _notify_listeners(record: JobRecord) -> None:
-    """Wake up streaming subscribers waiting on a job record."""
-
-    async with record.condition:
-        record.condition.notify_all()
+    with record.state_lock:
+        for index, event in enumerate(record.events):
+            if event["id"] > last_seen_event_id:
+                return index
+        return len(record.events)
 
 
 async def progress_generator(
@@ -102,18 +126,38 @@ async def progress_generator(
         logger.warning("Job %s not found", job_id)
         yield {
             "event": "error",
-            "data": json.dumps({"error": "Job not found or already completed"}),
+            "data": json.dumps(
+                {"error": "Job not found or already completed"}
+            ),
         }
         return
 
     logger.info("Starting SSE stream for job %s", job_id)
-    next_index = _parse_last_event_id(last_event_id)
+    next_index = _find_next_event_index(record, last_event_id)
 
     try:
         while True:
-            while next_index < len(record.events):
-                event = record.events[next_index]
-                next_index += 1
+            completed = False
+            events_to_yield: list[Dict[str, Any]] = []
+            wait_signal: asyncio.Event | None = None
+
+            with record.state_lock:
+                next_index = min(
+                    max(next_index, 0),
+                    len(record.events),
+                )
+                if next_index < len(record.events):
+                    events_to_yield = list(record.events[next_index:])
+                    next_index = len(record.events)
+
+                completed = record.completed
+                if not events_to_yield and not completed:
+                    wait_signal = record.update_signal
+                    if wait_signal.is_set():
+                        wait_signal = asyncio.Event()
+                        record.update_signal = wait_signal
+
+            for event in events_to_yield:
                 yield {
                     "id": str(event["id"]),
                     "event": event["event"],
@@ -125,18 +169,24 @@ async def progress_generator(
                 break
 
             try:
-                async with record.condition:
-                    await asyncio.wait_for(record.condition.wait(), timeout=300.0)
+                if wait_signal is None:
+                    continue
+                await asyncio.wait_for(wait_signal.wait(), timeout=300.0)
             except asyncio.TimeoutError:
                 logger.warning("Job %s timed out waiting for events", job_id)
                 yield {
                     "event": "error",
-                    "data": json.dumps({"error": "Job timed out - no progress in 5 minutes"}),
+                    "data": json.dumps(
+                        {"error": "Job timed out - no progress in 5 minutes"}
+                    ),
                 }
                 break
 
     except asyncio.CancelledError:
-        logger.info("SSE stream cancelled for job %s - keeping job for reconnection", job_id)
+        logger.info(
+            "SSE stream cancelled for job %s - keeping job for reconnection",
+            job_id,
+        )
         raise
     except Exception as exc:
         logger.exception("Error in progress generator for job %s", job_id)
@@ -159,22 +209,31 @@ def emit_progress(
         logger.warning("Cannot emit to job %s: not found", job_id)
         return
 
-    event_id = record.next_event_id
-    record.next_event_id += 1
-    record.events.append({"id": event_id, "event": event_type, "data": data})
+    should_schedule_completed_cleanup = False
+    with record.state_lock:
+        event_id = record.next_event_id
+        record.next_event_id += 1
+        record.events.append(
+            {"id": event_id, "event": event_type, "data": data}
+        )
+        if len(record.events) > _MAX_RECORDED_EVENTS:
+            del record.events[: len(record.events) - _MAX_RECORDED_EVENTS]
 
-    if event_type in ("complete", "error"):
-        record.completed = True
-        record.completed_at = time.time()
+        if event_type in ("complete", "error"):
+            record.completed = True
+            record.completed_at = time.time()
+            should_schedule_completed_cleanup = True
+
+        record.update_signal.set()
+
+    if should_schedule_completed_cleanup:
         try:
             asyncio.create_task(_schedule_completed_job_cleanup(job_id))
         except RuntimeError:
-            logger.debug("Cannot schedule completed cleanup for %s - no event loop", job_id)
-
-    try:
-        asyncio.create_task(_notify_listeners(record))
-    except RuntimeError:
-        logger.debug("Cannot notify listeners for %s - no event loop", job_id)
+            logger.debug(
+                "Cannot schedule completed cleanup for %s - no event loop",
+                job_id,
+            )
 
     if log:
         logger.debug(
@@ -227,7 +286,11 @@ def emit_complete(job_id: str, result: Dict[str, Any]) -> None:
     logger.info("Job %s completed successfully", job_id)
 
 
-def emit_error(job_id: str, error: str, details: Dict[str, Any] | None = None) -> None:
+def emit_error(
+    job_id: str,
+    error: str,
+    details: Dict[str, Any] | None = None,
+) -> None:
     """Emit an error event."""
 
     payload = {"error": error}
@@ -246,7 +309,10 @@ def cleanup_job(job_id: str) -> None:
     logger.info("Cleaned up job %s", job_id)
 
 
-def get_stream_response(job_id: str, last_event_id: str | None = None) -> EventSourceResponse:
+def get_stream_response(
+    job_id: str,
+    last_event_id: str | None = None,
+) -> EventSourceResponse:
     """Create an SSE EventSourceResponse for a job."""
 
     return EventSourceResponse(
