@@ -43,6 +43,15 @@ async def _collect_n_events(job_id: str, count: int):
     return events
 
 
+async def _collect_n_events_after_start(
+    job_id: str,
+    count: int,
+    started: asyncio.Event,
+):
+    started.set()
+    return await _collect_n_events(job_id, count)
+
+
 @pytest.mark.asyncio
 async def test_multiple_subscribers_receive_same_event_log():
     """Each subscriber should get the full event stream independently."""
@@ -156,8 +165,11 @@ async def test_progress_streaming_continues_after_retention_rollover(
     monkeypatch.setattr(progress_streaming, "_MAX_RECORDED_EVENTS", 2)
     job_id = progress_streaming.create_job()
 
-    collector = asyncio.create_task(_collect_n_events(job_id, 2))
-    await asyncio.sleep(0)
+    started = asyncio.Event()
+    collector = asyncio.create_task(
+        _collect_n_events_after_start(job_id, 2, started)
+    )
+    await started.wait()
 
     progress_streaming.emit_node_progress(job_id, "step-1", 10, "Step 1")
     progress_streaming.emit_node_progress(job_id, "step-2", 20, "Step 2")

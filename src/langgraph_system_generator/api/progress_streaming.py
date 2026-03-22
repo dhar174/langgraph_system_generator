@@ -186,7 +186,7 @@ async def progress_generator(
         return
 
     logger.info("Starting SSE stream for job %s", job_id)
-    next_index, last_sent_event_id = _resolve_initial_replay_state(
+    initial_replay_index, last_sent_event_id = _resolve_initial_replay_state(
         record,
         last_event_id,
     )
@@ -199,13 +199,17 @@ async def progress_generator(
             with record.state_lock:
                 events_snapshot = list(record.events)
                 if last_sent_event_id is None:
-                    next_index = _clamp_event_index(
-                        next_index,
+                    initial_replay_index = _clamp_event_index(
+                        initial_replay_index,
                         len(events_snapshot),
                     )
-                    if next_index < len(events_snapshot):
-                        events_to_yield = events_snapshot[next_index:]
+                    if initial_replay_index < len(events_snapshot):
+                        events_to_yield = events_snapshot[
+                            initial_replay_index:
+                        ]
                 else:
+                    # After the initial retained catch-up slice, always follow
+                    # event ids so deque rollover cannot stall the stream.
                     events_to_yield = _find_unread_events(
                         events_snapshot,
                         last_sent_event_id,
