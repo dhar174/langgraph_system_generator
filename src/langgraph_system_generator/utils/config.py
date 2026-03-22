@@ -105,7 +105,19 @@ class Settings(BaseSettings):
 
 
 _DEFAULT_ENV_FILE = object()
-_TEST_SETTINGS_ENV_KEYS = tuple(key.upper() for key in Settings.model_fields)
+
+
+def _test_settings_env_keys() -> tuple[str, ...]:
+    """Return the env var names mirrored by Settings fields during pytest loads."""
+
+    env_keys: list[str] = []
+    for field_name, field_info in Settings.model_fields.items():
+        env_name = field_info.alias or field_name
+        env_keys.append(str(env_name).upper())
+    return tuple(env_keys)
+
+
+_TEST_SETTINGS_ENV_KEYS = _test_settings_env_keys()
 
 
 def _pytest_is_active() -> bool:

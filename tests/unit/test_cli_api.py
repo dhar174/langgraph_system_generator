@@ -15,9 +15,16 @@ from langgraph_system_generator.cli import GenerationArtifacts, generate_artifac
 
 @pytest.fixture
 def reload_modules(monkeypatch: pytest.MonkeyPatch):
-    def _reload(*, output_base: str | None = None, include_server: bool = False):
+    def _reload(
+        *,
+        output_base: str | None = None,
+        base_output_dir: Path | None = None,
+        include_server: bool = False,
+    ):
         if output_base is not None:
             monkeypatch.setenv("LNF_OUTPUT_BASE", output_base)
+        if base_output_dir is not None:
+            monkeypatch.setenv("BASE_OUTPUT_DIR", str(base_output_dir))
 
         import importlib
         import langgraph_system_generator.constants as constants_module
@@ -61,9 +68,9 @@ async def test_generate_artifacts_stub(
 @pytest.mark.asyncio
 async def test_generate_artifacts_default_formats_include_markdown(
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
+    reload_modules,
 ):
-    monkeypatch.setenv("BASE_OUTPUT_DIR", str(tmp_path))
+    reload_modules(base_output_dir=tmp_path)
 
     output_dir = tmp_path / "default_formats"
     artifacts: GenerationArtifacts = await generate_artifacts(
