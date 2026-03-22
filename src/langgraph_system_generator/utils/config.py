@@ -113,7 +113,7 @@ def _test_settings_env_keys() -> tuple[str, ...]:
     env_keys: list[str] = []
     for field_name, field_info in Settings.model_fields.items():
         env_name = field_info.alias or field_name
-        env_keys.append(str(env_name).upper())
+        env_keys.append(env_name.upper())
     return tuple(env_keys)
 
 

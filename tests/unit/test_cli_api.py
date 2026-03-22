@@ -70,7 +70,7 @@ async def test_generate_artifacts_default_formats_include_markdown(
     tmp_path: Path,
     reload_modules,
 ):
-    reload_modules(base_output_dir=tmp_path)
+    _constants_module, _cli_module = reload_modules(base_output_dir=tmp_path)
 
     output_dir = tmp_path / "default_formats"
     artifacts: GenerationArtifacts = await generate_artifacts(
