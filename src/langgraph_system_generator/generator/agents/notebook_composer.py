@@ -6,7 +6,6 @@ import json
 import keyword
 import re
 from typing import Any, Dict, List
-import re
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
 
@@ -29,8 +28,18 @@ class NotebookComposer:
     stub and offline workflows.
     """
 
-    def __init__(self, model: str | None = None):
-        self.llm = ChatOpenAI(model=model or settings.default_model, temperature=0)
+    def __init__(
+        self,
+        model: str | None = None,
+        model_config: ModelConfig | None = None,
+    ):
+        config = model_config or ModelConfig(model=model or settings.default_model, temperature=0.0)
+        llm_kwargs = {"model": config.model, "temperature": config.temperature}
+        if config.api_base:
+            llm_kwargs["base_url"] = config.api_base
+        if config.max_tokens is not None:
+            llm_kwargs["max_tokens"] = config.max_tokens
+        self.llm = ChatOpenAI(**llm_kwargs)
 
     @staticmethod
     def _safe_identifier(value: Any, fallback: str) -> str:

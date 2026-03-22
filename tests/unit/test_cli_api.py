@@ -107,6 +107,34 @@ async def test_api_generate_stub(tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 
 
 @pytest.mark.asyncio
+async def test_api_rejects_unsupported_advanced_options(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setenv("LNF_OUTPUT_BASE", "test_api_unsupported_options")
+
+    import importlib
+    import langgraph_system_generator.constants as constants_module
+    import langgraph_system_generator.api.server as server_module
+
+    importlib.reload(constants_module)
+    importlib.reload(server_module)
+
+    transport = httpx.ASGITransport(app=server_module.app)
+    output_dir = constants_module._BASE_OUTPUT / tmp_path.name
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(
+            "/generate",
+            json={
+                "prompt": "API prompt",
+                "mode": "stub",
+                "output_dir": str(output_dir),
+                "memory_config": "short",
+            },
+        )
+
+    assert response.status_code == 400
+    assert "Unsupported advanced options" in response.json()["detail"]
+
+
+@pytest.mark.asyncio
 async def test_api_generate_with_formats(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):

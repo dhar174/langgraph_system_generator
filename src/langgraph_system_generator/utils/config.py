@@ -56,6 +56,45 @@ class ModelConfig(BaseModel):
         return cls(**filtered)
 
 
+class GenerationConfig(BaseModel):
+    """Request-scoped live generation settings."""
+
+    model: Optional[str] = Field(default=None, description="Optional model override")
+    temperature: Optional[float] = Field(
+        default=None,
+        ge=0.0,
+        le=2.0,
+        description="Optional temperature override",
+    )
+    max_tokens: Optional[int] = Field(
+        default=None,
+        ge=1,
+        description="Optional max_tokens override",
+    )
+    api_base: Optional[str] = Field(
+        default=None,
+        description="Optional OpenAI-compatible base URL override",
+    )
+    agent_type: Optional[str] = Field(
+        default=None,
+        description="Optional architecture override",
+    )
+
+    def to_model_config(self, default_model: str) -> ModelConfig:
+        """Resolve a per-request model configuration for live agents."""
+
+        config_kwargs = {
+            "model": self.model or default_model,
+            "api_base": self.api_base,
+            "max_tokens": self.max_tokens,
+        }
+        if self.temperature is not None:
+            config_kwargs["temperature"] = self.temperature
+
+        return ModelConfig(**config_kwargs)
+
+
+
 class Settings(BaseSettings):
     """Project settings loaded from environment or a `.env` file."""
 
