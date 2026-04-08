@@ -366,7 +366,7 @@ async def generate_artifacts(
         if not custom_endpoint and not os.environ.get("OPENAI_API_KEY"):
             raise RuntimeError("LLM API credentials are required for live generation mode.")
         _report_progress("graph_init", 10, "Creating generator graph...")
-        graph = create_generator_graph(generation_config=generation_config)
+        graph = create_generator_graph()
         _report_progress("graph_invoke", 15, "Invoking generator graph...")
         result = await graph.ainvoke(_default_state(prompt, generation_config))
         _report_progress("graph_complete", 60, "Generator graph completed")

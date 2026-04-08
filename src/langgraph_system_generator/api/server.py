@@ -40,12 +40,6 @@ _DEFAULT_API_OUTPUT = (_BASE_OUTPUT / "api").resolve()
 _MAX_CONCURRENT_GENERATIONS = int(os.getenv("LNF_MAX_CONCURRENT_GENERATIONS", "5"))
 _generation_lock = asyncio.Lock()
 _active_generation_count = 0
-_SUPPORTED_OPENAI_MODELS = {
-    "gpt-5.2",
-    "gpt-5-mini",
-    "gpt-5-nano",
-    "gpt-5.1",
-}
 _UNSUPPORTED_ADVANCED_FIELDS = (
     "memory_config",
     "preset",
@@ -120,6 +114,11 @@ def _resolve_artifact_path(path: str | os.PathLike[str]) -> Path:
 
 def _validate_advanced_options(request: "GenerationRequest") -> None:
     """Reject unsupported advanced options and invalid model/provider combinations."""
+    request.model = request.model.strip() if request.model else None
+    request.custom_endpoint = (
+        request.custom_endpoint.strip() if request.custom_endpoint else None
+    )
+
     unsupported_fields = [
         field_name
         for field_name in _UNSUPPORTED_ADVANCED_FIELDS
@@ -145,15 +144,6 @@ def _validate_advanced_options(request: "GenerationRequest") -> None:
         raise HTTPException(
             status_code=400,
             detail="Provide an explicit model identifier instead of the placeholder value 'custom'.",
-        )
-
-    if request.model and not request.custom_endpoint and request.model not in _SUPPORTED_OPENAI_MODELS:
-        raise HTTPException(
-            status_code=400,
-            detail=(
-                "Unsupported model for the built-in provider. Choose an OpenAI-compatible model "
-                "or set custom_endpoint with an explicit model identifier."
-            ),
         )
 
 

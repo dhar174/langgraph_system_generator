@@ -20,7 +20,7 @@ def require_optional_module(module_name: str, *, feature: str, extra: str) -> An
     """Import an optional module or raise a friendly runtime error."""
     try:
         return import_module(module_name)
-    except ImportError as exc:
+    except ModuleNotFoundError as exc:
         hint = _EXTRA_HINTS.get(extra, f'pip install -e ".[{extra}]"')
         raise OptionalDependencyError(
             f"{feature} requires optional dependencies that are not installed. "

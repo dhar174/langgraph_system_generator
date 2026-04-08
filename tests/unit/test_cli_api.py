@@ -130,6 +130,73 @@ async def test_api_rejects_unsupported_advanced_options(tmp_path: Path, monkeypa
 
 
 @pytest.mark.asyncio
+async def test_api_accepts_arbitrary_openai_compatible_model_id(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """Built-in provider should accept explicit model identifiers without an allowlist."""
+    monkeypatch.setenv("LNF_OUTPUT_BASE", "test_api_arbitrary_model")
+
+    import importlib
+    import langgraph_system_generator.constants as constants_module
+    import langgraph_system_generator.notebook.exporters as exporters_module
+    import langgraph_system_generator.api.server as server_module
+
+    importlib.reload(constants_module)
+    importlib.reload(exporters_module)
+    importlib.reload(server_module)
+
+    transport = httpx.ASGITransport(app=server_module.app)
+    output_dir = constants_module._BASE_OUTPUT / tmp_path.name
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(
+            "/generate",
+            json={
+                "prompt": "API prompt",
+                "mode": "stub",
+                "output_dir": str(output_dir),
+                "model": "gpt-5-future-release",
+            },
+        )
+
+    assert response.status_code == 200
+    assert response.json()["success"] is True
+
+
+@pytest.mark.asyncio
+async def test_api_rejects_custom_endpoint_without_explicit_model(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """Custom endpoints must include a non-placeholder model identifier."""
+    monkeypatch.setenv("LNF_OUTPUT_BASE", "test_api_custom_endpoint_requires_model")
+
+    import importlib
+    import langgraph_system_generator.constants as constants_module
+    import langgraph_system_generator.api.server as server_module
+
+    importlib.reload(constants_module)
+    importlib.reload(server_module)
+
+    transport = httpx.ASGITransport(app=server_module.app)
+    output_dir = constants_module._BASE_OUTPUT / tmp_path.name
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(
+            "/generate",
+            json={
+                "prompt": "API prompt",
+                "mode": "stub",
+                "output_dir": str(output_dir),
+                "custom_endpoint": "https://example.test/v1",
+            },
+        )
+
+    assert response.status_code == 400
+    assert (
+        "custom_endpoint requires an explicit OpenAI-compatible model identifier"
+        in response.json()["detail"]
+    )
+
+
+@pytest.mark.asyncio
 async def test_api_generate_with_formats(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):

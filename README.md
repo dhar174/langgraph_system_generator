@@ -128,7 +128,6 @@ Google Colab.
    !pip install -qU langgraph langchain langchain-openai langchain-community
    ```
 
-<<<<<<< Updated upstream
 4. Configure secrets in Colab before running live cells:
 
    ```python
@@ -141,16 +140,15 @@ Google Colab.
 5. Run the notebook top-to-bottom. If you only want the offline scaffold, use a
    notebook generated in `--mode stub`.
 
-For the full workflow, troubleshooting, and Drive-specific tips, see
-[docs/wiki/Colab-Usage.md](docs/wiki/Colab-Usage.md).
-=======
 If you prefer extras-based installs instead of `requirements.txt`, use:
 
 - `pip install -e .` for the core Python package/config/types only
 - `pip install -e ".[api]"` for the FastAPI/web server
 - `pip install -e ".[full]"` for notebook generation, export, and live-mode dependencies
 - `pip install -e ".[full,dev]"` for contributor/test tooling
->>>>>>> Stashed changes
+
+For the full workflow, troubleshooting, and Drive-specific tips, see
+[docs/wiki/Colab-Usage.md](docs/wiki/Colab-Usage.md).
 
 ## CLI
 

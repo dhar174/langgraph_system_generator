@@ -15,7 +15,7 @@ def test_require_optional_module_mentions_requested_extra(monkeypatch):
     """Missing optional imports should point to the correct extra."""
 
     def raise_import_error(_name):
-        raise ImportError("missing dependency")
+        raise ModuleNotFoundError("missing dependency")
 
     monkeypatch.setattr(optional_deps, "import_module", raise_import_error)
 
@@ -35,7 +35,7 @@ async def test_generate_artifacts_raises_friendly_error_when_full_extra_missing(
 
     def guarded_import(name):
         if name == "langgraph_system_generator.notebook.composer":
-            raise ImportError("missing notebook deps")
+            raise ModuleNotFoundError("missing notebook deps")
         return importlib.import_module(name)
 
     monkeypatch.setattr(optional_deps, "import_module", guarded_import)
@@ -44,6 +44,22 @@ async def test_generate_artifacts_raises_friendly_error_when_full_extra_missing(
         await generate_artifacts("test prompt", output_dir=tmp_path, mode="stub")
 
     assert 'pip install -e ".[full]"' in str(exc_info.value)
+
+
+def test_require_optional_module_surfaces_non_module_import_errors(monkeypatch):
+    """Import-time errors inside installed modules should not be rewrapped."""
+
+    def raise_import_error(_name):
+        raise ImportError("cannot import name 'broken_symbol' from 'installed_package'")
+
+    monkeypatch.setattr(optional_deps, "import_module", raise_import_error)
+
+    with pytest.raises(ImportError, match="broken_symbol"):
+        optional_deps.require_optional_module(
+            "installed_package.feature",
+            feature="Artifact generation",
+            extra="full",
+        )
 
 
 def test_api_package_exposes_app_lazily(monkeypatch):

@@ -129,12 +129,41 @@ class ParsedResult:
 # Path Utilities
 # -----------------------------------------------------------------------------
 
+_PATH_COMPONENT_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
+
+
+def _validate_path_component(value: str, *, label: str) -> str:
+    """Validate a user-controlled path component before using it in a path."""
+    candidate = value.strip()
+    if not candidate:
+        raise ValueError(f"{label} must not be empty.")
+    if (
+        candidate in {".", ".."}
+        or "/" in candidate
+        or "\\" in candidate
+        or not _PATH_COMPONENT_RE.fullmatch(candidate)
+    ):
+        raise ValueError(
+            f"{label} must contain only letters, numbers, dots, underscores, or hyphens."
+        )
+    return candidate
+
+
+def _resolve_under_root(root: Path, *components: str) -> Path:
+    """Resolve path components under a trusted root and reject traversal."""
+    safe_root = root.resolve()
+    candidate = safe_root.joinpath(*components).resolve(strict=False)
+    candidate.relative_to(safe_root)
+    return candidate
+
+
 def get_batch_dir(batch_id: str) -> Path:
     """Get the data directory for a batch.
 
     Use when: resolving the root directory for a specific batch run.
     """
-    return DATA_DIR / batch_id
+    safe_batch_id = _validate_path_component(batch_id, label="batch_id")
+    return _resolve_under_root(DATA_DIR, safe_batch_id)
 
 
 def get_item_dir(batch_id: str, item_id: str) -> Path:
@@ -142,7 +171,9 @@ def get_item_dir(batch_id: str, item_id: str) -> Path:
 
     Use when: locating stage output files for a single pipeline item.
     """
-    return get_batch_dir(batch_id) / item_id
+    safe_batch_id = _validate_path_component(batch_id, label="batch_id")
+    safe_item_id = _validate_path_component(item_id, label="item_id")
+    return _resolve_under_root(DATA_DIR, safe_batch_id, safe_item_id)
 
 
 def get_output_dir(batch_id: str) -> Path:
@@ -150,7 +181,8 @@ def get_output_dir(batch_id: str) -> Path:
 
     Use when: writing final rendered outputs (HTML, reports, etc.).
     """
-    return OUTPUT_DIR / batch_id
+    safe_batch_id = _validate_path_component(batch_id, label="batch_id")
+    return _resolve_under_root(OUTPUT_DIR, safe_batch_id)
 
 
 # -----------------------------------------------------------------------------
