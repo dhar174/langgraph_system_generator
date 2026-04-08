@@ -129,6 +129,8 @@ class ParsedResult:
 # Path Utilities
 # -----------------------------------------------------------------------------
 
+# Require an alphanumeric first character, followed by alphanumerics, dots,
+# underscores, or hyphens only.
 _PATH_COMPONENT_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 
 
@@ -153,6 +155,8 @@ def _resolve_under_root(root: Path, *components: str) -> Path:
     """Resolve path components under a trusted root and reject traversal."""
     safe_root = root.resolve()
     candidate = safe_root.joinpath(*components).resolve(strict=False)
+    # Intentionally validate-only: relative_to() raises ValueError if candidate
+    # escapes the trusted root.
     candidate.relative_to(safe_root)
     return candidate
 
