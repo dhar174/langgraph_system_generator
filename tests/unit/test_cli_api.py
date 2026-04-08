@@ -41,6 +41,28 @@ async def test_generate_artifacts_stub(tmp_path: Path, monkeypatch: pytest.Monke
 
 
 @pytest.mark.asyncio
+async def test_generate_artifacts_default_formats_include_markdown(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setenv("LNF_OUTPUT_BASE", "test_generate_artifacts_default_formats")
+
+    import importlib
+    import langgraph_system_generator.constants as constants_module
+    import langgraph_system_generator.notebook.exporters as exporters_module
+    import langgraph_system_generator.cli as cli_module
+
+    importlib.reload(constants_module)
+    importlib.reload(exporters_module)
+    importlib.reload(cli_module)
+
+    output_dir = constants_module._BASE_OUTPUT / "default_formats"
+    artifacts: GenerationArtifacts = await cli_module.generate_artifacts(
+        "Test prompt", output_dir=str(output_dir), mode="stub"
+    )
+
+    assert "markdown_path" in artifacts["manifest"]
+    assert Path(artifacts["manifest"]["markdown_path"]).exists()
+
+
+@pytest.mark.asyncio
 async def test_api_generate_stub(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     # Set a test output base
     monkeypatch.setenv("LNF_OUTPUT_BASE", "test_api_stub")
@@ -77,6 +99,34 @@ async def test_api_generate_stub(tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     assert payload["prompt"] == "API prompt"
     assert "output_dir" in payload
     assert payload["output_dir"] == str(output_dir)
+
+
+@pytest.mark.asyncio
+async def test_api_rejects_unsupported_advanced_options(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setenv("LNF_OUTPUT_BASE", "test_api_unsupported_options")
+
+    import importlib
+    import langgraph_system_generator.constants as constants_module
+    import langgraph_system_generator.api.server as server_module
+
+    importlib.reload(constants_module)
+    importlib.reload(server_module)
+
+    transport = httpx.ASGITransport(app=server_module.app)
+    output_dir = constants_module._BASE_OUTPUT / tmp_path.name
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(
+            "/generate",
+            json={
+                "prompt": "API prompt",
+                "mode": "stub",
+                "output_dir": str(output_dir),
+                "memory_config": "short",
+            },
+        )
+
+    assert response.status_code == 400
+    assert "Unsupported advanced options" in response.json()["detail"]
 
 
 @pytest.mark.asyncio
@@ -394,30 +444,36 @@ async def test_api_generate_async_concurrency_limit(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):
     """Test that /generate-async respects concurrency limits."""
-    # Set a very low limit for testing
     monkeypatch.setenv("LNF_MAX_CONCURRENT_GENERATIONS", "1")
     monkeypatch.setenv("LNF_OUTPUT_BASE", "test_concurrency")
 
-    # Force module reload to pick up new env var
     import importlib
+    import asyncio as aio
     import langgraph_system_generator.constants as constants_module
-    import langgraph_system_generator.notebook.exporters as exporters_module
     import langgraph_system_generator.api.server as server_module
 
     importlib.reload(constants_module)
-    importlib.reload(exporters_module)
     importlib.reload(server_module)
 
-    # Get the semaphore to verify it was set correctly
-    from langgraph_system_generator.api.server import _generation_semaphore, _MAX_CONCURRENT_GENERATIONS
-    
-    assert _MAX_CONCURRENT_GENERATIONS == 1
-    
+    gate = aio.Event()
+
+    async def slow_generate_artifacts(*_args, **_kwargs):
+        await gate.wait()
+        return {
+            "mode": "stub",
+            "prompt": "slow",
+            "manifest": {},
+            "manifest_path": str(constants_module._BASE_OUTPUT / "manifest.json"),
+            "output_dir": str(constants_module._BASE_OUTPUT / tmp_path.name / "gen1"),
+        }
+
+    monkeypatch.setattr(server_module, "generate_artifacts", slow_generate_artifacts)
+    server_module._active_generation_count = 0
+
     transport = httpx.ASGITransport(app=server_module.app)
     output_dir = constants_module._BASE_OUTPUT / tmp_path.name
-    
+
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
-        # Start first generation (should succeed)
         response1 = await client.post(
             "/generate-async",
             json={
@@ -426,10 +482,17 @@ async def test_api_generate_async_concurrency_limit(
                 "output_dir": str(output_dir / "gen1"),
             },
         )
-        
         assert response1.status_code == 200
-        
-        # Note: Due to the asynchronous nature and how quickly stub generation completes,
-        # it's difficult to reliably test the 503 response in unit tests.
-        # The semaphore protection is in place and will work in production.
-        # For comprehensive testing, use integration tests with slower generation modes.
+
+        response2 = await client.post(
+            "/generate-async",
+            json={
+                "prompt": "Test concurrent generation 2",
+                "mode": "stub",
+                "output_dir": str(output_dir / "gen2"),
+            },
+        )
+
+        assert response2.status_code == 503
+        gate.set()
+        await aio.sleep(0.05)

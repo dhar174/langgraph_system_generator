@@ -30,6 +30,7 @@ const temperatureSlider = document.getElementById('temperature');
 const tempValue = document.getElementById('tempValue');
 const modelSelect = document.getElementById('model');
 const customEndpointGroup = document.getElementById('customEndpointGroup');
+const customModelInput = document.getElementById('customModel');
 
 // Theme toggle
 const themeToggle = document.getElementById('themeToggle');
@@ -73,9 +74,11 @@ modelSelect.addEventListener('change', (e) => {
     if (e.target.value === 'custom') {
         customEndpointGroup.style.display = 'block';
         document.getElementById('customEndpoint').required = true;
+        customModelInput.required = true;
     } else {
         customEndpointGroup.style.display = 'none';
         document.getElementById('customEndpoint').required = false;
+        customModelInput.required = false;
     }
 });
 
@@ -639,13 +642,14 @@ form.addEventListener('submit', async (e) => {
     
     // Add advanced options if specified
     const model = formData.get('model');
-    if (model) data.model = model;
-    
     const customEndpoint = formData.get('customEndpoint');
-    if (customEndpoint && model === 'custom') data.custom_endpoint = customEndpoint;
-    
-    const preset = formData.get('preset');
-    if (preset) data.preset = preset;
+    const customModel = formData.get('customModel');
+    if (model === 'custom') {
+        if (customModel) data.model = customModel;
+        if (customEndpoint) data.custom_endpoint = customEndpoint;
+    } else if (model) {
+        data.model = model;
+    }
     
     const temperature = parseFloat(formData.get('temperature'));
     // Only send temperature if it differs from default (0.7)
@@ -656,18 +660,6 @@ form.addEventListener('submit', async (e) => {
     
     const agentType = formData.get('agentType');
     if (agentType) data.agent_type = agentType;
-    
-    const memoryConfig = formData.get('memoryConfig');
-    if (memoryConfig) data.memory_config = memoryConfig;
-    
-    const graphStyle = formData.get('graphStyle');
-    if (graphStyle) data.graph_style = graphStyle;
-    
-    const retrieverType = formData.get('retrieverType');
-    if (retrieverType) data.retriever_type = retrieverType;
-    
-    const documentLoader = formData.get('documentLoader');
-    if (documentLoader) data.document_loader = documentLoader;
     
     // Validate prompt length (using Unicode code points)
     if (getCharacterCount(data.prompt) > CHAR_COUNT_MAX) {
@@ -989,17 +981,18 @@ function rerunFromHistory(entry) {
     document.getElementById('outputDir').value = data.output_dir || './output/web_generated';
     
     if (data.model) {
-        document.getElementById('model').value = data.model;
-        // Trigger change event to show/hide custom endpoint
-        document.getElementById('model').dispatchEvent(new Event('change'));
+        const modelSelectElement = document.getElementById('model');
+        const optionExists = Array.from(modelSelectElement.options).some((option) => option.value === data.model);
+        modelSelectElement.value = optionExists ? data.model : 'custom';
+        modelSelectElement.dispatchEvent(new Event('change'));
+
+        if (!optionExists && customModelInput) {
+            customModelInput.value = data.model;
+        }
     }
     
     if (data.custom_endpoint) {
         document.getElementById('customEndpoint').value = data.custom_endpoint;
-    }
-    
-    if (data.preset) {
-        document.getElementById('preset').value = data.preset;
     }
     
     if (data.temperature !== undefined) {
@@ -1014,22 +1007,6 @@ function rerunFromHistory(entry) {
     
     if (data.agent_type) {
         document.getElementById('agentType').value = data.agent_type;
-    }
-    
-    if (data.memory_config) {
-        document.getElementById('memoryConfig').value = data.memory_config;
-    }
-    
-    if (data.graph_style) {
-        document.getElementById('graphStyle').value = data.graph_style;
-    }
-    
-    if (data.retriever_type) {
-        document.getElementById('retrieverType').value = data.retriever_type;
-    }
-    
-    if (data.document_loader) {
-        document.getElementById('documentLoader').value = data.document_loader;
     }
     
     // Restore output formats from history, if available

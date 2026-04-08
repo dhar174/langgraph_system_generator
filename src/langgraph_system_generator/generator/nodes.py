@@ -8,7 +8,6 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Any, Dict, List
 
-import asyncio
 import nbformat
 
 from langgraph_system_generator.generator.agents import (
@@ -39,6 +38,26 @@ from langgraph_system_generator.rag.retriever import DocsRetriever
 from langgraph_system_generator.utils.config import settings
 
 logger = logging.getLogger(__name__)
+
+
+def _resolve_model_config(state: GeneratorState):
+    """Build a per-request model config for live agent construction."""
+    generation_config = state.get("generation_config")
+    if generation_config is None:
+        return None
+    return generation_config.to_model_config(settings.default_model)
+
+
+def _requested_architecture_type(state: GeneratorState) -> str | None:
+    """Return an explicit architecture override when provided."""
+    generation_config = state.get("generation_config")
+    if generation_config is None:
+        return None
+
+    requested = (generation_config.agent_type or "").strip().lower()
+    if requested in {"router", "subagents", "hybrid"}:
+        return requested
+    return None
 
 
 def _runtime_qa_suggestions(message: str) -> List[str]:
@@ -76,7 +95,7 @@ async def intake_node(state: GeneratorState) -> Dict[str, Any]:
     Returns:
         Updated state with extracted constraints
     """
-    analyst = RequirementsAnalyst()
+    analyst = RequirementsAnalyst(model_config=_resolve_model_config(state))
     constraints = await analyst.analyze(state["user_prompt"])
 
     return {"constraints": constraints}
@@ -128,6 +147,16 @@ async def architecture_selection_node(state: GeneratorState) -> Dict[str, Any]:
     Returns:
         Updated state with architecture selection and justification
     """
+    requested_architecture = _requested_architecture_type(state)
+    if requested_architecture:
+        return {
+            "selected_patterns": {"primary": requested_architecture, "secondary": []},
+            "architecture_type": requested_architecture,
+            "architecture_justification": (
+                f"Architecture forced by request-scoped agent_type override: {requested_architecture}."
+            ),
+        }
+
     try:
         vector_store_manager = VectorStoreManager(settings.vector_store_path)
         retriever = DocsRetriever(vector_store_manager)
@@ -137,7 +166,10 @@ async def architecture_selection_node(state: GeneratorState) -> Dict[str, Any]:
         logging.warning(f"Failed to load vector store for architecture selection: {e}")
         retriever = None
 
-    selector = ArchitectureSelector(docs_retriever=retriever)
+    selector = ArchitectureSelector(
+        docs_retriever=retriever,
+        model_config=_resolve_model_config(state),
+    )
 
     architecture = await selector.select_architecture(
         state["constraints"], state["docs_context"]
@@ -162,7 +194,7 @@ async def graph_design_node(state: GeneratorState) -> Dict[str, Any]:
     Returns:
         Updated state with workflow design and notebook plan
     """
-    designer = GraphDesigner()
+    designer = GraphDesigner(model_config=_resolve_model_config(state))
 
     selected_patterns = state.get("selected_patterns", {}) or {}
     architecture_type = state.get("architecture_type")
@@ -206,7 +238,7 @@ async def tooling_plan_node(state: GeneratorState) -> Dict[str, Any]:
     Returns:
         Updated state with tools plan
     """
-    engineer = ToolchainEngineer()
+    engineer = ToolchainEngineer(model_config=_resolve_model_config(state))
 
     workflow_design = state.get("workflow_design", {})
     tools = await engineer.plan_tools(workflow_design, state["constraints"])
@@ -223,14 +255,15 @@ async def notebook_assembly_node(state: GeneratorState) -> Dict[str, Any]:
     Returns:
         Updated state with generated cells
     """
-    composer = NotebookComposer()
+    composer = NotebookComposer(model_config=_resolve_model_config(state))
 
     notebook_plan = state.get("notebook_plan")
     workflow_design = state.get("workflow_design", {})
     tools_plan = state.get("tools_plan", [])
 
     architecture = {
-        "architecture_type": state.get("selected_patterns", {}).get("primary", "router"),
+        "architecture_type": state.get("architecture_type")
+        or state.get("selected_patterns", {}).get("primary", "router"),
         "justification": state["architecture_justification"],
     }
 

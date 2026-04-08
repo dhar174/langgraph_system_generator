@@ -83,6 +83,21 @@ def test_settings_defaults(monkeypatch):
     assert loaded.default_budget_tokens == 100000
 
 
+def test_settings_defaults_ignore_project_env_under_pytest(tmp_path, monkeypatch):
+    env_path = tmp_path / ".env"
+    env_path.write_text("OPENAI_API_KEY=from-dotenv\nDEFAULT_MODEL=from-dotenv\n", encoding="utf-8")
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("OPENAI_API_KEY", "from-environment")
+    monkeypatch.setenv("DEFAULT_MODEL", "from-environment")
+
+    reset_settings_cache()
+    loaded = get_settings()
+
+    assert loaded.openai_api_key is None
+    assert loaded.default_model == "gpt-5-mini"
+
+
 def test_settings_cached_instance_is_reused(monkeypatch):
     for key in [
         "OPENAI_API_KEY",

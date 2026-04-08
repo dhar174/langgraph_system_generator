@@ -8,7 +8,7 @@ import os
 from pathlib import Path
 from typing import Any, Dict, Optional
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import FileResponse, HTMLResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
@@ -38,7 +38,41 @@ _DEFAULT_API_OUTPUT = (_BASE_OUTPUT / "api").resolve()
 
 # Concurrency limit for async generation (prevent resource exhaustion)
 _MAX_CONCURRENT_GENERATIONS = int(os.getenv("LNF_MAX_CONCURRENT_GENERATIONS", "5"))
-_generation_semaphore = asyncio.Semaphore(_MAX_CONCURRENT_GENERATIONS)
+_generation_lock = asyncio.Lock()
+_active_generation_count = 0
+_SUPPORTED_OPENAI_MODELS = {
+    "gpt-5.2",
+    "gpt-5-mini",
+    "gpt-5-nano",
+    "gpt-5.1",
+}
+_UNSUPPORTED_ADVANCED_FIELDS = (
+    "memory_config",
+    "preset",
+    "graph_style",
+    "retriever_type",
+    "document_loader",
+)
+
+
+async def _try_acquire_generation_slot() -> bool:
+    """Reserve a generation slot if capacity is available."""
+    global _active_generation_count
+
+    async with _generation_lock:
+        if _active_generation_count >= _MAX_CONCURRENT_GENERATIONS:
+            return False
+        _active_generation_count += 1
+        return True
+
+
+async def _release_generation_slot() -> None:
+    """Release a previously reserved generation slot."""
+    global _active_generation_count
+
+    async with _generation_lock:
+        if _active_generation_count > 0:
+            _active_generation_count -= 1
 
 
 def _resolve_output_dir(path: str | os.PathLike[str] | None) -> Path:
@@ -84,6 +118,45 @@ def _resolve_artifact_path(path: str | os.PathLike[str]) -> Path:
     return artifact_path
 
 
+def _validate_advanced_options(request: "GenerationRequest") -> None:
+    """Reject unsupported advanced options and invalid model/provider combinations."""
+    unsupported_fields = [
+        field_name
+        for field_name in _UNSUPPORTED_ADVANCED_FIELDS
+        if getattr(request, field_name) not in (None, "")
+    ]
+    if unsupported_fields:
+        supported_fields = "model, temperature, max_tokens, custom_endpoint, agent_type"
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Unsupported advanced options: {', '.join(unsupported_fields)}. "
+                f"Currently supported options are: {supported_fields}."
+            ),
+        )
+
+    if request.custom_endpoint and request.model in (None, "", "custom"):
+        raise HTTPException(
+            status_code=400,
+            detail="custom_endpoint requires an explicit OpenAI-compatible model identifier.",
+        )
+
+    if request.model == "custom":
+        raise HTTPException(
+            status_code=400,
+            detail="Provide an explicit model identifier instead of the placeholder value 'custom'.",
+        )
+
+    if request.model and not request.custom_endpoint and request.model not in _SUPPORTED_OPENAI_MODELS:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Unsupported model for the built-in provider. Choose an OpenAI-compatible model "
+                "or set custom_endpoint with an explicit model identifier."
+            ),
+        )
+
+
 class GenerationRequest(BaseModel):
     prompt: str = Field(
         ...,
@@ -105,15 +178,15 @@ class GenerationRequest(BaseModel):
     # Advanced options
     model: Optional[str] = Field(
         default=None,
-        description="LLM model to use (e.g., gpt-4, gpt-3.5-turbo, claude-3-opus, etc.). Uses default if not specified.",
+        description="OpenAI-compatible model to use for generation. Uses the default OpenAI-compatible model if not specified.",
     )
     custom_endpoint: Optional[str] = Field(
         default=None,
-        description="Custom API endpoint URL for self-hosted or alternative LLM providers.",
+        description="Custom OpenAI-compatible API endpoint URL for self-hosted or proxy deployments.",
     )
     preset: Optional[str] = Field(
         default=None,
-        description="Task preset (code-generation, data-analysis, customer-support, etc.) for optimized settings.",
+        description="Reserved for future support; currently rejected when set.",
     )
     temperature: Optional[float] = Field(
         default=None,
@@ -139,19 +212,19 @@ class GenerationRequest(BaseModel):
     )
     memory_config: Optional[str] = Field(
         default=None,
-        description="Memory configuration for the agent (none, short, long, full).",
+        description="Reserved for future support; currently rejected when set.",
     )
     graph_style: Optional[str] = Field(
         default=None,
-        description="Graph execution style (sequential, parallel, conditional, cyclic).",
+        description="Reserved for future support; currently rejected when set.",
     )
     retriever_type: Optional[str] = Field(
         default=None,
-        description="Document retriever type for RAG (vector, keyword, hybrid, mmr).",
+        description="Reserved for future support; currently rejected when set.",
     )
     document_loader: Optional[str] = Field(
         default=None,
-        description="Document loader type (text, pdf, web, markdown, json, csv).",
+        description="Reserved for future support; currently rejected when set.",
     )
 
 
@@ -222,6 +295,8 @@ async def chrome_devtools_endpoint():
 async def generate_notebook(request: GenerationRequest) -> GenerationResponse:
     """Generate notebook artifacts via the generator pipeline."""
 
+    _validate_advanced_options(request)
+
     # Use the secure path resolution function
     output_path = _resolve_output_dir(request.output_dir)
 
@@ -267,9 +342,9 @@ async def start_async_generation(
     This endpoint starts generation in the background and returns immediately with
     a job ID. Clients can then connect to the SSE stream endpoint to receive
     real-time progress updates, logs, and the final result.
-    
-    Concurrency is limited to prevent resource exhaustion. If the limit is reached,
-    returns 503 Service Unavailable.
+
+    Concurrency is limited with an explicit admission controller. If the limit is
+    reached, the request is rejected with 503 Service Unavailable.
 
     Returns:
         GenerationStartResponse with job_id and stream_url
@@ -277,11 +352,13 @@ async def start_async_generation(
     Raises:
         HTTPException 503: When concurrent generation limit is reached
     """
+    _validate_advanced_options(request)
+
     # Validate output directory
     output_path = _resolve_output_dir(request.output_dir)
 
-    # Check if we can accept more jobs (non-blocking check)
-    if _generation_semaphore.locked() and _generation_semaphore._value == 0:
+    # Acquire capacity before the job is accepted so overload requests fail fast.
+    if not await _try_acquire_generation_slot():
         raise HTTPException(
             status_code=503,
             detail=f"Server is currently processing the maximum number of concurrent generations ({_MAX_CONCURRENT_GENERATIONS}). Please try again later.",
@@ -290,8 +367,11 @@ async def start_async_generation(
     # Create job and start generation task
     job_id = create_job()
 
-    # Start generation in background
-    asyncio.create_task(_run_generation_with_progress(job_id, request, output_path))
+    try:
+        asyncio.create_task(_run_generation_with_progress(job_id, request, output_path))
+    except Exception:
+        await _release_generation_slot()
+        raise
 
     return GenerationStartResponse(
         job_id=job_id,
@@ -301,7 +381,7 @@ async def start_async_generation(
 
 
 @app.get("/stream/{job_id}")
-async def stream_job_progress(job_id: str):
+async def stream_job_progress(job_id: str, request: Request):
     """Server-Sent Events endpoint for streaming job progress.
 
     Connect to this endpoint with EventSource to receive real-time progress updates:
@@ -316,7 +396,7 @@ async def stream_job_progress(job_id: str):
     Returns:
         EventSourceResponse: SSE stream
     """
-    return get_stream_response(job_id)
+    return get_stream_response(job_id, request.headers.get("Last-Event-ID"))
 
 
 async def _run_generation_with_progress(
@@ -329,66 +409,64 @@ async def _run_generation_with_progress(
     This function orchestrates the generation process and emits progress events
     to the SSE stream. It wraps generate_artifacts() and adds instrumentation.
     
-    Uses a semaphore to limit concurrent generations and prevent resource exhaustion.
+    Uses the API admission controller to limit concurrent generations and prevent
+    resource exhaustion.
 
     Args:
         job_id: Job identifier for progress tracking
         request: Generation request parameters
         output_path: Resolved output directory path
     """
-    # Acquire semaphore to limit concurrency
-    async with _generation_semaphore:
-        try:
-            # Emit start event
-            emit_node_progress(job_id, "start", 0, "Starting generation...")
+    try:
+        # Emit start event
+        emit_node_progress(job_id, "start", 0, "Starting generation...")
 
-            # Emit validation progress
-            emit_node_progress(job_id, "validation", 5, "Validating request...")
+        # Emit validation progress
+        emit_node_progress(job_id, "validation", 5, "Validating request...")
 
-            # Run generation
-            # TODO: Pass job_id to generate_artifacts for node-level progress
-            emit_node_progress(job_id, "generation", 10, "Initializing generator...")
+        # Run generation
+        emit_node_progress(job_id, "generation", 10, "Initializing generator...")
 
-            # Define progress callback for generate_artifacts
-            def progress_callback(node: str, percentage: int, message: str) -> None:
-                """Forward progress to SSE stream."""
-                emit_node_progress(job_id, node, percentage, message)
+        def progress_callback(node: str, percentage: int, message: str) -> None:
+            """Forward progress to SSE stream."""
+            emit_node_progress(job_id, node, percentage, message)
 
-            artifacts: GenerationArtifacts = await generate_artifacts(
-                request.prompt,
-                output_dir=str(output_path),
-                mode=request.mode,
-                formats=request.formats,
-                model=request.model,
-                temperature=request.temperature,
-                max_tokens=request.max_tokens,
-                agent_type=request.agent_type,
-                memory_config=request.memory_config,
-                custom_endpoint=request.custom_endpoint,
-                preset=request.preset,
-                graph_style=request.graph_style,
-                retriever_type=request.retriever_type,
-                document_loader=request.document_loader,
-                progress_callback=progress_callback,
-            )
+        artifacts: GenerationArtifacts = await generate_artifacts(
+            request.prompt,
+            output_dir=str(output_path),
+            mode=request.mode,
+            formats=request.formats,
+            model=request.model,
+            temperature=request.temperature,
+            max_tokens=request.max_tokens,
+            agent_type=request.agent_type,
+            memory_config=request.memory_config,
+            custom_endpoint=request.custom_endpoint,
+            preset=request.preset,
+            graph_style=request.graph_style,
+            retriever_type=request.retriever_type,
+            document_loader=request.document_loader,
+            progress_callback=progress_callback,
+        )
 
-            # Emit completion with result
-            emit_complete(
-                job_id,
-                {
-                    "success": True,
-                    "mode": artifacts["mode"],
-                    "prompt": artifacts["prompt"],
-                    "manifest": artifacts["manifest"],
-                    "manifest_path": artifacts["manifest_path"],
-                    "output_dir": artifacts["output_dir"],
-                },
-            )
+        emit_complete(
+            job_id,
+            {
+                "success": True,
+                "mode": artifacts["mode"],
+                "prompt": artifacts["prompt"],
+                "manifest": artifacts["manifest"],
+                "manifest_path": artifacts["manifest_path"],
+                "output_dir": artifacts["output_dir"],
+            },
+        )
 
-        except Exception as exc:
-            logging.exception(f"Generation failed for job {job_id}")
-            emit_error(
-                job_id,
-                str(exc),
-                {"type": type(exc).__name__},
-            )
+    except Exception as exc:
+        logging.exception(f"Generation failed for job {job_id}")
+        emit_error(
+            job_id,
+            str(exc),
+            {"type": type(exc).__name__},
+        )
+    finally:
+        await _release_generation_slot()
