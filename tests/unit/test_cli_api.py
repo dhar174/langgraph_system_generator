@@ -18,7 +18,7 @@ def reload_modules(monkeypatch: pytest.MonkeyPatch):
     import importlib
 
     def _reload(
-        *modules,
+        *modules_to_reload,
         output_base: str | None = None,
         base_output_dir: Path | None = None,
         include_server: bool = False,
@@ -28,8 +28,8 @@ def reload_modules(monkeypatch: pytest.MonkeyPatch):
         if base_output_dir is not None:
             monkeypatch.setenv("BASE_OUTPUT_DIR", str(base_output_dir))
 
-        if modules:
-            for module in modules:
+        if modules_to_reload:
+            for module in modules_to_reload:
                 importlib.reload(module)
             return None
 
