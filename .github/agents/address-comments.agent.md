@@ -1,6 +1,6 @@
 ---
-description: 'Address PR comments. Use it for focused, repository-specific help.'
-name: 'address-comments'
+description: 'Specialist for resolving pull request review comments with focused code updates and follow-up testing.'
+name: 'Universal PR Comment Addresser'
 tools: ["*"]
 target: 'github-copilot'
 infer: true

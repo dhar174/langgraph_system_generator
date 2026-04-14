@@ -30,9 +30,8 @@ from langgraph_system_generator.utils.optional_deps import (
 
 BASE_DIR = Path(__file__).resolve().parents[2]
 DEFAULT_CACHE_PATH = (BASE_DIR / "data" / "cached_docs").resolve()
-
-GenerationMode = Literal["stub", "live"]
 DEFAULT_EXPORT_FORMATS = ("ipynb", "html", "markdown", "docx", "zip")
+GenerationMode = Literal["stub", "live"]
 
 
 class GenerationArtifacts(TypedDict):

@@ -56,7 +56,7 @@ Add this cell at the beginning of your notebook (if not already present):
 
 ```python
 # Install LangGraph dependencies
-!pip install -q langgraph langchain langchain-openai langchain-community
+!pip install -qU langgraph langchain langchain-openai langchain-community
 
 # Verify installation
 import langgraph
@@ -67,7 +67,8 @@ print(f"LangChain version: {langchain.__version__}")
 
 ### 5. Configure API Keys
 
-Add your OpenAI API key (required for execution):
+Add your provider key before running live cells. The repository defaults to
+OpenAI-backed live generation, so `OPENAI_API_KEY` is the most common choice:
 
 ```python
 import os
@@ -498,7 +499,7 @@ for i, query in enumerate(queries):
 ### Getting Help
 
 - **Colab FAQ**: https://research.google.com/colaboratory/faq.html
-- **LangGraph Docs**: https://langchain-ai.github.io/langgraph/
+- **LangGraph Docs**: https://docs.langchain.com/oss/python/langgraph/overview
 - **GitHub Issues**: Report bugs or ask questions
 
 ## Sharing Notebooks

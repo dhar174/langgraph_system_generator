@@ -1,6 +1,6 @@
 ---
 description: 'Validate user understanding of code, design patterns, and implementation details through guided questioning.'
-name: 'demonstrate-understanding'
+name: 'Demonstrate Understanding mode instructions'
 tools: ["*"]
 target: 'github-copilot'
 infer: true
