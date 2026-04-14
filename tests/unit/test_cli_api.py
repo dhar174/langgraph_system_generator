@@ -513,8 +513,6 @@ async def test_api_generate_async_concurrency_limit(
                 break
             await aio.sleep(_ASYNC_CLEANUP_POLL_INTERVAL_SECONDS)
         else:
-            pytest.fail(
-                "Background generation did not release its slot in time"
-            )
+            pytest.fail("Background generation did not release its slot in time")
 
         assert server_module._active_generation_count == 0
