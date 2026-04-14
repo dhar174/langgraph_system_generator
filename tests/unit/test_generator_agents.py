@@ -7,6 +7,8 @@ import pytest
 from langgraph_system_generator.generator.agents import (
     architecture_selector,
     graph_designer,
+    notebook_composer,
+    qa_repair_agent,
     requirements_analyst,
     toolchain_engineer,
 )
@@ -174,4 +176,44 @@ def test_architecture_selector_uses_request_scoped_model_config(monkeypatch):
         "model": "gpt-5-mini",
         "temperature": 0.2,
         "max_tokens": 1024,
+    }
+
+
+@pytest.mark.parametrize(
+    ("module", "agent_cls"),
+    [
+        (graph_designer, graph_designer.GraphDesigner),
+        (toolchain_engineer, toolchain_engineer.ToolchainEngineer),
+        (qa_repair_agent, qa_repair_agent.QARepairAgent),
+        (notebook_composer, notebook_composer.NotebookComposer),
+    ],
+)
+def test_other_agents_use_request_scoped_model_config(
+    monkeypatch,
+    module,
+    agent_cls,
+):
+    """Shared ChatOpenAI construction should preserve request-scoped settings."""
+    captured_kwargs = {}
+
+    monkeypatch.setattr(
+        module,
+        "ChatOpenAI",
+        make_capturing_llm(captured_kwargs),
+    )
+
+    agent_cls(
+        model_config=ModelConfig(
+            model="gpt-5.1",
+            temperature=0.3,
+            api_base="https://example.test/v1",
+            max_tokens=512,
+        )
+    )
+
+    assert captured_kwargs == {
+        "model": "gpt-5.1",
+        "temperature": 0.3,
+        "base_url": "https://example.test/v1",
+        "max_tokens": 512,
     }

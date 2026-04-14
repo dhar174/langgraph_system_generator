@@ -354,6 +354,70 @@ async def test_api_rejects_disallowed_output_dir(tmp_path: Path):
 
 
 @pytest.mark.asyncio
+async def test_api_generate_respects_concurrency_limit(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """Test that /generate respects the shared concurrency limit."""
+    monkeypatch.setenv("LNF_MAX_CONCURRENT_GENERATIONS", "1")
+    monkeypatch.setenv("LNF_OUTPUT_BASE", "test_sync_concurrency")
+
+    import importlib
+    import asyncio as aio
+    import langgraph_system_generator.constants as constants_module
+    import langgraph_system_generator.api.server as server_module
+
+    importlib.reload(constants_module)
+    importlib.reload(server_module)
+
+    gate = aio.Event()
+
+    async def slow_generate_artifacts(*_args, **_kwargs):
+        await gate.wait()
+        return {
+            "mode": "stub",
+            "prompt": "slow",
+            "manifest": {},
+            "manifest_path": str(constants_module._BASE_OUTPUT / "manifest.json"),
+            "output_dir": str(constants_module._BASE_OUTPUT / tmp_path.name / "gen1"),
+        }
+
+    monkeypatch.setattr(server_module, "generate_artifacts", slow_generate_artifacts)
+    server_module._active_generation_count = 0
+
+    transport = httpx.ASGITransport(app=server_module.app)
+    output_dir = constants_module._BASE_OUTPUT / tmp_path.name
+
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        request_one = aio.create_task(
+            client.post(
+                "/generate",
+                json={
+                    "prompt": "Test concurrent sync generation 1",
+                    "mode": "stub",
+                    "output_dir": str(output_dir / "gen1"),
+                },
+            )
+        )
+        await aio.sleep(0.05)
+
+        response2 = await client.post(
+            "/generate",
+            json={
+                "prompt": "Test concurrent sync generation 2",
+                "mode": "stub",
+                "output_dir": str(output_dir / "gen2"),
+            },
+        )
+
+        assert response2.status_code == 503
+
+        gate.set()
+        response1 = await request_one
+
+    assert response1.status_code == 200
+
+
+@pytest.mark.asyncio
 async def test_api_generate_async_endpoint(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):

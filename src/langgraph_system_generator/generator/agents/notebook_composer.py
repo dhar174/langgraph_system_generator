@@ -10,6 +10,7 @@ from typing import Any, Dict, List
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
 
+from langgraph_system_generator.generator.agents._llm import build_chat_llm
 from langgraph_system_generator.generator.state import CellSpec, NotebookPlan
 from langgraph_system_generator.patterns import (
     CritiqueLoopPattern,
@@ -34,13 +35,11 @@ class NotebookComposer:
         model: str | None = None,
         model_config: ModelConfig | None = None,
     ):
-        config = model_config or ModelConfig(model=model or settings.default_model, temperature=0.0)
-        llm_kwargs = {"model": config.model, "temperature": config.temperature}
-        if config.api_base:
-            llm_kwargs["base_url"] = config.api_base
-        if config.max_tokens is not None:
-            llm_kwargs["max_tokens"] = config.max_tokens
-        self.llm = ChatOpenAI(**llm_kwargs)
+        self.llm = build_chat_llm(
+            model=model,
+            model_config=model_config,
+            chat_openai_cls=ChatOpenAI,
+        )
 
     @staticmethod
     def _safe_identifier(value: Any, fallback: str) -> str:

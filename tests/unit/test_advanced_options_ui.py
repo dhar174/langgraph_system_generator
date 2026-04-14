@@ -111,6 +111,10 @@ def test_advanced_options_javascript():
         "Missing logic to show/hide custom endpoint group"
     assert "customModelInput.required = true" in content, \
         "Missing logic to require a custom model identifier"
+    assert "const hasCustomEndpoint = Boolean(data.custom_endpoint);" in content, \
+        "Missing rerun logic to distinguish explicit model overrides from custom endpoints"
+    assert "const explicitModelOption = new Option(data.model, data.model);" in content, \
+        "Missing rerun logic to add explicit model overrides back into the model select"
 
 
 def test_advanced_options_css():

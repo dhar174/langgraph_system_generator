@@ -983,10 +983,21 @@ function rerunFromHistory(entry) {
     if (data.model) {
         const modelSelectElement = document.getElementById('model');
         const optionExists = Array.from(modelSelectElement.options).some((option) => option.value === data.model);
-        modelSelectElement.value = optionExists ? data.model : 'custom';
+        const hasCustomEndpoint = Boolean(data.custom_endpoint);
+
+        if (optionExists) {
+            modelSelectElement.value = data.model;
+        } else if (hasCustomEndpoint) {
+            modelSelectElement.value = 'custom';
+        } else {
+            const explicitModelOption = new Option(data.model, data.model);
+            modelSelectElement.add(explicitModelOption);
+            modelSelectElement.value = data.model;
+        }
+
         modelSelectElement.dispatchEvent(new Event('change'));
 
-        if (!optionExists && customModelInput) {
+        if (!optionExists && hasCustomEndpoint && customModelInput) {
             customModelInput.value = data.model;
         }
     }

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from contextlib import asynccontextmanager
 import logging
 import os
 from pathlib import Path
@@ -67,6 +68,29 @@ async def _release_generation_slot() -> None:
     async with _generation_lock:
         if _active_generation_count > 0:
             _active_generation_count -= 1
+
+
+async def _acquire_generation_slot_or_raise() -> None:
+    """Acquire a generation slot or raise when capacity is exhausted."""
+    if not await _try_acquire_generation_slot():
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "Server is currently processing the maximum number of "
+                f"concurrent generations ({_MAX_CONCURRENT_GENERATIONS}). "
+                "Please try again later."
+            ),
+        )
+
+
+@asynccontextmanager
+async def _generation_slot():
+    """Guard a request with the shared generation admission controller."""
+    await _acquire_generation_slot_or_raise()
+    try:
+        yield
+    finally:
+        await _release_generation_slot()
 
 
 def _resolve_output_dir(path: str | os.PathLike[str] | None) -> Path:
@@ -290,37 +314,38 @@ async def generate_notebook(request: GenerationRequest) -> GenerationResponse:
     # Use the secure path resolution function
     output_path = _resolve_output_dir(request.output_dir)
 
-    try:
-        artifacts: GenerationArtifacts = await generate_artifacts(
-            request.prompt,
-            output_dir=str(output_path),
-            mode=request.mode,
-            formats=request.formats,
-            model=request.model,
-            temperature=request.temperature,
-            max_tokens=request.max_tokens,
-            agent_type=request.agent_type,
-            memory_config=request.memory_config,
-            custom_endpoint=request.custom_endpoint,
-            preset=request.preset,
-            graph_style=request.graph_style,
-            retriever_type=request.retriever_type,
-            document_loader=request.document_loader,
-        )
-        return GenerationResponse(
-            success=True,
-            mode=artifacts["mode"],
-            prompt=artifacts["prompt"],
-            manifest=artifacts["manifest"],
-            manifest_path=artifacts["manifest_path"],
-            output_dir=artifacts["output_dir"],
-        )
-    except (
-        RuntimeError,
-        ValueError,
-    ) as exc:  # pragma: no cover - surfaced via HTTPException
-        logging.exception("Generation request failed")
-        raise HTTPException(status_code=400, detail=str(exc))
+    async with _generation_slot():
+        try:
+            artifacts: GenerationArtifacts = await generate_artifacts(
+                request.prompt,
+                output_dir=str(output_path),
+                mode=request.mode,
+                formats=request.formats,
+                model=request.model,
+                temperature=request.temperature,
+                max_tokens=request.max_tokens,
+                agent_type=request.agent_type,
+                memory_config=request.memory_config,
+                custom_endpoint=request.custom_endpoint,
+                preset=request.preset,
+                graph_style=request.graph_style,
+                retriever_type=request.retriever_type,
+                document_loader=request.document_loader,
+            )
+            return GenerationResponse(
+                success=True,
+                mode=artifacts["mode"],
+                prompt=artifacts["prompt"],
+                manifest=artifacts["manifest"],
+                manifest_path=artifacts["manifest_path"],
+                output_dir=artifacts["output_dir"],
+            )
+        except (
+            RuntimeError,
+            ValueError,
+        ) as exc:  # pragma: no cover - surfaced via HTTPException
+            logging.exception("Generation request failed")
+            raise HTTPException(status_code=400, detail=str(exc))
 
 
 @app.post("/generate-async", response_model=GenerationStartResponse)
@@ -348,11 +373,7 @@ async def start_async_generation(
     output_path = _resolve_output_dir(request.output_dir)
 
     # Acquire capacity before the job is accepted so overload requests fail fast.
-    if not await _try_acquire_generation_slot():
-        raise HTTPException(
-            status_code=503,
-            detail=f"Server is currently processing the maximum number of concurrent generations ({_MAX_CONCURRENT_GENERATIONS}). Please try again later.",
-        )
+    await _acquire_generation_slot_or_raise()
 
     # Create job and start generation task
     job_id = create_job()
