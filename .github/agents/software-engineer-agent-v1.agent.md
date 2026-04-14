@@ -1,6 +1,6 @@
 ---
-description: 'Expert-level software engineering agent. Deliver production-ready, maintainable code. Execute systematically and specification-driven. Document.'
-name: 'software-engineer-agent-v1'
+description: 'Senior software engineering specialist for systematic, production-ready implementation and maintenance work.'
+name: 'Software Engineer Agent'
 tools: ["*"]
 target: 'github-copilot'
 infer: true

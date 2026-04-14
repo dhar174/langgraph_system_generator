@@ -1,5 +1,5 @@
 ---
-description: 'Strategic planning and architecture assistant focused on thoughtful analysis before implementation.'
+description: 'Strategic planning specialist for analyzing requirements and producing practical implementation approaches.'
 name: 'Plan Mode - Strategic Planning & Architecture'
 tools: ["*"]
 target: 'github-copilot'

@@ -1,5 +1,5 @@
 ---
-description: 'Elite technical content editor and curriculum architect for evaluating technical training materials, documentation, and educational content.'
+description: 'Technical content review specialist for improving documentation accuracy, structure, pedagogy, and code examples.'
 name: 'technical-content-evaluator'
 tools: ["*"]
 target: 'github-copilot'

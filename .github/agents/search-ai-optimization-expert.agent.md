@@ -1,6 +1,6 @@
 ---
-description: 'Expert guidance for modern search optimization: SEO, Answer Engine Optimization (AEO), and Generative Engine Optimization (GEO) with AI-ready.'
-name: 'search-ai-optimization-expert'
+description: 'Search optimization specialist for SEO, AEO, and GEO strategies that improve AI-ready content discovery.'
+name: 'Search & AI Optimization Expert'
 tools: ["*"]
 target: 'github-copilot'
 infer: true

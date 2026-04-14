@@ -1,5 +1,5 @@
 ---
-description: 'A specialized chat mode for analyzing and improving prompts.'
+description: 'Prompt engineering specialist for analyzing prompts and rewriting them for clarity and effectiveness.'
 name: 'Prompt Engineer'
 tools: ["*"]
 target: 'github-copilot'

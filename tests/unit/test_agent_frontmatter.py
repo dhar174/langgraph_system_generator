@@ -5,8 +5,10 @@ import re
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 AGENTS_DIR = REPO_ROOT / ".github" / "agents"
-EXPECTED_KEYS = {"description", "name", "tools", "target", "infer"}
-EXPECTED_KEYS_DISPLAY = sorted(EXPECTED_KEYS)
+REQUIRED_KEYS = {"description", "name", "tools", "target", "infer"}
+OPTIONAL_KEYS = {"mcp-servers"}
+ALLOWED_KEYS = REQUIRED_KEYS | OPTIONAL_KEYS
+EXPECTED_KEYS_DISPLAY = sorted(REQUIRED_KEYS)
 
 
 def _read_frontmatter(path: Path) -> dict[str, str]:
@@ -72,9 +74,13 @@ def test_agent_frontmatter_matches_copilot_requirements() -> None:
 
         frontmatter = _read_frontmatter(path)
 
-        assert set(frontmatter) == EXPECTED_KEYS, (
-            f"{path.name} should only use the supported frontmatter keys "
+        assert REQUIRED_KEYS.issubset(frontmatter), (
+            f"{path.name} must include the required frontmatter keys "
             f"{EXPECTED_KEYS_DISPLAY}"
+        )
+        assert set(frontmatter).issubset(ALLOWED_KEYS), (
+            f"{path.name} should only use supported frontmatter keys "
+            f"{sorted(ALLOWED_KEYS)}"
         )
         assert "model" not in frontmatter, f"{path.name} must not declare model in frontmatter"
         assert _parse_tools(frontmatter["tools"]) == ["*"], (

@@ -1,14 +1,18 @@
 # Precached LangGraph/LangChain Documentation
 
-This directory contains precached documentation from LangGraph and LangChain that has been scraped and stored for offline use. This enables the RAG system to work without needing to fetch documentation on every run.
+This directory contains precached documentation from LangGraph and LangChain
+that has been scraped and stored for offline use. This enables the RAG system
+to work without needing to fetch documentation on every run.
 
 **Note:** Redirect pages and minimal content (< 100 characters) are automatically filtered during scraping to ensure only high-quality documentation is cached.
 
 ## Contents
 
-The `documents.json` file contains scraped documentation from:
+The `documents.json` file contains scraped documentation from the current
+official docs surfaces:
 
 ### LangGraph Documentation
+- <https://docs.langchain.com/oss/python/langgraph/overview>
 - Core concepts and API
 - Multi-agent patterns (supervisor, hierarchical teams, collaboration)
 - State management and persistence
@@ -16,6 +20,8 @@ The `documents.json` file contains scraped documentation from:
 - How-to guides and tutorials
 
 ### LangChain Documentation
+- <https://docs.langchain.com/oss/python/langchain/overview>
+- <https://reference.langchain.com/python>
 - Core concepts
 - Agent architectures
 - RAG and retrieval
@@ -28,6 +34,10 @@ The `documents.json` file contains scraped documentation from:
 - **Content Size**: ~300KB (299,000+ characters)
 - **Sources**: Official LangGraph and LangChain documentation sites
 - **Quality**: All redirect pages and minimal content filtered out
+
+The legacy `https://langchain-ai.github.io/langgraph/` site now redirects to
+the docs.langchain.com LangGraph overview page, so new references should use the
+docs.langchain.com URLs directly.
 
 ## Usage
 

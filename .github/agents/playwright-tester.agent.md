@@ -1,5 +1,5 @@
 ---
-description: 'Testing mode for Playwright tests. Use it for focused, repository-specific help.'
+description: 'Playwright testing specialist for browser automation, UI debugging, and end-to-end validation.'
 name: 'Playwright Tester Mode'
 tools: ["*"]
 target: 'github-copilot'

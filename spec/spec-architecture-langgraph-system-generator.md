@@ -41,7 +41,7 @@ Describe the required architecture, quality bars, and interfaces for generating 
 - **REQ-012**: Provide CLI (`lnf generate`, `lnf build-index`) and FastAPI endpoints (`POST /generate`) with equivalent capabilities.
 - **REQ-013**: Render web UI that mirrors CLI/API options for mode, formats, model selection, and advanced parameters.
 - **REQ-014**: Guardrails: fail fast on missing required inputs, invalid formats, or unsupported mode combinations; return structured error payloads.
-- **REQ-015**: Persistence options: default MemorySaver for dev; expose pluggable checkpointing for SQLite/Postgres in inner graphs when requested.
+- **REQ-015**: Persistence options: default `InMemorySaver` for dev; expose pluggable checkpointing for SQLite/Postgres in inner graphs when requested.
 - **SEC-001**: Do not log secrets (API keys); load from environment and redact in outputs.
 - **CON-001**: Maintain offline operation in stub mode without network calls; rely solely on cached docs and fake embeddings.
 - **CON-002**: Generated notebooks must remain provider-agnostic except for explicitly selected model/tool integrations.
@@ -126,3 +126,6 @@ Edge cases: missing prompt (reject request), unsupported format flag (error), no
 - SYSTEM_SPEC.md (overall product goals)
 - UPDATED_LANGGRAPH_GUIDE.md (latest LangGraph guidance)
 - docs/wiki/Architecture-Deep-Dive.md (internal architecture details)
+- LangChain docs: https://docs.langchain.com
+- LangChain Python API reference: https://reference.langchain.com/python
+- LangGraph overview: https://docs.langchain.com/oss/python/langgraph/overview
