@@ -101,6 +101,13 @@ def test_build_stub_result_normalizes_supported_agent_type_override():
     assert "agent_type override" in result["architecture_justification"]
 
 
+def test_build_stub_result_ignores_unsupported_agent_type_override():
+    result = _build_stub_result("Delegate this workflow", agent_type=" swarm ")
+
+    assert result["architecture_type"] == "subagents"
+    assert "agent_type override" not in result["architecture_justification"]
+
+
 @pytest.mark.asyncio
 async def test_api_generate_stub(
     tmp_path: Path,
@@ -398,10 +405,10 @@ async def test_api_rejects_unsupported_agent_type():
 async def test_api_generate_surfaces_optional_dependency_errors(
     monkeypatch: pytest.MonkeyPatch,
 ):
+    error_message = "optional dependency unavailable"
+
     async def fake_generate_artifacts(*_args, **_kwargs):
-        raise OptionalDependencyError(
-            'Install with pip install "langgraph-system-generator[full]"'
-        )
+        raise OptionalDependencyError(error_message)
 
     monkeypatch.setattr(
         "langgraph_system_generator.api.server.generate_artifacts",
@@ -420,7 +427,7 @@ async def test_api_generate_surfaces_optional_dependency_errors(
         )
 
     assert response.status_code == 400
-    assert 'langgraph-system-generator[full]' in response.json()["detail"]
+    assert response.json()["detail"] == error_message
 
 
 @pytest.mark.asyncio
