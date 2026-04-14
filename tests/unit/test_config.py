@@ -3,6 +3,7 @@ from pathlib import Path
 from pydantic_settings import SettingsConfigDict
 
 from langgraph_system_generator.utils.config import (
+    GenerationConfig,
     ModelConfig,
     Settings,
     get_settings,
@@ -209,3 +210,12 @@ def test_model_config_preserves_gpt_5_mini():
     # Should also work when explicitly set
     config2 = ModelConfig(model="gpt-5-mini")
     assert config2.model == "gpt-5-mini"
+
+
+def test_generation_config_uses_model_defaults_when_temperature_not_overridden():
+    """GenerationConfig should preserve ModelConfig defaults when temperature is omitted."""
+
+    resolved = GenerationConfig(model="gpt-5.2").to_model_config("gpt-5-mini")
+
+    assert resolved.model == "gpt-5.2"
+    assert resolved.temperature == 0.7

@@ -124,6 +124,34 @@ async def test_api_generate_stub(
 
 
 @pytest.mark.asyncio
+async def test_api_rejects_unsupported_advanced_options(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setenv("LNF_OUTPUT_BASE", "test_api_unsupported_options")
+
+    import importlib
+    import langgraph_system_generator.constants as constants_module
+    import langgraph_system_generator.api.server as server_module
+
+    importlib.reload(constants_module)
+    importlib.reload(server_module)
+
+    transport = httpx.ASGITransport(app=server_module.app)
+    output_dir = constants_module._BASE_OUTPUT / tmp_path.name
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(
+            "/generate",
+            json={
+                "prompt": "API prompt",
+                "mode": "stub",
+                "output_dir": str(output_dir),
+                "memory_config": "short",
+            },
+        )
+
+    assert response.status_code == 400
+    assert "Unsupported advanced options" in response.json()["detail"]
+
+
+@pytest.mark.asyncio
 async def test_api_generate_with_formats(
     tmp_path: Path,
     reload_modules,
@@ -250,6 +278,39 @@ async def test_live_mode_requires_credentials(
 
 
 @pytest.mark.asyncio
+async def test_live_mode_rejects_invalid_builtin_model(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.setenv("BASE_OUTPUT_DIR", str(tmp_path.resolve()))
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+
+    with pytest.raises(ValueError, match="Unsupported model for the built-in provider"):
+        await generate_artifacts(
+            "Live prompt",
+            output_dir=tmp_path,
+            mode="live",
+            model="not-a-real-model",
+        )
+
+
+@pytest.mark.asyncio
+async def test_live_mode_rejects_invalid_custom_endpoint(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.setenv("BASE_OUTPUT_DIR", str(tmp_path.resolve()))
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+
+    with pytest.raises(ValueError, match="http or https URL"):
+        await generate_artifacts(
+            "Live prompt",
+            output_dir=tmp_path,
+            mode="live",
+            model="gpt-5-mini",
+            custom_endpoint="ftp://example.test/v1",
+        )
+
+
+@pytest.mark.asyncio
 async def test_api_rejects_disallowed_output_dir(tmp_path: Path):
     outside = tmp_path.parent
     transport = httpx.ASGITransport(app=app)
@@ -263,6 +324,62 @@ async def test_api_rejects_disallowed_output_dir(tmp_path: Path):
             },
         )
     assert response.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_api_rejects_invalid_custom_endpoint():
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(
+            "/generate",
+            json={
+                "prompt": "Invalid endpoint",
+                "mode": "stub",
+                "output_dir": "./output/api",
+                "model": "gpt-5-mini",
+                "custom_endpoint": "ftp://example.test/v1",
+            },
+        )
+
+    assert response.status_code == 400
+    assert "http or https URL" in response.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_api_rejects_custom_endpoint_with_blank_model():
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(
+            "/generate",
+            json={
+                "prompt": "Blank model",
+                "mode": "stub",
+                "output_dir": "./output/api",
+                "model": "   ",
+                "custom_endpoint": " https://example.test/v1 ",
+            },
+        )
+
+    assert response.status_code == 400
+    assert "explicit OpenAI-compatible model identifier" in response.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_api_rejects_unsupported_agent_type():
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(
+            "/generate",
+            json={
+                "prompt": "Unsupported agent type",
+                "mode": "stub",
+                "output_dir": "./output/api",
+                "agent_type": " swarm ",
+            },
+        )
+
+    assert response.status_code == 400
+    assert "Unsupported agent_type" in response.json()["detail"]
 
 
 @pytest.mark.asyncio

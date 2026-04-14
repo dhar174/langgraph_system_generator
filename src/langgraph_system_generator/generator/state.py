@@ -8,6 +8,8 @@ from typing import Annotated, Any, Dict, List, Optional
 from pydantic import BaseModel, Field
 from typing_extensions import TypedDict
 
+from langgraph_system_generator.utils.config import GenerationConfig
+
 
 class Constraint(BaseModel):
     """User constraint specification."""
@@ -88,6 +90,7 @@ class GeneratorState(TypedDict):
     # Workflow design (added for graph designer)
     workflow_design: Optional[Dict[str, Any]]
     tools_plan: Optional[List[Dict[str, Any]]]
+    generation_config: Optional[GenerationConfig]
 
     # Generation
     # NOTE: `generated_cells` is intentionally *not* annotated with `operator.add`.

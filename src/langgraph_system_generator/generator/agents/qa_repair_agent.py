@@ -8,14 +8,23 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
 
 from langgraph_system_generator.generator.state import CellSpec, QAReport
-from langgraph_system_generator.utils.config import settings
+from langgraph_system_generator.utils.config import (
+    ModelConfig,
+    build_chat_openai_kwargs,
+    resolve_model_config,
+)
 
 
 class QARepairAgent:
     """Validates and repairs generated notebooks."""
 
-    def __init__(self, model: str | None = None):
-        self.llm = ChatOpenAI(model=model or settings.default_model, temperature=0)
+    def __init__(
+        self,
+        model: str | None = None,
+        model_config: ModelConfig | None = None,
+    ):
+        config = resolve_model_config(model=model, model_config=model_config, temperature=0.0)
+        self.llm = ChatOpenAI(**build_chat_openai_kwargs(config))
 
     async def validate(self, cells: List[CellSpec]) -> List[QAReport]:
         """Run all quality checks on generated cells.
