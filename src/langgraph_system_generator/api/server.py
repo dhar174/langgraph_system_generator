@@ -33,6 +33,7 @@ from langgraph_system_generator.utils.generation_options import (
     normalize_agent_type,
     normalize_optional_string,
 )
+from langgraph_system_generator.utils.optional_deps import OptionalDependencyError
 
 app = FastAPI(title="LangGraph Notebook Foundry API", version="0.1.1")
 
@@ -353,6 +354,7 @@ async def generate_notebook(request: GenerationRequest) -> GenerationResponse:
             output_dir=artifacts["output_dir"],
         )
     except (
+        OptionalDependencyError,
         RuntimeError,
         ValueError,
     ) as exc:  # pragma: no cover - surfaced via HTTPException

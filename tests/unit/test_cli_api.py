@@ -10,7 +10,12 @@ import httpx
 from fastapi.testclient import TestClient
 
 from langgraph_system_generator.api.server import app
-from langgraph_system_generator.cli import GenerationArtifacts, generate_artifacts
+from langgraph_system_generator.cli import (
+    GenerationArtifacts,
+    _build_stub_result,
+    generate_artifacts,
+)
+from langgraph_system_generator.utils.optional_deps import OptionalDependencyError
 
 
 @pytest.fixture
@@ -87,6 +92,13 @@ async def test_generate_artifacts_default_formats_include_markdown(
 
     assert "markdown_path" in artifacts["manifest"]
     assert Path(artifacts["manifest"]["markdown_path"]).exists()
+
+
+def test_build_stub_result_normalizes_supported_agent_type_override():
+    result = _build_stub_result("Test prompt", agent_type=" Hybrid ")
+
+    assert result["architecture_type"] == "hybrid"
+    assert "agent_type override" in result["architecture_justification"]
 
 
 @pytest.mark.asyncio
@@ -380,6 +392,35 @@ async def test_api_rejects_unsupported_agent_type():
 
     assert response.status_code == 400
     assert "Unsupported agent_type" in response.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_api_generate_surfaces_optional_dependency_errors(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    async def fake_generate_artifacts(*_args, **_kwargs):
+        raise OptionalDependencyError(
+            'Install with pip install "langgraph-system-generator[full]"'
+        )
+
+    monkeypatch.setattr(
+        "langgraph_system_generator.api.server.generate_artifacts",
+        fake_generate_artifacts,
+    )
+
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(
+            "/generate",
+            json={
+                "prompt": "Missing optional dependencies",
+                "mode": "stub",
+                "output_dir": "./output/api",
+            },
+        )
+
+    assert response.status_code == 400
+    assert 'langgraph-system-generator[full]' in response.json()["detail"]
 
 
 @pytest.mark.asyncio

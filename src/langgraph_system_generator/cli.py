@@ -195,8 +195,8 @@ def _build_stub_result(prompt: str, agent_type: str | None = None) -> Dict[str, 
     """Create a deterministic, offline-friendly generation result."""
 
     RouterPattern, SubagentsPattern = _load_patterns()
-    normalized_agent_type = (agent_type or "").strip().lower()
-    if normalized_agent_type in {"router", "subagents", "hybrid"}:
+    normalized_agent_type = normalize_agent_type(agent_type)
+    if normalized_agent_type in SUPPORTED_AGENT_TYPES:
         architecture_type = normalized_agent_type
         justification = (
             f"{normalized_agent_type.title()} pattern selected from the requested "
