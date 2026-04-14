@@ -78,7 +78,39 @@ async def test_multiple_subscribers_receive_same_event_log():
 
 @pytest.mark.asyncio
 async def test_progress_streaming_resumes_after_last_event_id():
-    """A reconnecting client should resume after the acknowledged event."""
+    """A reconnecting client should resume after the last acknowledged event."""
+
+    job_id = progress_streaming.create_job()
+    progress_streaming.emit_node_progress(
+        job_id,
+        "start",
+        0,
+        "Starting generation...",
+    )
+    progress_streaming.emit_node_progress(
+        job_id,
+        "compose",
+        50,
+        "Composing notebook...",
+    )
+    progress_streaming.emit_complete(job_id, {"success": True})
+
+    resumed = await _collect_events(job_id, last_event_id="0")
+
+    assert [event["event"] for event in resumed] == ["progress", "complete"]
+    assert resumed[0]["data"]["message"] == "Composing notebook..."
+    assert resumed[1]["data"]["success"] is True
+
+    progress_streaming.cleanup_job(job_id)
+
+
+@pytest.mark.asyncio
+async def test_progress_streaming_clamps_reconnect_cursor_to_retained_events(
+    monkeypatch,
+):
+    """Reconnects should resume from the oldest retained event after trimming."""
+
+    monkeypatch.setattr(progress_streaming, "_MAX_PROGRESS_EVENTS", 2)
 
     job_id = progress_streaming.create_job()
     progress_streaming.emit_node_progress(
@@ -134,7 +166,7 @@ async def test_progress_streaming_resumes_when_last_event_id_is_ahead_of_log():
 async def test_progress_streaming_caps_retained_event_log(monkeypatch):
     """The in-memory replay log should not grow without bound."""
 
-    monkeypatch.setattr(progress_streaming, "_MAX_RECORDED_EVENTS", 3)
+    monkeypatch.setattr(progress_streaming, "_MAX_PROGRESS_EVENTS", 3)
     job_id = progress_streaming.create_job()
 
     progress_streaming.emit_node_progress(job_id, "step-1", 10, "Step 1")
@@ -162,7 +194,7 @@ async def test_progress_streaming_continues_after_retention_rollover(
 ):
     """A live subscriber should keep later events flowing after rollover."""
 
-    monkeypatch.setattr(progress_streaming, "_MAX_RECORDED_EVENTS", 2)
+    monkeypatch.setattr(progress_streaming, "_MAX_PROGRESS_EVENTS", 2)
     job_id = progress_streaming.create_job()
 
     started = asyncio.Event()

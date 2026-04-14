@@ -7,6 +7,7 @@ import logging
 import os
 from pathlib import Path
 from typing import Any, Dict, Optional
+from urllib.parse import urlparse
 
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import FileResponse, HTMLResponse, Response
@@ -143,6 +144,14 @@ def _validate_advanced_options(request: "GenerationRequest") -> None:
             status_code=400,
             detail="custom_endpoint requires an explicit OpenAI-compatible model identifier.",
         )
+
+    if request.custom_endpoint:
+        parsed_endpoint = urlparse(request.custom_endpoint)
+        if parsed_endpoint.scheme not in {"http", "https"} or not parsed_endpoint.hostname:
+            raise HTTPException(
+                status_code=400,
+                detail="custom_endpoint must be a valid http or https URL with a hostname.",
+            )
 
     if request.model == "custom":
         raise HTTPException(

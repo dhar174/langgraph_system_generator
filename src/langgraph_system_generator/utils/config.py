@@ -83,16 +83,43 @@ class GenerationConfig(BaseModel):
     def to_model_config(self, default_model: str) -> ModelConfig:
         """Resolve a per-request model configuration for live agents."""
 
-        config_kwargs = {
+        model_kwargs: dict[str, object] = {
             "model": self.model or default_model,
-            "api_base": self.api_base,
-            "max_tokens": self.max_tokens,
         }
         if self.temperature is not None:
-            config_kwargs["temperature"] = self.temperature
+            model_kwargs["temperature"] = self.temperature
+        if self.api_base is not None:
+            model_kwargs["api_base"] = self.api_base
+        if self.max_tokens is not None:
+            model_kwargs["max_tokens"] = self.max_tokens
+        return ModelConfig(**model_kwargs)
 
-        return ModelConfig(**config_kwargs)
 
+def resolve_model_config(
+    *,
+    model: str | None = None,
+    model_config: ModelConfig | None = None,
+    temperature: float = 0.0,
+) -> ModelConfig:
+    """Return the request-scoped model config or construct a default one."""
+
+    if model_config is not None:
+        return model_config
+    return ModelConfig(model=model or settings.default_model, temperature=temperature)
+
+
+def build_chat_openai_kwargs(config: ModelConfig) -> dict[str, object]:
+    """Translate a ModelConfig into ChatOpenAI constructor kwargs."""
+
+    llm_kwargs: dict[str, object] = {
+        "model": config.model,
+        "temperature": config.temperature,
+    }
+    if config.api_base:
+        llm_kwargs["base_url"] = config.api_base
+    if config.max_tokens is not None:
+        llm_kwargs["max_tokens"] = config.max_tokens
+    return llm_kwargs
 
 
 class Settings(BaseSettings):
@@ -144,17 +171,7 @@ class Settings(BaseSettings):
 
 
 _DEFAULT_ENV_FILE = object()
-_TEST_SETTINGS_ENV_KEYS = (
-    "OPENAI_API_KEY",
-    "ANTHROPIC_API_KEY",
-    "LANGSMITH_API_KEY",
-    "LANGSMITH_PROJECT",
-    "VECTOR_STORE_TYPE",
-    "VECTOR_STORE_PATH",
-    "DEFAULT_MODEL",
-    "MAX_REPAIR_ATTEMPTS",
-    "DEFAULT_BUDGET_TOKENS",
-)
+_TEST_SETTINGS_ENV_KEYS = tuple(field_name.upper() for field_name in Settings.model_fields)
 
 
 def _pytest_is_active() -> bool:
@@ -166,14 +183,14 @@ def _pytest_is_active() -> bool:
 def _resolve_default_env_file() -> Optional[str]:
     """Resolve the default dotenv path for application usage."""
 
+    if _pytest_is_active():
+        return None
+
     configured_env_file = os.environ.get("LNF_ENV_FILE")
     if configured_env_file is not None:
         return configured_env_file or None
 
     if os.environ.get("LNF_DISABLE_DOTENV", "").lower() in {"1", "true", "yes", "on"}:
-        return None
-
-    if _pytest_is_active():
         return None
 
     candidate = Path(".env")

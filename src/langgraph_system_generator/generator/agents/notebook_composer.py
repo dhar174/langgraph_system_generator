@@ -15,7 +15,12 @@ from langgraph_system_generator.patterns import (
     RouterPattern,
     SubagentsPattern,
 )
-from langgraph_system_generator.utils.config import ModelConfig, settings
+from langgraph_system_generator.utils.config import (
+    ModelConfig,
+    build_chat_openai_kwargs,
+    resolve_model_config,
+    settings,
+)
 
 
 class NotebookComposer:
@@ -33,13 +38,8 @@ class NotebookComposer:
         model: str | None = None,
         model_config: ModelConfig | None = None,
     ):
-        config = model_config or ModelConfig(model=model or settings.default_model, temperature=0.0)
-        llm_kwargs = {"model": config.model, "temperature": config.temperature}
-        if config.api_base:
-            llm_kwargs["base_url"] = config.api_base
-        if config.max_tokens is not None:
-            llm_kwargs["max_tokens"] = config.max_tokens
-        self.llm = ChatOpenAI(**llm_kwargs)
+        config = resolve_model_config(model=model, model_config=model_config, temperature=0.0)
+        self.llm = ChatOpenAI(**build_chat_openai_kwargs(config))
 
     @staticmethod
     def _safe_identifier(value: Any, fallback: str) -> str:
