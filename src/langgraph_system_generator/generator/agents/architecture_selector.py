@@ -27,7 +27,7 @@ class ArchitectureSelector:
         self.llm = build_chat_llm(
             model=model,
             model_config=model_config,
-            chat_openai_cls=ChatOpenAI,
+            chat_openai_class=ChatOpenAI,
         )
         self.docs_retriever = docs_retriever
 

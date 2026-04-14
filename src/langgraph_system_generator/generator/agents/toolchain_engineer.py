@@ -24,7 +24,7 @@ class ToolchainEngineer:
         self.llm = build_chat_llm(
             model=model,
             model_config=model_config,
-            chat_openai_cls=ChatOpenAI,
+            chat_openai_class=ChatOpenAI,
         )
 
     async def plan_tools(

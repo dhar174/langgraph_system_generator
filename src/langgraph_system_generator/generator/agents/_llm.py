@@ -13,7 +13,7 @@ def build_chat_llm(
     *,
     model: str | None = None,
     model_config: ModelConfig | None = None,
-    chat_openai_cls: Type[ChatOpenAI] = ChatOpenAI,
+    chat_openai_class: Type[ChatOpenAI] = ChatOpenAI,
 ) -> Any:
     """Build a ChatOpenAI-compatible client from shared model config rules."""
     config = model_config or ModelConfig(
@@ -25,4 +25,4 @@ def build_chat_llm(
         llm_kwargs["base_url"] = config.api_base
     if config.max_tokens is not None:
         llm_kwargs["max_tokens"] = config.max_tokens
-    return chat_openai_cls(**llm_kwargs)
+    return chat_openai_class(**llm_kwargs)

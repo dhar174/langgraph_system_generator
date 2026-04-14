@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
-from pathlib import Path
+import asyncio as aio
+import importlib
 import json
+from pathlib import Path
 
 import pytest
 import httpx
@@ -11,6 +13,16 @@ from fastapi.testclient import TestClient
 
 from langgraph_system_generator.api.server import app
 from langgraph_system_generator.cli import GenerationArtifacts, generate_artifacts
+
+
+def _reload_server_modules():
+    """Reload constants/server modules after environment changes in a test."""
+    import langgraph_system_generator.constants as constants_module
+    import langgraph_system_generator.api.server as server_module
+
+    importlib.reload(constants_module)
+    importlib.reload(server_module)
+    return constants_module, server_module
 
 
 @pytest.mark.asyncio
@@ -361,13 +373,7 @@ async def test_api_generate_respects_concurrency_limit(
     monkeypatch.setenv("LNF_MAX_CONCURRENT_GENERATIONS", "1")
     monkeypatch.setenv("LNF_OUTPUT_BASE", "test_sync_concurrency")
 
-    import importlib
-    import asyncio as aio
-    import langgraph_system_generator.constants as constants_module
-    import langgraph_system_generator.api.server as server_module
-
-    importlib.reload(constants_module)
-    importlib.reload(server_module)
+    constants_module, server_module = _reload_server_modules()
 
     gate = aio.Event()
 
@@ -382,7 +388,6 @@ async def test_api_generate_respects_concurrency_limit(
         }
 
     monkeypatch.setattr(server_module, "generate_artifacts", slow_generate_artifacts)
-    server_module._active_generation_count = 0
 
     transport = httpx.ASGITransport(app=server_module.app)
     output_dir = constants_module._BASE_OUTPUT / tmp_path.name
