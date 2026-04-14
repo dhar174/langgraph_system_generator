@@ -272,7 +272,7 @@ async def test_live_mode_requires_credentials(
 
 
 @pytest.mark.asyncio
-async def test_live_mode_rejects_invalid_builtin_model_before_credentials(
+async def test_live_mode_rejects_invalid_builtin_model(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):
     monkeypatch.setenv("BASE_OUTPUT_DIR", str(tmp_path.resolve()))

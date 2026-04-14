@@ -16,6 +16,12 @@ from typing import Any, Dict, List, Literal, TypedDict
 from urllib.parse import urlparse
 
 from langgraph_system_generator.generator.state import CellSpec, Constraint, NotebookPlan
+from langgraph_system_generator.utils.generation_options import (
+    SUPPORTED_AGENT_TYPES,
+    SUPPORTED_OPENAI_MODELS,
+    normalize_agent_type,
+    normalize_optional_string,
+)
 from langgraph_system_generator.utils.config import GenerationConfig, settings
 from langgraph_system_generator.utils.optional_deps import (
     OptionalDependencyError,
@@ -27,13 +33,6 @@ DEFAULT_CACHE_PATH = (BASE_DIR / "data" / "cached_docs").resolve()
 
 GenerationMode = Literal["stub", "live"]
 DEFAULT_EXPORT_FORMATS = ("ipynb", "html", "markdown", "docx", "zip")
-_SUPPORTED_OPENAI_MODELS = {
-    "gpt-5.2",
-    "gpt-5-mini",
-    "gpt-5-nano",
-    "gpt-5.1",
-}
-_SUPPORTED_AGENT_TYPES = {"router", "subagents", "hybrid"}
 
 
 class GenerationArtifacts(TypedDict):
@@ -86,22 +85,6 @@ def _serialize(obj: Any) -> Any:
     return obj
 
 
-def _normalize_optional_string(value: str | None) -> str | None:
-    """Strip surrounding whitespace and collapse empty strings to None."""
-
-    if value is None:
-        return None
-    normalized = value.strip()
-    return normalized or None
-
-
-def _normalize_agent_type(agent_type: str | None) -> str | None:
-    """Normalize agent_type values for validation and downstream use."""
-
-    normalized = _normalize_optional_string(agent_type)
-    return normalized.lower() if normalized else None
-
-
 def _validate_generation_options(
     *,
     mode: GenerationMode,
@@ -109,14 +92,25 @@ def _validate_generation_options(
     custom_endpoint: str | None,
     agent_type: str | None,
 ) -> tuple[str | None, str | None, str | None]:
-    """Validate and normalize advanced generation inputs."""
+    """Validate advanced options and normalize key string fields.
 
-    normalized_model = _normalize_optional_string(model)
-    normalized_custom_endpoint = _normalize_optional_string(custom_endpoint)
-    normalized_agent_type = _normalize_agent_type(agent_type)
+    Args:
+        mode: Generation mode used to determine whether live-only checks apply.
+        model: Requested model override.
+        custom_endpoint: Requested OpenAI-compatible base URL override.
+        agent_type: Requested architecture override.
 
-    if normalized_agent_type and normalized_agent_type not in _SUPPORTED_AGENT_TYPES:
-        supported = ", ".join(sorted(_SUPPORTED_AGENT_TYPES))
+    Returns:
+        tuple[str | None, str | None, str | None]:
+            (normalized_model, normalized_custom_endpoint, normalized_agent_type)
+    """
+
+    normalized_model = normalize_optional_string(model)
+    normalized_custom_endpoint = normalize_optional_string(custom_endpoint)
+    normalized_agent_type = normalize_agent_type(agent_type)
+
+    if normalized_agent_type and normalized_agent_type not in SUPPORTED_AGENT_TYPES:
+        supported = ", ".join(sorted(SUPPORTED_AGENT_TYPES))
         raise ValueError(f"Unsupported agent_type. Supported values are: {supported}.")
 
     if mode == "live":
@@ -140,7 +134,7 @@ def _validate_generation_options(
         if (
             normalized_model
             and not normalized_custom_endpoint
-            and normalized_model not in _SUPPORTED_OPENAI_MODELS
+            and normalized_model not in SUPPORTED_OPENAI_MODELS
         ):
             raise ValueError(
                 "Unsupported model for the built-in provider. Choose an OpenAI-compatible model "
