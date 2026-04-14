@@ -13,6 +13,7 @@ import logging
 import os
 from pathlib import Path
 from typing import Any, Dict, List, Literal, TypedDict
+from urllib.parse import urlparse
 
 from langgraph_system_generator.generator.state import CellSpec, Constraint, NotebookPlan
 from langgraph_system_generator.utils.config import GenerationConfig, settings
@@ -26,6 +27,13 @@ DEFAULT_CACHE_PATH = (BASE_DIR / "data" / "cached_docs").resolve()
 
 GenerationMode = Literal["stub", "live"]
 DEFAULT_EXPORT_FORMATS = ("ipynb", "html", "markdown", "docx", "zip")
+_SUPPORTED_OPENAI_MODELS = {
+    "gpt-5.2",
+    "gpt-5-mini",
+    "gpt-5-nano",
+    "gpt-5.1",
+}
+_SUPPORTED_AGENT_TYPES = {"router", "subagents", "hybrid"}
 
 
 class GenerationArtifacts(TypedDict):
@@ -76,6 +84,70 @@ def _serialize(obj: Any) -> Any:
     if isinstance(obj, dict):
         return {key: _serialize(val) for key, val in obj.items()}
     return obj
+
+
+def _normalize_optional_string(value: str | None) -> str | None:
+    """Strip surrounding whitespace and collapse empty strings to None."""
+
+    if value is None:
+        return None
+    normalized = value.strip()
+    return normalized or None
+
+
+def _normalize_agent_type(agent_type: str | None) -> str | None:
+    """Normalize agent_type values for validation and downstream use."""
+
+    normalized = _normalize_optional_string(agent_type)
+    return normalized.lower() if normalized else None
+
+
+def _validate_generation_options(
+    *,
+    mode: GenerationMode,
+    model: str | None,
+    custom_endpoint: str | None,
+    agent_type: str | None,
+) -> tuple[str | None, str | None, str | None]:
+    """Validate and normalize advanced generation inputs."""
+
+    normalized_model = _normalize_optional_string(model)
+    normalized_custom_endpoint = _normalize_optional_string(custom_endpoint)
+    normalized_agent_type = _normalize_agent_type(agent_type)
+
+    if normalized_agent_type and normalized_agent_type not in _SUPPORTED_AGENT_TYPES:
+        supported = ", ".join(sorted(_SUPPORTED_AGENT_TYPES))
+        raise ValueError(f"Unsupported agent_type. Supported values are: {supported}.")
+
+    if mode == "live":
+        if normalized_custom_endpoint and normalized_model in (None, "custom"):
+            raise ValueError(
+                "custom_endpoint requires an explicit OpenAI-compatible model identifier."
+            )
+
+        if normalized_custom_endpoint:
+            parsed_endpoint = urlparse(normalized_custom_endpoint)
+            if parsed_endpoint.scheme not in {"http", "https"} or not parsed_endpoint.hostname:
+                raise ValueError(
+                    "custom_endpoint must be a valid http or https URL with a hostname."
+                )
+
+        if normalized_model == "custom":
+            raise ValueError(
+                "Provide an explicit model identifier instead of the placeholder value 'custom'."
+            )
+
+        if (
+            normalized_model
+            and not normalized_custom_endpoint
+            and normalized_model not in _SUPPORTED_OPENAI_MODELS
+        ):
+            raise ValueError(
+                "Unsupported model for the built-in provider. Choose an OpenAI-compatible model "
+                "or set custom_endpoint with an explicit model identifier."
+            )
+
+    return normalized_model, normalized_custom_endpoint, normalized_agent_type
 
 
 def _write_json(path: Path, payload: Any) -> None:
@@ -324,6 +396,12 @@ async def generate_artifacts(
         document_loader: Document loader type (optional)
         progress_callback: Optional callback function(node, percentage, message) for progress tracking
     """
+    model, custom_endpoint, agent_type = _validate_generation_options(
+        mode=mode,
+        model=model,
+        custom_endpoint=custom_endpoint,
+        agent_type=agent_type,
+    )
 
     require_optional_module(
         "langgraph_system_generator.notebook.composer",

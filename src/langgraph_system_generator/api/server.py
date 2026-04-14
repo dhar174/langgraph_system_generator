@@ -46,6 +46,7 @@ _SUPPORTED_OPENAI_MODELS = {
     "gpt-5-nano",
     "gpt-5.1",
 }
+_SUPPORTED_AGENT_TYPES = {"router", "subagents", "hybrid"}
 _UNSUPPORTED_ADVANCED_FIELDS = (
     "memory_config",
     "preset",
@@ -53,6 +54,15 @@ _UNSUPPORTED_ADVANCED_FIELDS = (
     "retriever_type",
     "document_loader",
 )
+
+
+def _normalize_optional_string(value: str | None) -> str | None:
+    """Strip surrounding whitespace and collapse empty strings to None."""
+
+    if value is None:
+        return None
+    normalized = value.strip()
+    return normalized or None
 
 
 def _resolve_output_dir(path: str | os.PathLike[str] | None) -> Path:
@@ -100,6 +110,17 @@ def _resolve_artifact_path(path: str | os.PathLike[str]) -> Path:
 
 def _validate_advanced_options(request: "GenerationRequest") -> None:
     """Reject unsupported advanced options and invalid model/provider combinations."""
+    request.model = _normalize_optional_string(request.model)
+    request.custom_endpoint = _normalize_optional_string(request.custom_endpoint)
+    request.agent_type = _normalize_optional_string(request.agent_type)
+    if request.agent_type:
+        request.agent_type = request.agent_type.lower()
+        if request.agent_type not in _SUPPORTED_AGENT_TYPES:
+            supported = ", ".join(sorted(_SUPPORTED_AGENT_TYPES))
+            raise HTTPException(
+                status_code=400,
+                detail=f"Unsupported agent_type. Supported values are: {supported}.",
+            )
 
     unsupported_fields = [
         field_name
@@ -116,7 +137,7 @@ def _validate_advanced_options(request: "GenerationRequest") -> None:
             ),
         )
 
-    if request.custom_endpoint and request.model in (None, "", "custom"):
+    if request.custom_endpoint and request.model in (None, "custom"):
         raise HTTPException(
             status_code=400,
             detail="custom_endpoint requires an explicit OpenAI-compatible model identifier.",
