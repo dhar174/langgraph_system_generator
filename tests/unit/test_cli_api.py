@@ -15,8 +15,10 @@ from langgraph_system_generator.cli import GenerationArtifacts, generate_artifac
 
 @pytest.fixture
 def reload_modules(monkeypatch: pytest.MonkeyPatch):
+    import importlib
+
     def _reload(
-        *,
+        *modules,
         output_base: str | None = None,
         base_output_dir: Path | None = None,
         include_server: bool = False,
@@ -26,7 +28,11 @@ def reload_modules(monkeypatch: pytest.MonkeyPatch):
         if base_output_dir is not None:
             monkeypatch.setenv("BASE_OUTPUT_DIR", str(base_output_dir))
 
-        import importlib
+        if modules:
+            for module in modules:
+                importlib.reload(module)
+            return None
+
         import langgraph_system_generator.constants as constants_module
         import langgraph_system_generator.notebook.exporters as exporters_module
         import langgraph_system_generator.cli as cli_module
@@ -187,15 +193,14 @@ async def test_api_download_artifact_endpoint(
 
 @pytest.mark.asyncio
 async def test_api_download_artifact_rejects_invalid_path(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, reload_modules
 ):
     """Test artifact download rejects paths outside the trusted base."""
     monkeypatch.setenv("LNF_OUTPUT_BASE", "test_api_artifact_reject")
 
-    import importlib
     import langgraph_system_generator.api.server as server_module
 
-    importlib.reload(server_module)
+    reload_modules(server_module)
 
     transport = httpx.ASGITransport(app=server_module.app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
@@ -262,21 +267,18 @@ async def test_api_rejects_disallowed_output_dir(tmp_path: Path):
 
 @pytest.mark.asyncio
 async def test_api_generate_async_endpoint(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, reload_modules
 ):
     """Test /generate-async endpoint returns job_id and stream_url."""
     # Set a test output base
     monkeypatch.setenv("LNF_OUTPUT_BASE", "test_api_async")
 
     # Force module reload to pick up new env var
-    import importlib
     import langgraph_system_generator.constants as constants_module
     import langgraph_system_generator.notebook.exporters as exporters_module
     import langgraph_system_generator.api.server as server_module
 
-    importlib.reload(constants_module)
-    importlib.reload(exporters_module)
-    importlib.reload(server_module)
+    reload_modules(constants_module, exporters_module, server_module)
 
     transport = httpx.ASGITransport(app=server_module.app)
     output_dir = constants_module._BASE_OUTPUT / tmp_path.name
@@ -300,17 +302,16 @@ async def test_api_generate_async_endpoint(
 
 @pytest.mark.asyncio
 async def test_api_stream_endpoint_not_found(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, reload_modules
 ):
     """Test /stream/{job_id} endpoint returns error for non-existent job."""
     # Set a test output base
     monkeypatch.setenv("LNF_OUTPUT_BASE", "test_stream_notfound")
 
     # Force module reload to pick up new env var
-    import importlib
     import langgraph_system_generator.api.server as server_module
 
-    importlib.reload(server_module)
+    reload_modules(server_module)
 
     transport = httpx.ASGITransport(app=server_module.app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
@@ -336,23 +337,19 @@ async def test_api_stream_endpoint_not_found(
 
 @pytest.mark.asyncio
 async def test_api_generate_async_with_stream(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, reload_modules
 ):
     """Test full async generation flow with SSE stream consumption."""
     # Set a test output base
     monkeypatch.setenv("LNF_OUTPUT_BASE", "test_async_stream")
 
     # Force module reload to pick up new env var
-    import importlib
     import langgraph_system_generator.constants as constants_module
     import langgraph_system_generator.notebook.exporters as exporters_module
     import langgraph_system_generator.api.server as server_module
     import langgraph_system_generator.api.progress_streaming as progress_module
 
-    importlib.reload(constants_module)
-    importlib.reload(exporters_module)
-    importlib.reload(progress_module)
-    importlib.reload(server_module)
+    reload_modules(constants_module, exporters_module, progress_module, server_module)
 
     transport = httpx.ASGITransport(app=server_module.app)
     output_dir = constants_module._BASE_OUTPUT / tmp_path.name
@@ -415,7 +412,7 @@ async def test_api_generate_async_with_stream(
 
 @pytest.mark.asyncio
 async def test_api_generate_async_concurrency_limit(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, reload_modules
 ):
     """Test that /generate-async respects concurrency limits."""
     # Set a very low limit for testing
@@ -423,14 +420,11 @@ async def test_api_generate_async_concurrency_limit(
     monkeypatch.setenv("LNF_OUTPUT_BASE", "test_concurrency")
 
     # Force module reload to pick up new env var
-    import importlib
     import langgraph_system_generator.constants as constants_module
     import langgraph_system_generator.notebook.exporters as exporters_module
     import langgraph_system_generator.api.server as server_module
 
-    importlib.reload(constants_module)
-    importlib.reload(exporters_module)
-    importlib.reload(server_module)
+    reload_modules(constants_module, exporters_module, server_module)
 
     # Get the semaphore to verify it was set correctly
     from langgraph_system_generator.api.server import _generation_semaphore, _MAX_CONCURRENT_GENERATIONS

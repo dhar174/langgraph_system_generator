@@ -24,8 +24,7 @@ from langgraph_system_generator.utils.config import settings
 
 BASE_DIR = Path(__file__).resolve().parents[2]
 DEFAULT_CACHE_PATH = (BASE_DIR / "data" / "cached_docs").resolve()
-DEFAULT_EXPORT_FORMATS = ["ipynb", "html", "markdown", "docx", "zip"]
-
+DEFAULT_EXPORT_FORMATS = ("ipynb", "html", "markdown", "docx", "zip")
 GenerationMode = Literal["stub", "live"]
 
 

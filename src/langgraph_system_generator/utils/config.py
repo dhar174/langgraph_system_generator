@@ -129,14 +129,14 @@ def _pytest_is_active() -> bool:
 def _resolve_default_env_file() -> Optional[str]:
     """Resolve the default dotenv path for application usage."""
 
+    if _pytest_is_active():
+        return None
+
     configured_env_file = os.environ.get("LNF_ENV_FILE")
     if configured_env_file is not None:
         return configured_env_file or None
 
     if os.environ.get("LNF_DISABLE_DOTENV", "").lower() in {"1", "true", "yes", "on"}:
-        return None
-
-    if _pytest_is_active():
         return None
 
     candidate = Path(".env")
