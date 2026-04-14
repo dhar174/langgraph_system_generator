@@ -223,5 +223,19 @@ async def test_progress_streaming_continues_after_retention_rollover(
     assert [event["event"] for event in retained] == ["progress", "complete"]
     assert retained[0]["data"]["message"] == "Step 3"
     assert retained[-1]["data"]["success"] is True
+def test_emit_progress_retains_bounded_event_log(monkeypatch):
+    """The in-memory job log should cap retained events per job."""
+
+    monkeypatch.setattr(progress_streaming, "_MAX_PROGRESS_EVENTS", 2)
+
+    job_id = progress_streaming.create_job()
+    progress_streaming.emit_node_progress(job_id, "start", 0, "Starting generation...")
+    progress_streaming.emit_node_progress(job_id, "compose", 50, "Composing notebook...")
+    progress_streaming.emit_complete(job_id, {"success": True})
+
+    record = progress_streaming._active_jobs[job_id]
+
+    assert [event["id"] for event in record.events] == [1, 2]
+    assert [event["event"] for event in record.events] == ["progress", "complete"]
 
     progress_streaming.cleanup_job(job_id)

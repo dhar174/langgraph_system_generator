@@ -27,6 +27,17 @@ def reload_modules():
     return _reload
 
 
+@pytest.fixture
+def reload_modules():
+    import importlib
+
+    def _reload(*modules):
+        for module in modules:
+            importlib.reload(module)
+
+    return _reload
+
+
 @pytest.mark.asyncio
 async def test_generate_artifacts_stub(
     tmp_path: Path,
