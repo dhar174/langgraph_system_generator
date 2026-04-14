@@ -12,6 +12,20 @@ from fastapi.testclient import TestClient
 from langgraph_system_generator.api.server import app
 from langgraph_system_generator.cli import GenerationArtifacts, generate_artifacts
 
+_ASYNC_CLEANUP_POLL_ATTEMPTS = 100
+_ASYNC_CLEANUP_POLL_INTERVAL_SECONDS = 0.01
+
+
+@pytest.fixture
+def reload_modules():
+    import importlib
+
+    def _reload(*modules):
+        for module in modules:
+            importlib.reload(module)
+
+    return _reload
+
 
 @pytest.fixture
 def reload_modules():
@@ -505,10 +519,11 @@ async def test_api_generate_async_concurrency_limit(
 
         assert response2.status_code == 503
         gate.set()
-
-        for _ in range(100):
+        for _ in range(_ASYNC_CLEANUP_POLL_ATTEMPTS):
             if server_module._active_generation_count == 0:
                 break
-            await aio.sleep(0.01)
+            await aio.sleep(_ASYNC_CLEANUP_POLL_INTERVAL_SECONDS)
+        else:
+            pytest.fail("Background generation did not release its slot in time")
 
-    assert server_module._active_generation_count == 0
+        assert server_module._active_generation_count == 0
