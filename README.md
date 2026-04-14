@@ -90,7 +90,7 @@ Then open your browser to `http://localhost:8000` to access the web UI.
 
 - **Interactive Form**: Enter your system requirements in natural language
 - **Mode Selection**: Choose between stub mode (fast, no API key) or live mode (full LLM generation)
-- **Advanced Options**: Customize model, temperature, max tokens, agent type, and memory configuration
+- **Advanced Options**: Customize the OpenAI-compatible model, temperature, max tokens, agent type, and custom endpoint used for live generation
 - **Theme Toggle**: Switch between dark and light themes
 - **Progress Tracking**: Real-time progress bar with detailed generation steps
 - **Generation History**: Track and reuse previous configurations

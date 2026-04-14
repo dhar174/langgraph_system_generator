@@ -6,7 +6,6 @@ import json
 import keyword
 import re
 from typing import Any, Dict, List
-import re
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
 
@@ -16,7 +15,12 @@ from langgraph_system_generator.patterns import (
     RouterPattern,
     SubagentsPattern,
 )
-from langgraph_system_generator.utils.config import ModelConfig, settings
+from langgraph_system_generator.utils.config import (
+    ModelConfig,
+    build_chat_openai_kwargs,
+    resolve_model_config,
+    settings,
+)
 
 
 class NotebookComposer:
@@ -29,8 +33,13 @@ class NotebookComposer:
     stub and offline workflows.
     """
 
-    def __init__(self, model: str | None = None):
-        self.llm = ChatOpenAI(model=model or settings.default_model, temperature=0)
+    def __init__(
+        self,
+        model: str | None = None,
+        model_config: ModelConfig | None = None,
+    ):
+        config = resolve_model_config(model=model, model_config=model_config, temperature=0.0)
+        self.llm = ChatOpenAI(**build_chat_openai_kwargs(config))
 
     @staticmethod
     def _safe_identifier(value: Any, fallback: str) -> str:

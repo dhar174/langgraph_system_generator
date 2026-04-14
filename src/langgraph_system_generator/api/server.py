@@ -7,6 +7,7 @@ import logging
 import os
 from pathlib import Path
 from typing import Any, Dict, Optional
+from urllib.parse import urlparse
 
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import FileResponse, HTMLResponse, Response
@@ -26,6 +27,12 @@ from langgraph_system_generator.api.progress_streaming import (
     emit_node_progress,
     get_stream_response,
 )
+from langgraph_system_generator.utils.generation_options import (
+    SUPPORTED_AGENT_TYPES,
+    SUPPORTED_OPENAI_MODELS,
+    normalize_agent_type,
+    normalize_optional_string,
+)
 
 app = FastAPI(title="LangGraph Notebook Foundry API", version="0.1.1")
 
@@ -39,6 +46,13 @@ _DEFAULT_API_OUTPUT = (_BASE_OUTPUT / "api").resolve()
 # Concurrency limit for async generation (prevent resource exhaustion)
 _MAX_CONCURRENT_GENERATIONS = int(os.getenv("LNF_MAX_CONCURRENT_GENERATIONS", "5"))
 _generation_semaphore = asyncio.Semaphore(_MAX_CONCURRENT_GENERATIONS)
+_UNSUPPORTED_ADVANCED_FIELDS = (
+    "memory_config",
+    "preset",
+    "graph_style",
+    "retriever_type",
+    "document_loader",
+)
 
 
 def _resolve_output_dir(path: str | os.PathLike[str] | None) -> Path:
@@ -84,6 +98,92 @@ def _resolve_artifact_path(path: str | os.PathLike[str]) -> Path:
     return artifact_path
 
 
+def _validate_advanced_options(
+    request: "GenerationRequest",
+) -> tuple[str | None, str | None, str | None]:
+    """Reject unsupported advanced options and return normalized values.
+
+    Returns:
+        tuple[str | None, str | None, str | None]:
+            (normalized_model, normalized_custom_endpoint, normalized_agent_type)
+    """
+    normalized_model = normalize_optional_string(request.model)
+    normalized_custom_endpoint = normalize_optional_string(request.custom_endpoint)
+    normalized_agent_type = normalize_agent_type(request.agent_type)
+    if normalized_agent_type:
+        if normalized_agent_type not in SUPPORTED_AGENT_TYPES:
+            supported = ", ".join(sorted(SUPPORTED_AGENT_TYPES))
+            raise HTTPException(
+                status_code=400,
+                detail=f"Unsupported agent_type. Supported values are: {supported}.",
+            )
+
+    unsupported_fields = [
+        field_name
+        for field_name in _UNSUPPORTED_ADVANCED_FIELDS
+        if getattr(request, field_name) not in (None, "")
+    ]
+    if unsupported_fields:
+        supported_fields = "model, temperature, max_tokens, custom_endpoint, agent_type"
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Unsupported advanced options: {', '.join(unsupported_fields)}. "
+                f"Currently supported options are: {supported_fields}."
+            ),
+        )
+
+    if normalized_custom_endpoint and normalized_model in (None, "custom"):
+        raise HTTPException(
+            status_code=400,
+            detail="custom_endpoint requires an explicit OpenAI-compatible model identifier.",
+        )
+
+    if normalized_custom_endpoint:
+        parsed_endpoint = urlparse(normalized_custom_endpoint)
+        if parsed_endpoint.scheme not in {"http", "https"} or not parsed_endpoint.hostname:
+            raise HTTPException(
+                status_code=400,
+                detail="custom_endpoint must be a valid http or https URL with a hostname.",
+            )
+
+    if normalized_model == "custom":
+        raise HTTPException(
+            status_code=400,
+            detail="Provide an explicit model identifier instead of the placeholder value 'custom'.",
+        )
+
+    if (
+        normalized_model
+        and not normalized_custom_endpoint
+        and normalized_model not in SUPPORTED_OPENAI_MODELS
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Unsupported model for the built-in provider. Choose an OpenAI-compatible model "
+                "or set custom_endpoint with an explicit model identifier."
+            ),
+        )
+
+    return normalized_model, normalized_custom_endpoint, normalized_agent_type
+
+
+def _normalize_request(request: "GenerationRequest") -> "GenerationRequest":
+    """Return a copy of the request with normalized advanced option values."""
+
+    validated_model, validated_custom_endpoint, validated_agent_type = (
+        _validate_advanced_options(request)
+    )
+    return request.model_copy(
+        update={
+            "model": validated_model,
+            "custom_endpoint": validated_custom_endpoint,
+            "agent_type": validated_agent_type,
+        }
+    )
+
+
 class GenerationRequest(BaseModel):
     prompt: str = Field(
         ...,
@@ -105,15 +205,15 @@ class GenerationRequest(BaseModel):
     # Advanced options
     model: Optional[str] = Field(
         default=None,
-        description="LLM model to use (e.g., gpt-4, gpt-3.5-turbo, claude-3-opus, etc.). Uses default if not specified.",
+        description="OpenAI-compatible model to use for generation. Uses the default OpenAI-compatible model if not specified.",
     )
     custom_endpoint: Optional[str] = Field(
         default=None,
-        description="Custom API endpoint URL for self-hosted or alternative LLM providers.",
+        description="Custom OpenAI-compatible API endpoint URL for self-hosted or proxy deployments.",
     )
     preset: Optional[str] = Field(
         default=None,
-        description="Task preset (code-generation, data-analysis, customer-support, etc.) for optimized settings.",
+        description="Reserved for future support; currently rejected when set.",
     )
     temperature: Optional[float] = Field(
         default=None,
@@ -139,19 +239,19 @@ class GenerationRequest(BaseModel):
     )
     memory_config: Optional[str] = Field(
         default=None,
-        description="Memory configuration for the agent (none, short, long, full).",
+        description="Reserved for future support; currently rejected when set.",
     )
     graph_style: Optional[str] = Field(
         default=None,
-        description="Graph execution style (sequential, parallel, conditional, cyclic).",
+        description="Reserved for future support; currently rejected when set.",
     )
     retriever_type: Optional[str] = Field(
         default=None,
-        description="Document retriever type for RAG (vector, keyword, hybrid, mmr).",
+        description="Reserved for future support; currently rejected when set.",
     )
     document_loader: Optional[str] = Field(
         default=None,
-        description="Document loader type (text, pdf, web, markdown, json, csv).",
+        description="Reserved for future support; currently rejected when set.",
     )
 
 
@@ -222,6 +322,8 @@ async def chrome_devtools_endpoint():
 async def generate_notebook(request: GenerationRequest) -> GenerationResponse:
     """Generate notebook artifacts via the generator pipeline."""
 
+    normalized_request = _normalize_request(request)
+
     # Use the secure path resolution function
     output_path = _resolve_output_dir(request.output_dir)
 
@@ -231,16 +333,16 @@ async def generate_notebook(request: GenerationRequest) -> GenerationResponse:
             output_dir=str(output_path),
             mode=request.mode,
             formats=request.formats,
-            model=request.model,
-            temperature=request.temperature,
-            max_tokens=request.max_tokens,
-            agent_type=request.agent_type,
-            memory_config=request.memory_config,
-            custom_endpoint=request.custom_endpoint,
-            preset=request.preset,
-            graph_style=request.graph_style,
-            retriever_type=request.retriever_type,
-            document_loader=request.document_loader,
+            model=normalized_request.model,
+            temperature=normalized_request.temperature,
+            max_tokens=normalized_request.max_tokens,
+            agent_type=normalized_request.agent_type,
+            memory_config=normalized_request.memory_config,
+            custom_endpoint=normalized_request.custom_endpoint,
+            preset=normalized_request.preset,
+            graph_style=normalized_request.graph_style,
+            retriever_type=normalized_request.retriever_type,
+            document_loader=normalized_request.document_loader,
         )
         return GenerationResponse(
             success=True,
@@ -277,6 +379,8 @@ async def start_async_generation(
     Raises:
         HTTPException 503: When concurrent generation limit is reached
     """
+    normalized_request = _normalize_request(request)
+
     # Validate output directory
     output_path = _resolve_output_dir(request.output_dir)
 
@@ -291,7 +395,9 @@ async def start_async_generation(
     job_id = create_job()
 
     # Start generation in background
-    asyncio.create_task(_run_generation_with_progress(job_id, request, output_path))
+    asyncio.create_task(
+        _run_generation_with_progress(job_id, normalized_request, output_path)
+    )
 
     return GenerationStartResponse(
         job_id=job_id,
