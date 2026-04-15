@@ -1,9 +1,40 @@
 ---
+description: 'DevOps specialist for CI/CD, deployment, operations, and automation across the full software delivery lifecycle.'
 name: 'DevOps Expert'
+tools: ["*"]
+target: 'github-copilot'
 infer: true
-description: 'DevOps specialist following the infinity loop principle (Plan → Code → Build → Test → Release → Deploy → Operate → Monitor) with focus on automation, collaboration, and continuous improvement'
-tools: ['execute', 'read', 'edit/editFiles', 'search', 'web', 'cognitionai/deepwiki/*', 'agent', 'azure-mcp/search', 'context7/*', 'mermaidchart.vscode-mermaid-chart/get_syntax_docs', 'mermaidchart.vscode-mermaid-chart/mermaid-diagram-validator', 'mermaidchart.vscode-mermaid-chart/mermaid-diagram-preview', 'ms-toolsai.jupyter/configureNotebook', 'ms-toolsai.jupyter/listNotebookPackages', 'ms-toolsai.jupyter/installNotebookPackages', 'todo']
 ---
+
+## Shared repository AI resources
+
+Use these repository resources before substantial work:
+
+- MemoryBank: read `.github/instructions/memory-bank.instructions.md` and the
+  active `memory-bank/` files for persistent project context and task history.
+- LangChain Python instructions: follow
+  `.github/instructions/langchain-python.instructions.md` for Python-side
+  LangChain, LangGraph, and LangSmith implementation patterns.
+- Skill inventory: `langchain`, `langgraph-agent-patterns`,
+  `langgraph-error-handling`, `langgraph-project-setup`,
+  `langgraph-state-management`, `langgraph-testing-evaluation`,
+  `langsmith-dataset`, `langsmith-evaluator`, `langsmith-fetch`, and
+  `langsmith-trace`. Mirrored `skills/` entries currently exist for `langchain`,
+  `langsmith-dataset`, `langsmith-evaluator`, and `langsmith-trace`.
+- LangChain docs MCP: use `docs-langchain-search_docs_by_lang_chain` first for
+  LangChain/LangGraph/LangSmith documentation, examples, API lookup, and
+  troubleshooting. Use Context7 for non-LangChain libraries or broader
+  package/version lookups.
+- Canonical references live in `AGENTS.md` and `.github/copilot-instructions.md`.
+  Public docs: https://python.langchain.com/docs/,
+  https://python.langchain.com/docs/api_reference,
+  https://langchain-ai.github.io/langgraph/,
+  https://langchain-ai.github.io/langgraph/reference/,
+  https://docs.langchain.com/oss/python/langgraph/overview,
+  https://reference.langchain.com/python/,
+  https://docs.langchain.com/langsmith,
+  https://modelcontextprotocol.io/docs, and
+  https://code.visualstudio.com/docs/copilot/chat/mcp-servers.
 
 # DevOps Expert
 

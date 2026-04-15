@@ -1,73 +1,55 @@
-"""Subagents pattern for supervisor-based multi-agent workflows.
+"""Supervisor-subagent pattern generator aligned with modern LangGraph APIs."""
 
-This module provides templates and code generators for implementing
-supervisor-subagent LangGraph architectures where a supervisor agent
-coordinates and delegates tasks to multiple specialized subagents.
-
-Example Usage:
-    >>> from langgraph_system_generator.patterns.subagents import SubagentsPattern
-    >>>
-    >>> # Generate state code
-    >>> state_code = SubagentsPattern.generate_state_code()
-    >>>
-    >>> # Generate supervisor implementation
-    >>> supervisor_code = SubagentsPattern.generate_supervisor_code(
-    ...     subagents=["researcher", "writer", "reviewer"]
-    ... )
-    >>>
-    >>> # Generate complete graph code
-    >>> graph_code = SubagentsPattern.generate_graph_code(
-    ...     subagents=["researcher", "writer", "reviewer"]
-    ... )
-"""
+from __future__ import annotations
 
 from typing import Dict, List, Optional, Union
 
-from langgraph_system_generator.patterns.utils import build_llm_init
+from langgraph_system_generator.patterns.utils import (
+    build_llm_init,
+    double_quoted_literal,
+    render_additional_fields,
+    sanitize_identifier,
+)
 from langgraph_system_generator.utils.config import ModelConfig
 
 
+def _agent_specs(subagents: List[str]) -> List[tuple[str, str]]:
+    """Return ``(label, node_name)`` pairs for generated subagents."""
+    return [(agent, sanitize_identifier(agent)) for agent in (subagents or ["worker"])]
+
+
 class SubagentsPattern:
-    """Template generator for supervisor-subagent multi-agent patterns.
-
-    The subagents pattern is ideal for workflows where:
-    - A supervisor coordinates multiple specialized agents
-    - Tasks need to be decomposed and delegated
-    - Agents may need to collaborate or work sequentially
-    - The supervisor maintains overall workflow state and decisions
-
-    Architecture:
-        START -> supervisor -> [subagent_a, subagent_b, ...] -> supervisor -> END
-    """
+    """Template generator for supervisor/subagent workflows."""
 
     @staticmethod
     def generate_state_code(additional_fields: Optional[Dict[str, str]] = None) -> str:
-        """Generate state schema code for subagents pattern.
+        """Generate a TypedDict state schema for supervisor workflows."""
+        additional = render_additional_fields(additional_fields)
+        return f'''import operator
+from typing import Annotated, Dict, List
+from typing_extensions import TypedDict
 
-        Args:
-            additional_fields: Optional dict mapping field names to descriptions
-
-        Returns:
-            Python code string defining the WorkflowState class
-        """
-        additional = ""
-        if additional_fields:
-            for field_name, description in additional_fields.items():
-                additional += f"    {field_name}: str  # {description}\n"
-
-        return f'''from typing import Annotated, Sequence
-from langgraph.graph import MessagesState
+from langchain_core.messages import BaseMessage
+from langgraph.graph.message import add_messages
 
 
-class WorkflowState(MessagesState):
-    """State schema for supervisor-subagent workflow.
-    
-    Inherits from MessagesState to maintain conversation history.
-    Additional fields track the supervisor's decisions and coordination.
-    """
-    next: str  # Next agent to execute or "FINISH"
-    instructions: str  # Supervisor's instructions to the next agent
-    task_results: dict  # Results from each subagent
+def merge_dicts(left: Dict[str, str], right: Dict[str, str]) -> Dict[str, str]:
+    """Reducer used to merge per-agent outputs into shared state."""
+    merged = dict(left or {{}})
+    merged.update(right or {{}})
+    return merged
+
+
+class WorkflowState(TypedDict, total=False):
+    """State schema for a supervisor-subagent workflow."""
+
+    messages: Annotated[List[BaseMessage], add_messages]
+    next_agent: str
+    instructions: str
+    iterations: int
+    dispatch_log: Annotated[List[str], operator.add]
+    task_results: Annotated[Dict[str, str], merge_dicts]
+    final_output: str
 {additional}'''
 
     @staticmethod
@@ -77,158 +59,166 @@ class WorkflowState(MessagesState):
         model_config: Optional[Union[ModelConfig, dict]] = None,
         use_structured_output: bool = True,
     ) -> str:
-        """Generate supervisor node implementation code.
-
-        Args:
-            subagents: List of subagent names
-            subagent_descriptions: Optional dict mapping agent names to descriptions
-            model_config: ModelConfig instance or dict with model settings
-            use_structured_output: Whether to use structured output
-
-        Returns:
-            Python code string implementing the supervisor node
-        """
-        # Handle model_config parameter
+        """Generate a supervisor node that routes with ``Command``."""
         if model_config is None:
             config = ModelConfig()
         elif isinstance(model_config, dict):
             config = ModelConfig.from_dict(model_config)
         else:
             config = model_config
-        
-        llm_model = config.model
-        # Supervisor uses temperature=0 for deterministic routing decisions
-        api_base = config.api_base
-        max_tokens = config.max_tokens
-        
-        llm_init = build_llm_init(llm_model, 0, api_base, max_tokens)
-        
+
+        specs = _agent_specs(subagents)
         if subagent_descriptions is None:
             subagent_descriptions = {
-                agent: f"{agent} specialist" for agent in subagents
+                label: f"{label} specialist" for label, _ in specs
             }
 
-        agents_info = "\n".join(
-            [
-                f"- {agent}: {subagent_descriptions.get(agent, f'{agent} specialist')}"
-                for agent in subagents
-            ]
+        agent_literals = ", ".join(double_quoted_literal(label) for label, _ in specs)
+        goto_literals = ", ".join(
+            [double_quoted_literal(node_name) for _, node_name in specs] + ['"finish"']
+        )
+        route_map_lines = ",\n        ".join(
+            f"{double_quoted_literal(label)}: {double_quoted_literal(node_name)}"
+            for label, node_name in specs
+        )
+        agent_overview = "\n".join(
+            f"- {label}: {subagent_descriptions.get(label, f'{label} specialist')}"
+            for label, _ in specs
+        )
+        llm_init = build_llm_init(
+            config.model,
+            0,
+            config.api_base,
+            config.max_tokens,
         )
 
-        agents_list = ", ".join([f'"{agent}"' for agent in subagents])
-
         if use_structured_output:
-            return f'''from langchain_openai import ChatOpenAI
-from langchain_core.messages import HumanMessage, SystemMessage
+            return f'''from typing import Literal
+
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
+from langchain_openai import ChatOpenAI
+from langgraph.types import Command
 from pydantic import BaseModel, Field
-from typing import Literal
 
 
 class SupervisorDecision(BaseModel):
-    """Structured output for supervisor decisions."""
-    next: Literal[{agents_list}, "FINISH"] = Field(
-        description="The next agent to execute, or FINISH if task is complete"
+    """Typed supervisor routing decision."""
+
+    next_agent: Literal[{agent_literals}, "FINISH"] = Field(
+        description="Which specialist should work next, or FINISH when done."
     )
     instructions: str = Field(
-        description="Specific instructions for the selected agent"
+        description="Concrete next-step instructions for the selected specialist."
     )
     reasoning: str = Field(
-        description="Explanation for this decision"
+        description="Why this next step is the best choice right now."
     )
 
 
-def supervisor_node(state: WorkflowState) -> WorkflowState:
-    """Supervisor coordinates subagents and delegates tasks.
-    
-    The supervisor analyzes the current state, determines which subagent
-    should act next (or if the task is complete), and provides specific
-    instructions to that agent.
-    """
-    messages = state["messages"]
-    task_results = state.get("task_results", {{}})
-    
-    # Initialize LLM with structured output
+def supervisor_node(state: WorkflowState) -> Command[Literal[{goto_literals}]]:
+    """Choose the next specialist and pass along instructions."""
+    route_map = {{
+        {route_map_lines}
+    }}
+    messages = state.get("messages", [])
+    results = state.get("task_results", {{}})
+    iterations = state.get("iterations", 0)
+    if iterations >= MAX_ITERATIONS:
+        return Command(
+            update={{
+                "next_agent": "FINISH",
+                "instructions": "Maximum iterations reached; synthesize the work so far.",
+                "dispatch_log": ["Supervisor stopped after reaching MAX_ITERATIONS."],
+            }},
+            goto="finish",
+        )
     llm = {llm_init}
-    structured_llm = llm.with_structured_output(SupervisorDecision)
-    
-    # Supervisor prompt
-    system_prompt = """You are a supervisor coordinating a team of specialized agents.
 
-Available agents:
-{agents_info}
+    result_summary = "\\n".join(
+        f"- {{agent}}: {{output[:160]}}"
+        for agent, output in results.items()
+    ) or "No specialist results yet."
 
-Your role is to:
-1. Analyze the current conversation and task progress
-2. Decide which agent should act next (or FINISH if complete)
-3. Provide clear, specific instructions to the selected agent
+    decision = llm.with_structured_output(SupervisorDecision).invoke([
+        SystemMessage(
+            content="""You are a supervisor coordinating a LangGraph specialist team.
 
-Consider the results from previous agents when making decisions."""
-    
-    # Build context from task results
-    results_summary = "\\n".join([
-        f"- {{agent}}: {{result[:200]}}..." if len(result) > 200 else f"- {{agent}}: {{result}}"
-        for agent, result in task_results.items()
-    ]) if task_results else "No results yet."
-    
-    user_prompt = f"""Current conversation: {{messages[-1].content if messages else "Starting task"}}
-
-Previous agent results:
-{{results_summary}}
-
-Decide which agent should act next and provide instructions."""
-    
-    # Get supervisor decision
-    decision = structured_llm.invoke([
-        SystemMessage(content=system_prompt),
-        HumanMessage(content=user_prompt)
+Available specialists:
+{agent_overview}
+"""
+        ),
+        HumanMessage(
+            content=f"Latest request: {{messages[-1].content if messages else 'Start the workflow.'}}\\n\\n"
+            f"Current results:\\n{{result_summary}}"
+        ),
     ])
-    
-    # Update state
-    next_message = HumanMessage(
-        content=f"Supervisor decision: {{decision.next}} - {{decision.instructions}}"
-    )
-    
-    return {{
-        **state,
-        "next": decision.next,
-        "instructions": decision.instructions,
-        "messages": messages + [next_message],
-    }}'''
-        else:
-            return f'''from langchain_openai import ChatOpenAI
-from langchain_core.messages import HumanMessage, SystemMessage
+
+    target = "finish" if decision.next_agent == "FINISH" else route_map[decision.next_agent]
+    return Command(
+        update={{
+            "next_agent": decision.next_agent,
+            "instructions": decision.instructions,
+            "iterations": iterations + (0 if decision.next_agent == "FINISH" else 1),
+            "dispatch_log": [
+                f"Supervisor -> {{decision.next_agent}}: {{decision.reasoning}}"
+            ],
+            "messages": [
+                AIMessage(
+                    content=f"Supervisor selected {{decision.next_agent}}. {{decision.instructions}}"
+                )
+            ],
+        }},
+        goto=target,
+    )'''
+
+        default_agent = specs[0][0]
+        return f'''from typing import Literal
+
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
+from langchain_openai import ChatOpenAI
+from langgraph.types import Command
 
 
-def supervisor_node(state: WorkflowState) -> WorkflowState:
-    """Supervisor coordinates subagents and delegates tasks."""
-    messages = state["messages"]
-    task_results = state.get("task_results", {{}})
-    
+def supervisor_node(state: WorkflowState) -> Command[Literal[{goto_literals}]]:
+    """Fallback supervisor that emits a simple route instruction."""
+    route_map = {{
+        {route_map_lines}
+    }}
+    iterations = state.get("iterations", 0)
+    if iterations >= MAX_ITERATIONS:
+        return Command(
+            update={{
+                "next_agent": "FINISH",
+                "instructions": "Maximum iterations reached; synthesize the work so far.",
+                "dispatch_log": ["Supervisor stopped after reaching MAX_ITERATIONS."],
+            }},
+            goto="finish",
+        )
     llm = {llm_init}
-    
-    # Supervisor prompt
-    system_prompt = SystemMessage(content=f"""You are a supervisor coordinating agents.
-Available agents: {agents_list}, or FINISH to complete.
+    response = llm.invoke([
+        SystemMessage(
+            content="Reply with AGENT|INSTRUCTIONS where AGENT is one of: {', '.join(label for label, _ in specs)}, FINISH."
+        ),
+        HumanMessage(content=f"Latest request: {{state.get('messages', [])[-1].content if state.get('messages') else 'Start the workflow.'}}"),
+    ])
 
-Respond with: AGENT_NAME|instructions
-Example: researcher|Find information about X""")
-    
-    results_summary = str(task_results) if task_results else "No results yet"
-    user_prompt = HumanMessage(
-        content=f"Task: {{messages[-1].content if messages else 'Start'}}\\nResults: {{results_summary}}\\nDecision:"
-    )
-    
-    # Get decision
-    response = llm.invoke([system_prompt, user_prompt])
-    parts = response.content.split("|", 1)
-    next_agent = parts[0].strip()
-    instructions = parts[1].strip() if len(parts) > 1 else ""
-    
-    return {{
-        **state,
-        "next": next_agent,
-        "instructions": instructions,
-    }}'''
+    raw = response.content.strip()
+    agent_name, _, instructions = raw.partition("|")
+    next_agent = agent_name.strip() or {double_quoted_literal(default_agent)}
+    if next_agent not in route_map:
+        next_agent = {double_quoted_literal(default_agent)}
+    target = route_map[next_agent]
+
+    return Command(
+        update={{
+            "next_agent": next_agent,
+            "instructions": instructions.strip(),
+            "iterations": iterations + 1,
+            "dispatch_log": [f"Supervisor -> {{next_agent}}"],
+            "messages": [AIMessage(content=f"Supervisor selected {{next_agent}}")],
+        }},
+        goto=target,
+    )'''
 
     @staticmethod
     def generate_subagent_code(
@@ -237,151 +227,109 @@ Example: researcher|Find information about X""")
         model_config: Optional[Union[ModelConfig, dict]] = None,
         include_tools: bool = False,
     ) -> str:
-        """Generate code for a specific subagent node.
-
-        Args:
-            agent_name: Name of the subagent
-            agent_description: Description of agent's role and capabilities
-            model_config: ModelConfig instance or dict with model settings
-            include_tools: Whether to include tool binding code
-
-        Returns:
-            Python code string implementing the subagent node
-        """
-        # Handle model_config parameter
+        """Generate a specialist node implementation."""
         if model_config is None:
             config = ModelConfig()
         elif isinstance(model_config, dict):
             config = ModelConfig.from_dict(model_config)
         else:
             config = model_config
-        
-        llm_model = config.model
-        temperature = config.temperature
-        api_base = config.api_base
-        max_tokens = config.max_tokens
-        
-        llm_init = build_llm_init(llm_model, temperature, api_base, max_tokens)
-        
-        node_name = agent_name.lower().replace(" ", "_").replace("-", "_")
 
-        tools_code = ""
-        llm_var = "llm"
+        llm_init = build_llm_init(
+            config.model,
+            config.temperature,
+            config.api_base,
+            config.max_tokens,
+        )
+        node_name = sanitize_identifier(agent_name)
+
+        tool_snippet = ""
+        llm_variable = "llm"
         if include_tools:
-            tools_code = """
-    # Bind tools to this agent
-    from langchain_community.tools import DuckDuckGoSearchRun
-    tools = [DuckDuckGoSearchRun()]
-    llm_with_tools = llm.bind_tools(tools)"""
+            llm_variable = "llm_with_tools"
+            tool_snippet = '''
+    def lookup_context(query: str) -> str:
+        """Placeholder tool for auxiliary context lookup."""
+        return f"Context for: {query}"
 
-        if include_tools:
-            llm_var = "llm_with_tools"
+    tools = [lookup_context]
+    llm_with_tools = llm.bind_tools(tools)'''
 
-        return f'''def {node_name}_node(state: WorkflowState) -> WorkflowState:
-    """Subagent: {agent_name}.
-    
-    Role: {agent_description}
-    """
-    from langchain_openai import ChatOpenAI
-    from langchain_core.messages import HumanMessage, SystemMessage
-    
-    messages = state["messages"]
-    instructions = state.get("instructions", "")
-    task_results = state.get("task_results", {{}})
-    
-    # Initialize specialized LLM for this agent
-    llm = {llm_init}{tools_code}
-    
-    # Agent-specific system prompt
-    system_prompt = SystemMessage(content="""You are {agent_name}.
+        return f'''from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
+from langchain_openai import ChatOpenAI
+
+
+def {node_name}_node(state: WorkflowState) -> dict:
+    """Execute the {agent_name} specialist."""
+    llm = {llm_init}{tool_snippet}
+    messages = state.get("messages", [])
+    instructions = state.get("instructions", "Complete the assigned task.")
+
+    response = {llm_variable}.invoke([
+        SystemMessage(
+            content="""You are {agent_name}.
+
+Role:
 {agent_description}
+"""
+        ),
+        HumanMessage(content=f"Supervisor instructions: {{instructions}}"),
+        *messages,
+    ])
 
-Execute the supervisor's instructions carefully and provide detailed results.""")
-    
-    # Build context
-    user_prompt = HumanMessage(
-        content=f"Instructions: {{instructions}}\\n\\nContext: {{messages[-1].content if messages else 'Begin task'}}"
-    )
-    
-    # Execute agent task
-    response = {llm_var}.invoke([system_prompt, user_prompt])
-    
-    # Update task results
-    task_results["{agent_name}"] = response.content
-    
     return {{
-        **state,
-        "task_results": task_results,
-        "messages": messages + [HumanMessage(content=f"{agent_name} result: {{response.content}}")],
+        "task_results": {{"{agent_name}": getattr(response, "content", str(response))}},
+        "messages": [
+            AIMessage(content=f"{agent_name} completed the assigned task.")
+        ],
     }}'''
 
     @staticmethod
     def generate_graph_code(subagents: List[str], max_iterations: int = 10) -> str:
-        """Generate complete subagents graph construction code.
-
-        Args:
-            subagents: List of subagent names
-            max_iterations: Maximum iterations before forcing completion
-
-        Returns:
-            Python code string for building the complete graph
-        """
-        # Generate node additions
+        """Generate the graph wiring for the supervisor workflow."""
+        specs = _agent_specs(subagents)
         node_additions = "\n".join(
-            [
-                f'workflow.add_node("{agent.lower().replace(" ", "_")}", {agent.lower().replace(" ", "_")}_node)'
-                for agent in subagents
-            ]
+            f'workflow.add_node("{node_name}", {node_name}_node)'
+            for _, node_name in specs
         )
-
-        # Generate routing logic
-        route_conditions = "\n    ".join(
-            [
-                f'elif next_agent == "{agent}":\n        return "{agent.lower().replace(" ", "_")}"'
-                for agent in subagents
-            ]
+        return_edges = "\n".join(
+            f'workflow.add_edge("{node_name}", "supervisor")' for _, node_name in specs
         )
 
         return f'''from langgraph.graph import END, START, StateGraph
-from langgraph.checkpoint.memory import MemorySaver
+from langgraph.checkpoint.memory import InMemorySaver
 
 
-def supervisor_router(state: WorkflowState) -> str:
-    """Route to next agent based on supervisor decision."""
-    next_agent = state.get("next", "FINISH")
-    
-    if next_agent == "FINISH":
-        return END
-    {route_conditions}
+def finish_node(state: WorkflowState) -> dict:
+    """Synthesize a final answer from the accumulated specialist outputs."""
+    results = state.get("task_results", {{}})
+    if results:
+        final_output = "\\n\\n".join(
+            f"## {{agent}}\\n{{output}}" for agent, output in results.items()
+        )
     else:
-        return END
+        final_output = "No specialist results were produced."
+    return {{
+        "final_output": final_output,
+        "messages": [],
+    }}
 
 
-# Create graph
 workflow = StateGraph(WorkflowState)
-memory = MemorySaver()
+memory = InMemorySaver()
+checkpointer = InMemorySaver()
 
-# Add supervisor node
 workflow.add_node("supervisor", supervisor_node)
-
-# Add subagent nodes
 {node_additions}
+workflow.add_node("finish", finish_node)
 
-# Connect start to supervisor
 workflow.add_edge(START, "supervisor")
+{return_edges}
+workflow.add_edge("finish", END)
 
-# Add conditional edges from supervisor
-workflow.add_conditional_edges(
-    "supervisor",
-    supervisor_router,
-    {{{", ".join([f'"{agent.lower().replace(" ", "_")}": "{agent.lower().replace(" ", "_")}"' for agent in subagents])}, "END": END}}
-)
+graph = workflow.compile(checkpointer=checkpointer)
 
-# All subagents return to supervisor for next decision
-{chr(10).join([f'workflow.add_edge("{agent.lower().replace(" ", "_")}", "supervisor")' for agent in subagents])}
-
-# Compile graph
-graph = workflow.compile(checkpointer=memory)'''
+MAX_ITERATIONS = {max_iterations}'''
 
     @staticmethod
     def generate_complete_example(
@@ -389,80 +337,76 @@ graph = workflow.compile(checkpointer=memory)'''
         subagent_descriptions: Optional[Dict[str, str]] = None,
         model_config: Optional[Union[ModelConfig, dict]] = None,
     ) -> str:
-        """Generate a complete, runnable subagents pattern example.
-
-        Args:
-            subagents: List of subagent names
-            subagent_descriptions: Optional dict mapping agent names to descriptions
-            model_config: ModelConfig instance or dict with model settings
-
-        Returns:
-            Complete Python code for a supervisor-subagent workflow
-        """
+        """Generate a complete runnable supervisor/subagent example."""
+        specs = _agent_specs(subagents)
         if subagent_descriptions is None:
             subagent_descriptions = {
-                agent: f"{agent} specialist agent" for agent in subagents
+                label: f"{label} specialist" for label, _ in specs
             }
 
-        # Generate all components
         state_code = SubagentsPattern.generate_state_code()
         supervisor_code = SubagentsPattern.generate_supervisor_code(
-            subagents, subagent_descriptions, model_config=model_config
+            [label for label, _ in specs],
+            subagent_descriptions,
+            model_config=model_config,
         )
-
-        subagent_nodes_code = "\n\n".join(
-            [
-                SubagentsPattern.generate_subagent_code(
-                    agent, subagent_descriptions.get(agent, f"{agent} specialist"),
-                    model_config=model_config
-                )
-                for agent in subagents
-            ]
+        agent_nodes = "\n\n".join(
+            SubagentsPattern.generate_subagent_code(
+                label,
+                subagent_descriptions.get(label, f"{label} specialist"),
+                model_config=model_config,
+            )
+            for label, _ in specs
         )
+        graph_code = SubagentsPattern.generate_graph_code([label for label, _ in specs])
 
-        graph_code = SubagentsPattern.generate_graph_code(subagents)
+        return f'''"""Subagents Pattern Example."""
 
-        return f'''"""
-Subagents Pattern Example
-Generated by LangGraph System Generator
+from __future__ import annotations
 
-This example demonstrates a supervisor-subagent workflow with:
-- Supervisor: Coordinates and delegates tasks
-- Subagents: {", ".join(subagents)}
-"""
+import argparse
+import asyncio
+
+from langchain_core.messages import HumanMessage
 
 {state_code}
 
-
 {supervisor_code}
 
-
-{subagent_nodes_code}
-
+{agent_nodes}
 
 {graph_code}
 
 
-# Example usage
+def build_initial_state(user_request: str) -> WorkflowState:
+    """Create an initial workflow state for the demo."""
+    return {{
+        "messages": [HumanMessage(content=user_request)],
+        "task_results": {{}},
+        "dispatch_log": [],
+        "iterations": 0,
+        "final_output": "",
+    }}
+
+
+async def run_example(user_request: str) -> WorkflowState:
+    """Run the supervisor workflow and return the final state."""
+    return await graph.ainvoke(build_initial_state(user_request))
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Run the subagents pattern example.")
+    parser.add_argument("prompt", nargs="?", default="Prepare a concise research brief on autonomous agents.")
+    args = parser.parse_args()
+
+    result = asyncio.run(run_example(args.prompt))
+    print("Dispatch Log:")
+    for entry in result.get("dispatch_log", []):
+        print("-", entry)
+    print("\\nFinal Output:")
+    print(result.get("final_output", ""))
+
+
 if __name__ == "__main__":
-    import asyncio
-    from langchain_core.messages import HumanMessage
-    
-    async def run_example():
-        # Initialize state
-        initial_state = {{
-            "messages": [HumanMessage(content="Complete this multi-step task")],
-            "next": "",
-            "instructions": "",
-            "task_results": {{}},
-        }}
-        
-        # Run workflow
-        config = {{"configurable": {{"thread_id": "example-thread"}}}}
-        result = await graph.ainvoke(initial_state, config)
-        
-        print("Task Results:", result.get("task_results"))
-        print("Final Messages:", result.get("messages")[-1].content)
-    
-    asyncio.run(run_example())
+    main()
 '''

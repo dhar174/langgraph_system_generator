@@ -145,54 +145,65 @@ class GraphVisualizer:
             True if structure was extracted successfully, False otherwise
         """
         try:
-            graph_obj = self.graph
-
-            # Prefer public drawable graph API if available
-            if hasattr(self.graph, "get_graph"):
-                try:
-                    graph_obj = self.graph.get_graph()
-                except Exception as e:
-                    self._structure_warnings.append(
-                        f"Could not call graph.get_graph(): {e}. Falling back to compiled graph."
-                    )
-
-            # Extract nodes (prefer drawable graph, fall back to compiled graph nodes)
-            if hasattr(graph_obj, "nodes"):
-                self.nodes = self._extract_nodes_from(graph_obj.nodes)
-            if not self.nodes and hasattr(self.graph, "nodes"):
-                self.nodes = self._extract_nodes_from(self.graph.nodes)
+            graph_obj = self._resolve_graph_object()
+            self._populate_nodes(graph_obj)
 
             if not self.nodes:
                 print("❌ Cannot access graph nodes - unsupported graph structure")
                 return False
 
-            # Extract edges (best-effort)
-            if hasattr(graph_obj, "edges"):
-                self._extract_edges_from(graph_obj.edges)
-            if not self.edges and not self.conditional_edges and hasattr(self.graph, "edges"):
-                self._extract_edges_from(self.graph.edges)
-
-            if not self.edges and not self.conditional_edges:
-                self._structure_warnings.append(
-                    "Could not extract edges from graph structure. "
-                    "Diagram will include nodes only."
-                )
-
-            # Find entry point (best-effort)
-            if hasattr(graph_obj, "entrypoint"):
-                self.entry_point = getattr(graph_obj, "entrypoint")
-            elif "__start__" in self.nodes:
-                self.entry_point = "__start__"
-
-            if self._structure_warnings:
-                for warning in self._structure_warnings:
-                    print(f"⚠️  {warning}")
+            self._populate_edges(graph_obj)
+            self._populate_entry_point(graph_obj)
+            self._emit_structure_warnings()
 
             return True
 
         except Exception as e:
             print(f"❌ Error extracting graph structure: {e}")
             return False
+
+    def _resolve_graph_object(self) -> Any:
+        """Return drawable graph object when available, else compiled graph."""
+        graph_obj = self.graph
+        if hasattr(self.graph, "get_graph"):
+            try:
+                graph_obj = self.graph.get_graph()
+            except Exception as e:
+                self._structure_warnings.append(
+                    f"Could not call graph.get_graph(): {e}. Falling back to compiled graph."
+                )
+        return graph_obj
+
+    def _populate_nodes(self, graph_obj: Any) -> None:
+        """Populate node names using the best available graph source."""
+        if hasattr(graph_obj, "nodes"):
+            self.nodes = self._extract_nodes_from(graph_obj.nodes)
+        if not self.nodes and hasattr(self.graph, "nodes"):
+            self.nodes = self._extract_nodes_from(self.graph.nodes)
+
+    def _populate_edges(self, graph_obj: Any) -> None:
+        """Populate regular and conditional edges using available graph structure."""
+        if hasattr(graph_obj, "edges"):
+            self._extract_edges_from(graph_obj.edges)
+        if not self.edges and not self.conditional_edges and hasattr(self.graph, "edges"):
+            self._extract_edges_from(self.graph.edges)
+        if not self.edges and not self.conditional_edges:
+            self._structure_warnings.append(
+                "Could not extract edges from graph structure. "
+                "Diagram will include nodes only."
+            )
+
+    def _populate_entry_point(self, graph_obj: Any) -> None:
+        """Populate best-effort entry point metadata."""
+        if hasattr(graph_obj, "entrypoint"):
+            self.entry_point = getattr(graph_obj, "entrypoint")
+        elif "__start__" in self.nodes:
+            self.entry_point = "__start__"
+
+    def _emit_structure_warnings(self) -> None:
+        """Print any graph extraction warnings collected during processing."""
+        for warning in self._structure_warnings:
+            print(f"⚠️  {warning}")
 
     def _sanitize_node_id(self, node: str) -> str:
         """Sanitize node name for Mermaid ID.
@@ -234,7 +245,7 @@ class GraphVisualizer:
 
         lines = [
             "```mermaid",
-            f"graph TD",
+            "graph TD",
             f"    %% {self.graph_name}",
             ""
         ]
@@ -242,7 +253,6 @@ class GraphVisualizer:
         # Add nodes
         lines.append("    %% Nodes")
         for node in sorted(self.nodes):
-            node_id = self._sanitize_node_id(node)
             node_def = self._get_node_style(node)
             lines.append(f"    {node_def}")
 
@@ -345,7 +355,7 @@ def load_graph_from_path(module_path: str) -> tuple[Optional[Any], str]:
         Tuple of (loaded graph object or None, graph name)
     """
     if ':' not in module_path:
-        print(f"❌ Invalid path format. Use: path/to/module.py:graph_name")
+        print("❌ Invalid path format. Use: path/to/module.py:graph_name")
         return None, ""
 
     file_path, graph_name = module_path.split(':', 1)

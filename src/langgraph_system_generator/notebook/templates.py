@@ -39,7 +39,7 @@ def installation_and_imports(
 
         from langgraph.graph import END, START, MessagesState, StateGraph
         from langgraph.types import Command
-        from langgraph.checkpoint.memory import MemorySaver
+        from langgraph.checkpoint.memory import InMemorySaver
         from langgraph.prebuilt import create_react_agent
         from langchain_openai import ChatOpenAI
         from langchain_core.messages import HumanMessage
@@ -108,7 +108,7 @@ def build_graph_cells() -> List[CellSpec]:
         """
         from langgraph.types import Command
         from langgraph.graph import END, START, MessagesState, StateGraph
-        from langgraph.checkpoint.memory import MemorySaver
+        from langgraph.checkpoint.memory import InMemorySaver
         from langgraph.prebuilt import create_react_agent
         from langchain_core.messages import HumanMessage
         from langchain_openai import ChatOpenAI
@@ -136,7 +136,7 @@ def build_graph_cells() -> List[CellSpec]:
         graph.add_node("router_node", router_node)
         graph.add_edge(START, "router_node")
 
-        memory = MemorySaver()
+        memory = InMemorySaver()
         app = graph.compile(checkpointer=memory)
         """
     ).strip()
@@ -151,10 +151,49 @@ def build_graph_cells() -> List[CellSpec]:
     ]
 
 
-def run_graph_cells() -> List[CellSpec]:
-    """Return Run Graph cells."""
-    run_code = dedent(
+def run_graph_cells(architecture_type: str | None = None) -> List[CellSpec]:
+    """Return Run Graph cells with an architecture-aware initial state."""
+    if architecture_type == "router":
+        initial_state_block = """
+        initial_state = {
+            "messages": [HumanMessage(content="Route this request to the best specialist and produce a concise answer.")],
+            "route": "",
+            "results": {},
+            "final_output": "",
+        }
         """
+    elif architecture_type == "subagents":
+        initial_state_block = """
+        initial_state = {
+            "messages": [HumanMessage(content="Research the topic, draft a response, and review it before finishing.")],
+            "next": "supervisor",
+            "instructions": "",
+            "task_results": {},
+        }
+        """
+    elif architecture_type == "critique_loop":
+        initial_state_block = """
+        initial_state = {
+            "messages": [HumanMessage(content="Draft a polished explanation of how this workflow should solve the task.")],
+            "current_draft": "",
+            "critique_feedback": "",
+            "revision_count": 0,
+            "quality_score": 0.0,
+            "approved": False,
+            "criteria": [
+                "Accuracy and correctness",
+                "Clarity and readability",
+                "Completeness",
+            ],
+        }
+        """
+    else:
+        initial_state_block = """
+        initial_state = {"messages": [HumanMessage(content="Hi! Show me the LangGraph demo.")]}
+        """
+
+    run_code = dedent(
+        f"""
         try:
             app  # type: ignore[name-defined]  # noqa: F821
         except NameError as exc:
@@ -162,13 +201,11 @@ def run_graph_cells() -> List[CellSpec]:
                 "`app` is not defined. Please run the 'Build Graph' cell before this one."
             ) from exc
 
-        config = {"configurable": {"thread_id": "lnf-demo-thread"}}
-        initial_messages = [HumanMessage(content="Hi! Show me the LangGraph demo.")]
+        config = {{"configurable": {{"thread_id": "lnf-demo-thread"}}}}
+        {initial_state_block.strip()}
 
         print("Streaming updates (per step):")
-        for update in app.stream(
-            {"messages": initial_messages}, config, stream_mode="updates"
-        ):
+        for update in app.stream(initial_state, config, stream_mode="updates"):
             print(update)
 
         final_state = app.get_state(config).values

@@ -1,25 +1,40 @@
 ---
 description: 'API design specialist for RESTful, GraphQL, and gRPC APIs with focus on usability, scalability, and standards'
 name: 'API Designer'
-tools: ['search/codebase', 'search/usages', 'read/readFile', 'edit/createFile', 'edit/editFiles', 'web/fetch', 'web/githubRepo', 'search']
-handoffs:
-  - label: "📋 Create Specification"
-    agent: specification
-    prompt: "Create a detailed technical specification for this API design"
-    send: false
-  - label: "💻 Implement API"
-    agent: principal-software-engineer
-    prompt: "Implement the API design outlined above"
-    send: false
-  - label: "🧪 Add API Tests"
-    agent: test-writer
-    prompt: "Create comprehensive tests for this API including contract tests and integration tests"
-    send: false
-  - label: "🔒 Security Review"
-    agent: se-security-reviewer
-    prompt: "Review this API design for security vulnerabilities"
-    send: false
+tools: ["*"]
+target: 'github-copilot'
+infer: true
 ---
+
+## Shared repository AI resources
+
+Use these repository resources before substantial work:
+
+- MemoryBank: read `.github/instructions/memory-bank.instructions.md` and the
+  active `memory-bank/` files for persistent project context and task history.
+- LangChain Python instructions: follow
+  `.github/instructions/langchain-python.instructions.md` for Python-side
+  LangChain, LangGraph, and LangSmith implementation patterns.
+- Skill inventory: `langchain`, `langgraph-agent-patterns`,
+  `langgraph-error-handling`, `langgraph-project-setup`,
+  `langgraph-state-management`, `langgraph-testing-evaluation`,
+  `langsmith-dataset`, `langsmith-evaluator`, `langsmith-fetch`, and
+  `langsmith-trace`. Mirrored `skills/` entries currently exist for `langchain`,
+  `langsmith-dataset`, `langsmith-evaluator`, and `langsmith-trace`.
+- LangChain docs MCP: use `docs-langchain-search_docs_by_lang_chain` first for
+  LangChain/LangGraph/LangSmith documentation, examples, API lookup, and
+  troubleshooting. Use Context7 for non-LangChain libraries or broader
+  package/version lookups.
+- Canonical references live in `AGENTS.md` and `.github/copilot-instructions.md`.
+  Public docs: https://python.langchain.com/docs/,
+  https://python.langchain.com/docs/api_reference,
+  https://langchain-ai.github.io/langgraph/,
+  https://langchain-ai.github.io/langgraph/reference/,
+  https://docs.langchain.com/oss/python/langgraph/overview,
+  https://reference.langchain.com/python/,
+  https://docs.langchain.com/langsmith,
+  https://modelcontextprotocol.io/docs, and
+  https://code.visualstudio.com/docs/copilot/chat/mcp-servers.
 
 # API Designer
 

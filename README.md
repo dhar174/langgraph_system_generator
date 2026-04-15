@@ -11,14 +11,20 @@ Prompt -> Full Agentic System. Generates entire multiagent systems based on user
 
 ## Quickstart
 
-1. Create a virtual environment and install dependencies:
+1. Create a Python `3.10+` virtual environment, install dependencies, and
+   install the package so the `lnf` CLI is available:
    ```bash
-   python -m venv .venv
-   source .venv/bin/activate  # Windows: .venv\Scripts\activate
-   pip install -r requirements.txt
-   ```
+    python -m venv .venv
+    source .venv/bin/activate  # Windows: .venv\Scripts\activate
+    python -m pip install --upgrade pip
+    pip install -r requirements.txt
+    pip install -e ".[full]"
+    pip install flake8
+    ```
 
-2. Copy `.env.example` to `.env` and add your API keys.
+2. Copy `.env.example` to `.env` and add your API keys. Live generation
+   currently expects `OPENAI_API_KEY`; stub mode works without external model
+   credentials.
 
 3. (Optional) Build the vector index from precached docs:
    ```bash
@@ -29,10 +35,113 @@ Prompt -> Full Agentic System. Generates entire multiagent systems based on user
    You only need to run this if you have an OpenAI API key and want to build the 
    vector index for semantic search.
 
-4. Run the test scaffold to verify imports:
-   ```bash
-   python -m pytest
+4. Run the baseline test scaffold:
+    ```bash
+    python -m pytest --asyncio-mode=auto
+    ```
+
+## Official Framework References
+
+- **LangChain docs**: <https://docs.langchain.com>
+- **LangChain Python API reference**: <https://reference.langchain.com/python>
+- **LangGraph overview**: <https://docs.langchain.com/oss/python/langgraph/overview>
+
+## How It Works
+
+LNF uses a staged outer LangGraph workflow to turn a prompt into runnable
+notebook artifacts.
+
+```mermaid
+graph LR
+    Prompt[Prompt] --> Requirements[Requirements]
+    Requirements --> RAG[RAG]
+    RAG --> Architecture[Architecture Select]
+    Architecture --> Plan[Plan]
+    Plan --> Generate[Generate]
+    Generate --> QA[QA / Repair]
+    QA --> Export[Export]
+```
+
+### Pipeline Stages
+
+1. **Prompt**: the CLI, API, or web UI collects a natural-language request plus
+   optional output and mode settings.
+2. **Requirements**: `intake_node` calls `RequirementsAnalyst` to extract
+   constraints from the prompt.
+3. **RAG**: `rag_retrieval_node` queries the cached LangChain/LangGraph docs and
+   stores relevant snippets in `docs_context`.
+4. **Architecture Select**: `architecture_selection_node` picks the best-fit
+   pattern, such as router or subagents, and records the rationale.
+5. **Plan**: `graph_design_node` and `tooling_plan_node` define the workflow
+   shape, notebook outline, and any tool integrations.
+6. **Generate**: `notebook_assembly_node` turns the plan into notebook cells and
+   metadata.
+7. **QA / Repair**: `static_qa_node` and `runtime_qa_node` validate the notebook;
+   if checks fail, `repair_node` performs a bounded repair loop.
+8. **Export**: `package_outputs_node` builds an in-memory `artifacts_manifest`;
+   the CLI/export layer uses this manifest to write `notebook.ipynb`, manifest JSON,
+   exports, and the final bundle.
+
+For the code-level view, see
+[docs/wiki/Architecture-Deep-Dive.md](docs/wiki/Architecture-Deep-Dive.md).
+
+## Developing Locally
+
+Use the editable install during local development so the CLI and package imports
+stay in sync.
+
+```bash
+python -m venv .venv
+source .venv/bin/activate  # Windows: .venv\Scripts\activate
+python -m pip install --upgrade pip
+pip install -r requirements.txt
+pip install -e ".[full]"
+pip install flake8
+python -m flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
+python -m pytest --asyncio-mode=auto
+```
+
+Useful local entry points:
+
+```bash
+# CLI
+lnf generate "Create a router-based chatbot" --output ./output/demo --mode stub
+
+# API / web UI
+uvicorn langgraph_system_generator.api.server:app --host 0.0.0.0 --port 8000
+```
+
+If you only need the core package without the heavier export and API extras, use
+`pip install -e .` instead.
+
+## Colab Usage
+
+Generated notebooks are intended to run in both local Jupyter environments and
+Google Colab.
+
+1. Generate or download `notebook.ipynb`.
+2. Upload it to Google Drive and open it in Colab.
+3. In the first setup cell, install the packages used by the notebook. For the
+   current repo defaults that usually means:
+
+   ```python
+   !pip install -qU langgraph langchain langchain-openai langchain-community
    ```
+
+4. Configure secrets in Colab before running live cells:
+
+   ```python
+   import os
+   from google.colab import userdata
+
+   os.environ["OPENAI_API_KEY"] = userdata.get("OPENAI_API_KEY")
+   ```
+
+5. Run the notebook top-to-bottom. If you only want the offline scaffold, use a
+   notebook generated in `--mode stub`.
+
+For the full workflow, troubleshooting, and Drive-specific tips, see
+[docs/wiki/Colab-Usage.md](docs/wiki/Colab-Usage.md).
 
 ## CLI
 
@@ -153,7 +262,11 @@ docker run -p 8000:8000 \
 
 ## Pattern Library
 
-The system includes a powerful pattern library for generating common multi-agent architectures. Three core patterns are available:
+The system includes a generator-backed pattern library plus a broader runnable example library.
+
+### Generator-Backed Core Patterns
+
+The public Python package continues to expose three code-generation helpers:
 
 ### Router Pattern
 Dynamic routing to specialized agents based on input classification. Ideal for modular systems with domain-specific expertise.
@@ -209,19 +322,33 @@ code = CritiqueLoopPattern.generate_complete_example(
 # Returns iterative refinement workflow
 ```
 
-### Examples and Documentation
+### Runnable Pattern Examples
 
-- **Comprehensive Documentation**: See [docs/patterns.md](docs/patterns.md) for detailed pattern guide
-- **Runnable Examples**: Check `examples/` directory for practical demonstrations:
-  - `examples/router_pattern_example.py` - Router pattern usage
-  - `examples/subagents_pattern_example.py` - Subagents pattern usage
-  - `examples/critique_revise_pattern_example.py` - Critique-revise pattern usage
-- **Test Coverage**: ≥90% coverage for all pattern modules (see `tests/unit/test_patterns.py`)
+`examples/` now acts as a canonical LangGraph pattern showcase with paired notebooks, stub/live execution modes, and advanced example-only patterns such as hierarchical teams, plan-and-execute, REWOO-style speculation, HITL approval, LLM-as-a-judge, and LLMCompiler-style dependency graphs.
+
+- **Pattern Index**: [examples/README.md](examples/README.md)
+- **Core Pattern Docs**: [docs/patterns.md](docs/patterns.md)
+- **Generator-Backed Examples**:
+  - `examples/router_pattern_example.py`
+  - `examples/subagents_pattern_example.py`
+  - `examples/critique_revise_pattern_example.py`
+- **Advanced Example-Only References**:
+  - `examples/hierarchical_teams_example.py`
+  - `examples/planning_and_execute_example.py`
+  - `examples/rewoo_example.py`
+  - `examples/human_approval_pattern.py`
+  - `examples/llm_judge_example.py`
+  - `examples/llm_compiler_example.py`
 
 Run an example:
 ```bash
-export OPENAI_API_KEY='your-key-here'
-python examples/router_pattern_example.py
+python examples/router_pattern_example.py --mode stub
+# For live mode:
+# export OPENAI_API_KEY='your-key-here'
+# python examples/router_pattern_example.py --mode live
+# Planner/executor-specific live overrides:
+# python examples/planning_and_execute_example.py --mode live \
+#   --planner-model gpt-4.1-mini --executor-model gpt-5-mini
 ```
 
 ## Precached Documentation

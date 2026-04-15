@@ -38,7 +38,7 @@ const themeIcon = themeToggle.querySelector('.theme-icon');
 // Initialize theme from localStorage
 const currentTheme = localStorage.getItem('theme') || 'dark';
 document.documentElement.setAttribute('data-theme', currentTheme);
-themeIcon.textContent = currentTheme === 'dark' ? '🌙' : '☀️';
+themeIcon.textContent = currentTheme === 'dark' ? 'Dark' : 'Light';
 
 // Theme toggle functionality
 themeToggle.addEventListener('click', () => {
@@ -47,7 +47,7 @@ themeToggle.addEventListener('click', () => {
     
     document.documentElement.setAttribute('data-theme', newTheme);
     localStorage.setItem('theme', newTheme);
-    themeIcon.textContent = newTheme === 'dark' ? '🌙' : '☀️';
+    themeIcon.textContent = newTheme === 'dark' ? 'Dark' : 'Light';
 });
 
 // Advanced options toggle
@@ -309,7 +309,7 @@ function initProgressSteps() {
         const icon = document.createElement('span');
         icon.className = 'step-icon';
         icon.setAttribute('aria-label', 'Step status');
-        icon.textContent = '⏳';
+        icon.textContent = '...';
         
         const text = document.createElement('span');
         text.className = 'step-text';
@@ -344,12 +344,12 @@ function showProgress(step, percentage, message) {
         
         if (percentage >= stepPercent) {
             stepDiv.classList.add('complete');
-            icon.textContent = '✅';
+            icon.textContent = 'OK';
         } else if (Math.abs(percentage - stepPercent) < 15) {
             stepDiv.classList.add('active');
-            icon.textContent = '⏳';
+            icon.textContent = '...';
         } else {
-            icon.textContent = '⏳';
+            icon.textContent = '...';
         }
     });
 }
@@ -375,7 +375,7 @@ function showResult(data) {
     const successHeading = document.createElement('h3');
     successHeading.style.color = 'var(--success-color)';
     successHeading.style.marginBottom = '0.5rem';
-    successHeading.textContent = '✅ Generation Successful!';
+    successHeading.textContent = 'Generation Successful!';
     
     const successParagraph = document.createElement('p');
     successParagraph.textContent = 'Your system was generated in ';
@@ -507,7 +507,7 @@ function showResult(data) {
     const stepsHeading = document.createElement('h4');
     stepsHeading.style.marginBottom = '0.5rem';
     stepsHeading.style.color = 'var(--text-primary)';
-    stepsHeading.textContent = '📝 Next Steps:';
+    stepsHeading.textContent = 'Next Steps:';
     
     const stepsList = document.createElement('ol');
     stepsList.style.marginLeft = '1.5rem';
@@ -538,7 +538,7 @@ function showResult(data) {
     const exportHeading = document.createElement('h4');
     exportHeading.style.marginBottom = '1rem';
     exportHeading.style.color = 'var(--text-primary)';
-    exportHeading.textContent = '📥 Available Downloads:';
+    exportHeading.textContent = 'Available Downloads:';
     
     const exportButtons = document.createElement('div');
     exportButtons.style.display = 'flex';
@@ -547,12 +547,12 @@ function showResult(data) {
     
     // Add download buttons for available formats
     const formats = [
-        { key: 'notebook_path', label: 'Notebook (.ipynb)', icon: '📓' },
-        { key: 'html_path', label: 'HTML', icon: '🌐' },
-        { key: 'markdown_path', label: 'Markdown', icon: '📝' },
-        { key: 'docx_path', label: 'Word Doc', icon: '📄' },
-        { key: 'pdf_path', label: 'PDF', icon: '📕' },
-        { key: 'zip_path', label: 'ZIP Bundle', icon: '📦' }
+        { key: 'notebook_path', label: 'Notebook (.ipynb)' },
+        { key: 'html_path', label: 'HTML' },
+        { key: 'docx_path', label: 'Word Doc' },
+        { key: 'pdf_path', label: 'PDF' },
+        { key: 'zip_path', label: 'ZIP Bundle' },
+        { key: 'markdown_path', label: 'Markdown (.md)' }
     ];
     
     formats.forEach(format => {
@@ -563,7 +563,7 @@ function showResult(data) {
             btn.download = '';
             btn.style.display = 'inline-flex';
             btn.style.textDecoration = 'none';
-            btn.textContent = `${format.icon} ${format.label}`;
+            btn.textContent = format.label;
             exportButtons.appendChild(btn);
         }
     });
@@ -571,25 +571,11 @@ function showResult(data) {
     // Add copy result button
     const copyBtn = document.createElement('button');
     copyBtn.className = 'btn btn-secondary';
-    copyBtn.textContent = '📋 Copy Result Info';
+    copyBtn.textContent = 'Copy Result Info';
     copyBtn.onclick = () => {
         const resultText = JSON.stringify(manifest, null, 2);
-        copyTextToClipboard(resultText, '✅ Result info copied').then((copied) => {
-            if (copied) {
-                const originalText = copyBtn.textContent;
-                copyBtn.textContent = '✅ Copied!';
-                setTimeout(() => {
-                    copyBtn.textContent = originalText;
-                }, 2000);
-            }
-        });
-    };
-    exportButtons.appendChild(copyBtn);
-    
-    exportSection.appendChild(exportHeading);
-    exportSection.appendChild(exportButtons);
-    resultWrapper.appendChild(exportSection);
-    
+        // Use the shared clipboard helper so toasts and errors are handled consistently
+        copyTextToClipboard(resultText, 'Result info copied to clipboard');
     // Add to DOM
     resultContent.appendChild(resultWrapper);
     resultCard.style.display = 'block';
@@ -909,6 +895,91 @@ function updateHistoryDisplay() {
     });
 }
 
+function copyLastPromptFromHistory() {
+    try {
+        const rawHistory = typeof localStorage !== 'undefined'
+            ? localStorage.getItem('generationHistory')
+            : null;
+
+        let entries = [];
+        if (rawHistory) {
+            try {
+                const parsed = JSON.parse(rawHistory);
+                if (Array.isArray(parsed)) {
+                    entries = parsed;
+                }
+            } catch (e) {
+                console.error('Failed to parse generationHistory from localStorage', e);
+            }
+        }
+
+        if (!entries.length) {
+            const notification = document.createElement('div');
+            notification.style.cssText = 'position: fixed; top: 20px; right: 20px; background: var(--error-color); color: white; padding: 1rem; border-radius: 0.5rem; z-index: 1000; opacity: 1; transition: opacity 0.3s ease; animation: slideDown 0.3s ease;';
+            notification.textContent = 'No history entries available to copy';
+            document.body.appendChild(notification);
+
+            setTimeout(() => {
+                notification.style.opacity = '0';
+                setTimeout(() => notification.remove(), 300);
+            }, 2000);
+            return;
+        }
+
+        const lastEntry = entries[entries.length - 1];
+        const prompt =
+            (lastEntry && lastEntry.fullData && lastEntry.fullData.prompt) ||
+            (lastEntry && lastEntry.prompt);
+
+        if (!prompt) {
+            const notification = document.createElement('div');
+            notification.style.cssText = 'position: fixed; top: 20px; right: 20px; background: var(--error-color); color: white; padding: 1rem; border-radius: 0.5rem; z-index: 1000; opacity: 1; transition: opacity 0.3s ease; animation: slideDown 0.3s ease;';
+            notification.textContent = 'Last history entry has no prompt to copy';
+            document.body.appendChild(notification);
+
+            setTimeout(() => {
+                notification.style.opacity = '0';
+                setTimeout(() => notification.remove(), 300);
+            }, 2000);
+            return;
+        }
+
+        if (typeof copyTextToClipboard === 'function') {
+            copyTextToClipboard(prompt);
+        } else if (navigator && navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+            navigator.clipboard.writeText(prompt).catch((err) => {
+                console.error('Failed to write prompt to clipboard via navigator.clipboard', err);
+            });
+        } else {
+            // Fallback: temporary textarea
+            const textarea = document.createElement('textarea');
+            textarea.value = prompt;
+            textarea.style.position = 'fixed';
+            textarea.style.opacity = '0';
+            document.body.appendChild(textarea);
+            textarea.select();
+            try {
+                document.execCommand('copy');
+            } catch (err) {
+                console.error('Fallback clipboard copy failed', err);
+            }
+            textarea.remove();
+        }
+
+        const notification = document.createElement('div');
+        notification.style.cssText = 'position: fixed; top: 20px; right: 20px; background: var(--success-color); color: white; padding: 1rem; border-radius: 0.5rem; z-index: 1000; opacity: 1; transition: opacity 0.3s ease; animation: slideDown 0.3s ease;';
+        notification.textContent = 'Last prompt copied from history';
+        document.body.appendChild(notification);
+
+        setTimeout(() => {
+            notification.style.opacity = '0';
+            setTimeout(() => notification.remove(), 300);
+        }, 2000);
+    } catch (err) {
+        console.error('copyLastPromptFromHistory failed', err);
+    }
+}
+
 function rerunFromHistory(entry) {
     const data = entry.fullData;
     
@@ -974,18 +1045,18 @@ function rerunFromHistory(entry) {
     
     // Hide history
     document.getElementById('historyCard').style.display = 'none';
-
-    showToast('✅ Configuration loaded from history');
-}
-
-function copyLastPromptFromHistory() {
-    const history = loadFromHistory();
-    if (history.length === 0) {
-        return;
-    }
-
-    const latestPrompt = history[0].fullPrompt || history[0].prompt || '';
-    copyTextToClipboard(latestPrompt, '✅ Last prompt copied');
+    
+    // Show a notification
+    const notification = document.createElement('div');
+    notification.style.cssText = 'position: fixed; top: 20px; right: 20px; background: var(--success-color); color: white; padding: 1rem; border-radius: 0.5rem; z-index: 1000; opacity: 1; transition: opacity 0.3s ease; animation: slideDown 0.3s ease;';
+    notification.textContent = 'Configuration loaded from history';
+    document.body.appendChild(notification);
+    
+    setTimeout(() => {
+        // Fade out the notification before removing it
+        notification.style.opacity = '0';
+        setTimeout(() => notification.remove(), 300);
+    }, 2000);
 }
 
 // History toggle button

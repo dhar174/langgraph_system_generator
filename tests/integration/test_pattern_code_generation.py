@@ -38,9 +38,15 @@ async def test_router_pattern_notebook_generation(tmp_path: Path):
     all_code = "\n\n".join([cell.source for cell in code_cells])
 
     # Verify pattern-specific code generation
-    assert "class WorkflowState(MessagesState):" in all_code, "State class not found"
+    assert "class WorkflowState(TypedDict, total=False):" in all_code, "State class not found"
     assert "route:" in all_code, "Router state field missing"
-    assert "def router_node(state: WorkflowState)" in all_code, "Router node not found"
+    assert (
+        "def router_node(state: WorkflowState, window_size: int = 5)" in all_code
+    ), "Router node not found"
+    assert "Recent conversation (last {window_size} messages):" in all_code
+    assert "TypedDict" in all_code, "TypedDict state not found"
+    assert "route_history" in all_code, "Router reducer-backed state field missing"
+    assert "Command" in all_code, "Router should use Command-based routing"
 
     # Verify no empty implementations (no standalone 'pass' statements for nodes)
     # Note: We allow pass in fallback scenarios, but pattern code should not have it
@@ -48,15 +54,23 @@ async def test_router_pattern_notebook_generation(tmp_path: Path):
     router_related = [s for s in code_sections if "def router_node" in s]
     if router_related:
         # Router node should have actual implementation, not just pass
-        assert any(
-            "ChatOpenAI" in section or "llm" in section.lower()
-            for section in router_related
-        ), "Router node has no LLM implementation"
+        assert "with_structured_output" in all_code or "ChatOpenAI" in all_code, (
+            "Router notebook should include model-backed routing logic"
+        )
 
     # Verify graph construction
     assert "StateGraph(WorkflowState)" in all_code, "Graph construction missing"
     assert "add_node" in all_code, "Graph node addition missing"
     assert "compile" in all_code, "Graph compilation missing"
+
+    execution_cells = [
+        cell for cell in nb.cells if cell.cell_type == "code" and 'config = {"configurable"' in cell.source
+    ]
+    assert execution_cells, "Execution cell missing"
+    execution_source = execution_cells[0].source
+    assert '"route": ""' in execution_source
+    assert '"results": {}' in execution_source
+    assert '"final_output": ""' in execution_source
 
 
 @pytest.mark.asyncio
@@ -86,13 +100,23 @@ async def test_subagents_pattern_notebook_generation(tmp_path: Path):
     all_code = "\n\n".join([cell.source for cell in code_cells])
 
     # Verify pattern-specific code generation
-    assert "class WorkflowState(MessagesState):" in all_code, "State class not found"
-    assert "next:" in all_code, "Supervisor state field 'next' missing"
+    assert "TypedDict" in all_code, "TypedDict state not found"
+    assert "next_agent:" in all_code, "Supervisor state field 'next_agent' missing"
     assert "instructions:" in all_code, "Supervisor state field 'instructions' missing"
+    assert "Command" in all_code, "Supervisor should use Command-based routing"
 
     # Verify graph construction
     assert "StateGraph(WorkflowState)" in all_code, "Graph construction missing"
-    assert "add_conditional_edges" in all_code, "Conditional edges missing"
+    assert "finish_node" in all_code, "Finish node missing"
+
+    execution_cells = [
+        cell for cell in nb.cells if cell.cell_type == "code" and 'config = {"configurable"' in cell.source
+    ]
+    assert execution_cells, "Execution cell missing"
+    execution_source = execution_cells[0].source
+    assert '"next": "supervisor"' in execution_source
+    assert '"instructions": ""' in execution_source
+    assert '"task_results": {}' in execution_source
 
 
 @pytest.mark.asyncio
@@ -118,27 +142,17 @@ async def test_tool_code_generation_not_empty(tmp_path: Path):
     # Find tools section
     code_cells = [cell for cell in nb.cells if cell.cell_type == "code"]
 
+    meaningful_markers = ("DuckDuckGoSearchRun", "Path(", "requests.get", "return {")
     for cell in code_cells:
         if "# Tool:" in cell.source or (
             "def " in cell.source and "_tool" in cell.source.lower()
         ):
-            # Tool should have either real implementation or helpful comments
-            # Check it's not just "pass" with nothing else
-            lines = [
-                line.strip()
-                for line in cell.source.split("\n")
-                if line.strip() and not line.strip().startswith("#")
-            ]
-            # If there's only a function def and pass, it's too empty
-            if len(lines) <= 3:  # def, docstring, pass
-                has_impl_hints = (
-                    "Example" in cell.source
-                    or "TODO" in cell.source
-                    or "import" in cell.source.lower()
-                )
-                assert (
-                    has_impl_hints
-                ), f"Tool implementation too minimal: {cell.source[:200]}"
+            assert "pass" not in cell.source, f"Tool implementation should not contain pass: {cell.source[:200]}"
+            assert "TODO" not in cell.source, f"Tool implementation should not contain TODO: {cell.source[:200]}"
+            assert "Implement your tool logic here" not in cell.source
+            assert any(marker in cell.source for marker in meaningful_markers), (
+                f"Tool implementation lacks meaningful logic markers: {cell.source[:200]}"
+            )
 
     # It's ok if no tools found for some prompts
     # The main check is if tools exist, they should have meaningful content
@@ -171,8 +185,9 @@ async def test_node_code_generation_not_empty(tmp_path: Path):
     for cell in code_cells:
         if "def " in cell.source and "_node(state:" in cell.source:
             node_found = True
-            # Node should have more than just "return state"
-            # Look for LLM usage, message handling, or other logic
+            assert "return state" not in cell.source, f"Node implementation contains stub return: {cell.source[:200]}"
+            assert "pass" not in cell.source, f"Node implementation contains pass: {cell.source[:200]}"
+            assert "TODO: Implement" not in cell.source, f"Node implementation contains TODO placeholder: {cell.source[:200]}"
             has_logic = any(
                 keyword in cell.source
                 for keyword in [
@@ -180,8 +195,9 @@ async def test_node_code_generation_not_empty(tmp_path: Path):
                     "llm",
                     "messages",
                     "invoke",
-                    "Example",
-                    "TODO",
+                    "results",
+                    "task_results",
+                    "current_draft",
                 ]
             )
             assert has_logic, f"Node implementation too minimal: {cell.source[:200]}"

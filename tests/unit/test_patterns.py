@@ -1,6 +1,8 @@
-"""Tests for pattern library code generation."""
+"""Tests for modernized pattern generator output."""
 
 from __future__ import annotations
+
+import ast
 
 from langgraph_system_generator.patterns import (
     CritiqueLoopPattern,
@@ -16,9 +18,9 @@ class TestRouterPattern:
         """Test basic state code generation."""
         code = RouterPattern.generate_state_code()
 
-        assert "class WorkflowState(MessagesState):" in code
+        assert "class WorkflowState(TypedDict, total=False):" in code
         assert "route: str" in code
-        assert "results: Dict[str, str]" in code
+        assert "results: Annotated[Dict[str, str], merge_dicts]" in code
         assert "final_output: str" in code
 
     def test_generate_state_code_with_additional_fields(self):
@@ -36,7 +38,7 @@ class TestRouterPattern:
             routes, use_structured_output=True
         )
 
-        assert "def router_node(state: WorkflowState)" in code
+        assert "def router_node(state: WorkflowState, window_size: int = 5)" in code
         assert "class RouteDecision(BaseModel):" in code
         assert '"search"' in code
         assert '"analyze"' in code
@@ -50,7 +52,7 @@ class TestRouterPattern:
             routes, use_structured_output=False
         )
 
-        assert "def router_node(state: WorkflowState)" in code
+        assert "def router_node(state: WorkflowState, window_size: int = 5)" in code
         assert "SystemMessage" in code
         assert "with_structured_output" not in code
 
@@ -63,7 +65,7 @@ class TestRouterPattern:
         assert "def search_node(state: WorkflowState)" in code
         assert "Perform web searches for information" in code
         assert "ChatOpenAI" in code
-        assert "results[" in code
+        assert '"search": response.content' in code
 
     def test_generate_graph_code_conditional(self):
         """Test graph construction with conditional edges."""
@@ -74,7 +76,7 @@ class TestRouterPattern:
         assert "StateGraph(WorkflowState)" in code
         assert 'workflow.add_node("router", router_node)' in code
         assert "add_conditional_edges" in code
-        assert "MemorySaver()" in code
+        assert "InMemorySaver()" in code
 
     def test_generate_complete_example(self):
         """Test complete example generation."""
@@ -98,10 +100,11 @@ class TestSubagentsPattern:
         """Test basic state code generation."""
         code = SubagentsPattern.generate_state_code()
 
-        assert "class WorkflowState(MessagesState):" in code
-        assert "next: str" in code
+        assert "class WorkflowState(TypedDict, total=False):" in code
+        assert "next_agent: str" in code
         assert "instructions: str" in code
-        assert "task_results: dict" in code
+        assert "task_results: Annotated[Dict[str, str], merge_dicts]" in code
+        assert "dispatch_log: Annotated[List[str], operator.add]" in code
 
     def test_generate_state_code_with_additional_fields(self):
         """Test state code generation with additional fields."""
@@ -129,6 +132,9 @@ class TestSubagentsPattern:
         assert '"reviewer"' in code
         assert '"FINISH"' in code
         assert "with_structured_output" in code
+        assert "model='gpt-5-mini'" in code
+        assert "dispatch_log" in code
+        assert "MAX_ITERATIONS" in code
 
     def test_generate_supervisor_code_simple(self):
         """Test supervisor node generation without structured output."""
@@ -139,6 +145,9 @@ class TestSubagentsPattern:
 
         assert "def supervisor_node(state: WorkflowState)" in code
         assert "with_structured_output" not in code
+        assert "model='gpt-5-mini'" in code
+        assert "dispatch_log" in code
+        assert "MAX_ITERATIONS" in code
 
     def test_generate_subagent_code(self):
         """Test subagent node generation."""
@@ -149,7 +158,7 @@ class TestSubagentsPattern:
         assert "def researcher_node(state: WorkflowState)" in code
         assert "Research and gather information" in code
         assert "ChatOpenAI" in code
-        assert 'task_results["researcher"]' in code
+        assert '"researcher": getattr(response, "content", str(response))' in code
 
     def test_generate_subagent_code_with_tools(self):
         """Test subagent node generation with tool binding."""
@@ -160,6 +169,7 @@ class TestSubagentsPattern:
         assert "def researcher_node(state: WorkflowState)" in code
         assert "llm_with_tools = llm.bind_tools(tools)" in code
         assert "llm_with_tools.invoke(" in code
+        assert "lookup_context" in code
         # Ensure it's not commented out
         assert "# llm_with_tools = llm.bind_tools" not in code
 
@@ -168,12 +178,33 @@ class TestSubagentsPattern:
         subagents = ["researcher", "writer"]
         code = SubagentsPattern.generate_graph_code(subagents)
 
-        assert "def supervisor_router(state: WorkflowState)" in code
+        assert "def finish_node(state: WorkflowState)" in code
         assert "StateGraph(WorkflowState)" in code
         assert 'workflow.add_node("supervisor", supervisor_node)' in code
         assert 'workflow.add_node("researcher", researcher_node)' in code
         assert 'workflow.add_node("writer", writer_node)' in code
-        assert "add_conditional_edges" in code
+        assert 'workflow.add_edge("researcher", "supervisor")' in code
+        assert 'workflow.add_edge("finish", END)' in code
+
+    def test_generate_supervisor_code_includes_context_window_management(self):
+        """Test supervisor code includes bounded task result context management."""
+        code = SubagentsPattern.generate_supervisor_code(["researcher", "writer"])
+
+        assert "MAX_ITERATIONS" in code
+        assert "if iterations >= MAX_ITERATIONS" in code
+        assert '"dispatch_log": [' in code
+
+    def test_generate_supervisor_code_supports_summary_model_override(self):
+        """Test supervisor summarization model can be configured explicitly."""
+        from langgraph_system_generator.utils.config import ModelConfig
+
+        config = ModelConfig(model="gpt-5-mini", summary_model="gpt-5-nano")
+        code = SubagentsPattern.generate_supervisor_code(
+            ["researcher"],
+            model_config=config,
+        )
+
+        assert "model='gpt-5-mini'" in code
 
     def test_generate_complete_example(self):
         """Test complete example generation."""
@@ -197,12 +228,14 @@ class TestCritiqueLoopPattern:
         code = CritiqueLoopPattern.generate_state_code()
 
         assert "class WorkflowState(MessagesState):" in code
+        assert "class DraftSnapshot(TypedDict):" in code
         assert "current_draft: str" in code
         assert "critique_feedback: str" in code
         assert "revision_count: int" in code
         assert "quality_score: float" in code
         assert "approved: bool" in code
         assert "criteria: List[str]" in code
+        assert "draft_history: Annotated[List[DraftSnapshot], operator.add]" in code
 
     def test_generate_generation_node_code(self):
         """Test generation node code."""
@@ -244,6 +277,10 @@ class TestCritiqueLoopPattern:
         assert "def revise_node(state: WorkflowState)" in code
         assert "current_draft" in code
         assert "critique_feedback" in code
+        assert "quality_score" in code
+        assert '"draft_history": (' in code
+        assert '"content": current_draft' in code
+        assert '"quality_score": quality_score' in code
         assert "revision_count" in code
         assert "ChatOpenAI" in code
 
@@ -267,6 +304,9 @@ class TestCritiqueLoopPattern:
         )
 
         assert "def should_continue(state: WorkflowState)" in code
+        assert "draft_history = list(state.get(\"draft_history\", []))" in code
+        assert "revision_count >= 3 and draft_history" in code
+        assert 'max_revisions_reached": "finalize"' in code
         assert "StateGraph(WorkflowState)" in code
         assert 'workflow.add_node("generate", generate_node)' in code
         assert 'workflow.add_node("critique", critique_node)' in code
@@ -290,6 +330,7 @@ class TestCritiqueLoopPattern:
         assert "def critique_node" in code
         assert "def revise_node" in code
         assert "workflow = StateGraph" in code
+        assert '"draft_history": []' in code
         assert "if __name__ ==" in code
 
 
@@ -386,12 +427,12 @@ class TestRouterPatternEdgeCases:
         """Test router generation handles empty routes gracefully."""
         code = RouterPattern.generate_router_node_code([])
         # Should still generate valid code structure
-        assert "def router_node(state: WorkflowState)" in code
+        assert "def router_node(state: WorkflowState, window_size: int = 5)" in code
 
     def test_generate_router_with_single_route(self):
         """Test router generation with only one route."""
         code = RouterPattern.generate_router_node_code(["search"])
-        assert "def router_node(state: WorkflowState)" in code
+        assert "def router_node(state: WorkflowState, window_size: int = 5)" in code
         assert '"search"' in code
 
     def test_generate_router_with_special_model_name(self):
@@ -469,7 +510,7 @@ class TestSubagentsPatternEdgeCases:
         """Test graph generation with different max_iterations."""
         code = SubagentsPattern.generate_graph_code(["agent1"], max_iterations=5)
         assert "StateGraph" in code
-        assert "supervisor_router" in code
+        assert "MAX_ITERATIONS = 5" in code
 
     def test_generate_subagent_with_hyphenated_name(self):
         """Test subagent name normalization for special characters."""
@@ -597,7 +638,7 @@ class TestPatternImportability:
 
         # Both should be valid and independent
         assert "route:" in router_state
-        assert "next:" in subagent_state
+        assert "next_agent:" in subagent_state
         assert router_state != subagent_state
 
 
@@ -631,7 +672,7 @@ class TestPatternErrorHandling:
 
         # Subagent code should handle empty messages
         subagent_code = SubagentsPattern.generate_subagent_code("test", "Test agent")
-        assert "messages[-1]" in subagent_code or "if messages" in subagent_code
+        assert 'messages = state.get("messages", [])' in subagent_code
 
 
 class TestPatternModelConfig:
@@ -646,7 +687,7 @@ class TestPatternModelConfig:
             ["search"], model_config=config
         )
 
-        assert "def router_node(state: WorkflowState)" in code
+        assert "def router_node(state: WorkflowState, window_size: int = 5)" in code
         assert "model='gpt-5-mini'" in code
         # Router always uses temperature=0 for deterministic routing
         assert "temperature=0" in code
@@ -668,7 +709,7 @@ class TestPatternModelConfig:
         """Test RouterPattern uses default config when None provided."""
         code = RouterPattern.generate_router_node_code(["search"])
 
-        assert "def router_node(state: WorkflowState)" in code
+        assert "def router_node(state: WorkflowState, window_size: int = 5)" in code
         assert "model='gpt-5-mini'" in code
         assert "temperature=" in code
 
@@ -707,7 +748,7 @@ class TestPatternModelConfig:
 
         assert "def researcher_node(state: WorkflowState)" in code
         # Should have uncommented tool binding code
-        assert "DuckDuckGoSearchRun" in code
+        assert "lookup_context" in code
         assert "bind_tools" in code
         assert "llm_with_tools" in code
         # Should NOT have commented tool examples
@@ -856,3 +897,227 @@ class TestPatternModelConfig:
         
         assert "temperature=0" in code
         assert "temperature=0.9" not in code
+from langgraph_system_generator.utils.config import ModelConfig
+
+
+def test_router_pattern_emits_typed_state_and_command_routing():
+    state_code = RouterPattern.generate_state_code(
+        additional_fields={"user_id": "User identifier"}
+    )
+    router_code = RouterPattern.generate_router_node_code(["search", "analyze"])
+    route_code = RouterPattern.generate_route_node_code(
+        "search",
+        "Perform grounded retrieval.",
+        model_config=ModelConfig(model="gpt-5-mini", temperature=0.4),
+    )
+    graph_code = RouterPattern.generate_graph_code(
+        ["search", "analyze"],
+        use_conditional_edges=False,
+    )
+
+    assert "TypedDict" in state_code
+    assert "add_messages" in state_code
+    assert "route_history" in state_code
+    assert "user_id: str" in state_code
+
+    assert "Command" in router_code
+    assert "RouteDecision" in router_code
+    assert "with_structured_output" in router_code
+    assert "temperature=0" in router_code
+
+    assert "Perform grounded retrieval." in route_code
+    assert "model='gpt-5-mini'" in route_code
+    assert "temperature=0.4" in route_code
+
+    assert "InMemorySaver" in graph_code
+    assert "workflow.add_node('router', router_node)" in graph_code
+    assert "add_conditional_edges" not in graph_code
+
+
+def test_subagents_pattern_emits_supervisor_command_flow_and_finish_node():
+    state_code = SubagentsPattern.generate_state_code(
+        additional_fields={"priority": "Task priority"}
+    )
+    supervisor_code = SubagentsPattern.generate_supervisor_code(
+        ["researcher", "writer"],
+        {"researcher": "Gather evidence", "writer": "Draft answer"},
+        model_config=ModelConfig(model="gpt-5-mini", max_tokens=1200),
+    )
+    tool_agent_code = SubagentsPattern.generate_subagent_code(
+        "researcher",
+        "Gather evidence",
+        include_tools=True,
+    )
+    graph_code = SubagentsPattern.generate_graph_code(["researcher", "writer"])
+
+    assert "TypedDict" in state_code
+    assert "next_agent: str" in state_code
+    assert "dispatch_log" in state_code
+    assert "priority: str" in state_code
+
+    assert "SupervisorDecision" in supervisor_code
+    assert "Command" in supervisor_code
+    assert "with_structured_output" in supervisor_code
+    assert "MAX_ITERATIONS" in supervisor_code
+    assert "model='gpt-5-mini'" in supervisor_code
+    assert "max_tokens=1200" in supervisor_code
+    assert "temperature=0" in supervisor_code
+
+    assert "llm.bind_tools(tools)" in tool_agent_code
+    assert "lookup_context" in tool_agent_code
+
+    assert "finish_node" in graph_code
+    assert "InMemorySaver" in graph_code
+    assert 'workflow.add_edge("researcher", "supervisor")' in graph_code
+
+
+def test_critique_loop_pattern_emits_structured_judging_and_finalize_path():
+    state_code = CritiqueLoopPattern.generate_state_code(
+        additional_fields={"audience": "Target audience"}
+    )
+    critique_code = CritiqueLoopPattern.generate_critique_node_code(
+        criteria=["Accuracy", "Clarity"],
+        model_config=ModelConfig(model="gpt-5-mini", max_tokens=800),
+    )
+    revise_code = CritiqueLoopPattern.generate_revise_node_code(
+        model_config=ModelConfig(model="gpt-5-mini", temperature=0.7)
+    )
+    helper_code = CritiqueLoopPattern.generate_conditional_edge_code(
+        max_revisions=2,
+        min_quality_score=0.9,
+    )
+    graph_code = CritiqueLoopPattern.generate_graph_code(
+        max_revisions=2,
+        min_quality_score=0.9,
+    )
+
+    assert "MessagesState" in state_code
+    assert "DraftSnapshot" in state_code
+    assert "draft_history" in state_code
+    assert "revision_history" in state_code
+    assert "audience: str" in state_code
+
+    assert "CritiqueAssessment" in critique_code
+    assert "with_structured_output" in critique_code
+    assert "previous_quality_score" in critique_code
+    assert "model='gpt-5-mini'" in critique_code
+    assert "max_tokens=800" in critique_code
+    assert "temperature=0" in critique_code
+
+    assert "temperature=0.7" in revise_code
+    assert '"draft_history": (' in revise_code
+
+    assert "should_continue" in helper_code
+    assert "quality_score >= 0.9" in helper_code
+    assert "finalize_node" in graph_code
+    assert "draft_history = list(state.get(\"draft_history\", []))" in graph_code
+    assert 'max_revisions_reached": "finalize"' in graph_code
+    assert "InMemorySaver" in graph_code
+
+
+def test_critique_loop_finalize_rolls_back_to_best_historical_draft():
+    namespace = {"WorkflowState": dict}
+    helper_code = CritiqueLoopPattern.generate_conditional_edge_code(
+        max_revisions=2,
+        min_quality_score=0.95,
+    )
+    graph_code = CritiqueLoopPattern.generate_graph_code(
+        max_revisions=2,
+        min_quality_score=0.95,
+    )
+    graph_module = ast.parse(graph_code)
+    finalize_node_ast = next(
+        node
+        for node in graph_module.body
+        if isinstance(node, ast.FunctionDef) and node.name == "finalize_node"
+    )
+    finalize_module = ast.Module(body=[finalize_node_ast], type_ignores=[])
+    module_code = "\n\n".join(
+        [
+            helper_code,
+            ast.unparse(finalize_module),
+        ]
+    )
+
+    exec(module_code, namespace)
+
+    should_continue = namespace["should_continue"]
+    finalize_node = namespace["finalize_node"]
+    state = {
+        "current_draft": "Revision 2",
+        "quality_score": 0.7,
+        "revision_count": 2,
+        "approved": False,
+        "draft_history": [
+            {"content": "Revision 1", "quality_score": 0.9},
+        ],
+    }
+
+    assert should_continue(state) == "max_revisions_reached"
+    assert finalize_node(state)["final_output"] == "Revision 1"
+
+
+def test_generated_pattern_sections_compile_as_python():
+    snippets = [
+        RouterPattern.generate_state_code(),
+        RouterPattern.generate_router_node_code(["search"]),
+        RouterPattern.generate_router_node_code(["search"], use_structured_output=False),
+        RouterPattern.generate_graph_code(["search"]),
+        RouterPattern.generate_complete_example(["search"]),
+        SubagentsPattern.generate_state_code(),
+        SubagentsPattern.generate_supervisor_code(["researcher"]),
+        SubagentsPattern.generate_supervisor_code(
+            ["researcher"], use_structured_output=False
+        ),
+        SubagentsPattern.generate_graph_code(["researcher"]),
+        SubagentsPattern.generate_complete_example(["researcher"]),
+        CritiqueLoopPattern.generate_state_code(),
+        CritiqueLoopPattern.generate_generation_node_code(),
+        CritiqueLoopPattern.generate_critique_node_code(),
+        CritiqueLoopPattern.generate_critique_node_code(use_structured_output=False),
+        CritiqueLoopPattern.generate_revise_node_code(),
+        CritiqueLoopPattern.generate_graph_code(),
+        CritiqueLoopPattern.generate_complete_example(),
+    ]
+
+    for snippet in snippets:
+        compile(snippet, "<generated-pattern>", "exec")
+
+
+def test_generated_pattern_state_normalizes_multiline_field_descriptions():
+    snippet = RouterPattern.generate_state_code(
+        additional_fields={"user_id": "User identifier\nfrom prompt context"}
+    )
+
+    assert "user_id: str  # User identifier from prompt context" in snippet
+    compile(snippet, "<generated-pattern>", "exec")
+def test_pattern_generators_accept_model_config_dicts_and_api_base():
+    config = {
+        "model": "gpt-5-mini",
+        "temperature": 0.6,
+        "api_base": "https://example.invalid/v1",
+        "max_tokens": 2000,
+    }
+
+    router_code = RouterPattern.generate_route_node_code(
+        "search",
+        "Search docs",
+        model_config=config,
+    )
+    subagent_code = SubagentsPattern.generate_subagent_code(
+        "researcher",
+        "Research specialist",
+        model_config=config,
+    )
+    critique_code = CritiqueLoopPattern.generate_generation_node_code(
+        model_config=config,
+    )
+
+    assert "base_url='https://example.invalid/v1'" in router_code
+    assert "max_tokens=2000" in router_code
+
+    assert "base_url='https://example.invalid/v1'" in subagent_code
+    assert "temperature=0.6" in subagent_code
+
+    assert "base_url='https://example.invalid/v1'" in critique_code
+    assert "max_tokens=2000" in critique_code

@@ -1,244 +1,90 @@
-# Pattern Library Examples
+# LangGraph Pattern Examples
 
-This directory contains comprehensive, runnable examples demonstrating the use of the LangGraph System Generator pattern library.
+`examples/` is a runnable pattern library, not an application-usage demo folder. Each Python script has a paired notebook and defaults to `--mode stub` so the workflows run offline without credentials.
 
-## Prerequisites
+## Setup
 
-1. Install dependencies:
-   ```bash
-   pip install -r ../requirements.txt
-   ```
+Use Python `3.10+`.
 
-2. Set your OpenAI API key:
-   ```bash
-   export OPENAI_API_KEY='your-key-here'
-   ```
-
-3. Install the package in development mode (from repository root):
-   ```bash
-   pip install -e .
-   ```
-
-## Available Examples
-
-### 1. Router Pattern Example
-**File**: `router_pattern_example.py`
-
-Demonstrates the Router Pattern for creating multi-agent systems with dynamic routing.
-
-**What it covers**:
-- Complete router system generation
-- Custom router configuration with additional state fields
-- Individual component generation (state, router node, route handlers, graph)
-- Integration patterns for custom workflows
-
-**Usage**:
 ```bash
-python examples/router_pattern_example.py
-```
-
-**Example scenarios**:
-- Customer support routing (technical, billing, general)
-- Content handling (search, analyze, summarize)
-- Request classification systems
-
----
-
-### 2. Subagents Pattern Example
-**File**: `subagents_pattern_example.py`
-
-Demonstrates the Subagents Pattern for supervisor-based agent coordination.
-
-**What it covers**:
-- Research team system with supervisor
-- Custom supervisor configuration
-- Collaborative content creation workflow
-- Scalability with large agent teams (8+ agents)
-- Tool integration for subagents
-
-**Usage**:
-```bash
-python examples/subagents_pattern_example.py
-```
-
-**Example scenarios**:
-- Research and analysis workflows
-- Content creation pipelines
-- Software development teams
-- Data processing pipelines
-
----
-
-### 3. Critique-Revise Loop Pattern Example
-**File**: `critique_revise_pattern_example.py`
-
-Demonstrates the Critique-Revise Loop Pattern for iterative quality improvement.
-
-**What it covers**:
-- Content refinement system
-- Custom quality assurance configuration
-- Iterative improvement workflow visualization
-- Domain-specific quality criteria (technical docs, marketing, research, code)
-- Advanced configurations (strict quality control, fast iteration, continuous improvement)
-
-**Usage**:
-```bash
-python examples/critique_revise_pattern_example.py
-```
-
-**Example scenarios**:
-- Technical documentation refinement
-- Code generation with quality checks
-- Content writing and editing
-- Report generation and review
-
----
-
-## Understanding the Output
-
-Each example generates:
-
-1. **Complete Working Code**: Full LangGraph workflow implementations
-2. **Component Demonstrations**: Individual pattern components (state, nodes, graphs)
-3. **Integration Patterns**: How to use patterns in custom workflows
-4. **Best Practices**: Tips and recommendations for each pattern
-
-### Example Output Structure
-
-```
-================================================================================
-Pattern Example
-================================================================================
-
-Generated Code:
-[Complete, runnable Python code for the pattern]
-
-Key Components:
-- State Schema
-- Node Implementations
-- Graph Construction
-- Execution Logic
-
-Integration Tips:
-[How to use the generated code in your projects]
-================================================================================
-```
-
-## Running Without API Key
-
-The examples will run and generate code even without an API key. They demonstrate the code generation capabilities of the pattern library. However, to **execute** the generated workflows, you'll need a valid OpenAI API key.
-
-When run without an API key, you'll see:
-```
-⚠️  WARNING: OPENAI_API_KEY not found in environment
-The generated code requires an API key to run.
-Set it with: export OPENAI_API_KEY='your-key-here'
-```
-
-## Customization
-
-All examples show how to customize:
-
-- **LLM Models**: Change from default `gpt-5-mini` to `gpt-4`, `gpt-3.5-turbo`, etc.
-- **State Fields**: Add custom fields to state schemas
-- **Agent Descriptions**: Customize agent roles and capabilities
-- **Quality Criteria**: Define domain-specific evaluation criteria
-- **Thresholds**: Adjust quality scores, max iterations, etc.
-
-## Integration with Your Projects
-
-To use the generated code in your projects:
-
-1. **Run an example** to see the generated code
-2. **Copy relevant sections** into your project files
-3. **Customize as needed**:
-   - Modify prompts for your domain
-   - Add tools (web search, databases, APIs)
-   - Adjust routing/coordination logic
-   - Configure LLM parameters
-4. **Test with sample inputs**
-5. **Deploy to production**
-
-## Example Workflow
-
-```python
-# 1. Generate code using pattern library
-from langgraph_system_generator.patterns import RouterPattern
-
-routes = ["support", "sales", "technical"]
-code = RouterPattern.generate_complete_example(routes)
-
-# 2. Save to file
-with open("my_workflow.py", "w") as f:
-    f.write(code)
-
-# 3. Customize the generated code
-# Edit my_workflow.py to add your domain logic
-
-# 4. Run your custom workflow
-# python my_workflow.py
-```
-
-## Pattern Selection Guide
-
-| Use Case | Recommended Pattern | Example File |
-|----------|---------------------|--------------|
-| Input classification | Router | `router_pattern_example.py` |
-| Task decomposition | Subagents | `subagents_pattern_example.py` |
-| Quality improvement | Critique-Revise | `critique_revise_pattern_example.py` |
-| Specialized handling | Router | `router_pattern_example.py` |
-| Multi-step workflows | Subagents | `subagents_pattern_example.py` |
-| Iterative refinement | Critique-Revise | `critique_revise_pattern_example.py` |
-
-## Additional Resources
-
-- **Pattern Documentation**: [../docs/patterns.md](../docs/patterns.md)
-- **Test Suite**: [../tests/unit/test_patterns.py](../tests/unit/test_patterns.py)
-- **Source Code**: [../src/langgraph_system_generator/patterns/](../src/langgraph_system_generator/patterns/)
-- **LangGraph Docs**: https://langchain-ai.github.io/langgraph/
-
-## Troubleshooting
-
-### Import Error: `ModuleNotFoundError: No module named 'langgraph_system_generator'`
-
-Install the package in development mode:
-```bash
-cd ..  # Go to repository root
+python -m venv .venv
+source .venv/bin/activate  # Windows: .venv\Scripts\activate
+pip install -r requirements.txt
 pip install -e .
 ```
 
-### API Key Issues
+Live mode requires `OPENAI_API_KEY`:
 
-Ensure your API key is set:
 ```bash
-export OPENAI_API_KEY='sk-...'
-python examples/router_pattern_example.py
+export OPENAI_API_KEY="sk-..."  # Linux/macOS (bash/zsh)
+$env:OPENAI_API_KEY="sk-..."    # Windows (PowerShell)
+python examples/router_pattern_example.py --mode live
 ```
 
-### Pattern Import Issues
+For notebooks, set `OPENAI_API_KEY` in the Jupyter or Colab kernel environment
+before switching `MODE` to `live`.
 
-Make sure you're importing from the correct module:
-```python
-from langgraph_system_generator.patterns import RouterPattern
-from langgraph_system_generator.patterns import SubagentsPattern
-from langgraph_system_generator.patterns import CritiqueLoopPattern
+Stub mode is the default for every script and notebook:
+
+```bash
+python examples/router_pattern_example.py --mode stub
 ```
 
-## Contributing Examples
+## Pattern Index
 
-To add new examples:
+| Pattern | Python | Notebook | Latency | Cost | Complexity | Best For |
+| --- | --- | --- | --- | --- | --- | --- |
+| Router | `router_pattern_example.py` | `router_pattern_example.ipynb` | Low | Low | Low | One-shot delegation to a single specialist |
+| Subagents | `subagents_pattern_example.py` | `subagents_pattern_example.ipynb` | Medium | Medium | Medium | Sequential collaboration across specialists |
+| Critique-Revise | `critique_revise_pattern_example.py` | `critique_revise_pattern_example.ipynb` | Medium | Medium-High | Medium | Iterative quality improvement with bounded retries |
+| Hierarchical Teams | `hierarchical_teams_example.py` | `hierarchical_teams_example.ipynb` | Medium-High | Medium-High | High | Team-of-teams workflows and nested supervision |
+| Plan-and-Execute | `planning_and_execute_example.py` | `planning_and_execute_example.ipynb` | Medium | Medium | Medium | Separate planning from execution and trace each step |
+| REWOO-Style Speculation | `rewoo_example.py` | `rewoo_example.ipynb` | Medium | Medium | High | Predict tool outputs first, reconcile later |
+| Human Approval / HITL | `human_approval_pattern.py` | `human_approval_pattern.ipynb` | Human-bound | Low-Medium | Medium | Sensitive actions requiring approve/edit/reject gates |
+| LLM-as-a-Judge | `llm_judge_example.py` | `llm_judge_example.ipynb` | Medium | Medium | Medium | Rubric-based scoring and explicit quality gates |
+| LLMCompiler-Style Execution | `llm_compiler_example.py` | `llm_compiler_example.ipynb` | Medium | Medium | High | Dependency-graph planning with parallelizable subtasks |
 
-1. Create a new example file following the naming convention
-2. Include comprehensive demonstrations of pattern features
-3. Add comments explaining key concepts
-4. Test the example runs without errors
-5. Update this README with the new example
-6. Submit a pull request
+## Pattern Selection Matrix
 
-## Support
+| Situation | Prefer | Why |
+| --- | --- | --- |
+| The request should go to exactly one specialist | Router | Lowest-latency delegation with minimal graph overhead |
+| Specialists must build on prior outputs | Subagents | Supervisor can sequence work and preserve shared context |
+| A single answer needs iterative refinement | Critique-Revise | Quality improves through explicit critique and revision |
+| One supervisor is getting overloaded | Hierarchical Teams | Split responsibilities into nested teams with a top-level coordinator |
+| Planning quality and execution quality should be tuned separately | Plan-and-Execute | Lets planner and executor use different prompts or models |
+| You want to speculate before paying for real tool observations | REWOO-Style Speculation | Surfaces consistency-vs-latency trade-offs clearly |
+| A tool/action is sensitive or externally visible | Human Approval / HITL | Interrupts provide pause, edit, approve, and reject flows |
+| You need explicit rubric scores or ship/no-ship decisions | LLM-as-a-Judge | Produces auditable structured evaluation output |
+| Independent subtasks can run in parallel before synthesis | LLMCompiler-Style Execution | Dependency graph plus `Send` fan-out improves throughput |
 
-For issues or questions:
-- Review the generated code and comments
-- Check [../docs/patterns.md](../docs/patterns.md) for detailed documentation
-- Open an issue on GitHub
-- Review test cases in [../tests/](../tests/) for usage patterns
+## JS Parity References
+
+These links point to current official JavaScript docs or closest first-party primitives. Some advanced patterns do not have a one-to-one JS cookbook yet; in those cases the parity link points to the official building blocks used to implement the pattern.
+
+| Pattern | Closest Official JS Reference |
+| --- | --- |
+| Router | [LangChain JS multi-agent router](https://docs.langchain.com/oss/javascript/langchain/multi-agent/router) |
+| Subagents | [LangChain JS multi-agent subagents](https://docs.langchain.com/oss/javascript/langchain/multi-agent/subagents) |
+| Critique-Revise | [LangGraph JS graph API](https://docs.langchain.com/oss/javascript/langgraph/graph-api) |
+| Hierarchical Teams | [LangGraph JS subgraphs](https://docs.langchain.com/oss/javascript/langgraph/use-subgraphs) |
+| Plan-and-Execute | [Thinking in LangGraph (JS)](https://docs.langchain.com/oss/javascript/langgraph/thinking-in-langgraph) |
+| REWOO-Style Speculation | [LangGraph JS graph API](https://docs.langchain.com/oss/javascript/langgraph/graph-api) |
+| Human Approval / HITL | [LangGraph JS interrupts](https://docs.langchain.com/oss/javascript/langgraph/interrupts) and [LangChain JS human-in-the-loop](https://docs.langchain.com/oss/javascript/langchain/human-in-the-loop) |
+| LLM-as-a-Judge | [Evaluate a graph in LangSmith](https://docs.langchain.com/langsmith/evaluate-graph) |
+| LLMCompiler-Style Execution | [LangGraph JS use-graph-api / Send](https://docs.langchain.com/oss/javascript/langgraph/use-graph-api) |
+
+## Benchmark
+
+Use [benchmark_critique_vs_judge.ipynb](./benchmark_critique_vs_judge.ipynb) with the checked-in fixture [benchmark_critique_vs_judge_fixture.json](./benchmark_critique_vs_judge_fixture.json) to compare token cost, latency, and rubric quality for Critique-Revise vs LLM-as-a-Judge.
+
+- Stub mode loads the checked-in fixture and renders the comparison offline.
+- Live runs should record the model name, date, prompt/completion token counts, latency, and pricing assumptions used for any refreshed results.
+
+## Notes
+
+- The three public generator-backed patterns remain `RouterPattern`, `SubagentsPattern`, and `CritiqueLoopPattern` under `src/langgraph_system_generator/patterns/`.
+- The advanced assets in this folder are example-only references for current LangGraph design patterns; they are intentionally not exported as new public code-generation classes in `src/`.
+- The plan-and-execute example exposes `--planner-model` and `--executor-model`
+  for live runs, and the paired notebook mirrors those controls with
+  `PLANNER_MODEL` and `EXECUTOR_MODEL`.

@@ -27,7 +27,7 @@ Covers the outer generation workflow only (intake → RAG → planning → noteb
 4. **Pattern & Architecture Selection**
    - Choose router/subagents/hybrid/critique-map-reduce pattern; record rationale and citations.
 5. **State & Tool Plan**
-   - Define outer and inner state schemas, reducers, tool lists, persistence choice (MemorySaver dev; SQLite/Postgres optional).
+   - Define outer and inner state schemas, reducers, tool lists, persistence choice (`InMemorySaver` for dev; SQLite/Postgres optional).
 6. **Notebook Assembly**
    - Programmatically emit cells: intro, config, state/tools, graph build, demo/smoke, export helpers, troubleshooting.
 7. **Static QA**

@@ -16,6 +16,7 @@ from langgraph_system_generator.notebook.composer import NotebookComposer
 from langgraph_system_generator.notebook.exporters import NotebookExporter
 from langgraph_system_generator.notebook.manuscript_docx import ManuscriptDOCXGenerator
 from langgraph_system_generator.notebook.manuscript_pdf import ManuscriptPDFGenerator
+from langgraph_system_generator.notebook.runtime import inspect_kernel_spec
 
 
 def test_composer_adds_required_sections():
@@ -76,6 +77,10 @@ def test_exporters_write_files(tmp_path: Path, monkeypatch):
 
 
 def test_smoke_execute_simple_notebook(tmp_path: Path):
+    kernel_ok, kernel_message = inspect_kernel_spec("python3")
+    if not kernel_ok:
+        pytest.skip(kernel_message)
+
     composer = NotebookComposer()
     nb = composer.build_notebook(
         [
@@ -91,7 +96,7 @@ def test_smoke_execute_simple_notebook(tmp_path: Path):
     client = NotebookClient(nb, timeout=60, kernel_name="python3")
     try:
         executed = client.execute()
-    except NoSuchKernel:
+    except (FileNotFoundError, NoSuchKernel):
         pytest.skip("python3 kernel is not available in this environment")
 
     # Ensure execution added outputs
