@@ -171,7 +171,19 @@ class Settings(BaseSettings):
 
 
 _DEFAULT_ENV_FILE = object()
-_TEST_SETTINGS_ENV_KEYS = tuple(field_name.upper() for field_name in Settings.model_fields)
+
+
+def _test_settings_env_keys() -> tuple[str, ...]:
+    """Return the env var names mirrored by Settings fields during pytest loads."""
+
+    env_keys: list[str] = []
+    for field_name, field_info in Settings.model_fields.items():
+        env_name = field_info.alias or field_name
+        env_keys.append(env_name.upper())
+    return tuple(env_keys)
+
+
+_TEST_SETTINGS_ENV_KEYS = _test_settings_env_keys()
 
 
 def _pytest_is_active() -> bool:
@@ -236,7 +248,7 @@ def get_settings(env_file: Union[str, Path, None, object] = _DEFAULT_ENV_FILE) -
     """Return a cached settings instance."""
 
     if env_file is _DEFAULT_ENV_FILE:
-        resolved_env_file = _resolve_default_env_file()
+        resolved_env_file = None if _pytest_is_active() else _resolve_default_env_file()
     elif env_file is None:
         resolved_env_file = None
     else:

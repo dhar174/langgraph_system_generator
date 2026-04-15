@@ -1,6 +1,6 @@
 ---
 description: 'Perform janitorial tasks on any codebase including cleanup, simplification, and tech debt remediation.'
-name: 'janitor'
+name: 'Universal Janitor'
 tools: ["*"]
 target: 'github-copilot'
 infer: true

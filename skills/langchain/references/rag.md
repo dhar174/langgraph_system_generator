@@ -1,114 +1,95 @@
 # LangChain RAG Guide
 
-Complete guide to Retrieval-Augmented Generation with LangChain.
+LangChain v1 documents two recommended RAG shapes:
 
-## What is RAG?
+1. **RAG agent**: expose retrieval as a tool and let an agent decide when to
+   call it
+2. **Two-step RAG chain**: retrieve first, then answer in a single model call
 
-**RAG (Retrieval-Augmented Generation)** combines:
-1. **Retrieval**: Find relevant documents from knowledge base
-2. **Generation**: LLM generates answer using retrieved context
-
-**Benefits**:
-- Reduce hallucinations
-- Up-to-date information
-- Domain-specific knowledge
-- Source citations
-
-## RAG pipeline components
-
-### 1. Document loading
+## Indexing pipeline
 
 ```python
-from langchain_community.document_loaders import (
-    WebBaseLoader,
-    PyPDFLoader,
-    TextLoader,
-    DirectoryLoader,
-    CSVLoader,
-    UnstructuredMarkdownLoader
-)
-```
+import bs4
 
-### 2. Text splitting
-
-```python
-from langchain.text_splitter import (
-    RecursiveCharacterTextSplitter,
-    CharacterTextSplitter,
-    TokenTextSplitter
-)
-```
-
-### 3. Embeddings
-
-```python
+from langchain_community.document_loaders import WebBaseLoader
+from langchain_text_splitters import RecursiveCharacterTextSplitter
+from langchain_core.vectorstores import InMemoryVectorStore
 from langchain_openai import OpenAIEmbeddings
+
+loader = WebBaseLoader(
+    web_paths=("https://lilianweng.github.io/posts/2023-06-23-agent/",),
+    bs_kwargs={
+        "parse_only": bs4.SoupStrainer(
+            class_=("post-content", "post-title", "post-header")
+        )
+    },
+)
+docs = loader.load()
+
+splitter = RecursiveCharacterTextSplitter(
+    chunk_size=1000,
+    chunk_overlap=200,
+    add_start_index=True,
+)
+splits = splitter.split_documents(docs)
+
+embedding_model = OpenAIEmbeddings()
+vector_store = InMemoryVectorStore(embedding=embedding_model)
+vector_store.add_documents(splits)
 ```
 
-### 4. Vector stores
+## Retrieval tool
 
 ```python
-from langchain_chroma import Chroma
-from langchain_community.vectorstores import FAISS
-from langchain_pinecone import PineconeVectorStore
+from langchain.tools import tool
+
+
+@tool(response_format="content_and_artifact")
+def retrieve_context(query: str):
+    """Retrieve information to help answer a query."""
+    retrieved_docs = vector_store.similarity_search(query, k=2)
+    serialized = "\n\n".join(
+        f"Source: {doc.metadata}\nContent: {doc.page_content}"
+        for doc in retrieved_docs
+    )
+    return serialized, retrieved_docs
 ```
 
-### 5. Retrieval
+## RAG agent
 
 ```python
-retriever = vectorstore.as_retriever(
-    search_type="similarity",
-    search_kwargs={"k": 4}
+from langchain.agents import create_agent
+from langchain_anthropic import ChatAnthropic
+
+agent = create_agent(
+    model=ChatAnthropic(model="claude-sonnet-4-5-20250929"),
+    tools=[retrieve_context],
+    system_prompt=(
+        "Use the retrieval tool to ground answers in the indexed corpus. "
+        "If the context is insufficient, say you do not know."
+    ),
 )
 ```
 
-### 6. QA chain
+## Text splitters
+
+Current splitter docs use the standalone `langchain-text-splitters` package:
 
 ```python
-from langchain.chains import RetrievalQA
-from langchain_anthropic import ChatAnthropic
-```
-
-## Advanced RAG patterns
-
-### Conversational RAG
-
-```python
-from langchain.chains import ConversationalRetrievalChain
-from langchain.memory import ConversationBufferMemory
-```
-
-### Multi-query retrieval
-
-```python
-from langchain.retrievers import MultiQueryRetriever
-```
-
-### Contextual compression
-
-```python
-from langchain.retrievers import ContextualCompressionRetriever
-from langchain.retrievers.document_compressors import LLMChainExtractor
-```
-
-### Ensemble retrieval (hybrid search)
-
-```python
-from langchain.retrievers import EnsembleRetriever
-from langchain.retrievers import BM25Retriever
+from langchain_text_splitters import RecursiveCharacterTextSplitter
 ```
 
 ## Best practices
 
-1. **Chunk size matters** - 512-1024 tokens is usually optimal
-2. **Add overlap** - 10-20% overlap prevents context loss
-3. **Use metadata** - Track sources for citations
-4. **Test retrieval quality** - Evaluate before using in production
-5. **Hybrid search** - Combine vector + keyword for best results
+1. Keep indexing and query-time retrieval conceptually separate.
+2. Track source metadata so answers can cite their origin.
+3. Use a retrieval tool when you want agentic control over when retrieval runs.
+4. Use a two-step chain when you want predictable latency and exactly one model
+   generation pass.
 
 ## Resources
 
-- **LangChain RAG Docs**: https://docs.langchain.com/oss/python/langchain/rag
-- **Vector Stores**: https://python.langchain.com/docs/integrations/vectorstores
-- **Document Loaders**: https://python.langchain.com/docs/integrations/document_loaders
-- **Retrievers**: https://python.langchain.com/docs/modules/data_connection/retrievers
+- **LangChain RAG guide**: <https://docs.langchain.com/oss/python/langchain/rag>
+- **Retrieval with agents overview**: <https://docs.langchain.com/oss/python/langchain/retrieval>
+- **Text splitters**: <https://docs.langchain.com/oss/python/integrations/splitters/index>
+- **API Reference**: <https://reference.langchain.com/python>

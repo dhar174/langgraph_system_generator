@@ -1,5 +1,5 @@
 ---
-description: 'Optionally create GitHub issues upon user confirmation.'
+description: 'PRD specialist for turning feature ideas into structured requirements, success metrics, and implementation context.'
 name: 'Create PRD Chat Mode'
 tools: ["*"]
 target: 'github-copilot'

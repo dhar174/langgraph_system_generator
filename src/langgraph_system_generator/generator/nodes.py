@@ -36,6 +36,10 @@ from langgraph_system_generator.qa import NotebookRepairAgent, NotebookValidator
 from langgraph_system_generator.rag.embeddings import VectorStoreManager
 from langgraph_system_generator.rag.retriever import DocsRetriever
 from langgraph_system_generator.utils.config import settings
+from langgraph_system_generator.utils.generation_options import (
+    SUPPORTED_AGENT_TYPES,
+    normalize_agent_type,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -56,8 +60,8 @@ def _requested_architecture_type(state: GeneratorState) -> str | None:
     if generation_config is None:
         return None
 
-    requested = (generation_config.agent_type or "").strip().lower()
-    if requested in {"router", "subagents", "hybrid"}:
+    requested = normalize_agent_type(generation_config.agent_type)
+    if requested in SUPPORTED_AGENT_TYPES:
         return requested
     return None
 

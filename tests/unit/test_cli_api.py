@@ -10,7 +10,12 @@ import httpx
 from fastapi.testclient import TestClient
 
 from langgraph_system_generator.api.server import app
-from langgraph_system_generator.cli import GenerationArtifacts, generate_artifacts
+from langgraph_system_generator.cli import (
+    GenerationArtifacts,
+    _build_stub_result,
+    generate_artifacts,
+)
+from langgraph_system_generator.utils.optional_deps import OptionalDependencyError
 
 _ASYNC_CLEANUP_POLL_ATTEMPTS = 100
 _ASYNC_CLEANUP_POLL_INTERVAL_SECONDS = 0.01
@@ -28,12 +33,40 @@ def reload_modules():
 
 
 @pytest.fixture
-def reload_modules():
+def reload_modules(monkeypatch: pytest.MonkeyPatch):
     import importlib
 
-    def _reload(*modules):
-        for module in modules:
-            importlib.reload(module)
+    def _reload(
+        *modules_to_reload,
+        output_base: str | None = None,
+        base_output_dir: Path | None = None,
+        include_server: bool = False,
+    ):
+        if output_base is not None:
+            monkeypatch.setenv("LNF_OUTPUT_BASE", output_base)
+        if base_output_dir is not None:
+            monkeypatch.setenv("BASE_OUTPUT_DIR", str(base_output_dir))
+
+        if modules_to_reload:
+            for module in modules_to_reload:
+                importlib.reload(module)
+            return None
+
+        import langgraph_system_generator.constants as constants_module
+        import langgraph_system_generator.notebook.exporters as exporters_module
+        import langgraph_system_generator.cli as cli_module
+
+        importlib.reload(constants_module)
+        importlib.reload(exporters_module)
+        importlib.reload(cli_module)
+
+        if not include_server:
+            return constants_module, cli_module
+
+        import langgraph_system_generator.api.server as server_module
+
+        importlib.reload(server_module)
+        return constants_module, cli_module, server_module
 
     return _reload
 
@@ -41,18 +74,9 @@ def reload_modules():
 @pytest.mark.asyncio
 async def test_generate_artifacts_stub(
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
     reload_modules,
 ):
-    # Set a test output base
-    monkeypatch.setenv("LNF_OUTPUT_BASE", "test_generate_artifacts_stub")
-
-    # Force module reload to pick up new env var
-    import langgraph_system_generator.constants as constants_module
-    import langgraph_system_generator.notebook.exporters as exporters_module
-    import langgraph_system_generator.cli as cli_module
-
-    reload_modules(constants_module, exporters_module, cli_module)
+    constants_module, cli_module = reload_modules(output_base="test_generate_artifacts_stub")
 
     # Use path within OUTPUT_BASE
     output_dir = constants_module._BASE_OUTPUT / "test_stub"
@@ -69,9 +93,9 @@ async def test_generate_artifacts_stub(
 @pytest.mark.asyncio
 async def test_generate_artifacts_default_formats_include_markdown(
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
+    reload_modules,
 ):
-    monkeypatch.setenv("BASE_OUTPUT_DIR", str(tmp_path))
+    _constants_module, _cli_module = reload_modules(base_output_dir=tmp_path)
 
     output_dir = tmp_path / "default_formats"
     artifacts: GenerationArtifacts = await generate_artifacts(
@@ -84,21 +108,29 @@ async def test_generate_artifacts_default_formats_include_markdown(
     assert Path(artifacts["manifest"]["markdown_path"]).exists()
 
 
+def test_build_stub_result_normalizes_supported_agent_type_override():
+    result = _build_stub_result("Test prompt", agent_type=" Hybrid ")
+
+    assert result["architecture_type"] == "hybrid"
+    assert "agent_type override" in result["architecture_justification"]
+
+
+def test_build_stub_result_ignores_unsupported_agent_type_override():
+    result = _build_stub_result("Delegate this workflow", agent_type=" swarm ")
+
+    assert result["architecture_type"] == "subagents"
+    assert "agent_type override" not in result["architecture_justification"]
+
+
 @pytest.mark.asyncio
 async def test_api_generate_stub(
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
     reload_modules,
 ):
-    # Set a test output base
-    monkeypatch.setenv("LNF_OUTPUT_BASE", "test_api_stub")
-
-    # Force module reload to pick up new env var
-    import langgraph_system_generator.constants as constants_module
-    import langgraph_system_generator.notebook.exporters as exporters_module
-    import langgraph_system_generator.api.server as server_module
-
-    reload_modules(constants_module, exporters_module, server_module)
+    constants_module, _, server_module = reload_modules(
+        output_base="test_api_stub",
+        include_server=True,
+    )
 
     transport = httpx.ASGITransport(app=server_module.app)
     output_dir = constants_module._BASE_OUTPUT / tmp_path.name
@@ -154,18 +186,14 @@ async def test_api_rejects_unsupported_advanced_options(tmp_path: Path, monkeypa
 
 @pytest.mark.asyncio
 async def test_api_generate_with_formats(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, reload_modules
+    tmp_path: Path,
+    reload_modules,
 ):
     """Test API with format selection."""
-    # Set a test output base
-    monkeypatch.setenv("LNF_OUTPUT_BASE", "test_api_formats")
-
-    # Force module reload to pick up new env var
-    import langgraph_system_generator.constants as constants_module
-    import langgraph_system_generator.notebook.exporters as exporters_module
-    import langgraph_system_generator.api.server as server_module
-
-    reload_modules(constants_module, exporters_module, server_module)
+    constants_module, _, server_module = reload_modules(
+        output_base="test_api_formats",
+        include_server=True,
+    )
 
     transport = httpx.ASGITransport(app=server_module.app)
     output_dir = constants_module._BASE_OUTPUT / tmp_path.name
@@ -196,17 +224,14 @@ async def test_api_generate_with_formats(
 
 @pytest.mark.asyncio
 async def test_api_download_artifact_endpoint(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, reload_modules
+    tmp_path: Path,
+    reload_modules,
 ):
     """Test downloading a generated artifact through the API."""
-    monkeypatch.setenv("LNF_OUTPUT_BASE", "test_api_artifact_download")
-
-    import langgraph_system_generator.constants as constants_module
-    import langgraph_system_generator.notebook.exporters as exporters_module
-    import langgraph_system_generator.cli as cli_module
-    import langgraph_system_generator.api.server as server_module
-
-    reload_modules(constants_module, exporters_module, cli_module, server_module)
+    constants_module, cli_module, server_module = reload_modules(
+        output_base="test_api_artifact_download",
+        include_server=True,
+    )
 
     artifacts = await cli_module.generate_artifacts(
         "Artifact download prompt",
@@ -286,6 +311,39 @@ async def test_live_mode_requires_credentials(
 
 
 @pytest.mark.asyncio
+async def test_live_mode_rejects_invalid_builtin_model(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.setenv("BASE_OUTPUT_DIR", str(tmp_path.resolve()))
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+
+    with pytest.raises(ValueError, match="Unsupported model for the built-in provider"):
+        await generate_artifacts(
+            "Live prompt",
+            output_dir=tmp_path,
+            mode="live",
+            model="not-a-real-model",
+        )
+
+
+@pytest.mark.asyncio
+async def test_live_mode_rejects_invalid_custom_endpoint(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.setenv("BASE_OUTPUT_DIR", str(tmp_path.resolve()))
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+
+    with pytest.raises(ValueError, match="http or https URL"):
+        await generate_artifacts(
+            "Live prompt",
+            output_dir=tmp_path,
+            mode="live",
+            model="gpt-5-mini",
+            custom_endpoint="ftp://example.test/v1",
+        )
+
+
+@pytest.mark.asyncio
 async def test_api_rejects_disallowed_output_dir(tmp_path: Path):
     outside = tmp_path.parent
     transport = httpx.ASGITransport(app=app)
@@ -318,6 +376,72 @@ async def test_api_rejects_invalid_custom_endpoint():
 
     assert response.status_code == 400
     assert "http or https URL" in response.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_api_rejects_custom_endpoint_with_blank_model():
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(
+            "/generate",
+            json={
+                "prompt": "Blank model",
+                "mode": "stub",
+                "output_dir": "./output/api",
+                "model": "   ",
+                "custom_endpoint": " https://example.test/v1 ",
+            },
+        )
+
+    assert response.status_code == 400
+    assert "explicit OpenAI-compatible model identifier" in response.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_api_rejects_unsupported_agent_type():
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(
+            "/generate",
+            json={
+                "prompt": "Unsupported agent type",
+                "mode": "stub",
+                "output_dir": "./output/api",
+                "agent_type": " swarm ",
+            },
+        )
+
+    assert response.status_code == 400
+    assert "Unsupported agent_type" in response.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_api_generate_surfaces_optional_dependency_errors(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    error_message = "optional dependency unavailable"
+
+    async def fake_generate_artifacts(*_args, **_kwargs):
+        raise OptionalDependencyError(error_message)
+
+    monkeypatch.setattr(
+        "langgraph_system_generator.api.server.generate_artifacts",
+        fake_generate_artifacts,
+    )
+
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(
+            "/generate",
+            json={
+                "prompt": "Missing optional dependencies",
+                "mode": "stub",
+                "output_dir": "./output/api",
+            },
+        )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == error_message
 
 
 @pytest.mark.asyncio

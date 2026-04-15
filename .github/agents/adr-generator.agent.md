@@ -1,5 +1,5 @@
 ---
-description: 'Expert agent for creating comprehensive Architectural Decision Records (ADRs) with structured formatting optimized for AI consumption and human.'
+description: 'Specialist for creating clear architectural decision records with structured rationale, tradeoffs, and implementation context.'
 name: 'ADR Generator'
 tools: ["*"]
 target: 'github-copilot'

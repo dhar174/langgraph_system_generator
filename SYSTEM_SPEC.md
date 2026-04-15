@@ -143,7 +143,7 @@ The generator should maintain a “pattern palette” it can snap to, driven by 
 * **Critique → Revise loops** (conditional edges until acceptance)
 * **Map-reduce content expansion** (outline → chapters in parallel → merge)
 * **Human-in-the-loop interrupts** (approval gates for expensive steps)
-* **Persistence/checkpointing** (MemorySaver for dev; SQLite/Postgres for prod) ([LangChain Docs][6])
+* **Persistence/checkpointing** (`InMemorySaver` for dev; SQLite/Postgres for prod) ([LangChain Docs][6])
 
 **Implementation note:** prefer the recommended agent factory (`create_agent`) and keep a migration-aware compatibility layer so notebooks don’t ship deprecated scaffolding. ([LangChain Docs][1])
 
@@ -199,7 +199,7 @@ The inner workflow should generate:
 * graph compiles
 * minimal run executes through at least one full loop
 * outputs are created in expected folders
-* checkpointing configured (at least MemorySaver in dev; optional SQLite/Postgres in prod) ([LangChain Docs][6])
+* checkpointing configured (at least `InMemorySaver` in dev; optional SQLite/Postgres in prod) ([LangChain Docs][6])
 
 If a gate fails, outer graph enters a **Repair Loop** (bounded attempts).
 
@@ -219,12 +219,12 @@ Because this system generates executable notebooks:
 
 If you want, I can also write a **“prompt-to-implementer” version** of this spec (with exact state typings, tool signatures, and a concrete outer-graph node list + conditional routing), so you can drop it straight into your build model.
 
-[1]: https://docs.langchain.com/oss/python/migrate/langgraph-v1?utm_source=chatgpt.com "LangGraph v1 migration guide - Docs by LangChain"
-[2]: https://docs.langchain.com/oss/python/langgraph/use-graph-api?utm_source=chatgpt.com "Use the graph API - Docs by LangChain"
-[3]: https://docs.langchain.com/oss/python/langchain/multi-agent/subagents?utm_source=chatgpt.com "Subagents - Docs by LangChain"
-[4]: https://docs.langchain.com/oss/javascript/langchain/multi-agent/router?utm_source=chatgpt.com "Router - Docs by LangChain"
-[5]: https://docs.langchain.com/oss/python/langchain/agents?utm_source=chatgpt.com "Agents - Docs by LangChain"
-[6]: https://docs.langchain.com/oss/javascript/langgraph/persistence?utm_source=chatgpt.com "Persistence - Docs by LangChain"
+[1]: https://docs.langchain.com/oss/python/langchain/overview "LangChain overview - Docs by LangChain"
+[2]: https://docs.langchain.com/oss/python/langgraph/overview "LangGraph overview - Docs by LangChain"
+[3]: https://docs.langchain.com/oss/python/langchain/agents "LangChain agents - Docs by LangChain"
+[4]: https://docs.langchain.com/oss/python/langgraph/overview "LangGraph overview - Docs by LangChain"
+[5]: https://reference.langchain.com/python "LangChain Python API reference"
+[6]: https://docs.langchain.com/oss/python/langgraph/persistence "LangGraph persistence - Docs by LangChain"
 [7]: https://nbformat.readthedocs.io/en/5.6.0/api.html?utm_source=chatgpt.com "Python API for working with notebook files — nbformat 5.6 documentation"
 [8]: https://nbconvert.readthedocs.io/en/v7.14.0/usage.html?utm_source=chatgpt.com "Using as a command line tool — nbconvert 7.14.0 documentation"
 [9]: https://python-docx.readthedocs.io/en/latest/dev/analysis/features/styles/paragraph-style.html?utm_source=chatgpt.com "Paragraph Style — python-docx 1.2.0 documentation"

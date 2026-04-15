@@ -2,6 +2,12 @@
 
 This guide explains the internal architecture of LangGraph System Generator and how the generation pipeline transforms prompts into complete multi-agent systems.
 
+See also:
+
+- **LangChain docs**: <https://docs.langchain.com>
+- **LangChain Python API reference**: <https://reference.langchain.com/python>
+- **LangGraph overview**: <https://docs.langchain.com/oss/python/langgraph/overview>
+
 ## Overview
 
 LangGraph System Generator follows a **linear pipeline architecture** with conditional repair loops. Each stage processes and enriches the state, ultimately producing complete, runnable Jupyter notebooks.
@@ -10,20 +16,20 @@ LangGraph System Generator follows a **linear pipeline architecture** with condi
 
 ```mermaid
 graph TB
-    Start([User Prompt]) --> Intake
-    Intake[Requirements Analysis] --> RAG
-    RAG[RAG Retrieval] --> ArchSelect
-    ArchSelect[Architecture Selection] --> GraphDesign
-    GraphDesign[Workflow Design] --> ToolPlan
-    ToolPlan[Tool Planning] --> Compose
-    Compose[Notebook Composition] --> StaticQA
+    Start([Prompt]) --> Intake
+    Intake[Requirements] --> RAG
+    RAG[RAG] --> ArchSelect
+    ArchSelect[Architecture Select] --> GraphDesign
+    GraphDesign[Plan Workflow] --> ToolPlan
+    ToolPlan[Plan Tools] --> Compose
+    Compose[Generate Notebook] --> StaticQA
     StaticQA[Static QA] --> RuntimeQA
     RuntimeQA[Runtime QA] --> Decision{QA Passed?}
     Decision -->|Yes| Package[Package Outputs]
     Decision -->|No, Attempts < Max| Repair[Repair Notebook]
     Decision -->|No, Max Attempts| Fail[Best Effort Package]
     Repair --> RuntimeQA
-    Package --> End([Generated Artifacts])
+    Package --> End([Exported Artifacts])
     Fail --> End
 ```
 

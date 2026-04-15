@@ -1,6 +1,6 @@
 ---
 description: 'Challenge assumptions and encourage critical thinking to ensure the best possible solution and outcomes.'
-name: 'critical-thinking'
+name: 'Critical thinking mode instructions'
 tools: ["*"]
 target: 'github-copilot'
 infer: true
