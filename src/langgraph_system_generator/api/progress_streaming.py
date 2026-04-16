@@ -60,8 +60,7 @@ async def _schedule_job_cleanup(job_id: str) -> None:
 
 async def _schedule_completed_job_cleanup(job_id: str) -> None:
     """Schedule cleanup for a completed job after the retention window."""
-_JOB_TTL_SECONDS = 3600  # 1 hour
-_COMPLETED_JOB_TTL_SECONDS = 300  # 5 minutes
+    await asyncio.sleep(_COMPLETED_JOB_TTL_SECONDS)
 
     record = _active_jobs.get(job_id)
     if record and record.completed:
