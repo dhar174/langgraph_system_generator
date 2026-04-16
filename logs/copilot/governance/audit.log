@@ -1,0 +1,12 @@
+{
+  "timestamp": "2026-04-16T07:20:20Z",
+  "event": "session_start",
+  "governance_level": "standard",
+  "cwd": "/home/runner/work/langgraph_system_generator/langgraph_system_generator"
+}
+{
+  "timestamp": "2026-04-16T07:20:20Z",
+  "event": "prompt_scanned",
+  "governance_level": "standard",
+  "status": "clean"
+}
