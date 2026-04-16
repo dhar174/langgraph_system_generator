@@ -8,6 +8,8 @@ from typing import Annotated, Any, Dict, List, Optional
 from pydantic import BaseModel, Field
 from typing_extensions import TypedDict
 
+from langgraph_system_generator.utils.config import GenerationConfig
+
 
 class Constraint(BaseModel):
     """User constraint specification."""
@@ -84,6 +86,7 @@ class GeneratorState(TypedDict):
     notebook_plan: Optional[NotebookPlan]
     architecture_justification: str
     architecture_type: Optional[str]
+    generation_config: Optional[GenerationConfig]
 
     # Workflow design (added for graph designer)
     workflow_design: Optional[Dict[str, Any]]

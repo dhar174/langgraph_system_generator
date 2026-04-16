@@ -28,3 +28,4 @@ test_*/
 
 # Copilot process tracking files
 Copilot-Processing.md
+logs/copilot/

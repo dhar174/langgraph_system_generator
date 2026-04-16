@@ -14,13 +14,12 @@ import os
 from pathlib import Path
 from typing import Any, Dict, List, Literal, TypedDict
 
-from langchain_community.embeddings import FakeEmbeddings
-
-from langgraph_system_generator.generator.graph import create_generator_graph
 from langgraph_system_generator.generator.state import CellSpec, Constraint, NotebookPlan
-from langgraph_system_generator.patterns import RouterPattern, SubagentsPattern
-from langgraph_system_generator.rag.indexer import build_index_from_cache
-from langgraph_system_generator.utils.config import settings
+from langgraph_system_generator.utils.config import GenerationConfig, settings
+from langgraph_system_generator.utils.optional_deps import (
+    OptionalDependencyError,
+    require_optional_module,
+)
 
 BASE_DIR = Path(__file__).resolve().parents[2]
 DEFAULT_CACHE_PATH = (BASE_DIR / "data" / "cached_docs").resolve()
@@ -39,7 +38,10 @@ class GenerationArtifacts(TypedDict):
     result: Dict[str, Any]
 
 
-def _default_state(prompt: str) -> Dict[str, Any]:
+def _default_state(
+    prompt: str,
+    generation_config: GenerationConfig | None = None,
+) -> Dict[str, Any]:
     """Return a baseline GeneratorState payload."""
 
     return {
@@ -59,6 +61,7 @@ def _default_state(prompt: str) -> Dict[str, Any]:
         "artifacts_manifest": {},
         "generation_complete": False,
         "error_message": None,
+        "generation_config": generation_config,
     }
 
 
@@ -100,10 +103,39 @@ def _infer_stub_architecture(prompt: str) -> tuple[str, str]:
     return ("router", "Router pattern selected as a sensible default for general workflows.")
 
 
-def _build_stub_result(prompt: str) -> Dict[str, Any]:
-    """Create a deterministic, offline-friendly generation result."""
+def _load_patterns() -> tuple[Any, Any]:
+    """Import pattern generators lazily to preserve minimal installs."""
+    patterns_module = require_optional_module(
+        "langgraph_system_generator.patterns",
+        feature="Stub artifact generation",
+        extra="full",
+    )
+    return patterns_module.RouterPattern, patterns_module.SubagentsPattern
 
-    architecture_type, justification = _infer_stub_architecture(prompt)
+
+def _load_generator_graph() -> Any:
+    """Import the live generator graph lazily."""
+    graph_module = require_optional_module(
+        "langgraph_system_generator.generator.graph",
+        feature="Live generation",
+        extra="full",
+    )
+    return graph_module.create_generator_graph
+
+
+def _build_stub_result(prompt: str, agent_type: str | None = None) -> Dict[str, Any]:
+    """Create a deterministic, offline-friendly generation result."""
+    RouterPattern, SubagentsPattern = _load_patterns()
+
+    normalized_agent_type = (agent_type or "").strip().lower()
+    if normalized_agent_type in {"router", "subagents", "hybrid"}:
+        architecture_type = normalized_agent_type
+        justification = (
+            f"{normalized_agent_type.title()} pattern selected from the requested "
+            "agent_type override."
+        )
+    else:
+        architecture_type, justification = _infer_stub_architecture(prompt)
 
     constraints = [
         Constraint(type="goal", value=f"Deliver a notebook for: {prompt}", priority=5),
@@ -290,8 +322,27 @@ async def generate_artifacts(
         progress_callback: Optional callback function(node, percentage, message) for progress tracking
     """
 
+    require_optional_module(
+        "langgraph_system_generator.notebook.composer",
+        feature="Artifact generation",
+        extra="full",
+    )
+    require_optional_module(
+        "langgraph_system_generator.notebook.exporters",
+        feature="Artifact generation",
+        extra="full",
+    )
+
     from langgraph_system_generator.notebook.composer import NotebookComposer
     from langgraph_system_generator.notebook.exporters import NotebookExporter
+
+    generation_config = GenerationConfig(
+        model=model,
+        temperature=temperature,
+        max_tokens=max_tokens,
+        api_base=custom_endpoint,
+        agent_type=agent_type,
+    )
 
     def _report_progress(node: str, percentage: int, message: str) -> None:
         """Helper to report progress if callback is provided."""
@@ -311,16 +362,17 @@ async def generate_artifacts(
     _report_progress("init", 5, "Initializing generation...")
 
     if mode == "live":
-        if not os.environ.get("OPENAI_API_KEY"):
+        create_generator_graph = _load_generator_graph()
+        if not custom_endpoint and not os.environ.get("OPENAI_API_KEY"):
             raise RuntimeError("LLM API credentials are required for live generation mode.")
         _report_progress("graph_init", 10, "Creating generator graph...")
         graph = create_generator_graph()
         _report_progress("graph_invoke", 15, "Invoking generator graph...")
-        result = await graph.ainvoke(_default_state(prompt))
+        result = await graph.ainvoke(_default_state(prompt, generation_config))
         _report_progress("graph_complete", 60, "Generator graph completed")
     else:
         _report_progress("stub", 30, "Building stub result...")
-        result = _build_stub_result(prompt)
+        result = _build_stub_result(prompt, agent_type=agent_type)
         _report_progress("stub_complete", 60, "Stub generation complete")
 
     _report_progress("serialize", 62, "Serializing results...")
@@ -341,12 +393,7 @@ async def generate_artifacts(
         "plan_title": plan_title,
     }
     
-    # Add advanced options to manifest if provided.
-    # NOTE: These parameters are currently stored as metadata for tracking and
-    # reproducibility purposes. They do not directly affect the generation pipeline
-    # in the current implementation. In live mode, the generation uses the configured
-    # LLM settings from the generator graph, not these UI-provided values.
-    # Future enhancements could integrate these parameters into the generation process.
+    # Persist request metadata for reproducibility and downstream consumers.
     if model:
         manifest["model"] = model
     if temperature is not None:
@@ -393,7 +440,7 @@ async def generate_artifacts(
         
         # Determine which formats to generate
         if formats is None or not formats:
-            formats = ["ipynb", "html", "docx", "zip"]
+            formats = ["ipynb", "html", "markdown", "docx", "zip"]
         
         _report_progress("export_init", 70, f"Exporting to {len(formats)} format(s)...")
         exporter = NotebookExporter()
@@ -481,10 +528,20 @@ async def _handle_build_index(
 ) -> str:
     """Build a documentation index from cached docs."""
 
+    embeddings_module = require_optional_module(
+        "langchain_community.embeddings",
+        feature="Index building",
+        extra="full",
+    )
+    indexer_module = require_optional_module(
+        "langgraph_system_generator.rag.indexer",
+        feature="Index building",
+        extra="full",
+    )
     cache = str(Path(cache_path).resolve())
     store = str(Path(store_path).resolve())
-    embeddings = None if use_openai else FakeEmbeddings(size=32)
-    manager = await build_index_from_cache(
+    embeddings = None if use_openai else embeddings_module.FakeEmbeddings(size=32)
+    manager = await indexer_module.build_index_from_cache(
         cache_path=cache,
         store_path=store,
         embeddings=embeddings,
@@ -495,14 +552,18 @@ async def _handle_build_index(
 
 
 def _run_generate(args: argparse.Namespace) -> int:
-    artifacts = asyncio.run(
-        generate_artifacts(
-            args.prompt,
-            output_dir=args.output,
-            mode=args.mode,
-            formats=args.formats,
+    try:
+        artifacts = asyncio.run(
+            generate_artifacts(
+                args.prompt,
+                output_dir=args.output,
+                mode=args.mode,
+                formats=args.formats,
+            )
         )
-    )
+    except OptionalDependencyError as exc:
+        print(f"✗ Failed to generate artifacts: {exc}")
+        return 1
 
     print(f"✓ Generated artifacts in {artifacts['output_dir']}")
     print(f"  Manifest: {artifacts['manifest_path']}")
@@ -538,7 +599,12 @@ def _run_build_index(args: argparse.Namespace) -> int:
         )
         print(f"✓ Vector index written to {path}")
         return 0
-    except (FileNotFoundError, RuntimeError, ValueError) as exc:  # pragma: no cover - defensive
+    except (
+        FileNotFoundError,
+        OptionalDependencyError,
+        RuntimeError,
+        ValueError,
+    ) as exc:  # pragma: no cover - defensive
         print(f"✗ Failed to build index: {exc}")
         return 1
 

@@ -27,7 +27,7 @@ python -m venv .venv && source .venv/bin/activate
 
 # Install all dependencies (includes dev / test tools)
 pip install -r requirements.txt
-pip install -e .
+pip install -e ".[full,dev]"
 
 # (Optional) Build the RAG vector index for live-mode retrieval.
 # Requires OPENAI_API_KEY. Skip this step if you only plan to run the unit test

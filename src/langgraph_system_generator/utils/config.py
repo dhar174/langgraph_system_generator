@@ -1,5 +1,8 @@
 """Configuration management for LangGraph Notebook Foundry."""
 
+from __future__ import annotations
+
+from contextlib import contextmanager
 from functools import lru_cache
 import os
 from pathlib import Path
@@ -11,12 +14,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class ModelConfig(BaseModel):
-    """Configuration for LLM model parameters used in code generation.
-    
-    This class encapsulates all model-related configuration to make it easy
-    to inject different models, temperatures, and API settings into pattern
-    generators without modifying the generator source code.
-    """
+    """Configuration for LLM model parameters used in code generation."""
 
     model: str = Field(
         default="gpt-5-mini",
@@ -49,8 +47,42 @@ class ModelConfig(BaseModel):
     def from_dict(cls, config: dict) -> "ModelConfig":
         """Create ModelConfig from a dictionary, filtering unknown keys."""
         known_fields = cls.model_fields.keys()
-        filtered = {k: v for k, v in config.items() if k in known_fields}
+        filtered = {key: value for key, value in config.items() if key in known_fields}
         return cls(**filtered)
+
+
+class GenerationConfig(BaseModel):
+    """Request-scoped live generation settings."""
+
+    model: Optional[str] = Field(default=None, description="Optional model override")
+    temperature: Optional[float] = Field(
+        default=None,
+        ge=0.0,
+        le=2.0,
+        description="Optional temperature override",
+    )
+    max_tokens: Optional[int] = Field(
+        default=None,
+        ge=1,
+        description="Optional max_tokens override",
+    )
+    api_base: Optional[str] = Field(
+        default=None,
+        description="Optional OpenAI-compatible base URL override",
+    )
+    agent_type: Optional[str] = Field(
+        default=None,
+        description="Optional architecture override",
+    )
+
+    def to_model_config(self, default_model: str) -> ModelConfig:
+        """Resolve a per-request model configuration for live agents."""
+        return ModelConfig(
+            model=self.model or default_model,
+            temperature=0.0 if self.temperature is None else self.temperature,
+            api_base=self.api_base,
+            max_tokens=self.max_tokens,
+        )
 
 
 class Settings(BaseSettings):
@@ -102,17 +134,26 @@ class Settings(BaseSettings):
 
 
 _DEFAULT_ENV_FILE = object()
+_TEST_SETTINGS_ENV_KEYS = (
+    "OPENAI_API_KEY",
+    "ANTHROPIC_API_KEY",
+    "LANGSMITH_API_KEY",
+    "LANGSMITH_PROJECT",
+    "VECTOR_STORE_TYPE",
+    "VECTOR_STORE_PATH",
+    "DEFAULT_MODEL",
+    "MAX_REPAIR_ATTEMPTS",
+    "DEFAULT_BUDGET_TOKENS",
+)
 
 
 def _pytest_is_active() -> bool:
     """Return True when running under pytest collection or execution."""
-
     return "pytest" in sys.modules or "PYTEST_CURRENT_TEST" in os.environ
 
 
 def _resolve_default_env_file() -> Optional[str]:
     """Resolve the default dotenv path for application usage."""
-
     configured_env_file = os.environ.get("LNF_ENV_FILE")
     if configured_env_file is not None:
         return configured_env_file or None
@@ -130,21 +171,38 @@ def _resolve_default_env_file() -> Optional[str]:
     return None
 
 
+@contextmanager
+def _suspend_project_env_for_pytest(env_file: Optional[str]):
+    """Temporarily remove project settings env vars during default pytest loads."""
+    if not (_pytest_is_active() and env_file is None):
+        yield
+        return
+
+    removed_values = {
+        key: os.environ.pop(key)
+        for key in _TEST_SETTINGS_ENV_KEYS
+        if key in os.environ
+    }
+    try:
+        yield
+    finally:
+        os.environ.update(removed_values)
+
+
 @lru_cache(maxsize=8)
 def _cached_settings(env_file: Optional[str]) -> Settings:
     """Create and cache settings instances by env file path."""
-
     init_kwargs = {}
     if env_file is not None:
         init_kwargs["_env_file"] = env_file
         init_kwargs["_env_file_encoding"] = "utf-8"
 
-    return Settings(**init_kwargs)
+    with _suspend_project_env_for_pytest(env_file):
+        return Settings(**init_kwargs)
 
 
 def get_settings(env_file: Union[str, Path, None, object] = _DEFAULT_ENV_FILE) -> Settings:
     """Return a cached settings instance."""
-
     if env_file is _DEFAULT_ENV_FILE:
         resolved_env_file = _resolve_default_env_file()
     elif env_file is None:
@@ -154,11 +212,11 @@ def get_settings(env_file: Union[str, Path, None, object] = _DEFAULT_ENV_FILE) -
 
     return _cached_settings(resolved_env_file)
 
+
 def reset_settings_cache(
     env_file: Union[str, Path, None, object] = _DEFAULT_ENV_FILE,
 ) -> Settings:
     """Clear and refresh the cached settings instance."""
-
     _cached_settings.cache_clear()
     refreshed = get_settings(env_file)
     globals()["settings"] = refreshed
