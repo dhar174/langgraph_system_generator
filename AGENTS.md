@@ -373,6 +373,15 @@ The primary repository skills for LangChain-adjacent work live under
 When a mirrored skill exists in both `.github/skills/` and `skills/`, keep both
 copies aligned.
 
+### Repository bootstrap skill
+
+Use `.github/skills/repo-agent-bootstrap/` when contributors need to bootstrap
+or refresh a hybrid GitHub Copilot, Codex, and Claude stack for a repository.
+This skill inventories the repo first, scaffolds managed guidance and custom
+agents second, and preserves human edits outside managed sections during later
+maintenance runs. A Codex-discoverable mirror also exists at
+`skills/repo-agent-bootstrap/`.
+
 ### Public documentation and API references
 
 Keep these links visible in onboarding and daily workflows. The issue that added
