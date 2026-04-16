@@ -28,7 +28,7 @@ Excluded:
 3. Re-run bootstrap validation and report any remaining drift explicitly.
 
 ## Validation
-- `python .github/skills/repo-agent-bootstrap/scripts/validate_agent_stack.py --repo-root /home/runner/work/langgraph_system_generator/langgraph_system_generator`
+- `python .github/skills/repo-agent-bootstrap/scripts/validate_agent_stack.py`
 
 ## Completion criteria
 - The missing support files exist.
