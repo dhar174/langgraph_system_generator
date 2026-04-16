@@ -43,9 +43,11 @@ Prefer these repository skills when applicable:
 - `langsmith-evaluator`
 - `langsmith-fetch`
 - `langsmith-trace`
+- `repo-agent-bootstrap` for repo-wide Copilot/Codex/Claude bootstrap or maintenance work
 
 Mirrored top-level `skills/` entries currently exist for `langchain`,
-`langsmith-dataset`, `langsmith-evaluator`, and `langsmith-trace`.
+`langsmith-dataset`, `langsmith-evaluator`, `langsmith-trace`, and
+`repo-agent-bootstrap`.
 
 ## Reference links
 
