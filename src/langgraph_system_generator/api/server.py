@@ -48,13 +48,6 @@ _DEFAULT_API_OUTPUT = (_BASE_OUTPUT / "api").resolve()
 _MAX_CONCURRENT_GENERATIONS = int(os.getenv("LNF_MAX_CONCURRENT_GENERATIONS", "5"))
 _generation_lock = asyncio.Lock()
 _active_generation_count = 0
-_SUPPORTED_OPENAI_MODELS = {
-    "gpt-5.2",
-    "gpt-5-mini",
-    "gpt-5-nano",
-    "gpt-5.1",
-}
-_generation_semaphore = asyncio.Semaphore(_MAX_CONCURRENT_GENERATIONS)
 _UNSUPPORTED_ADVANCED_FIELDS = (
     "memory_config",
     "preset",
@@ -427,7 +420,9 @@ async def start_async_generation(
     job_id = create_job()
 
     try:
-        asyncio.create_task(_run_generation_with_progress(job_id, request, output_path))
+        asyncio.create_task(
+            _run_generation_with_progress(job_id, normalized_request, output_path)
+        )
     except Exception:
         await _release_generation_slot()
         raise

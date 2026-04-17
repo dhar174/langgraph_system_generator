@@ -197,32 +197,37 @@ async def test_progress_streaming_continues_after_retention_rollover(
     monkeypatch.setattr(progress_streaming, "_MAX_PROGRESS_EVENTS", 2)
     job_id = progress_streaming.create_job()
 
-    started = asyncio.Event()
-    collector = asyncio.create_task(
-        _collect_n_events_after_start(job_id, 2, started)
-    )
-    await started.wait()
+    try:
+        started = asyncio.Event()
+        collector = asyncio.create_task(
+            _collect_n_events_after_start(job_id, 2, started)
+        )
+        await started.wait()
 
-    progress_streaming.emit_node_progress(job_id, "step-1", 10, "Step 1")
-    progress_streaming.emit_node_progress(job_id, "step-2", 20, "Step 2")
+        progress_streaming.emit_node_progress(job_id, "step-1", 10, "Step 1")
+        progress_streaming.emit_node_progress(job_id, "step-2", 20, "Step 2")
 
-    first_batch = await collector
+        first_batch = await collector
 
-    progress_streaming.emit_node_progress(job_id, "step-3", 30, "Step 3")
-    progress_streaming.emit_complete(job_id, {"success": True})
+        progress_streaming.emit_node_progress(job_id, "step-3", 30, "Step 3")
+        progress_streaming.emit_complete(job_id, {"success": True})
 
-    retained = await _collect_events(
-        job_id,
-        last_event_id=first_batch[-1]["id"],
-    )
+        retained = await _collect_events(
+            job_id,
+            last_event_id=first_batch[-1]["id"],
+        )
 
-    assert [event["data"]["message"] for event in first_batch] == [
-        "Step 1",
-        "Step 2",
-    ]
-    assert [event["event"] for event in retained] == ["progress", "complete"]
-    assert retained[0]["data"]["message"] == "Step 3"
-    assert retained[-1]["data"]["success"] is True
+        assert [event["data"]["message"] for event in first_batch] == [
+            "Step 1",
+            "Step 2",
+        ]
+        assert [event["event"] for event in retained] == ["progress", "complete"]
+        assert retained[0]["data"]["message"] == "Step 3"
+        assert retained[-1]["data"]["success"] is True
+    finally:
+        progress_streaming.cleanup_job(job_id)
+
+
 def test_emit_progress_retains_bounded_event_log(monkeypatch):
     """The in-memory job log should cap retained events per job."""
 

@@ -22,17 +22,6 @@ _ASYNC_CLEANUP_POLL_INTERVAL_SECONDS = 0.01
 
 
 @pytest.fixture
-def reload_modules():
-    import importlib
-
-    def _reload(*modules):
-        for module in modules:
-            importlib.reload(module)
-
-    return _reload
-
-
-@pytest.fixture
 def reload_modules(monkeypatch: pytest.MonkeyPatch):
     import importlib
 
