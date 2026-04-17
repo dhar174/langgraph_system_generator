@@ -35,7 +35,7 @@ def merge_managed_text(existing_text: str, new_text: str) -> str:
     existing_text = existing_text.rstrip()
     if not existing_text:
         return new_text
-    return existing_text + "\n\n" + new_block
+    return existing_text + "\n\n" + new_block[2]
 
 
 def _extract_managed_block(text: str) -> tuple[int, int, str] | None:

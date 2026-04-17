@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
+import time
 
 import pytest
 
@@ -56,3 +58,24 @@ async def test_progress_streaming_resumes_after_last_event_id():
     assert resumed[1]["data"]["success"] is True
 
     progress_streaming.cleanup_job(job_id)
+
+
+@pytest.mark.asyncio
+async def test_completed_job_cleanup_waits_for_retention_window(monkeypatch: pytest.MonkeyPatch):
+    """Completed jobs should not be removed before the retention sleep occurs."""
+    sleep_calls: list[float] = []
+
+    async def fake_sleep(delay: float) -> None:
+        sleep_calls.append(delay)
+
+    job_id = "completed-job"
+    progress_streaming._active_jobs[job_id] = progress_streaming.JobRecord(
+        created_at=time.time(),
+        completed=True,
+    )
+    monkeypatch.setattr(progress_streaming.asyncio, "sleep", fake_sleep)
+
+    await progress_streaming._schedule_completed_job_cleanup(job_id)
+
+    assert sleep_calls == [progress_streaming._COMPLETED_JOB_TTL_SECONDS]
+    assert job_id not in progress_streaming._active_jobs
