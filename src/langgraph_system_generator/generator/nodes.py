@@ -55,7 +55,7 @@ def _requested_architecture_type(state: GeneratorState) -> str | None:
         return None
 
     requested = (generation_config.agent_type or "").strip().lower()
-    if requested in {"router", "subagents", "hybrid"}:
+    if requested in {"router", "subagents", "hybrid", "autoagent"}:
         return requested
     return None
 
@@ -74,7 +74,10 @@ def _runtime_qa_suggestions(message: str) -> List[str]:
             "Refresh the kernel spec with: python -m ipykernel install --user --name python3",
         ]
 
-    if "missing jupyter_client" in normalized or "missing notebook execution dependency" in normalized:
+    if (
+        "missing jupyter_client" in normalized
+        or "missing notebook execution dependency" in normalized
+    ):
         return [
             "Install notebook runtime dependencies such as jupyter_client and nbclient.",
             'Reinstall the project extras with: pip install -e ".[full]"',
@@ -276,13 +279,13 @@ async def notebook_assembly_node(state: GeneratorState) -> Dict[str, Any]:
 
 def _cells_from_notebook(path: Path) -> List[CellSpec]:
     """Read cells from a notebook file and convert to CellSpec list.
-    
+
     Args:
         path: Path to the notebook file
-        
+
     Returns:
         List of CellSpec objects parsed from the notebook
-        
+
     Raises:
         ValueError: If the notebook cannot be read or parsed
     """
@@ -290,7 +293,9 @@ def _cells_from_notebook(path: Path) -> List[CellSpec]:
         with path.open("r", encoding="utf-8") as handle:
             notebook = nbformat.read(handle, as_version=4)
     except Exception as e:
-        raise type(e)(f"Failed to read notebook from {path}: {type(e).__name__}: {e}") from e
+        raise type(e)(
+            f"Failed to read notebook from {path}: {type(e).__name__}: {e}"
+        ) from e
 
     regenerated_cells: List[CellSpec] = []
     for cell in notebook.cells:
@@ -333,12 +338,12 @@ async def static_qa_node(state: GeneratorState) -> Dict[str, Any]:
         notebook = notebook_builder.build_notebook(cells)
         notebook_path = Path(temp_dir) / "generated.ipynb"
         notebook_builder.write(notebook, notebook_path)
-        
+
         # Log temp path for debugging failed validations
         logger.debug(f"Running validation on temporary notebook: {notebook_path}")
-        
+
         reports = validator.validate_all(notebook_path)
-        
+
         # If validation fails, log details for debugging
         if any(not r.passed for r in reports):
             logger.info(
@@ -346,7 +351,7 @@ async def static_qa_node(state: GeneratorState) -> Dict[str, Any]:
                 "(stored in a TemporaryDirectory that will be removed after this step).",
                 notebook_path,
             )
-    
+
     existing_reports = state.get("qa_reports") or []
 
     return {"qa_reports": [*existing_reports, *reports]}
@@ -435,7 +440,7 @@ async def repair_node(state: GeneratorState) -> Dict[str, Any]:
             qa_reports,
             attempt=state["repair_attempts"],
         )
-        
+
         # Only reload cells if repair was successful
         if repair_success:
             try:
