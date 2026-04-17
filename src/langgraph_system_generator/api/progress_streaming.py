@@ -6,6 +6,7 @@ import asyncio
 from dataclasses import dataclass, field
 import json
 import logging
+import os
 import time
 from typing import Any, AsyncGenerator, Dict
 from uuid import uuid4
@@ -25,6 +26,7 @@ class JobRecord:
     next_event_id: int = 0
     completed: bool = False
     completed_at: float | None = None
+    events_truncated: bool = False
 
 
 _active_jobs: Dict[str, JobRecord] = {}
@@ -34,6 +36,9 @@ _JOB_TTL_SECONDS = 3600  # 1 hour
 
 # Completed job retention - keep completed jobs for clients that connect late
 _COMPLETED_JOB_TTL_SECONDS = 300  # 5 minutes
+
+# Bound replay history while still allowing one truncation marker and a terminal event.
+_MAX_EVENTS_PER_JOB = int(os.getenv("LNF_MAX_EVENTS_PER_JOB", "10000"))
 
 
 def create_job() -> str:
@@ -150,6 +155,37 @@ def emit_progress(
     record = _active_jobs.get(job_id)
     if record is None:
         logger.warning("Cannot emit to job %s: not found", job_id)
+        return
+
+    is_terminal = event_type in ("complete", "error")
+    if not is_terminal and len(record.events) >= _MAX_EVENTS_PER_JOB:
+        if not record.events_truncated:
+            record.events_truncated = True
+            truncation_event_id = record.next_event_id
+            record.next_event_id += 1
+            record.events.append(
+                {
+                    "id": truncation_event_id,
+                    "event": "events_truncated",
+                    "data": {
+                        "message": (
+                            "Event history truncated after "
+                            f"{_MAX_EVENTS_PER_JOB} replayable events. "
+                            "Further non-terminal events will not be stored."
+                        ),
+                        "max_events": _MAX_EVENTS_PER_JOB,
+                    },
+                }
+            )
+            logger.warning(
+                "Job %s reached the replay history limit (%d); dropping further non-terminal events",
+                job_id,
+                _MAX_EVENTS_PER_JOB,
+            )
+            try:
+                asyncio.create_task(_notify_listeners(record))
+            except RuntimeError:
+                logger.debug("Cannot notify listeners for %s - no event loop", job_id)
         return
 
     event_id = record.next_event_id

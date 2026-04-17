@@ -174,6 +174,15 @@ async def test_api_rejects_unsupported_advanced_options(
     assert "Unsupported advanced options" in response.json()["detail"]
 
 
+def test_generation_request_formats_description_mentions_markdown():
+    description = app.openapi()["components"]["schemas"]["GenerationRequest"]["properties"][
+        "formats"
+    ]["description"]
+
+    assert "markdown" in description.lower()
+    assert "ipynb, html, markdown, docx, zip" in description
+
+
 @pytest.mark.asyncio
 async def test_api_accepts_arbitrary_openai_compatible_model_id(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch

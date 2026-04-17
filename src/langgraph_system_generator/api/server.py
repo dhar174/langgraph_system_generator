@@ -187,7 +187,10 @@ class GenerationRequest(BaseModel):
     )
     formats: Optional[list[str]] = Field(
         default=None,
-        description="List of output formats to generate (ipynb, html, pdf, docx, zip). Generates all if not specified.",
+        description=(
+            "List of output formats to generate (ipynb, html, markdown, pdf, docx, zip). "
+            "If not specified, generates the default export set: ipynb, html, markdown, docx, zip."
+        ),
     )
     # Advanced options
     model: Optional[str] = Field(
