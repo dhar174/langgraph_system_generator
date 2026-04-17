@@ -20,8 +20,7 @@ def installation_and_imports(
 ) -> List[CellSpec]:
     """Return Installation & Imports cells."""
     pkgs = list(packages) if packages else list(_DEFAULT_PACKAGES)
-    install_code = dedent(
-        f"""
+    install_code = dedent(f"""
         # Install runtime requirements only if missing to avoid unnecessary network calls.
         import importlib
         import subprocess
@@ -43,8 +42,7 @@ def installation_and_imports(
         from langgraph.prebuilt import create_react_agent
         from langchain_openai import ChatOpenAI
         from langchain_core.messages import HumanMessage
-        """
-    ).strip()
+        """).strip()
 
     return [
         CellSpec(
@@ -58,8 +56,7 @@ def installation_and_imports(
 
 def configuration_cell(model: str = "gpt-5-mini") -> List[CellSpec]:
     """Return configuration cells with API key handling."""
-    config_code = dedent(
-        f"""
+    config_code = dedent(f"""
         import os
         from getpass import getpass
         from pathlib import Path
@@ -89,8 +86,7 @@ def configuration_cell(model: str = "gpt-5-mini") -> List[CellSpec]:
         
         print(f"Using model: {{MODEL}}")
         print(f"Working directory: {{WORKDIR}}")
-        """
-    ).strip()
+        """).strip()
 
     return [
         CellSpec(
@@ -104,8 +100,7 @@ def configuration_cell(model: str = "gpt-5-mini") -> List[CellSpec]:
 
 def build_graph_cells() -> List[CellSpec]:
     """Return Build Graph cells."""
-    graph_code = dedent(
-        """
+    graph_code = dedent("""
         from langgraph.types import Command
         from langgraph.graph import END, START, MessagesState, StateGraph
         from langgraph.checkpoint.memory import InMemorySaver
@@ -138,8 +133,7 @@ def build_graph_cells() -> List[CellSpec]:
 
         memory = InMemorySaver()
         app = graph.compile(checkpointer=memory)
-        """
-    ).strip()
+        """).strip()
 
     return [
         CellSpec(
@@ -171,6 +165,17 @@ def run_graph_cells(architecture_type: str | None = None) -> List[CellSpec]:
             "task_results": {},
         }
         """
+    elif architecture_type == "autoagent":
+        initial_state_block = """
+        initial_state = {
+            "messages": [HumanMessage(content="Plan the task, execute it, and critique the result before finishing.")],
+            "next_agent": "coordinator",
+            "instructions": "",
+            "task_results": {},
+            "dispatch_log": [],
+            "iterations": 0,
+        }
+        """
     elif architecture_type == "critique_loop":
         initial_state_block = """
         initial_state = {
@@ -192,8 +197,7 @@ def run_graph_cells(architecture_type: str | None = None) -> List[CellSpec]:
         initial_state = {"messages": [HumanMessage(content="Hi! Show me the LangGraph demo.")]}
         """
 
-    run_code = dedent(
-        f"""
+    run_code = dedent(f"""
         try:
             app  # type: ignore[name-defined]  # noqa: F821
         except NameError as exc:
@@ -210,8 +214,7 @@ def run_graph_cells(architecture_type: str | None = None) -> List[CellSpec]:
 
         final_state = app.get_state(config).values
         print("Final message:", final_state["messages"][-1])
-        """
-    ).strip()
+        """).strip()
 
     return [
         CellSpec(
@@ -225,8 +228,7 @@ def run_graph_cells(architecture_type: str | None = None) -> List[CellSpec]:
 
 def export_results_cells() -> List[CellSpec]:
     """Return Export Results cells."""
-    export_code = dedent(
-        """
+    export_code = dedent("""
         import json
         from pathlib import Path
 
@@ -240,8 +242,7 @@ def export_results_cells() -> List[CellSpec]:
             json.dump(output_data, handle, indent=2, default=str)
 
         print(f"Saved results to {output_path.resolve()}")
-        """
-    ).strip()
+        """).strip()
 
     return [
         CellSpec(
