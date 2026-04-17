@@ -14,12 +14,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class ModelConfig(BaseModel):
-    """Configuration for LLM model parameters used in code generation.
-    
-    This class encapsulates all model-related configuration to make it easy
-    to inject different models, temperatures, and API settings into pattern
-    generators without modifying the generator source code.
-    """
+    """Configuration for LLM model parameters used in code generation."""
 
     model: str = Field(
         default="gpt-5-mini",
@@ -52,7 +47,7 @@ class ModelConfig(BaseModel):
     def from_dict(cls, config: dict) -> "ModelConfig":
         """Create ModelConfig from a dictionary, filtering unknown keys."""
         known_fields = cls.model_fields.keys()
-        filtered = {k: v for k, v in config.items() if k in known_fields}
+        filtered = {key: value for key, value in config.items() if key in known_fields}
         return cls(**filtered)
 
 
@@ -82,44 +77,12 @@ class GenerationConfig(BaseModel):
 
     def to_model_config(self, default_model: str) -> ModelConfig:
         """Resolve a per-request model configuration for live agents."""
-
-        model_kwargs: dict[str, object] = {
-            "model": self.model or default_model,
-        }
-        if self.temperature is not None:
-            model_kwargs["temperature"] = self.temperature
-        if self.api_base is not None:
-            model_kwargs["api_base"] = self.api_base
-        if self.max_tokens is not None:
-            model_kwargs["max_tokens"] = self.max_tokens
-        return ModelConfig(**model_kwargs)
-
-
-def resolve_model_config(
-    *,
-    model: str | None = None,
-    model_config: ModelConfig | None = None,
-    temperature: float = 0.0,
-) -> ModelConfig:
-    """Return the request-scoped model config or construct a default one."""
-
-    if model_config is not None:
-        return model_config
-    return ModelConfig(model=model or settings.default_model, temperature=temperature)
-
-
-def build_chat_openai_kwargs(config: ModelConfig) -> dict[str, object]:
-    """Translate a ModelConfig into ChatOpenAI constructor kwargs."""
-
-    llm_kwargs: dict[str, object] = {
-        "model": config.model,
-        "temperature": config.temperature,
-    }
-    if config.api_base:
-        llm_kwargs["base_url"] = config.api_base
-    if config.max_tokens is not None:
-        llm_kwargs["max_tokens"] = config.max_tokens
-    return llm_kwargs
+        return ModelConfig(
+            model=self.model or default_model,
+            temperature=0.0 if self.temperature is None else self.temperature,
+            api_base=self.api_base,
+            max_tokens=self.max_tokens,
+        )
 
 
 class Settings(BaseSettings):
@@ -171,38 +134,34 @@ class Settings(BaseSettings):
 
 
 _DEFAULT_ENV_FILE = object()
-
-
-def _test_settings_env_keys() -> tuple[str, ...]:
-    """Return the env var names mirrored by Settings fields during pytest loads."""
-
-    env_keys: list[str] = []
-    for field_name, field_info in Settings.model_fields.items():
-        env_name = field_info.alias or field_name
-        env_keys.append(env_name.upper())
-    return tuple(env_keys)
-
-
-_TEST_SETTINGS_ENV_KEYS = _test_settings_env_keys()
+_TEST_SETTINGS_ENV_KEYS = (
+    "OPENAI_API_KEY",
+    "ANTHROPIC_API_KEY",
+    "LANGSMITH_API_KEY",
+    "LANGSMITH_PROJECT",
+    "VECTOR_STORE_TYPE",
+    "VECTOR_STORE_PATH",
+    "DEFAULT_MODEL",
+    "MAX_REPAIR_ATTEMPTS",
+    "DEFAULT_BUDGET_TOKENS",
+)
 
 
 def _pytest_is_active() -> bool:
     """Return True when running under pytest collection or execution."""
-
     return "pytest" in sys.modules or "PYTEST_CURRENT_TEST" in os.environ
 
 
 def _resolve_default_env_file() -> Optional[str]:
     """Resolve the default dotenv path for application usage."""
-
-    if _pytest_is_active():
-        return None
-
     configured_env_file = os.environ.get("LNF_ENV_FILE")
     if configured_env_file is not None:
         return configured_env_file or None
 
     if os.environ.get("LNF_DISABLE_DOTENV", "").lower() in {"1", "true", "yes", "on"}:
+        return None
+
+    if _pytest_is_active():
         return None
 
     candidate = Path(".env")
@@ -212,23 +171,9 @@ def _resolve_default_env_file() -> Optional[str]:
     return None
 
 
-@lru_cache(maxsize=8)
-def _cached_settings(env_file: Optional[str]) -> Settings:
-    """Create and cache settings instances by env file path."""
-
-    init_kwargs = {}
-    if env_file is not None:
-        init_kwargs["_env_file"] = env_file
-        init_kwargs["_env_file_encoding"] = "utf-8"
-
-    with _suspend_project_env_for_pytest(env_file):
-        return Settings(**init_kwargs)
-
-
 @contextmanager
 def _suspend_project_env_for_pytest(env_file: Optional[str]):
-    """Temporarily remove project env vars during default pytest loads."""
-
+    """Temporarily remove project settings env vars during default pytest loads."""
     if not (_pytest_is_active() and env_file is None):
         yield
         return
@@ -244,11 +189,22 @@ def _suspend_project_env_for_pytest(env_file: Optional[str]):
         os.environ.update(removed_values)
 
 
+@lru_cache(maxsize=8)
+def _cached_settings(env_file: Optional[str]) -> Settings:
+    """Create and cache settings instances by env file path."""
+    init_kwargs = {}
+    if env_file is not None:
+        init_kwargs["_env_file"] = env_file
+        init_kwargs["_env_file_encoding"] = "utf-8"
+
+    with _suspend_project_env_for_pytest(env_file):
+        return Settings(**init_kwargs)
+
+
 def get_settings(env_file: Union[str, Path, None, object] = _DEFAULT_ENV_FILE) -> Settings:
     """Return a cached settings instance."""
-
     if env_file is _DEFAULT_ENV_FILE:
-        resolved_env_file = None if _pytest_is_active() else _resolve_default_env_file()
+        resolved_env_file = _resolve_default_env_file()
     elif env_file is None:
         resolved_env_file = None
     else:
@@ -261,7 +217,6 @@ def reset_settings_cache(
     env_file: Union[str, Path, None, object] = _DEFAULT_ENV_FILE,
 ) -> Settings:
     """Clear and refresh the cached settings instance."""
-
     _cached_settings.cache_clear()
     refreshed = get_settings(env_file)
     globals()["settings"] = refreshed

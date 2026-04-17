@@ -9,7 +9,6 @@ __all__ = ["app"]
 
 def __getattr__(name: str):
     """Lazily expose the FastAPI app so core installs do not import API extras."""
-
     if name != "app":
         raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from contextlib import asynccontextmanager
 import logging
 import os
 from pathlib import Path
@@ -29,7 +30,6 @@ from langgraph_system_generator.api.progress_streaming import (
 )
 from langgraph_system_generator.utils.generation_options import (
     SUPPORTED_AGENT_TYPES,
-    SUPPORTED_OPENAI_MODELS,
     normalize_agent_type,
     normalize_optional_string,
 )
@@ -59,7 +59,6 @@ _UNSUPPORTED_ADVANCED_FIELDS = (
 
 async def _try_acquire_generation_slot() -> bool:
     """Reserve a generation slot if capacity is available."""
-
     global _active_generation_count
 
     async with _generation_lock:
@@ -71,12 +70,34 @@ async def _try_acquire_generation_slot() -> bool:
 
 async def _release_generation_slot() -> None:
     """Release a previously reserved generation slot."""
-
     global _active_generation_count
 
     async with _generation_lock:
         if _active_generation_count > 0:
             _active_generation_count -= 1
+
+
+async def _acquire_generation_slot_or_raise() -> None:
+    """Acquire a generation slot or raise when capacity is exhausted."""
+    if not await _try_acquire_generation_slot():
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "Server is currently processing the maximum number of "
+                f"concurrent generations ({_MAX_CONCURRENT_GENERATIONS}). "
+                "Please try again later."
+            ),
+        )
+
+
+@asynccontextmanager
+async def _generation_slot():
+    """Guard a request with the shared generation admission controller."""
+    await _acquire_generation_slot_or_raise()
+    try:
+        yield
+    finally:
+        await _release_generation_slot()
 
 
 def _resolve_output_dir(path: str | os.PathLike[str] | None) -> Path:
@@ -125,22 +146,16 @@ def _resolve_artifact_path(path: str | os.PathLike[str]) -> Path:
 def _validate_advanced_options(
     request: "GenerationRequest",
 ) -> tuple[str | None, str | None, str | None]:
-    """Reject unsupported advanced options and return normalized values.
-
-    Returns:
-        tuple[str | None, str | None, str | None]:
-            (normalized_model, normalized_custom_endpoint, normalized_agent_type)
-    """
+    """Reject unsupported advanced options and return normalized values."""
     normalized_model = normalize_optional_string(request.model)
     normalized_custom_endpoint = normalize_optional_string(request.custom_endpoint)
     normalized_agent_type = normalize_agent_type(request.agent_type)
-    if normalized_agent_type:
-        if normalized_agent_type not in SUPPORTED_AGENT_TYPES:
-            supported = ", ".join(sorted(SUPPORTED_AGENT_TYPES))
-            raise HTTPException(
-                status_code=400,
-                detail=f"Unsupported agent_type. Supported values are: {supported}.",
-            )
+    if normalized_agent_type and normalized_agent_type not in SUPPORTED_AGENT_TYPES:
+        supported = ", ".join(sorted(SUPPORTED_AGENT_TYPES))
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unsupported agent_type. Supported values are: {supported}.",
+        )
 
     unsupported_fields = [
         field_name
@@ -177,33 +192,19 @@ def _validate_advanced_options(
             detail="Provide an explicit model identifier instead of the placeholder value 'custom'.",
         )
 
-    if (
-        normalized_model
-        and not normalized_custom_endpoint
-        and normalized_model not in SUPPORTED_OPENAI_MODELS
-    ):
-        raise HTTPException(
-            status_code=400,
-            detail=(
-                "Unsupported model for the built-in provider. Choose an OpenAI-compatible model "
-                "or set custom_endpoint with an explicit model identifier."
-            ),
-        )
-
     return normalized_model, normalized_custom_endpoint, normalized_agent_type
 
 
 def _normalize_request(request: "GenerationRequest") -> "GenerationRequest":
     """Return a copy of the request with normalized advanced option values."""
-
-    validated_model, validated_custom_endpoint, validated_agent_type = (
+    normalized_model, normalized_custom_endpoint, normalized_agent_type = (
         _validate_advanced_options(request)
     )
     return request.model_copy(
         update={
-            "model": validated_model,
-            "custom_endpoint": validated_custom_endpoint,
-            "agent_type": validated_agent_type,
+            "model": normalized_model,
+            "custom_endpoint": normalized_custom_endpoint,
+            "agent_type": normalized_agent_type,
         }
     )
 
@@ -259,7 +260,7 @@ class GenerationRequest(BaseModel):
     )
     agent_type: Optional[str] = Field(
         default=None,
-        description="Type of agent architecture (router, subagents, hybrid, etc.).",
+        description="Type of agent architecture (router, subagents, hybrid, autoagent, etc.).",
     )
     memory_config: Optional[str] = Field(
         default=None,
@@ -345,44 +346,44 @@ async def chrome_devtools_endpoint():
 @app.post("/generate", response_model=GenerationResponse)
 async def generate_notebook(request: GenerationRequest) -> GenerationResponse:
     """Generate notebook artifacts via the generator pipeline."""
-
     normalized_request = _normalize_request(request)
 
     # Use the secure path resolution function
     output_path = _resolve_output_dir(request.output_dir)
 
-    try:
-        artifacts: GenerationArtifacts = await generate_artifacts(
-            request.prompt,
-            output_dir=str(output_path),
-            mode=request.mode,
-            formats=request.formats,
-            model=normalized_request.model,
-            temperature=normalized_request.temperature,
-            max_tokens=normalized_request.max_tokens,
-            agent_type=normalized_request.agent_type,
-            memory_config=normalized_request.memory_config,
-            custom_endpoint=normalized_request.custom_endpoint,
-            preset=normalized_request.preset,
-            graph_style=normalized_request.graph_style,
-            retriever_type=normalized_request.retriever_type,
-            document_loader=normalized_request.document_loader,
-        )
-        return GenerationResponse(
-            success=True,
-            mode=artifacts["mode"],
-            prompt=artifacts["prompt"],
-            manifest=artifacts["manifest"],
-            manifest_path=artifacts["manifest_path"],
-            output_dir=artifacts["output_dir"],
-        )
-    except (
-        OptionalDependencyError,
-        RuntimeError,
-        ValueError,
-    ) as exc:  # pragma: no cover - surfaced via HTTPException
-        logging.exception("Generation request failed")
-        raise HTTPException(status_code=400, detail=str(exc))
+    async with _generation_slot():
+        try:
+            artifacts: GenerationArtifacts = await generate_artifacts(
+                request.prompt,
+                output_dir=str(output_path),
+                mode=request.mode,
+                formats=request.formats,
+                model=normalized_request.model,
+                temperature=request.temperature,
+                max_tokens=request.max_tokens,
+                agent_type=normalized_request.agent_type,
+                memory_config=request.memory_config,
+                custom_endpoint=normalized_request.custom_endpoint,
+                preset=request.preset,
+                graph_style=request.graph_style,
+                retriever_type=request.retriever_type,
+                document_loader=request.document_loader,
+            )
+            return GenerationResponse(
+                success=True,
+                mode=artifacts["mode"],
+                prompt=artifacts["prompt"],
+                manifest=artifacts["manifest"],
+                manifest_path=artifacts["manifest_path"],
+                output_dir=artifacts["output_dir"],
+            )
+        except (
+            OptionalDependencyError,
+            RuntimeError,
+            ValueError,
+        ) as exc:  # pragma: no cover - surfaced via HTTPException
+            logging.exception("Generation request failed")
+            raise HTTPException(status_code=400, detail=str(exc))
 
 
 @app.post("/generate-async", response_model=GenerationStartResponse)
@@ -394,7 +395,7 @@ async def start_async_generation(
     This endpoint starts generation in the background and returns immediately with
     a job ID. Clients can then connect to the SSE stream endpoint to receive
     real-time progress updates, logs, and the final result.
-    
+
     Concurrency is limited with an explicit admission controller. If the limit is
     reached, the request is rejected with 503 Service Unavailable.
 
@@ -410,11 +411,7 @@ async def start_async_generation(
     output_path = _resolve_output_dir(request.output_dir)
 
     # Acquire capacity before the job is accepted so overload requests fail fast.
-    if not await _try_acquire_generation_slot():
-        raise HTTPException(
-            status_code=503,
-            detail=f"Server is currently processing the maximum number of concurrent generations ({_MAX_CONCURRENT_GENERATIONS}). Please try again later.",
-        )
+    await _acquire_generation_slot_or_raise()
 
     # Create job and start generation task
     job_id = create_job()
@@ -472,13 +469,17 @@ async def _run_generation_with_progress(
         output_path: Resolved output directory path
     """
     try:
+        # Emit start event
         emit_node_progress(job_id, "start", 0, "Starting generation...")
+
+        # Emit validation progress
         emit_node_progress(job_id, "validation", 5, "Validating request...")
+
+        # Run generation
         emit_node_progress(job_id, "generation", 10, "Initializing generator...")
 
         def progress_callback(node: str, percentage: int, message: str) -> None:
             """Forward progress to SSE stream."""
-
             emit_node_progress(job_id, node, percentage, message)
 
         artifacts: GenerationArtifacts = await generate_artifacts(

@@ -7,12 +7,9 @@ from typing import List
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
 
+from langgraph_system_generator.generator.agents._llm import build_chat_llm
 from langgraph_system_generator.generator.state import CellSpec, QAReport
-from langgraph_system_generator.utils.config import (
-    ModelConfig,
-    build_chat_openai_kwargs,
-    resolve_model_config,
-)
+from langgraph_system_generator.utils.config import ModelConfig
 
 
 class QARepairAgent:
@@ -23,8 +20,11 @@ class QARepairAgent:
         model: str | None = None,
         model_config: ModelConfig | None = None,
     ):
-        config = resolve_model_config(model=model, model_config=model_config, temperature=0.0)
-        self.llm = ChatOpenAI(**build_chat_openai_kwargs(config))
+        self.llm = build_chat_llm(
+            model=model,
+            model_config=model_config,
+            chat_openai_class=ChatOpenAI,
+        )
 
     async def validate(self, cells: List[CellSpec]) -> List[QAReport]:
         """Run all quality checks on generated cells.

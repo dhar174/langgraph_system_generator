@@ -7,10 +7,12 @@ code-generation classes.
 """
 
 from langgraph_system_generator.patterns.critique_loops import CritiqueLoopPattern
+from langgraph_system_generator.patterns.autoagent import AutoAgentPattern
 from langgraph_system_generator.patterns.router import RouterPattern
 from langgraph_system_generator.patterns.subagents import SubagentsPattern
 
 __all__ = [
+    "AutoAgentPattern",
     "RouterPattern",
     "SubagentsPattern",
     "CritiqueLoopPattern",

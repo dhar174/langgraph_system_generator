@@ -44,7 +44,8 @@ class NotebookPlan(BaseModel):
         default_factory=list, description="LangGraph patterns to be used"
     )
     architecture_type: str = Field(
-        default="", description="Selected architecture: router, subagents, or hybrid"
+        default="",
+        description="Selected architecture: router, subagents, hybrid, or autoagent",
     )
 
 
@@ -86,6 +87,7 @@ class GeneratorState(TypedDict):
     notebook_plan: Optional[NotebookPlan]
     architecture_justification: str
     architecture_type: Optional[str]
+    generation_config: Optional[GenerationConfig]
 
     # Workflow design (added for graph designer)
     workflow_design: Optional[Dict[str, Any]]

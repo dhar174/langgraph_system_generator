@@ -73,7 +73,7 @@ graph LR
 3. **RAG**: `rag_retrieval_node` queries the cached LangChain/LangGraph docs and
    stores relevant snippets in `docs_context`.
 4. **Architecture Select**: `architecture_selection_node` picks the best-fit
-   pattern, such as router or subagents, and records the rationale.
+   pattern, such as router, subagents, or autoagent, and records the rationale.
 5. **Plan**: `graph_design_node` and `tooling_plan_node` define the workflow
    shape, notebook outline, and any tool integrations.
 6. **Generate**: `notebook_assembly_node` turns the plan into notebook cells and
@@ -142,6 +142,13 @@ Google Colab.
 5. Run the notebook top-to-bottom. If you only want the offline scaffold, use a
    notebook generated in `--mode stub`.
 
+If you prefer extras-based installs instead of `requirements.txt`, use:
+
+- `pip install -e .` for the core Python package/config/types only
+- `pip install -e ".[api]"` for the FastAPI/web server
+- `pip install -e ".[full]"` for notebook generation, export, and live-mode dependencies
+- `pip install -e ".[full,dev]"` for contributor/test tooling
+
 For the full workflow, troubleshooting, and Drive-specific tips, see
 [docs/wiki/Colab-Usage.md](docs/wiki/Colab-Usage.md).
 
@@ -152,6 +159,9 @@ Use the bundled CLI (stub mode by default) to generate scaffold artifacts or reb
 ```bash
 # Generate offline-friendly artifacts from a prompt
 lnf generate "Create a router-based chatbot" --output ./output/demo --mode stub
+
+# Force AutoAgent architecture in stub/live generation
+lnf generate "Create an autonomous planning-and-execution assistant" --mode stub --agent-type autoagent
 
 # Generate specific output formats (default: all formats except PDF)
 lnf generate "Create a chatbot" --output ./output/demo --formats ipynb html markdown docx

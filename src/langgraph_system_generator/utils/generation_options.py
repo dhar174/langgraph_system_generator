@@ -7,7 +7,7 @@ SUPPORTED_OPENAI_MODELS = frozenset(
     {"gpt-5.2", "gpt-5-mini", "gpt-5-nano", "gpt-5.1"}
 )
 
-SUPPORTED_AGENT_TYPES = frozenset({"router", "subagents", "hybrid"})
+SUPPORTED_AGENT_TYPES = frozenset({"router", "subagents", "hybrid", "autoagent"})
 
 
 def normalize_optional_string(value: str | None) -> str | None:

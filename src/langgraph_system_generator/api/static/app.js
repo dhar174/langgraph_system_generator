@@ -73,12 +73,12 @@ temperatureSlider.addEventListener('input', (e) => {
 modelSelect.addEventListener('change', (e) => {
     if (e.target.value === 'custom') {
         customEndpointGroup.style.display = 'block';
-        customModelInput.required = true;
         document.getElementById('customEndpoint').required = true;
+        customModelInput.required = true;
     } else {
         customEndpointGroup.style.display = 'none';
-        customModelInput.required = false;
         document.getElementById('customEndpoint').required = false;
+        customModelInput.required = false;
     }
 });
 
@@ -983,10 +983,21 @@ function rerunFromHistory(entry) {
     if (data.model) {
         const modelSelectElement = document.getElementById('model');
         const optionExists = Array.from(modelSelectElement.options).some((option) => option.value === data.model);
-        modelSelectElement.value = optionExists ? data.model : 'custom';
+        const hasCustomEndpoint = Boolean(data.custom_endpoint);
+
+        if (optionExists) {
+            modelSelectElement.value = data.model;
+        } else if (hasCustomEndpoint) {
+            modelSelectElement.value = 'custom';
+        } else {
+            const explicitModelOption = new Option(data.model, data.model);
+            modelSelectElement.add(explicitModelOption);
+            modelSelectElement.value = data.model;
+        }
+
         modelSelectElement.dispatchEvent(new Event('change'));
 
-        if (!optionExists && customModelInput) {
+        if (!optionExists && hasCustomEndpoint && customModelInput) {
             customModelInput.value = data.model;
         }
     }
@@ -1075,3 +1086,4 @@ copyLastPromptBtn.addEventListener('click', () => {
 
 // Initialize history display on load
 updateHistoryDisplay();
+}

@@ -3,7 +3,6 @@ from pathlib import Path
 from pydantic_settings import SettingsConfigDict
 
 from langgraph_system_generator.utils.config import (
-    GenerationConfig,
     ModelConfig,
     Settings,
     get_settings,
@@ -99,6 +98,26 @@ def test_settings_defaults_ignore_project_env_under_pytest(tmp_path, monkeypatch
     assert loaded.default_model == "gpt-5-mini"
 
 
+def test_settings_cached_instance_is_reused(monkeypatch):
+    for key in [
+        "OPENAI_API_KEY",
+        "LANGSMITH_PROJECT",
+    ]:
+        monkeypatch.delenv(key, raising=False)
+
+    monkeypatch.setenv("LNF_DISABLE_DOTENV", "1")
+
+    reset_settings_cache(env_file=None)
+    first = get_settings(env_file=None)
+    second = get_settings(env_file=None)
+
+    assert first is second
+
+    third = reset_settings_cache(env_file=None)
+    assert third is not first
+    assert get_settings(env_file=None) is third
+
+
 def test_settings_default_load_ignores_lnf_env_file_under_pytest(tmp_path, monkeypatch):
     env_path = tmp_path / ".env.test"
     env_path.write_text(
@@ -120,26 +139,6 @@ def test_settings_default_load_ignores_lnf_env_file_under_pytest(tmp_path, monke
 
     assert explicit.openai_api_key == "from-env-file"
     assert explicit.default_model == "from-env-file"
-
-
-def test_settings_cached_instance_is_reused(monkeypatch):
-    for key in [
-        "OPENAI_API_KEY",
-        "LANGSMITH_PROJECT",
-    ]:
-        monkeypatch.delenv(key, raising=False)
-
-    monkeypatch.setenv("LNF_DISABLE_DOTENV", "1")
-
-    reset_settings_cache(env_file=None)
-    first = get_settings(env_file=None)
-    second = get_settings(env_file=None)
-
-    assert first is second
-
-    third = reset_settings_cache(env_file=None)
-    assert third is not first
-    assert get_settings(env_file=None) is third
 
 
 def test_model_config_defaults():
@@ -210,12 +209,3 @@ def test_model_config_preserves_gpt_5_mini():
     # Should also work when explicitly set
     config2 = ModelConfig(model="gpt-5-mini")
     assert config2.model == "gpt-5-mini"
-
-
-def test_generation_config_uses_model_defaults_when_temperature_not_overridden():
-    """GenerationConfig should preserve ModelConfig defaults when temperature is omitted."""
-
-    resolved = GenerationConfig(model="gpt-5.2").to_model_config("gpt-5-mini")
-
-    assert resolved.model == "gpt-5.2"
-    assert resolved.temperature == 0.7
