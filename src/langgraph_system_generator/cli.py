@@ -14,7 +14,11 @@ import os
 from pathlib import Path
 from typing import Any, Dict, List, Literal, TypedDict
 
-from langgraph_system_generator.generator.state import CellSpec, Constraint, NotebookPlan
+from langgraph_system_generator.generator.state import (
+    CellSpec,
+    Constraint,
+    NotebookPlan,
+)
 from langgraph_system_generator.utils.config import GenerationConfig, settings
 from langgraph_system_generator.utils.optional_deps import (
     OptionalDependencyError,
@@ -85,7 +89,14 @@ def _infer_stub_architecture(prompt: str) -> tuple[str, str]:
     """Lightweight heuristic to pick an architecture in stub mode."""
 
     text = prompt.lower()
-    if any(keyword in text for keyword in ["delegate", "supervisor", "team", "subagent"]):
+    if "autoagent" in text or "auto agent" in text:
+        return (
+            "autoagent",
+            "AutoAgent pattern selected based on explicit AutoAgent intent in the prompt.",
+        )
+    if any(
+        keyword in text for keyword in ["delegate", "supervisor", "team", "subagent"]
+    ):
         return (
             "subagents",
             "Subagents pattern selected based on collaborative/delegation cues in the prompt.",
@@ -95,22 +106,32 @@ def _infer_stub_architecture(prompt: str) -> tuple[str, str]:
             "hybrid",
             "Hybrid pattern selected for mixed or multi-stage requirements detected in the prompt.",
         )
-    if any(keyword in text for keyword in ["router", "route", "triage", "dispatch", "classification"]):
+    if any(
+        keyword in text
+        for keyword in ["router", "route", "triage", "dispatch", "classification"]
+    ):
         return (
             "router",
             "Router pattern selected for routing/triage style requests in the prompt.",
         )
-    return ("router", "Router pattern selected as a sensible default for general workflows.")
+    return (
+        "router",
+        "Router pattern selected as a sensible default for general workflows.",
+    )
 
 
-def _load_patterns() -> tuple[Any, Any]:
+def _load_patterns() -> tuple[Any, Any, Any]:
     """Import pattern generators lazily to preserve minimal installs."""
     patterns_module = require_optional_module(
         "langgraph_system_generator.patterns",
         feature="Stub artifact generation",
         extra="full",
     )
-    return patterns_module.RouterPattern, patterns_module.SubagentsPattern
+    return (
+        patterns_module.RouterPattern,
+        patterns_module.SubagentsPattern,
+        patterns_module.AutoAgentPattern,
+    )
 
 
 def _load_generator_graph() -> Any:
@@ -125,10 +146,10 @@ def _load_generator_graph() -> Any:
 
 def _build_stub_result(prompt: str, agent_type: str | None = None) -> Dict[str, Any]:
     """Create a deterministic, offline-friendly generation result."""
-    RouterPattern, SubagentsPattern = _load_patterns()
+    RouterPattern, SubagentsPattern, AutoAgentPattern = _load_patterns()
 
     normalized_agent_type = (agent_type or "").strip().lower()
-    if normalized_agent_type in {"router", "subagents", "hybrid"}:
+    if normalized_agent_type in {"router", "subagents", "hybrid", "autoagent"}:
         architecture_type = normalized_agent_type
         justification = (
             f"{normalized_agent_type.title()} pattern selected from the requested "
@@ -183,33 +204,43 @@ def _build_stub_result(prompt: str, agent_type: str | None = None) -> Dict[str, 
         }
 
         # State
-        cells.append(CellSpec(
-            cell_type="code",
-            content=RouterPattern.generate_state_code(),
-            section="state_definition"
-        ))
+        cells.append(
+            CellSpec(
+                cell_type="code",
+                content=RouterPattern.generate_state_code(),
+                section="state_definition",
+            )
+        )
 
         # Router node
-        cells.append(CellSpec(
-            cell_type="code",
-            content=RouterPattern.generate_router_node_code(routes),
-            section="nodes"
-        ))
+        cells.append(
+            CellSpec(
+                cell_type="code",
+                content=RouterPattern.generate_router_node_code(routes),
+                section="nodes",
+            )
+        )
 
         # Route nodes
         for route in routes:
-            cells.append(CellSpec(
-                cell_type="code",
-                content=RouterPattern.generate_route_node_code(route, route_purposes[route]),
-                section="nodes"
-            ))
+            cells.append(
+                CellSpec(
+                    cell_type="code",
+                    content=RouterPattern.generate_route_node_code(
+                        route, route_purposes[route]
+                    ),
+                    section="nodes",
+                )
+            )
 
         # Graph
-        cells.append(CellSpec(
-            cell_type="code",
-            content=RouterPattern.generate_graph_code(routes),
-            section="graph"
-        ))
+        cells.append(
+            CellSpec(
+                cell_type="code",
+                content=RouterPattern.generate_graph_code(routes),
+                section="graph",
+            )
+        )
 
     elif architecture_type == "subagents":
         subagents = ["researcher", "writer", "reviewer"]
@@ -220,39 +251,97 @@ def _build_stub_result(prompt: str, agent_type: str | None = None) -> Dict[str, 
         }
 
         # State
-        cells.append(CellSpec(
-            cell_type="code",
-            content=SubagentsPattern.generate_state_code(),
-            section="state_definition"
-        ))
+        cells.append(
+            CellSpec(
+                cell_type="code",
+                content=SubagentsPattern.generate_state_code(),
+                section="state_definition",
+            )
+        )
 
         # Supervisor
-        cells.append(CellSpec(
-            cell_type="code",
-            content=SubagentsPattern.generate_supervisor_code(subagents, descriptions),
-            section="nodes"
-        ))
+        cells.append(
+            CellSpec(
+                cell_type="code",
+                content=SubagentsPattern.generate_supervisor_code(
+                    subagents, descriptions
+                ),
+                section="nodes",
+            )
+        )
 
         # Subagents
         for agent in subagents:
-            cells.append(CellSpec(
-                cell_type="code",
-                content=SubagentsPattern.generate_subagent_code(agent, descriptions[agent]),
-                section="nodes"
-            ))
+            cells.append(
+                CellSpec(
+                    cell_type="code",
+                    content=SubagentsPattern.generate_subagent_code(
+                        agent, descriptions[agent]
+                    ),
+                    section="nodes",
+                )
+            )
 
         # Graph
-        cells.append(CellSpec(
-            cell_type="code",
-            content=SubagentsPattern.generate_graph_code(subagents),
-            section="graph"
-        ))
+        cells.append(
+            CellSpec(
+                cell_type="code",
+                content=SubagentsPattern.generate_graph_code(subagents),
+                section="graph",
+            )
+        )
+    elif architecture_type == "autoagent":
+        workers = ["planner", "executor", "critic"]
+        worker_descriptions = {
+            "planner": "Breaks goals into concrete execution steps",
+            "executor": "Implements and runs the selected action plan",
+            "critic": "Reviews output quality and requests refinements when needed",
+        }
+
+        cells.append(
+            CellSpec(
+                cell_type="code",
+                content=AutoAgentPattern.generate_state_code(),
+                section="state_definition",
+            )
+        )
+
+        cells.append(
+            CellSpec(
+                cell_type="code",
+                content=AutoAgentPattern.generate_coordinator_code(
+                    workers, worker_descriptions
+                ),
+                section="nodes",
+            )
+        )
+
+        for worker in workers:
+            cells.append(
+                CellSpec(
+                    cell_type="code",
+                    content=AutoAgentPattern.generate_worker_code(
+                        worker, worker_descriptions[worker]
+                    ),
+                    section="nodes",
+                )
+            )
+
+        cells.append(
+            CellSpec(
+                cell_type="code",
+                content=AutoAgentPattern.generate_graph_code(workers),
+                section="graph",
+            )
+        )
     else:
-        cells.append(CellSpec(
-            cell_type="code",
-            content="from langgraph.graph import StateGraph\n\n# Define your workflow here",
-            section="graph",
-        ))
+        cells.append(
+            CellSpec(
+                cell_type="code",
+                content="from langgraph.graph import StateGraph\n\n# Define your workflow here",
+                section="graph",
+            )
+        )
 
     return {
         "constraints": constraints,
@@ -266,7 +355,15 @@ def _build_stub_result(prompt: str, agent_type: str | None = None) -> Dict[str, 
             "nodes": [
                 {
                     "name": architecture_type,
-                    "purpose": "Dispatch to specialists" if architecture_type == "router" else "Coordinate sub-agents",
+                    "purpose": (
+                        "Dispatch to specialists"
+                        if architecture_type == "router"
+                        else (
+                            "Coordinate AutoAgent workers"
+                            if architecture_type == "autoagent"
+                            else "Coordinate sub-agents"
+                        )
+                    ),
                 }
             ],
         },
@@ -353,7 +450,7 @@ async def generate_artifacts(
                 # Log progress callback failures instead of silently swallowing
                 logging.warning(
                     f"Progress callback failed for node={node}, percentage={percentage}: {e}",
-                    exc_info=True
+                    exc_info=True,
                 )
 
     target = Path(output_dir)
@@ -364,7 +461,9 @@ async def generate_artifacts(
     if mode == "live":
         create_generator_graph = _load_generator_graph()
         if not custom_endpoint and not os.environ.get("OPENAI_API_KEY"):
-            raise RuntimeError("LLM API credentials are required for live generation mode.")
+            raise RuntimeError(
+                "LLM API credentials are required for live generation mode."
+            )
         _report_progress("graph_init", 10, "Creating generator graph...")
         graph = create_generator_graph()
         _report_progress("graph_invoke", 15, "Invoking generator graph...")
@@ -382,9 +481,11 @@ async def generate_artifacts(
     else:
         selected_patterns = serialized.get("selected_patterns") or {}
         architecture_type = selected_patterns.get("primary") or "router"
-    
-    plan_title = serialized.get("notebook_plan", {}).get("title") or "Generated Notebook"
-    
+
+    plan_title = (
+        serialized.get("notebook_plan", {}).get("title") or "Generated Notebook"
+    )
+
     manifest: Dict[str, Any] = {
         "prompt": prompt,
         "mode": mode,
@@ -392,7 +493,7 @@ async def generate_artifacts(
         "cell_count": len(serialized.get("generated_cells", []) or []),
         "plan_title": plan_title,
     }
-    
+
     # Persist request metadata for reproducibility and downstream consumers.
     if model:
         manifest["model"] = model
@@ -433,25 +534,25 @@ async def generate_artifacts(
         _report_progress("compose", 65, "Composing notebook...")
         # Convert serialized cells back to CellSpec objects
         cell_specs = [CellSpec(**cell) for cell in cells]
-        
+
         # Build the notebook
         composer = NotebookComposer(colab_friendly=True)
         notebook = composer.build_notebook(cell_specs, ensure_minimum_sections=True)
-        
+
         # Determine which formats to generate
         if formats is None or not formats:
             formats = ["ipynb", "html", "markdown", "docx", "zip"]
-        
+
         _report_progress("export_init", 70, f"Exporting to {len(formats)} format(s)...")
         exporter = NotebookExporter()
-        
+
         # Export to requested formats
         if "ipynb" in formats:
             _report_progress("export_ipynb", 72, "Exporting to Jupyter notebook...")
             ipynb_path = target / "notebook.ipynb"
             exporter.export_ipynb(notebook, ipynb_path)
             manifest["notebook_path"] = str(ipynb_path)
-        
+
         if "html" in formats:
             try:
                 _report_progress("export_html", 78, "Exporting to HTML...")
@@ -478,7 +579,7 @@ async def generate_artifacts(
                 manifest["docx_path"] = str(docx_path)
             except Exception as e:
                 manifest["docx_error"] = str(e)
-        
+
         if "pdf" in formats:
             try:
                 _report_progress("export_pdf", 90, "Exporting to PDF...")
@@ -491,7 +592,7 @@ async def generate_artifacts(
                 manifest["pdf_path"] = str(pdf_path)
             except Exception as e:
                 manifest["pdf_error"] = str(e)
-        
+
         if "zip" in formats:
             try:
                 _report_progress("export_zip", 95, "Creating ZIP archive...")
@@ -501,7 +602,7 @@ async def generate_artifacts(
                     extra_files.append(manifest["plan_path"])
                 if manifest.get("cells_path"):
                     extra_files.append(manifest["cells_path"])
-                
+
                 zip_path = target / "notebook_bundle.zip"
                 exporter.export_zip(notebook, zip_path, extra_files=extra_files)
                 manifest["zip_path"] = str(zip_path)
@@ -524,7 +625,11 @@ async def generate_artifacts(
 
 
 async def _handle_build_index(
-    cache_path: str, store_path: str, use_openai: bool, chunk_size: int, chunk_overlap: int
+    cache_path: str,
+    store_path: str,
+    use_openai: bool,
+    chunk_size: int,
+    chunk_overlap: int,
 ) -> str:
     """Build a documentation index from cached docs."""
 
@@ -559,6 +664,7 @@ def _run_generate(args: argparse.Namespace) -> int:
                 output_dir=args.output,
                 mode=args.mode,
                 formats=args.formats,
+                agent_type=args.agent_type,
             )
         )
     except OptionalDependencyError as exc:
@@ -614,7 +720,9 @@ def build_parser() -> argparse.ArgumentParser:
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     gen = subparsers.add_parser("generate", help="Generate notebook artifacts")
-    gen.add_argument("prompt", type=str, help="User prompt describing the system to build")
+    gen.add_argument(
+        "prompt", type=str, help="User prompt describing the system to build"
+    )
     gen.add_argument(
         "-o",
         "--output",
@@ -634,9 +742,17 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Output formats to generate (default: all formats). Specify one or more.",
     )
+    gen.add_argument(
+        "--agent-type",
+        choices=["router", "subagents", "hybrid", "autoagent"],
+        default=None,
+        help="Override architecture selection for generation.",
+    )
     gen.set_defaults(func=_run_generate)
 
-    idx = subparsers.add_parser("build-index", help="Build vector index from cached docs")
+    idx = subparsers.add_parser(
+        "build-index", help="Build vector index from cached docs"
+    )
     idx.add_argument(
         "--cache",
         default=str(DEFAULT_CACHE_PATH),
@@ -652,8 +768,15 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Use OpenAI embeddings instead of local fake embeddings.",
     )
-    idx.add_argument("--chunk-size", type=int, default=500, help="Chunk size for document splitting")
-    idx.add_argument("--chunk-overlap", type=int, default=50, help="Chunk overlap for document splitting")
+    idx.add_argument(
+        "--chunk-size", type=int, default=500, help="Chunk size for document splitting"
+    )
+    idx.add_argument(
+        "--chunk-overlap",
+        type=int,
+        default=50,
+        help="Chunk overlap for document splitting",
+    )
     idx.set_defaults(func=_run_build_index)
 
     return parser

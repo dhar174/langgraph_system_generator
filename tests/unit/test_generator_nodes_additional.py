@@ -61,10 +61,11 @@ async def test_intake_node_sets_constraints(monkeypatch):
 
     assert result["constraints"] == constraints
 
+
 @pytest.mark.asyncio
 async def test_rag_retrieval_node_falls_back_on_failure(monkeypatch):
     """Test that rag_retrieval_node returns empty docs_context when DocsRetriever.retrieve fails.
-    
+
     This test ensures VectorStoreManager initialization succeeds (by mocking OpenAIEmbeddings)
     so that the actual retrieval failure path is exercised.
     """
@@ -108,9 +109,7 @@ async def test_architecture_selection_node_defaults_when_missing(monkeypatch):
         lambda self, pattern_name: [],
     )
 
-    result = await architecture_selection_node(
-        {"constraints": [], "docs_context": []}
-    )
+    result = await architecture_selection_node({"constraints": [], "docs_context": []})
 
     assert result["selected_patterns"] == {}
     assert result["architecture_type"] == "router"
@@ -129,6 +128,21 @@ async def test_architecture_selection_node_honors_agent_type_override():
 
     assert result["selected_patterns"] == {"primary": "subagents", "secondary": []}
     assert result["architecture_type"] == "subagents"
+    assert "agent_type override" in result["architecture_justification"]
+
+
+@pytest.mark.asyncio
+async def test_architecture_selection_node_honors_autoagent_override():
+    result = await architecture_selection_node(
+        {
+            "constraints": [],
+            "docs_context": [],
+            "generation_config": GenerationConfig(agent_type="autoagent"),
+        }
+    )
+
+    assert result["selected_patterns"] == {"primary": "autoagent", "secondary": []}
+    assert result["architecture_type"] == "autoagent"
     assert "agent_type override" in result["architecture_justification"]
 
 
@@ -175,26 +189,30 @@ async def test_tooling_plan_node_returns_tools_plan(monkeypatch):
         make_stub_llm(payload),
     )
 
-    result = await tooling_plan_node({"workflow_design": {"nodes": []}, "constraints": []})
+    result = await tooling_plan_node(
+        {"workflow_design": {"nodes": []}, "constraints": []}
+    )
 
-    assert result["tools_plan"] == [{"name": "tool", "category": "misc", "purpose": "x", "configuration": {}}]
+    assert result["tools_plan"] == [
+        {"name": "tool", "category": "misc", "purpose": "x", "configuration": {}}
+    ]
 
 
 @pytest.mark.asyncio
 async def test_notebook_assembly_node_returns_generated_cells(monkeypatch):
     cells = [CellSpec(cell_type="markdown", content="Hi", metadata={})]
     # Mock NotebookComposer to return cells without needing LLM
-    payload = '[]'  # Dummy payload since we'll mock the compose method
+    payload = "[]"  # Dummy payload since we'll mock the compose method
 
     monkeypatch.setattr(
         notebook_composer,
         "ChatOpenAI",
         make_stub_llm(payload),
     )
-    
+
     async def fake_compose_notebook(*_args, **_kwargs):
         return cells
-    
+
     monkeypatch.setattr(
         "langgraph_system_generator.generator.nodes.NotebookComposer.compose_notebook",
         fake_compose_notebook,
@@ -243,7 +261,10 @@ async def test_runtime_qa_node_message_empty_cells():
 async def test_runtime_qa_node_message_with_cells(monkeypatch):
     monkeypatch.setattr(
         "langgraph_system_generator.generator.nodes.run_notebook_smoke_test",
-        lambda kernel_name="python3", timeout=60: (True, "Runtime execution environment validated using the 'python3' kernel."),
+        lambda kernel_name="python3", timeout=60: (
+            True,
+            "Runtime execution environment validated using the 'python3' kernel.",
+        ),
     )
 
     state = {
@@ -261,7 +282,10 @@ async def test_runtime_qa_node_message_with_cells(monkeypatch):
 async def test_runtime_qa_node_reports_kernel_failure(monkeypatch):
     monkeypatch.setattr(
         "langgraph_system_generator.generator.nodes.run_notebook_smoke_test",
-        lambda kernel_name="python3", timeout=60: (False, "Runtime validation unavailable: kernel 'python3' is not registered."),
+        lambda kernel_name="python3", timeout=60: (
+            False,
+            "Runtime validation unavailable: kernel 'python3' is not registered.",
+        ),
     )
 
     state = {
@@ -304,7 +328,10 @@ async def test_runtime_qa_node_reports_actual_failure(monkeypatch):
     """Actual smoke-test failures (not 'unavailable') should still fail the check."""
     monkeypatch.setattr(
         "langgraph_system_generator.generator.nodes.run_notebook_smoke_test",
-        lambda kernel_name="python3", timeout=60: (False, "Runtime validation failed: smoke notebook executed without the expected output."),
+        lambda kernel_name="python3", timeout=60: (
+            False,
+            "Runtime validation failed: smoke notebook executed without the expected output.",
+        ),
     )
 
     state = {

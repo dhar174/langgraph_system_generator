@@ -222,7 +222,7 @@ class GenerationRequest(BaseModel):
     )
     agent_type: Optional[str] = Field(
         default=None,
-        description="Type of agent architecture (router, subagents, hybrid, etc.).",
+        description="Type of agent architecture (router, subagents, hybrid, autoagent, etc.).",
     )
     memory_config: Optional[str] = Field(
         default=None,
