@@ -17,6 +17,9 @@ from langgraph_system_generator.cli import (
 )
 from langgraph_system_generator.utils.optional_deps import OptionalDependencyError
 
+_ASYNC_CLEANUP_POLL_ATTEMPTS = 100
+_ASYNC_CLEANUP_POLL_INTERVAL_SECONDS = 0.01
+
 
 @pytest.fixture
 def reload_modules(monkeypatch: pytest.MonkeyPatch):
@@ -580,27 +583,34 @@ async def test_api_generate_async_concurrency_limit(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, reload_modules
 ):
     """Test that /generate-async respects concurrency limits."""
-    # Set a very low limit for testing
     monkeypatch.setenv("LNF_MAX_CONCURRENT_GENERATIONS", "1")
     monkeypatch.setenv("LNF_OUTPUT_BASE", "test_concurrency")
 
-    # Force module reload to pick up new env var
+    import asyncio as aio
     import langgraph_system_generator.constants as constants_module
-    import langgraph_system_generator.notebook.exporters as exporters_module
     import langgraph_system_generator.api.server as server_module
 
-    reload_modules(constants_module, exporters_module, server_module)
+    reload_modules(constants_module, server_module)
 
-    # Get the semaphore to verify it was set correctly
-    from langgraph_system_generator.api.server import _generation_semaphore, _MAX_CONCURRENT_GENERATIONS
-    
-    assert _MAX_CONCURRENT_GENERATIONS == 1
-    
+    gate = aio.Event()
+
+    async def slow_generate_artifacts(*_args, **_kwargs):
+        await gate.wait()
+        return {
+            "mode": "stub",
+            "prompt": "slow",
+            "manifest": {},
+            "manifest_path": str(constants_module._BASE_OUTPUT / "manifest.json"),
+            "output_dir": str(constants_module._BASE_OUTPUT / tmp_path.name / "gen1"),
+        }
+
+    monkeypatch.setattr(server_module, "generate_artifacts", slow_generate_artifacts)
+    server_module._active_generation_count = 0
+
     transport = httpx.ASGITransport(app=server_module.app)
     output_dir = constants_module._BASE_OUTPUT / tmp_path.name
-    
+
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
-        # Start first generation (should succeed)
         response1 = await client.post(
             "/generate-async",
             json={
@@ -609,10 +619,24 @@ async def test_api_generate_async_concurrency_limit(
                 "output_dir": str(output_dir / "gen1"),
             },
         )
-        
         assert response1.status_code == 200
-        
-        # Note: Due to the asynchronous nature and how quickly stub generation completes,
-        # it's difficult to reliably test the 503 response in unit tests.
-        # The semaphore protection is in place and will work in production.
-        # For comprehensive testing, use integration tests with slower generation modes.
+
+        response2 = await client.post(
+            "/generate-async",
+            json={
+                "prompt": "Test concurrent generation 2",
+                "mode": "stub",
+                "output_dir": str(output_dir / "gen2"),
+            },
+        )
+
+        assert response2.status_code == 503
+        gate.set()
+        for _ in range(_ASYNC_CLEANUP_POLL_ATTEMPTS):
+            if server_module._active_generation_count == 0:
+                break
+            await aio.sleep(_ASYNC_CLEANUP_POLL_INTERVAL_SECONDS)
+        else:
+            pytest.fail("Background generation did not release its slot in time")
+
+        assert server_module._active_generation_count == 0
