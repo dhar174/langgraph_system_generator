@@ -6,10 +6,11 @@ import json
 import keyword
 import re
 from typing import Any, Dict, List
-import re
+
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
 
+from langgraph_system_generator.generator.agents._llm import build_chat_llm
 from langgraph_system_generator.generator.state import CellSpec, NotebookPlan
 from langgraph_system_generator.patterns import (
     CritiqueLoopPattern,
@@ -29,8 +30,16 @@ class NotebookComposer:
     stub and offline workflows.
     """
 
-    def __init__(self, model: str | None = None):
-        self.llm = ChatOpenAI(model=model or settings.default_model, temperature=0)
+    def __init__(
+        self,
+        model: str | None = None,
+        model_config: ModelConfig | None = None,
+    ):
+        self.llm = build_chat_llm(
+            model=model,
+            model_config=model_config,
+            chat_openai_class=ChatOpenAI,
+        )
 
     @staticmethod
     def _safe_identifier(value: Any, fallback: str) -> str:

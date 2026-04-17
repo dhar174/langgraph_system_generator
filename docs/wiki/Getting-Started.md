@@ -33,10 +33,21 @@ Choose the appropriate installation based on your needs:
 pip install -e .
 ```
 
+This installs the package, settings, and shared types only. It does **not** include
+the CLI/API generation stack.
+
+#### API Installation (Web server only)
+```bash
+pip install -e ".[api]"
+```
+
 #### Full Installation (All features)
 ```bash
 pip install -e ".[full]"
 ```
+
+This is the install profile required for `lnf generate`, notebook export, and
+live-mode generation.
 
 #### Development Installation (Includes testing tools)
 ```bash

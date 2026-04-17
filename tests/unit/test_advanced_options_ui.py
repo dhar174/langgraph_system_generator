@@ -39,7 +39,7 @@ def test_advanced_options_html_structure():
     
     # Check all advanced form fields exist
     required_fields = [
-        "model", "customEndpoint", "preset", "temperature", "maxTokens", 
+        "model", "customModel", "customEndpoint", "preset", "temperature", "maxTokens",
         "agentType", "memoryConfig", "graphStyle", "retrieverType", "documentLoader"
     ]
     for field_id in required_fields:
@@ -58,11 +58,16 @@ def test_advanced_options_html_structure():
     optgroups = model_select.find_all("optgroup")
     assert len(optgroups) > 0, "Model select should have optgroups for organization"
     
-    # Verify key optgroups exist
+    # Verify supported optgroups exist
     optgroup_labels = [og.get("label") for og in optgroups]
     assert "OpenAI" in optgroup_labels, "Missing OpenAI optgroup"
-    assert "Anthropic Claude" in optgroup_labels, "Missing Anthropic Claude optgroup"
-    assert "Google Gemini" in optgroup_labels, "Missing Google Gemini optgroup"
+    assert "Custom" in optgroup_labels, "Missing Custom optgroup"
+
+    unsupported_field_ids = ["preset", "memoryConfig", "graphStyle", "retrieverType", "documentLoader"]
+    for field_id in unsupported_field_ids:
+        field = soup.find(id=field_id)
+        assert field is not None, f"Missing unsupported field with id={field_id}"
+        assert field.has_attr("disabled"), f"{field_id} should be disabled until supported"
     
     # Check JavaScript is loaded
     scripts = soup.find_all("script")
@@ -104,6 +109,12 @@ def test_advanced_options_javascript():
         "Missing change event listener for model select"
     assert "customEndpointGroup.style.display" in content, \
         "Missing logic to show/hide custom endpoint group"
+    assert "customModelInput.required = true" in content, \
+        "Missing logic to require a custom model identifier"
+    assert "const hasCustomEndpoint = Boolean(data.custom_endpoint);" in content, \
+        "Missing rerun logic to distinguish explicit model overrides from custom endpoints"
+    assert "const explicitModelOption = new Option(data.model, data.model);" in content, \
+        "Missing rerun logic to add explicit model overrides back into the model select"
 
 
 def test_advanced_options_css():

@@ -7,10 +7,13 @@ import pytest
 from langgraph_system_generator.generator.agents import (
     architecture_selector,
     graph_designer,
+    notebook_composer,
+    qa_repair_agent,
     requirements_analyst,
     toolchain_engineer,
 )
 from langgraph_system_generator.generator.state import Constraint
+from langgraph_system_generator.utils.config import ModelConfig
 
 
 class DummyResponse:
@@ -31,6 +34,19 @@ def make_stub_llm(content: str):
             return DummyResponse(self._content)
 
     return StubLLM
+
+
+def make_capturing_llm(captured_kwargs: dict):
+    """Create a ChatOpenAI stub that records constructor kwargs."""
+
+    class CapturingLLM:
+        def __init__(self, *_args, **kwargs):
+            captured_kwargs.update(kwargs)
+
+        async def ainvoke(self, _messages):
+            return DummyResponse("[]")
+
+    return CapturingLLM
 
 
 @pytest.mark.asyncio
@@ -113,3 +129,91 @@ async def test_toolchain_engineer_parsing(payload, expected_count, monkeypatch):
     constraints = [Constraint(type="goal", value="x", priority=5)]
     result = await engineer.plan_tools({"nodes": []}, constraints)
     assert len(result) == expected_count
+
+
+def test_requirements_analyst_uses_request_scoped_model_config(monkeypatch):
+    """RequirementsAnalyst should pass request-scoped model settings to ChatOpenAI."""
+    captured_kwargs = {}
+
+    monkeypatch.setattr(
+        requirements_analyst,
+        "ChatOpenAI",
+        make_capturing_llm(captured_kwargs),
+    )
+
+    requirements_analyst.RequirementsAnalyst(
+        model_config=ModelConfig(
+            model="gpt-5.2",
+            temperature=0.4,
+            api_base="https://example.test/v1",
+            max_tokens=2048,
+        )
+    )
+
+    assert captured_kwargs == {
+        "model": "gpt-5.2",
+        "temperature": 0.4,
+        "base_url": "https://example.test/v1",
+        "max_tokens": 2048,
+    }
+
+
+def test_architecture_selector_uses_request_scoped_model_config(monkeypatch):
+    """ArchitectureSelector should pass request-scoped model settings to ChatOpenAI."""
+    captured_kwargs = {}
+
+    monkeypatch.setattr(
+        architecture_selector,
+        "ChatOpenAI",
+        make_capturing_llm(captured_kwargs),
+    )
+
+    architecture_selector.ArchitectureSelector(
+        model_config=ModelConfig(model="gpt-5-mini", temperature=0.2, max_tokens=1024)
+    )
+
+    assert captured_kwargs == {
+        "model": "gpt-5-mini",
+        "temperature": 0.2,
+        "max_tokens": 1024,
+    }
+
+
+@pytest.mark.parametrize(
+    ("module", "agent_cls"),
+    [
+        (graph_designer, graph_designer.GraphDesigner),
+        (toolchain_engineer, toolchain_engineer.ToolchainEngineer),
+        (qa_repair_agent, qa_repair_agent.QARepairAgent),
+        (notebook_composer, notebook_composer.NotebookComposer),
+    ],
+)
+def test_other_agents_use_request_scoped_model_config(
+    monkeypatch,
+    module,
+    agent_cls,
+):
+    """Shared ChatOpenAI construction should preserve request-scoped settings."""
+    captured_kwargs = {}
+
+    monkeypatch.setattr(
+        module,
+        "ChatOpenAI",
+        make_capturing_llm(captured_kwargs),
+    )
+
+    agent_cls(
+        model_config=ModelConfig(
+            model="gpt-5.1",
+            temperature=0.3,
+            api_base="https://example.test/v1",
+            max_tokens=512,
+        )
+    )
+
+    assert captured_kwargs == {
+        "model": "gpt-5.1",
+        "temperature": 0.3,
+        "base_url": "https://example.test/v1",
+        "max_tokens": 512,
+    }

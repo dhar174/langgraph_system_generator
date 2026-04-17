@@ -23,6 +23,7 @@ from langgraph_system_generator.generator.nodes import (
     tooling_plan_node,
 )
 from langgraph_system_generator.generator.state import CellSpec, Constraint, QAReport
+from langgraph_system_generator.utils.config import GenerationConfig
 
 
 class DummyResponse:
@@ -114,6 +115,21 @@ async def test_architecture_selection_node_defaults_when_missing(monkeypatch):
     assert result["selected_patterns"] == {}
     assert result["architecture_type"] == "router"
     assert result["architecture_justification"] == "Because"
+
+
+@pytest.mark.asyncio
+async def test_architecture_selection_node_honors_agent_type_override():
+    result = await architecture_selection_node(
+        {
+            "constraints": [],
+            "docs_context": [],
+            "generation_config": GenerationConfig(agent_type="subagents"),
+        }
+    )
+
+    assert result["selected_patterns"] == {"primary": "subagents", "secondary": []}
+    assert result["architecture_type"] == "subagents"
+    assert "agent_type override" in result["architecture_justification"]
 
 
 @pytest.mark.asyncio
