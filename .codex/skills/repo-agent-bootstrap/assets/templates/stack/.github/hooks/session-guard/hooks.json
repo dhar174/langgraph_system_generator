@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "hooks": {
+    "sessionStart": [
+      {
+        "name": "announce-guidance",
+        "command": "echo 'Read AGENTS.md and memory-bank/ before major work.'"
+      }
+    ]
+  }
+}
