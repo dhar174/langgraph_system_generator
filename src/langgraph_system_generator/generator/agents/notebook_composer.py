@@ -578,7 +578,7 @@ Generate the complete Python function implementation.""")
             if candidate.get("name") not in {node_name, "router", "supervisor"}
         ]
         default_route = routes[0] if routes else "complete"
-        supervisor_target = default_route if routes else "FINISH"
+        next_worker = routes[0] if routes else "FINISH"
 
         # Serialize values as safe Python string literals for generated code.
         node_name_literal = json.dumps(safe_node_name)
@@ -609,8 +609,7 @@ Generate the complete Python function implementation.""")
         }:
             update_lines.extend(
                 [
-                    f'    updates["next_agent"] = "{supervisor_target}"',
-                    f'    updates["next"] = "{supervisor_target}"',
+                    f'    updates["next_agent"] = "{next_worker}"',
                     f'    updates["instructions"] = "Continue with the delegated task for {default_route}."',
                 ]
             )
