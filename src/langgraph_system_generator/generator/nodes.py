@@ -38,6 +38,9 @@ from langgraph_system_generator.utils.config import settings
 
 logger = logging.getLogger(__name__)
 
+RUNTIME_UNAVAILABLE_PREFIX = "runtime validation unavailable"
+TRUSTED_SMOKE_TEST_SCOPE = "trusted_smoke_test"
+
 
 def _resolve_model_config(state: GeneratorState):
     """Build a per-request model config for live agent construction."""
@@ -468,7 +471,7 @@ async def runtime_qa_node(state: GeneratorState) -> Dict[str, Any]:
         else:
             smoke_passed, smoke_message = await asyncio.to_thread(run_notebook_smoke_test)
             runtime_unavailable = smoke_message.lower().startswith(
-                "runtime validation unavailable"
+                RUNTIME_UNAVAILABLE_PREFIX
             )
             passed = smoke_passed or (runtime_unavailable and generation_mode != "live")
             message = (
@@ -495,7 +498,7 @@ async def runtime_qa_node(state: GeneratorState) -> Dict[str, Any]:
                     "failure_kind": failure_kind,
                     "preflight": preflight_evidence,
                     "execution": {
-                        "execution_scope": "trusted_smoke_test",
+                        "execution_scope": TRUSTED_SMOKE_TEST_SCOPE,
                         "message": smoke_message,
                     },
                 },

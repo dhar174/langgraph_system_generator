@@ -270,7 +270,7 @@ async def test_runtime_qa_node_message_empty_cells():
 
 
 @pytest.mark.asyncio
-async def test_runtime_qa_node_runs_trusted_smoke_test(monkeypatch):
+async def test_runtime_qa_node_executes_trusted_smoke_test(monkeypatch):
     captured = {"called": False}
     monkeypatch.setattr(
         "langgraph_system_generator.generator.nodes.inspect_notebook_runtime_support",
@@ -283,7 +283,7 @@ async def test_runtime_qa_node_runs_trusted_smoke_test(monkeypatch):
     monkeypatch.setattr(
         "langgraph_system_generator.generator.nodes.run_notebook_smoke_test",
         lambda kernel_name="python3", timeout=60: (
-            captured.__setitem__("called", True),
+            captured.update({"called": True}),
             True,
             "Runtime execution environment validated using the 'python3' kernel.",
         )[1:],
