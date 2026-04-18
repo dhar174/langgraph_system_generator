@@ -250,22 +250,30 @@ Validates notebook structure without execution:
 **Input**: Notebook file  
 **Output**: Additional QA reports
 
-Validates that the notebook can compile and execute:
+Validates the generated notebook by executing the built notebook artifact. In
+`live` mode, missing notebook runtime support is a real gate failure; in `stub`
+mode it is recorded as non-blocking runtime evidence.
 
 ```python
 {
   "qa_reports": [
     # ... previous static QA reports ...
     {
-      "check_name": "graph_compiles",
+      "check_name": "Runtime Check",
       "passed": true,
-      "message": "Graph construction compiles successfully"
+      "stage": "runtime",
+      "message": "Generated notebook executed successfully using the 'python3' kernel.",
+      "evidence": {
+        "preflight": {"kernel_name": "python3"},
+        "execution": {"executed_cells": 4}
+      }
     }
   ]
 }
 ```
 
-**Component**: `NotebookValidator` (compilation checks)
+**Component**: notebook runtime helpers (`inspect_notebook_runtime_support`,
+`execute_notebook`)
 
 #### 9. Repair Loop
 **Input**: Notebook + Failed QA reports  
@@ -278,6 +286,10 @@ If QA fails, attempts to repair the notebook:
   "repair_attempts": 1,
   "qa_reports": [
     # ... updated reports after repair ...
+  ],
+  "qa_history": [
+    # ... prior static/runtime reports ...,
+    {"check_name": "Repair Attempt", "stage": "repair", "passed": false}
   ]
 }
 ```

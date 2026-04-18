@@ -33,10 +33,14 @@ async def test_generator_state_initialization():
         "docs_context": [],
         "notebook_plan": None,
         "architecture_justification": "",
+        "architecture_type": None,
+        "generation_config": None,
+        "generation_mode": "stub",
         "workflow_design": None,
         "tools_plan": None,
         "generated_cells": [],
         "qa_reports": [],
+        "qa_history": [],
         "repair_attempts": 0,
         "artifacts_manifest": {},
         "generation_complete": False,
@@ -47,6 +51,8 @@ async def test_generator_state_initialization():
     assert "user_prompt" in initial_state
     assert "repair_attempts" in initial_state
     assert "generation_complete" in initial_state
+    assert "generation_mode" in initial_state
+    assert "qa_history" in initial_state
 
     # Verify initial state values
     assert initial_state["repair_attempts"] == 0
