@@ -36,9 +36,13 @@ class NotebookComposer:
         model: str | None = None,
         model_config: ModelConfig | None = None,
     ):
+        self.model_config = model_config or ModelConfig(
+            model=model or settings.default_model,
+            temperature=0.0,
+        )
         self.llm = build_chat_llm(
             model=model,
-            model_config=model_config,
+            model_config=self.model_config,
             chat_openai_class=ChatOpenAI,
         )
 
@@ -200,19 +204,33 @@ This notebook implements a LangGraph workflow using the **{plan.architecture_typ
 
     def _create_config_cells(self) -> List[CellSpec]:
         """Create configuration cells."""
-        config_content = """import os
-from getpass import getpass
-
-# Configuration
-MODEL = "gpt-5-mini"
-MAX_ITERATIONS = 10
-
-# API Keys
-if not os.environ.get("OPENAI_API_KEY"):
-    os.environ["OPENAI_API_KEY"] = getpass("Enter OpenAI API Key: ")
-
-if not os.environ.get("ANTHROPIC_API_KEY"):
-    os.environ["ANTHROPIC_API_KEY"] = getpass("Enter Anthropic API Key (optional): ")"""
+        config_lines = [
+            "import os",
+            "from getpass import getpass",
+            "",
+            "# Configuration",
+            f"MODEL = {json.dumps(self.model_config.model)}",
+            f"TEMPERATURE = {self.model_config.temperature}",
+            "MAX_ITERATIONS = 10",
+            (
+                f"MAX_TOKENS = {self.model_config.max_tokens}"
+                if self.model_config.max_tokens is not None
+                else "MAX_TOKENS = None"
+            ),
+            (
+                f"API_BASE = {json.dumps(self.model_config.api_base)}"
+                if self.model_config.api_base
+                else "API_BASE = None"
+            ),
+            "",
+            "# API Keys",
+            'if not os.environ.get("OPENAI_API_KEY"):',
+            '    os.environ["OPENAI_API_KEY"] = getpass("Enter OpenAI API Key: ")',
+            "",
+            'if not os.environ.get("ANTHROPIC_API_KEY"):',
+            '    os.environ["ANTHROPIC_API_KEY"] = getpass("Enter Anthropic API Key (optional): ")',
+        ]
+        config_content = "\n".join(config_lines)
 
         return [
             CellSpec(
@@ -684,8 +702,7 @@ Generate the complete Python function implementation.""")
         """
         cells = []
 
-        # Create model config from settings
-        model_config = ModelConfig(model=settings.default_model)
+        model_config = self.model_config
 
         if architecture_type == "router":
             # Extract routes from nodes

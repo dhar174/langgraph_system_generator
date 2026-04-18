@@ -740,7 +740,11 @@ def build_parser() -> argparse.ArgumentParser:
         nargs="+",
         choices=["ipynb", "html", "markdown", "pdf", "docx", "zip"],
         default=None,
-        help="Output formats to generate (default: all formats). Specify one or more.",
+        help=(
+            "Output formats to generate "
+            "(default: ipynb html markdown docx zip; PDF only when requested). "
+            "Specify one or more."
+        ),
     )
     gen.add_argument(
         "--agent-type",
