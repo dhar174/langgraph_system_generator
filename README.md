@@ -474,7 +474,7 @@ direction TB
     constraints : Annotated[List[Constraint], operator.add]
     docs_context : Annotated[List[DocSnippet], operator.add]
     error_message : Optional[str]
-    generated_cells : Annotated[List[CellSpec], operator.add]
+    generated_cells : List[CellSpec]
     generation_complete : bool
     notebook_plan : Optional[NotebookPlan]
     qa_reports : List[QAReport]
