@@ -24,7 +24,6 @@ The issue requested five major enhancement areas:
   - `temperature`: Optional[float] - Sampling temperature (0.0-2.0)
   - `max_tokens`: Optional[int] - Maximum output tokens (1-32768)
   - `agent_type`: Optional[str] - Architecture pattern selection
-  - `memory_config`: Optional[str] - Memory configuration
 - Updated `generate_artifacts()` function in `cli.py` to accept and use new parameters
 - Parameters are tracked in generation manifest for debugging and reproducibility
 
@@ -377,13 +376,12 @@ The issue requested five major enhancement areas:
   "model": "gpt-4",
   "temperature": 0.8,
   "max_tokens": 4000,
-  "agent_type": "router",
-  "memory_config": "short"
+  "agent_type": "router"
 }
 ```
 
 **Key Points:**
-- All new fields are optional
+- Supported advanced fields are optional
 - Defaults are sensible
 - Existing API calls work unchanged
 - No version breaking
