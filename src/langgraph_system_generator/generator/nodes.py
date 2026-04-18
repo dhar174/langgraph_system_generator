@@ -114,7 +114,7 @@ def _stamp_report(
 ) -> QAReport:
     """Attach structured QA metadata while preserving any existing evidence."""
 
-    merged_evidence = dict(report.evidence or {})
+    merged_evidence = report.evidence.copy()
     if evidence:
         merged_evidence.update(evidence)
 
