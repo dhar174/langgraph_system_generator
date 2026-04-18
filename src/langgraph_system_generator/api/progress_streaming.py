@@ -37,8 +37,26 @@ _JOB_TTL_SECONDS = 3600  # 1 hour
 # Completed job retention - keep completed jobs for clients that connect late
 _COMPLETED_JOB_TTL_SECONDS = 300  # 5 minutes
 
+
+def _get_max_events_per_job() -> int:
+    """Read the per-job event cap from the environment with safe fallback."""
+    raw_value = os.getenv("LNF_MAX_EVENTS_PER_JOB", "10000")
+
+    try:
+        parsed_value = int(raw_value)
+    except ValueError:
+        logger.warning(
+            "Invalid LNF_MAX_EVENTS_PER_JOB value %r; falling back to default %d",
+            raw_value,
+            10000,
+        )
+        return 10000
+
+    return max(parsed_value, 1)
+
+
 # Bound replay history while still allowing one truncation marker and a terminal event.
-_MAX_EVENTS_PER_JOB = int(os.getenv("LNF_MAX_EVENTS_PER_JOB", "10000"))
+_MAX_EVENTS_PER_JOB = _get_max_events_per_job()
 
 
 def create_job() -> str:
