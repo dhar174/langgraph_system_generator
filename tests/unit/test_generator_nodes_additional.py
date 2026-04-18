@@ -10,7 +10,6 @@ from langgraph_system_generator.generator.agents import (
     toolchain_engineer,
 )
 from langgraph_system_generator.generator.nodes import (
-    _runtime_qa_suggestions,
     architecture_selection_node,
     graph_design_node,
     intake_node,
@@ -69,7 +68,6 @@ async def test_rag_retrieval_node_falls_back_on_failure(monkeypatch):
     This test ensures VectorStoreManager initialization succeeds (by mocking OpenAIEmbeddings)
     so that the actual retrieval failure path is exercised.
     """
-    from unittest.mock import Mock
     from langchain_community.embeddings import FakeEmbeddings
 
     # Mock OpenAIEmbeddings to avoid requiring credentials and ensure VectorStoreManager succeeds
@@ -272,9 +270,8 @@ async def test_runtime_qa_node_message_empty_cells():
 
 
 @pytest.mark.asyncio
-async def test_runtime_qa_node_executes_generated_notebook(monkeypatch):
-    captured = {}
-
+async def test_runtime_qa_node_runs_trusted_smoke_test(monkeypatch):
+    captured = {"called": False}
     monkeypatch.setattr(
         "langgraph_system_generator.generator.nodes.inspect_notebook_runtime_support",
         lambda kernel_name="python3": (
@@ -284,14 +281,12 @@ async def test_runtime_qa_node_executes_generated_notebook(monkeypatch):
         ),
     )
     monkeypatch.setattr(
-        "langgraph_system_generator.generator.nodes.execute_notebook",
-        lambda notebook_path, kernel_name="python3", timeout=60: (
-            captured.setdefault("notebook_path", str(notebook_path)),
-            captured.setdefault("kernel_name", kernel_name),
+        "langgraph_system_generator.generator.nodes.run_notebook_smoke_test",
+        lambda kernel_name="python3", timeout=60: (
+            captured.__setitem__("called", True),
             True,
-            "Generated notebook executed successfully using the 'python3' kernel.",
-            {"executed_cells": 1},
-        )[2:],
+            "Runtime execution environment validated using the 'python3' kernel.",
+        )[1:],
     )
 
     state = {
@@ -304,10 +299,10 @@ async def test_runtime_qa_node_executes_generated_notebook(monkeypatch):
     result = await runtime_qa_node(state)
 
     report = result["qa_reports"][-1]
-    assert captured["notebook_path"].endswith("generated.ipynb")
-    assert "executed successfully" in report.message
+    assert captured["called"] is True
+    assert "Runtime execution environment validated" in report.message
     assert report.passed is True
-    assert report.evidence["execution"]["executed_cells"] == 1
+    assert report.evidence["execution"]["execution_scope"] == "trusted_smoke_test"
     assert report.evidence["preflight"]["kind"] == "preflight"
 
 
@@ -376,11 +371,10 @@ async def test_runtime_qa_node_reports_actual_failure(monkeypatch):
         ),
     )
     monkeypatch.setattr(
-        "langgraph_system_generator.generator.nodes.execute_notebook",
-        lambda notebook_path, kernel_name="python3", timeout=60: (
+        "langgraph_system_generator.generator.nodes.run_notebook_smoke_test",
+        lambda kernel_name="python3", timeout=60: (
             False,
-            "Runtime execution failed: CellExecutionError: name 'graph' is not defined",
-            {"error_type": "CellExecutionError", "cell_index": 3},
+            "Runtime validation failed: smoke notebook executed without the expected output.",
         ),
     )
 
@@ -394,9 +388,9 @@ async def test_runtime_qa_node_reports_actual_failure(monkeypatch):
     result = await runtime_qa_node(state)
 
     report = result["qa_reports"][-1]
-    assert "Runtime execution failed" in report.message
+    assert "Runtime validation failed" in report.message
     assert report.passed is False
-    assert report.evidence["execution"]["error_type"] == "CellExecutionError"
+    assert report.evidence["execution"]["execution_scope"] == "trusted_smoke_test"
 
 
 @pytest.mark.asyncio

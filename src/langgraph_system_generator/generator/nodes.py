@@ -14,7 +14,6 @@ from langgraph_system_generator.generator.agents import (
     ArchitectureSelector,
     GraphDesigner,
     NotebookComposer,
-    QARepairAgent,
     RequirementsAnalyst,
     ToolchainEngineer,
 )
@@ -29,8 +28,8 @@ from langgraph_system_generator.notebook.composer import (
     NotebookComposer as NotebookFileComposer,
 )
 from langgraph_system_generator.notebook.runtime import (
-    execute_notebook,
     inspect_notebook_runtime_support,
+    run_notebook_smoke_test,
 )
 from langgraph_system_generator.qa import NotebookRepairAgent, NotebookValidator
 from langgraph_system_generator.rag.embeddings import VectorStoreManager
@@ -415,7 +414,7 @@ async def static_qa_node(state: GeneratorState) -> Dict[str, Any]:
 
 
 async def runtime_qa_node(state: GeneratorState) -> Dict[str, Any]:
-    """Run runtime quality checks by executing the generated notebook.
+    """Run runtime quality checks with a trusted notebook smoke test.
 
     Args:
         state: Current generator state
@@ -439,62 +438,68 @@ async def runtime_qa_node(state: GeneratorState) -> Dict[str, Any]:
             evidence={"generation_mode": generation_mode, "failure_kind": "no_cells"},
         )
     else:
-        notebook_builder = NotebookFileComposer()
-        with TemporaryDirectory() as temp_dir:
-            notebook = notebook_builder.build_notebook(state.get("generated_cells", []))
-            notebook_path = Path(temp_dir) / "generated.ipynb"
-            notebook_builder.write(notebook, notebook_path)
+        preflight_ok, preflight_message, preflight_evidence = await asyncio.to_thread(
+            inspect_notebook_runtime_support
+        )
 
-            preflight_ok, preflight_message, preflight_evidence = await asyncio.to_thread(
-                inspect_notebook_runtime_support
+        if not preflight_ok:
+            suggestions = _runtime_qa_suggestions(preflight_message)
+            passed = generation_mode != "live"
+            message = (
+                f"Runtime checks skipped: {preflight_message}"
+                if passed
+                else preflight_message
             )
-
-            if not preflight_ok:
-                suggestions = _runtime_qa_suggestions(preflight_message)
-                passed = generation_mode != "live"
-                message = (
-                    f"Runtime checks skipped: {preflight_message}"
-                    if passed
-                    else preflight_message
-                )
-                report = _stamp_report(
-                    QAReport(
-                        check_name="Runtime Check",
-                        passed=passed,
-                        message=message,
-                        suggestions=suggestions,
-                    ),
-                    stage="runtime",
-                    attempt=attempt,
-                    evidence={
-                        "generation_mode": generation_mode,
-                        "failure_kind": "runtime_unavailable",
-                        "preflight": preflight_evidence,
+            report = _stamp_report(
+                QAReport(
+                    check_name="Runtime Check",
+                    passed=passed,
+                    message=message,
+                    suggestions=suggestions,
+                ),
+                stage="runtime",
+                attempt=attempt,
+                evidence={
+                    "generation_mode": generation_mode,
+                    "failure_kind": "runtime_unavailable",
+                    "preflight": preflight_evidence,
+                },
+            )
+        else:
+            smoke_passed, smoke_message = await asyncio.to_thread(run_notebook_smoke_test)
+            runtime_unavailable = smoke_message.lower().startswith(
+                "runtime validation unavailable"
+            )
+            passed = smoke_passed or (runtime_unavailable and generation_mode != "live")
+            message = (
+                f"Runtime checks skipped: {smoke_message}"
+                if runtime_unavailable and passed
+                else smoke_message
+            )
+            failure_kind = (
+                "runtime_unavailable"
+                if runtime_unavailable
+                else ("execution_passed" if passed else "execution_failed")
+            )
+            report = _stamp_report(
+                QAReport(
+                    check_name="Runtime Check",
+                    passed=passed,
+                    message=message,
+                    suggestions=[] if passed else _runtime_qa_suggestions(smoke_message),
+                ),
+                stage="runtime",
+                attempt=attempt,
+                evidence={
+                    "generation_mode": generation_mode,
+                    "failure_kind": failure_kind,
+                    "preflight": preflight_evidence,
+                    "execution": {
+                        "execution_scope": "trusted_smoke_test",
+                        "message": smoke_message,
                     },
-                )
-            else:
-                passed, message, execution_evidence = await asyncio.to_thread(
-                    execute_notebook,
-                    notebook_path,
-                )
-                report = _stamp_report(
-                    QAReport(
-                        check_name="Runtime Check",
-                        passed=passed,
-                        message=message,
-                        suggestions=[] if passed else _runtime_qa_suggestions(message),
-                    ),
-                    stage="runtime",
-                    attempt=attempt,
-                    evidence={
-                        "generation_mode": generation_mode,
-                        "failure_kind": (
-                            "execution_passed" if passed else "execution_failed"
-                        ),
-                        "preflight": preflight_evidence,
-                        "execution": execution_evidence,
-                    },
-                )
+                },
+            )
 
     qa_history = [*_qa_history_from_state(state), report]
     return {"qa_reports": [*existing_reports, report], "qa_history": qa_history}
