@@ -44,7 +44,8 @@ class NotebookPlan(BaseModel):
         default_factory=list, description="LangGraph patterns to be used"
     )
     architecture_type: str = Field(
-        default="", description="Selected architecture: router, subagents, or hybrid"
+        default="",
+        description="Selected architecture: router, subagents, hybrid, or autoagent",
     )
 
 

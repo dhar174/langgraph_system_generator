@@ -53,7 +53,38 @@ async def test_generate_artifacts_stub(tmp_path: Path, monkeypatch: pytest.Monke
 
 
 @pytest.mark.asyncio
-async def test_generate_artifacts_default_formats_include_markdown(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+async def test_generate_artifacts_stub_autoagent_override(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.setenv("LNF_OUTPUT_BASE", "test_generate_artifacts_stub_autoagent")
+
+    import importlib
+    import langgraph_system_generator.constants as constants_module
+    import langgraph_system_generator.notebook.exporters as exporters_module
+    import langgraph_system_generator.cli as cli_module
+
+    importlib.reload(constants_module)
+    importlib.reload(exporters_module)
+    importlib.reload(cli_module)
+
+    output_dir = constants_module._BASE_OUTPUT / "test_stub_autoagent"
+    artifacts: GenerationArtifacts = await cli_module.generate_artifacts(
+        "Build an autonomous planning workflow",
+        output_dir=str(output_dir),
+        mode="stub",
+        agent_type="autoagent",
+    )
+
+    assert artifacts["manifest"]["architecture_type"] == "autoagent"
+    assert artifacts["manifest"]["agent_type"] == "autoagent"
+    assert artifacts["result"]["architecture_type"] == "autoagent"
+    assert artifacts["result"]["generation_complete"] is True
+
+
+@pytest.mark.asyncio
+async def test_generate_artifacts_default_formats_include_markdown(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
     monkeypatch.setenv("LNF_OUTPUT_BASE", "test_generate_artifacts_default_formats")
 
     import importlib
@@ -114,7 +145,9 @@ async def test_api_generate_stub(tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 
 
 @pytest.mark.asyncio
-async def test_api_rejects_unsupported_advanced_options(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+async def test_api_rejects_removed_advanced_options_as_unknown_fields(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
     monkeypatch.setenv("LNF_OUTPUT_BASE", "test_api_unsupported_options")
 
     import importlib
@@ -137,8 +170,17 @@ async def test_api_rejects_unsupported_advanced_options(tmp_path: Path, monkeypa
             },
         )
 
-    assert response.status_code == 400
-    assert "Unsupported advanced options" in response.json()["detail"]
+    assert response.status_code == 422
+    assert response.json()["detail"][0]["type"] == "extra_forbidden"
+
+
+def test_generation_request_formats_description_mentions_markdown():
+    description = app.openapi()["components"]["schemas"]["GenerationRequest"]["properties"][
+        "formats"
+    ]["description"]
+
+    assert "markdown" in description.lower()
+    assert "ipynb, html, markdown, docx, zip" in description
 
 
 @pytest.mark.asyncio
@@ -304,7 +346,9 @@ async def test_api_download_artifact_rejects_invalid_path(
 
     transport = httpx.ASGITransport(app=server_module.app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
-        response = await client.get("/artifacts", params={"path": str(tmp_path / ".." / "escape.txt")})
+        response = await client.get(
+            "/artifacts", params={"path": str(tmp_path / ".." / "escape.txt")}
+        )
 
     assert response.status_code == 400
     assert "allowed base directory" in response.json()["detail"]
@@ -480,7 +524,7 @@ async def test_api_stream_endpoint_not_found(
         async with client.stream("GET", "/stream/nonexistent-job-id") as response:
             assert response.status_code == 200
             assert "text/event-stream" in response.headers.get("content-type", "")
-            
+
             # Read first event which should be an error
             events = []
             async for line in response.aiter_lines():
@@ -490,7 +534,7 @@ async def test_api_stream_endpoint_not_found(
                     data = line.split(":", 1)[1].strip()
                     events.append({"event": event_type, "data": json.loads(data)})
                     break
-            
+
             assert len(events) > 0
             assert events[0]["event"] == "error"
             assert "not found" in events[0]["data"]["error"].lower()
@@ -518,7 +562,7 @@ async def test_api_generate_async_with_stream(
 
     transport = httpx.ASGITransport(app=server_module.app)
     output_dir = constants_module._BASE_OUTPUT / tmp_path.name
-    
+
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
         # Start async generation
         response = await client.post(
@@ -530,44 +574,44 @@ async def test_api_generate_async_with_stream(
                 "formats": ["ipynb"],
             },
         )
-        
+
         assert response.status_code == 200
         payload = response.json()
         stream_url = payload["stream_url"]
-        
+
         # Connect to SSE stream
         events = []
         async with client.stream("GET", stream_url, timeout=30.0) as stream_response:
             assert stream_response.status_code == 200
-            
+
             # Parse SSE events
             event_type = None
             async for line in stream_response.aiter_lines():
                 line = line.strip()
                 if not line:
                     continue
-                    
+
                 if line.startswith("event:"):
                     event_type = line.split(":", 1)[1].strip()
                 elif line.startswith("data:"):
                     data = line.split(":", 1)[1].strip()
                     events.append({"event": event_type, "data": json.loads(data)})
-                    
+
                     # Stop after complete or error
                     if event_type in ("complete", "error"):
                         break
-        
+
         # Verify we got events
         assert len(events) > 0, "Should receive at least one event"
-        
+
         # Check for progress events
         progress_events = [e for e in events if e["event"] == "progress"]
         assert len(progress_events) > 0, "Should receive progress events"
-        
+
         # Check for completion
         complete_events = [e for e in events if e["event"] == "complete"]
         assert len(complete_events) == 1, "Should have exactly one complete event"
-        
+
         # Verify completion data
         final_result = complete_events[0]["data"]
         assert final_result.get("success") is True
