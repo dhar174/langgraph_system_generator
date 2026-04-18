@@ -26,8 +26,3 @@
   "cwd": "/home/runner/work/langgraph_system_generator/langgraph_system_generator"
 }
 {"timestamp":"2026-04-18T14:08:50Z","event":"sessionEnd"}
-{
-  "timestamp": "2026-04-18T14:12:53Z",
-  "event": "sessionStart",
-  "cwd": "/home/runner/work/langgraph_system_generator/langgraph_system_generator"
-}
