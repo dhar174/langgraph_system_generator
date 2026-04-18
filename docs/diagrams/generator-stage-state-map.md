@@ -32,8 +32,8 @@ flowchart LR
     repair --> retry_decision{"should_retry_after_repair()"}:::decision
     retry_decision -->|retry QA| staticqa
     retry_decision -->|success| package
-    retry_decision -->|fail| end
-    qa_decision -->|failures and budget exhausted| end
+    retry_decision -->|fail| package
+    qa_decision -->|failures and budget exhausted| package
 ```
 
 ## State Semantics
