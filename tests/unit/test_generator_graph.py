@@ -88,6 +88,20 @@ def test_should_repair_attempts_exhausted(failing_report):
     assert should_repair(state) == "fail"
 
 
+def test_should_repair_runtime_unavailable_live_fails_fast():
+    """Live runtime unavailability should fail instead of entering repair."""
+    runtime_report = QAReport(
+        check_name="Runtime Check",
+        passed=False,
+        message="Runtime validation unavailable: kernel 'python3' is not registered.",
+        stage="runtime",
+        evidence={"failure_kind": "runtime_unavailable", "generation_mode": "live"},
+    )
+    state = build_state(qa_reports=[runtime_report], repair_attempts=0)
+
+    assert should_repair(state) == "fail"
+
+
 @pytest.mark.skipif(settings.max_repair_attempts < 2, reason="Requires max_repair_attempts >= 2")
 def test_should_retry_after_repair_attempts_remaining():
     """Post-repair with attempts remaining should retry QA."""

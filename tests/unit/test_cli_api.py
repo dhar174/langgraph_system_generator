@@ -13,6 +13,7 @@ from fastapi.testclient import TestClient
 
 from langgraph_system_generator.api.server import app
 from langgraph_system_generator.cli import GenerationArtifacts, generate_artifacts
+from langgraph_system_generator.utils.config import GenerationConfig
 
 
 def _reload_server_modules():
@@ -50,6 +51,19 @@ async def test_generate_artifacts_stub(tmp_path: Path, monkeypatch: pytest.Monke
     assert artifacts["manifest"]["cell_count"] > 0
     assert Path(artifacts["manifest_path"]).exists()
     assert artifacts["result"]["generation_complete"] is True
+
+
+def test_default_state_includes_generation_mode_and_qa_history():
+    import langgraph_system_generator.cli as cli_module
+
+    state = cli_module._default_state(
+        "Test prompt",
+        GenerationConfig(model="gpt-5-mini"),
+        generation_mode="live",
+    )
+
+    assert state["generation_mode"] == "live"
+    assert state["qa_history"] == []
 
 
 @pytest.mark.asyncio
