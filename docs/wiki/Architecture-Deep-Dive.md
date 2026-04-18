@@ -347,6 +347,7 @@ class GeneratorState(TypedDict):
     tools_plan: Optional[List[Dict[str, Any]]]
     
     # Generation
+    # No reducer: last-write-wins across repair iterations
     generated_cells: List[CellSpec]
     
     # QA & Repair
@@ -360,7 +361,7 @@ class GeneratorState(TypedDict):
 ```
 
 **Key Features**:
-- **Annotated Lists**: Fields like `constraints` and `docs_context` use `operator.add` for merged accumulation
+- **Annotated Lists**: Fields like `constraints` and `docs_context` use `operator.add` to append values across nodes
 - **Last-write-wins cells**: `generated_cells` intentionally has no reducer, so each repair pass replaces prior cells
 - **Immutability**: State updates create new state versions (LangGraph managed)
 - **Type Safety**: TypedDict provides IDE autocomplete and validation
