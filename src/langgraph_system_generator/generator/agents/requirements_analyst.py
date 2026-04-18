@@ -7,16 +7,25 @@ from typing import List
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
 
+from langgraph_system_generator.generator.agents._llm import build_chat_llm
 from langgraph_system_generator.generator.state import Constraint
 from langgraph_system_generator.generator.utils import extract_json_from_llm_response
-from langgraph_system_generator.utils.config import settings
+from langgraph_system_generator.utils.config import ModelConfig
 
 
 class RequirementsAnalyst:
     """Extracts structured constraints from user prompt."""
 
-    def __init__(self, model: str | None = None):
-        self.llm = ChatOpenAI(model=model or settings.default_model, temperature=0)
+    def __init__(
+        self,
+        model: str | None = None,
+        model_config: ModelConfig | None = None,
+    ):
+        self.llm = build_chat_llm(
+            model=model,
+            model_config=model_config,
+            chat_openai_class=ChatOpenAI,
+        )
 
     async def analyze(self, prompt: str) -> List[Constraint]:
         """Extract constraints from prompt.

@@ -8,25 +8,33 @@ from typing import Any, Dict, List
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
 
+from langgraph_system_generator.generator.agents._llm import build_chat_llm
 from langgraph_system_generator.generator.state import Constraint, DocSnippet
 from langgraph_system_generator.generator.utils import extract_json_from_llm_response
 from langgraph_system_generator.rag.retriever import DocsRetriever
-from langgraph_system_generator.utils.config import settings
+from langgraph_system_generator.utils.config import ModelConfig
 
 
 class ArchitectureSelector:
     """Chooses optimal LangGraph pattern architecture."""
 
     def __init__(
-        self, docs_retriever: DocsRetriever | None = None, model: str | None = None
+        self,
+        docs_retriever: DocsRetriever | None = None,
+        model: str | None = None,
+        model_config: ModelConfig | None = None,
     ):
-        self.llm = ChatOpenAI(model=model or settings.default_model, temperature=0)
+        self.llm = build_chat_llm(
+            model=model,
+            model_config=model_config,
+            chat_openai_class=ChatOpenAI,
+        )
         self.docs_retriever = docs_retriever
 
     async def select_architecture(
         self, constraints: List[Constraint], docs_context: List[DocSnippet]
     ) -> Dict[str, Any]:
-        """Select router vs subagents vs hybrid pattern.
+        """Select router vs subagents vs hybrid vs autoagent pattern.
 
         Args:
             constraints: Extracted project constraints
@@ -43,6 +51,9 @@ class ArchitectureSelector:
             )
             pattern_docs.extend(
                 self.docs_retriever.retrieve_for_pattern("subagents") or []
+            )
+            pattern_docs.extend(
+                self.docs_retriever.retrieve_for_pattern("autoagent") or []
             )
             pattern_docs.extend(
                 self.docs_retriever.retrieve_for_pattern("supervisor") or []
@@ -86,6 +97,7 @@ Based on the requirements and official documentation, recommend the best pattern
 - **router**: Single router that classifies inputs and routes to specialist functions
 - **subagents**: Supervisor coordinating multiple subagent workers with their own contexts
 - **hybrid**: Combination of router and subagents for complex workflows
+- **autoagent**: Coordinator-driven planner/executor/critic team for iterative autonomous execution
 
 Consider:
 - Complexity of task decomposition
@@ -96,7 +108,7 @@ Consider:
 
 Return a JSON object with this structure:
 {
-  "architecture_type": "router" | "subagents" | "hybrid",
+  "architecture_type": "router" | "subagents" | "hybrid" | "autoagent",
   "patterns": {
     "primary": "pattern_name",
     "secondary": ["additional_patterns"]
@@ -105,15 +117,13 @@ Return a JSON object with this structure:
 }"""
         )
 
-        user_message = HumanMessage(
-            content=f"""Requirements:
+        user_message = HumanMessage(content=f"""Requirements:
 {constraints_text}
 
 Documentation Context:
 {docs_text}
 
-Recommend the best architecture."""
-        )
+Recommend the best architecture.""")
 
         response = await self.llm.ainvoke([selection_prompt, user_message])
 

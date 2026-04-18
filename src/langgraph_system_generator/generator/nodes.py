@@ -8,7 +8,6 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Any, Dict, List
 
-import asyncio
 import nbformat
 
 from langgraph_system_generator.generator.agents import (
@@ -41,6 +40,26 @@ from langgraph_system_generator.utils.config import settings
 logger = logging.getLogger(__name__)
 
 
+def _resolve_model_config(state: GeneratorState):
+    """Build a per-request model config for live agent construction."""
+    generation_config = state.get("generation_config")
+    if generation_config is None:
+        return None
+    return generation_config.to_model_config(settings.default_model)
+
+
+def _requested_architecture_type(state: GeneratorState) -> str | None:
+    """Return an explicit architecture override when provided."""
+    generation_config = state.get("generation_config")
+    if generation_config is None:
+        return None
+
+    requested = (generation_config.agent_type or "").strip().lower()
+    if requested in {"router", "subagents", "hybrid", "autoagent"}:
+        return requested
+    return None
+
+
 def _runtime_qa_suggestions(message: str) -> List[str]:
     """Return remediation guidance tailored to the runtime QA failure message."""
 
@@ -55,7 +74,10 @@ def _runtime_qa_suggestions(message: str) -> List[str]:
             "Refresh the kernel spec with: python -m ipykernel install --user --name python3",
         ]
 
-    if "missing jupyter_client" in normalized or "missing notebook execution dependency" in normalized:
+    if (
+        "missing jupyter_client" in normalized
+        or "missing notebook execution dependency" in normalized
+    ):
         return [
             "Install notebook runtime dependencies such as jupyter_client and nbclient.",
             'Reinstall the project extras with: pip install -e ".[full]"',
@@ -76,7 +98,7 @@ async def intake_node(state: GeneratorState) -> Dict[str, Any]:
     Returns:
         Updated state with extracted constraints
     """
-    analyst = RequirementsAnalyst()
+    analyst = RequirementsAnalyst(model_config=_resolve_model_config(state))
     constraints = await analyst.analyze(state["user_prompt"])
 
     return {"constraints": constraints}
@@ -128,6 +150,16 @@ async def architecture_selection_node(state: GeneratorState) -> Dict[str, Any]:
     Returns:
         Updated state with architecture selection and justification
     """
+    requested_architecture = _requested_architecture_type(state)
+    if requested_architecture:
+        return {
+            "selected_patterns": {"primary": requested_architecture, "secondary": []},
+            "architecture_type": requested_architecture,
+            "architecture_justification": (
+                f"Architecture forced by request-scoped agent_type override: {requested_architecture}."
+            ),
+        }
+
     try:
         vector_store_manager = VectorStoreManager(settings.vector_store_path)
         retriever = DocsRetriever(vector_store_manager)
@@ -137,7 +169,10 @@ async def architecture_selection_node(state: GeneratorState) -> Dict[str, Any]:
         logging.warning(f"Failed to load vector store for architecture selection: {e}")
         retriever = None
 
-    selector = ArchitectureSelector(docs_retriever=retriever)
+    selector = ArchitectureSelector(
+        docs_retriever=retriever,
+        model_config=_resolve_model_config(state),
+    )
 
     architecture = await selector.select_architecture(
         state["constraints"], state["docs_context"]
@@ -162,7 +197,7 @@ async def graph_design_node(state: GeneratorState) -> Dict[str, Any]:
     Returns:
         Updated state with workflow design and notebook plan
     """
-    designer = GraphDesigner()
+    designer = GraphDesigner(model_config=_resolve_model_config(state))
 
     selected_patterns = state.get("selected_patterns", {}) or {}
     architecture_type = state.get("architecture_type")
@@ -206,7 +241,7 @@ async def tooling_plan_node(state: GeneratorState) -> Dict[str, Any]:
     Returns:
         Updated state with tools plan
     """
-    engineer = ToolchainEngineer()
+    engineer = ToolchainEngineer(model_config=_resolve_model_config(state))
 
     workflow_design = state.get("workflow_design", {})
     tools = await engineer.plan_tools(workflow_design, state["constraints"])
@@ -223,14 +258,15 @@ async def notebook_assembly_node(state: GeneratorState) -> Dict[str, Any]:
     Returns:
         Updated state with generated cells
     """
-    composer = NotebookComposer()
+    composer = NotebookComposer(model_config=_resolve_model_config(state))
 
     notebook_plan = state.get("notebook_plan")
     workflow_design = state.get("workflow_design", {})
     tools_plan = state.get("tools_plan", [])
 
     architecture = {
-        "architecture_type": state.get("selected_patterns", {}).get("primary", "router"),
+        "architecture_type": state.get("architecture_type")
+        or state.get("selected_patterns", {}).get("primary", "router"),
         "justification": state["architecture_justification"],
     }
 
@@ -243,13 +279,13 @@ async def notebook_assembly_node(state: GeneratorState) -> Dict[str, Any]:
 
 def _cells_from_notebook(path: Path) -> List[CellSpec]:
     """Read cells from a notebook file and convert to CellSpec list.
-    
+
     Args:
         path: Path to the notebook file
-        
+
     Returns:
         List of CellSpec objects parsed from the notebook
-        
+
     Raises:
         ValueError: If the notebook cannot be read or parsed
     """
@@ -257,7 +293,9 @@ def _cells_from_notebook(path: Path) -> List[CellSpec]:
         with path.open("r", encoding="utf-8") as handle:
             notebook = nbformat.read(handle, as_version=4)
     except Exception as e:
-        raise type(e)(f"Failed to read notebook from {path}: {type(e).__name__}: {e}") from e
+        raise type(e)(
+            f"Failed to read notebook from {path}: {type(e).__name__}: {e}"
+        ) from e
 
     regenerated_cells: List[CellSpec] = []
     for cell in notebook.cells:
@@ -300,12 +338,12 @@ async def static_qa_node(state: GeneratorState) -> Dict[str, Any]:
         notebook = notebook_builder.build_notebook(cells)
         notebook_path = Path(temp_dir) / "generated.ipynb"
         notebook_builder.write(notebook, notebook_path)
-        
+
         # Log temp path for debugging failed validations
         logger.debug(f"Running validation on temporary notebook: {notebook_path}")
-        
+
         reports = validator.validate_all(notebook_path)
-        
+
         # If validation fails, log details for debugging
         if any(not r.passed for r in reports):
             logger.info(
@@ -313,7 +351,7 @@ async def static_qa_node(state: GeneratorState) -> Dict[str, Any]:
                 "(stored in a TemporaryDirectory that will be removed after this step).",
                 notebook_path,
             )
-    
+
     existing_reports = state.get("qa_reports") or []
 
     return {"qa_reports": [*existing_reports, *reports]}
@@ -402,7 +440,7 @@ async def repair_node(state: GeneratorState) -> Dict[str, Any]:
             qa_reports,
             attempt=state["repair_attempts"],
         )
-        
+
         # Only reload cells if repair was successful
         if repair_success:
             try:

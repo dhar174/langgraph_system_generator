@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
-from pathlib import Path
+import asyncio as aio
+import importlib
 import json
+from pathlib import Path
 
 import pytest
 import httpx
@@ -11,6 +13,16 @@ from fastapi.testclient import TestClient
 
 from langgraph_system_generator.api.server import app
 from langgraph_system_generator.cli import GenerationArtifacts, generate_artifacts
+
+
+def _reload_server_modules():
+    """Reload constants/server modules after environment changes in a test."""
+    import langgraph_system_generator.constants as constants_module
+    import langgraph_system_generator.api.server as server_module
+
+    importlib.reload(constants_module)
+    importlib.reload(server_module)
+    return constants_module, server_module
 
 
 @pytest.mark.asyncio
@@ -38,6 +50,59 @@ async def test_generate_artifacts_stub(tmp_path: Path, monkeypatch: pytest.Monke
     assert artifacts["manifest"]["cell_count"] > 0
     assert Path(artifacts["manifest_path"]).exists()
     assert artifacts["result"]["generation_complete"] is True
+
+
+@pytest.mark.asyncio
+async def test_generate_artifacts_stub_autoagent_override(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.setenv("LNF_OUTPUT_BASE", "test_generate_artifacts_stub_autoagent")
+
+    import importlib
+    import langgraph_system_generator.constants as constants_module
+    import langgraph_system_generator.notebook.exporters as exporters_module
+    import langgraph_system_generator.cli as cli_module
+
+    importlib.reload(constants_module)
+    importlib.reload(exporters_module)
+    importlib.reload(cli_module)
+
+    output_dir = constants_module._BASE_OUTPUT / "test_stub_autoagent"
+    artifacts: GenerationArtifacts = await cli_module.generate_artifacts(
+        "Build an autonomous planning workflow",
+        output_dir=str(output_dir),
+        mode="stub",
+        agent_type="autoagent",
+    )
+
+    assert artifacts["manifest"]["architecture_type"] == "autoagent"
+    assert artifacts["manifest"]["agent_type"] == "autoagent"
+    assert artifacts["result"]["architecture_type"] == "autoagent"
+    assert artifacts["result"]["generation_complete"] is True
+
+
+@pytest.mark.asyncio
+async def test_generate_artifacts_default_formats_include_markdown(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.setenv("LNF_OUTPUT_BASE", "test_generate_artifacts_default_formats")
+
+    import importlib
+    import langgraph_system_generator.constants as constants_module
+    import langgraph_system_generator.notebook.exporters as exporters_module
+    import langgraph_system_generator.cli as cli_module
+
+    importlib.reload(constants_module)
+    importlib.reload(exporters_module)
+    importlib.reload(cli_module)
+
+    output_dir = constants_module._BASE_OUTPUT / "default_formats"
+    artifacts: GenerationArtifacts = await cli_module.generate_artifacts(
+        "Test prompt", output_dir=str(output_dir), mode="stub"
+    )
+
+    assert "markdown_path" in artifacts["manifest"]
+    assert Path(artifacts["manifest"]["markdown_path"]).exists()
 
 
 @pytest.mark.asyncio
@@ -77,6 +142,112 @@ async def test_api_generate_stub(tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     assert payload["prompt"] == "API prompt"
     assert "output_dir" in payload
     assert payload["output_dir"] == str(output_dir)
+
+
+@pytest.mark.asyncio
+async def test_api_rejects_unsupported_advanced_options(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.setenv("LNF_OUTPUT_BASE", "test_api_unsupported_options")
+
+    import importlib
+    import langgraph_system_generator.constants as constants_module
+    import langgraph_system_generator.api.server as server_module
+
+    importlib.reload(constants_module)
+    importlib.reload(server_module)
+
+    transport = httpx.ASGITransport(app=server_module.app)
+    output_dir = constants_module._BASE_OUTPUT / tmp_path.name
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(
+            "/generate",
+            json={
+                "prompt": "API prompt",
+                "mode": "stub",
+                "output_dir": str(output_dir),
+                "memory_config": "short",
+            },
+        )
+
+    assert response.status_code == 400
+    assert "Unsupported advanced options" in response.json()["detail"]
+
+
+def test_generation_request_formats_description_mentions_markdown():
+    description = app.openapi()["components"]["schemas"]["GenerationRequest"]["properties"][
+        "formats"
+    ]["description"]
+
+    assert "markdown" in description.lower()
+    assert "ipynb, html, markdown, docx, zip" in description
+
+
+@pytest.mark.asyncio
+async def test_api_accepts_arbitrary_openai_compatible_model_id(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """Built-in provider should accept explicit model identifiers without an allowlist."""
+    monkeypatch.setenv("LNF_OUTPUT_BASE", "test_api_arbitrary_model")
+
+    import importlib
+    import langgraph_system_generator.constants as constants_module
+    import langgraph_system_generator.notebook.exporters as exporters_module
+    import langgraph_system_generator.api.server as server_module
+
+    importlib.reload(constants_module)
+    importlib.reload(exporters_module)
+    importlib.reload(server_module)
+
+    transport = httpx.ASGITransport(app=server_module.app)
+    output_dir = constants_module._BASE_OUTPUT / tmp_path.name
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(
+            "/generate",
+            json={
+                "prompt": "API prompt",
+                "mode": "stub",
+                "output_dir": str(output_dir),
+                "model": "gpt-5-future-release",
+            },
+        )
+
+    assert response.status_code == 200
+    assert response.json()["success"] is True
+
+
+@pytest.mark.asyncio
+async def test_api_rejects_custom_endpoint_without_explicit_model(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """Custom endpoints must include a non-placeholder model identifier."""
+    monkeypatch.setenv("LNF_OUTPUT_BASE", "test_api_custom_endpoint_requires_model")
+
+    import importlib
+    import langgraph_system_generator.constants as constants_module
+    import langgraph_system_generator.api.server as server_module
+
+    importlib.reload(constants_module)
+    importlib.reload(server_module)
+
+    transport = httpx.ASGITransport(app=server_module.app)
+    output_dir = constants_module._BASE_OUTPUT / tmp_path.name
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(
+            "/generate",
+            json={
+                "prompt": "API prompt",
+                "mode": "stub",
+                "output_dir": str(output_dir),
+                "custom_endpoint": "https://example.test/v1",
+            },
+        )
+
+    assert response.status_code == 400
+    assert (
+        "custom_endpoint requires an explicit OpenAI-compatible model identifier"
+        in response.json()["detail"]
+    )
 
 
 @pytest.mark.asyncio
@@ -175,7 +346,9 @@ async def test_api_download_artifact_rejects_invalid_path(
 
     transport = httpx.ASGITransport(app=server_module.app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
-        response = await client.get("/artifacts", params={"path": str(tmp_path / ".." / "escape.txt")})
+        response = await client.get(
+            "/artifacts", params={"path": str(tmp_path / ".." / "escape.txt")}
+        )
 
     assert response.status_code == 400
     assert "allowed base directory" in response.json()["detail"]
@@ -237,6 +410,63 @@ async def test_api_rejects_disallowed_output_dir(tmp_path: Path):
 
 
 @pytest.mark.asyncio
+async def test_api_generate_respects_concurrency_limit(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """Test that /generate respects the shared concurrency limit."""
+    monkeypatch.setenv("LNF_MAX_CONCURRENT_GENERATIONS", "1")
+    monkeypatch.setenv("LNF_OUTPUT_BASE", "test_sync_concurrency")
+
+    constants_module, server_module = _reload_server_modules()
+
+    gate = aio.Event()
+
+    async def slow_generate_artifacts(*_args, **_kwargs):
+        await gate.wait()
+        return {
+            "mode": "stub",
+            "prompt": "slow",
+            "manifest": {},
+            "manifest_path": str(constants_module._BASE_OUTPUT / "manifest.json"),
+            "output_dir": str(constants_module._BASE_OUTPUT / tmp_path.name / "gen1"),
+        }
+
+    monkeypatch.setattr(server_module, "generate_artifacts", slow_generate_artifacts)
+
+    transport = httpx.ASGITransport(app=server_module.app)
+    output_dir = constants_module._BASE_OUTPUT / tmp_path.name
+
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        request_one = aio.create_task(
+            client.post(
+                "/generate",
+                json={
+                    "prompt": "Test concurrent sync generation 1",
+                    "mode": "stub",
+                    "output_dir": str(output_dir / "gen1"),
+                },
+            )
+        )
+        await aio.sleep(0.05)
+
+        response2 = await client.post(
+            "/generate",
+            json={
+                "prompt": "Test concurrent sync generation 2",
+                "mode": "stub",
+                "output_dir": str(output_dir / "gen2"),
+            },
+        )
+
+        assert response2.status_code == 503
+
+        gate.set()
+        response1 = await request_one
+
+    assert response1.status_code == 200
+
+
+@pytest.mark.asyncio
 async def test_api_generate_async_endpoint(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):
@@ -294,7 +524,7 @@ async def test_api_stream_endpoint_not_found(
         async with client.stream("GET", "/stream/nonexistent-job-id") as response:
             assert response.status_code == 200
             assert "text/event-stream" in response.headers.get("content-type", "")
-            
+
             # Read first event which should be an error
             events = []
             async for line in response.aiter_lines():
@@ -304,7 +534,7 @@ async def test_api_stream_endpoint_not_found(
                     data = line.split(":", 1)[1].strip()
                     events.append({"event": event_type, "data": json.loads(data)})
                     break
-            
+
             assert len(events) > 0
             assert events[0]["event"] == "error"
             assert "not found" in events[0]["data"]["error"].lower()
@@ -332,7 +562,7 @@ async def test_api_generate_async_with_stream(
 
     transport = httpx.ASGITransport(app=server_module.app)
     output_dir = constants_module._BASE_OUTPUT / tmp_path.name
-    
+
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
         # Start async generation
         response = await client.post(
@@ -344,44 +574,44 @@ async def test_api_generate_async_with_stream(
                 "formats": ["ipynb"],
             },
         )
-        
+
         assert response.status_code == 200
         payload = response.json()
         stream_url = payload["stream_url"]
-        
+
         # Connect to SSE stream
         events = []
         async with client.stream("GET", stream_url, timeout=30.0) as stream_response:
             assert stream_response.status_code == 200
-            
+
             # Parse SSE events
             event_type = None
             async for line in stream_response.aiter_lines():
                 line = line.strip()
                 if not line:
                     continue
-                    
+
                 if line.startswith("event:"):
                     event_type = line.split(":", 1)[1].strip()
                 elif line.startswith("data:"):
                     data = line.split(":", 1)[1].strip()
                     events.append({"event": event_type, "data": json.loads(data)})
-                    
+
                     # Stop after complete or error
                     if event_type in ("complete", "error"):
                         break
-        
+
         # Verify we got events
         assert len(events) > 0, "Should receive at least one event"
-        
+
         # Check for progress events
         progress_events = [e for e in events if e["event"] == "progress"]
         assert len(progress_events) > 0, "Should receive progress events"
-        
+
         # Check for completion
         complete_events = [e for e in events if e["event"] == "complete"]
         assert len(complete_events) == 1, "Should have exactly one complete event"
-        
+
         # Verify completion data
         final_result = complete_events[0]["data"]
         assert final_result.get("success") is True
@@ -394,30 +624,36 @@ async def test_api_generate_async_concurrency_limit(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):
     """Test that /generate-async respects concurrency limits."""
-    # Set a very low limit for testing
     monkeypatch.setenv("LNF_MAX_CONCURRENT_GENERATIONS", "1")
     monkeypatch.setenv("LNF_OUTPUT_BASE", "test_concurrency")
 
-    # Force module reload to pick up new env var
     import importlib
+    import asyncio as aio
     import langgraph_system_generator.constants as constants_module
-    import langgraph_system_generator.notebook.exporters as exporters_module
     import langgraph_system_generator.api.server as server_module
 
     importlib.reload(constants_module)
-    importlib.reload(exporters_module)
     importlib.reload(server_module)
 
-    # Get the semaphore to verify it was set correctly
-    from langgraph_system_generator.api.server import _generation_semaphore, _MAX_CONCURRENT_GENERATIONS
-    
-    assert _MAX_CONCURRENT_GENERATIONS == 1
-    
+    gate = aio.Event()
+
+    async def slow_generate_artifacts(*_args, **_kwargs):
+        await gate.wait()
+        return {
+            "mode": "stub",
+            "prompt": "slow",
+            "manifest": {},
+            "manifest_path": str(constants_module._BASE_OUTPUT / "manifest.json"),
+            "output_dir": str(constants_module._BASE_OUTPUT / tmp_path.name / "gen1"),
+        }
+
+    monkeypatch.setattr(server_module, "generate_artifacts", slow_generate_artifacts)
+    server_module._active_generation_count = 0
+
     transport = httpx.ASGITransport(app=server_module.app)
     output_dir = constants_module._BASE_OUTPUT / tmp_path.name
-    
+
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
-        # Start first generation (should succeed)
         response1 = await client.post(
             "/generate-async",
             json={
@@ -426,10 +662,17 @@ async def test_api_generate_async_concurrency_limit(
                 "output_dir": str(output_dir / "gen1"),
             },
         )
-        
         assert response1.status_code == 200
-        
-        # Note: Due to the asynchronous nature and how quickly stub generation completes,
-        # it's difficult to reliably test the 503 response in unit tests.
-        # The semaphore protection is in place and will work in production.
-        # For comprehensive testing, use integration tests with slower generation modes.
+
+        response2 = await client.post(
+            "/generate-async",
+            json={
+                "prompt": "Test concurrent generation 2",
+                "mode": "stub",
+                "output_dir": str(output_dir / "gen2"),
+            },
+        )
+
+        assert response2.status_code == 503
+        gate.set()
+        await aio.sleep(0.05)

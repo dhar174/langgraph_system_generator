@@ -7,16 +7,25 @@ from typing import Any, Dict, List
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
 
+from langgraph_system_generator.generator.agents._llm import build_chat_llm
 from langgraph_system_generator.generator.state import Constraint
 from langgraph_system_generator.generator.utils import extract_json_from_llm_response
-from langgraph_system_generator.utils.config import settings
+from langgraph_system_generator.utils.config import ModelConfig
 
 
 class GraphDesigner:
     """Designs the inner workflow state, nodes, and edges."""
 
-    def __init__(self, model: str | None = None):
-        self.llm = ChatOpenAI(model=model or settings.default_model, temperature=0)
+    def __init__(
+        self,
+        model: str | None = None,
+        model_config: ModelConfig | None = None,
+    ):
+        self.llm = build_chat_llm(
+            model=model,
+            model_config=model_config,
+            chat_openai_class=ChatOpenAI,
+        )
 
     async def design_workflow(
         self, architecture: Dict[str, Any], constraints: List[Constraint]
@@ -37,9 +46,12 @@ class GraphDesigner:
             [f"- [{c.type}] {c.value} (priority: {c.priority})" for c in constraints]
         )
 
-        design_prompt = SystemMessage(
-            content="""You are a LangGraph workflow designer.
+        design_prompt = SystemMessage(content="""You are a LangGraph workflow designer.
 Design a complete graph specification for the given architecture type.
+
+Supported architecture types include router, subagents, hybrid, and autoagent.
+For autoagent, use a coordinator + worker-team shape with explicit planning,
+execution, and critique/review responsibilities.
 
 For the workflow, specify:
 1. **state_schema**: TypedDict fields needed for the workflow
@@ -73,18 +85,15 @@ Return a JSON object with this structure:
   ],
   "entry_point": "start_node",
   "checkpointing": true
-}"""
-        )
+}""")
 
-        user_message = HumanMessage(
-            content=f"""Architecture Type: {architecture_type}
+        user_message = HumanMessage(content=f"""Architecture Type: {architecture_type}
 Architecture Justification: {justification}
 
 Requirements:
 {constraints_text}
 
-Design the workflow graph."""
-        )
+Design the workflow graph.""")
 
         response = await self.llm.ainvoke([design_prompt, user_message])
 
@@ -97,30 +106,49 @@ Design the workflow graph."""
 
     def _fallback_design(self, architecture_type: str) -> Dict[str, Any]:
         """Provide a fallback design if LLM parsing fails."""
-        if architecture_type == "subagents":
+        if architecture_type in {"subagents", "autoagent"}:
+            coordinator_name = (
+                "coordinator" if architecture_type == "autoagent" else "supervisor"
+            )
             return {
                 "state_schema": {
                     "messages": "List of messages",
-                    "next": "Next agent to call",
+                    "next_agent": "Next worker to call",
+                    "instructions": "Coordinator guidance for the selected worker",
+                    "task_results": "Merged worker outputs",
                 },
                 "nodes": [
-                    {"name": "supervisor", "purpose": "Coordinate subagents"},
-                    {"name": "agent_1", "purpose": "Specialized agent 1"},
-                    {"name": "agent_2", "purpose": "Specialized agent 2"},
+                    {
+                        "name": coordinator_name,
+                        "purpose": "Coordinate worker delegation and synthesis",
+                    },
+                    {
+                        "name": "planner",
+                        "purpose": "Break down goals into executable steps",
+                    },
+                    {
+                        "name": "executor",
+                        "purpose": "Execute planned steps and produce outputs",
+                    },
+                    {
+                        "name": "critic",
+                        "purpose": "Review output quality and request refinements",
+                    },
                 ],
                 "edges": [],
                 "conditional_edges": [
                     {
-                        "from": "supervisor",
-                        "condition": "Route to next agent",
+                        "from": coordinator_name,
+                        "condition": "Route to next worker",
                         "branches": {
-                            "agent_1": "agent_1",
-                            "agent_2": "agent_2",
+                            "planner": "planner",
+                            "executor": "executor",
+                            "critic": "critic",
                             "FINISH": "END",
                         },
                     }
                 ],
-                "entry_point": "supervisor",
+                "entry_point": coordinator_name,
                 "checkpointing": True,
             }
         else:

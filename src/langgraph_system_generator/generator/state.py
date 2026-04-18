@@ -8,6 +8,8 @@ from typing import Annotated, Any, Dict, List, Optional
 from pydantic import BaseModel, Field
 from typing_extensions import TypedDict
 
+from langgraph_system_generator.utils.config import GenerationConfig
+
 
 class Constraint(BaseModel):
     """User constraint specification."""
@@ -42,7 +44,8 @@ class NotebookPlan(BaseModel):
         default_factory=list, description="LangGraph patterns to be used"
     )
     architecture_type: str = Field(
-        default="", description="Selected architecture: router, subagents, or hybrid"
+        default="",
+        description="Selected architecture: router, subagents, hybrid, or autoagent",
     )
 
 
@@ -84,6 +87,7 @@ class GeneratorState(TypedDict):
     notebook_plan: Optional[NotebookPlan]
     architecture_justification: str
     architecture_type: Optional[str]
+    generation_config: Optional[GenerationConfig]
 
     # Workflow design (added for graph designer)
     workflow_design: Optional[Dict[str, Any]]

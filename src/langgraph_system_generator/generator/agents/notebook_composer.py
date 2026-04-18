@@ -6,12 +6,14 @@ import json
 import keyword
 import re
 from typing import Any, Dict, List
-import re
+
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
 
+from langgraph_system_generator.generator.agents._llm import build_chat_llm
 from langgraph_system_generator.generator.state import CellSpec, NotebookPlan
 from langgraph_system_generator.patterns import (
+    AutoAgentPattern,
     CritiqueLoopPattern,
     RouterPattern,
     SubagentsPattern,
@@ -29,8 +31,20 @@ class NotebookComposer:
     stub and offline workflows.
     """
 
-    def __init__(self, model: str | None = None):
-        self.llm = ChatOpenAI(model=model or settings.default_model, temperature=0)
+    def __init__(
+        self,
+        model: str | None = None,
+        model_config: ModelConfig | None = None,
+    ):
+        self.model_config = model_config or ModelConfig(
+            model=model or settings.default_model,
+            temperature=0.0,
+        )
+        self.llm = build_chat_llm(
+            model=model,
+            model_config=self.model_config,
+            chat_openai_class=ChatOpenAI,
+        )
 
     @staticmethod
     def _safe_identifier(value: Any, fallback: str) -> str:
@@ -190,19 +204,33 @@ This notebook implements a LangGraph workflow using the **{plan.architecture_typ
 
     def _create_config_cells(self) -> List[CellSpec]:
         """Create configuration cells."""
-        config_content = """import os
-from getpass import getpass
-
-# Configuration
-MODEL = "gpt-5-mini"
-MAX_ITERATIONS = 10
-
-# API Keys
-if not os.environ.get("OPENAI_API_KEY"):
-    os.environ["OPENAI_API_KEY"] = getpass("Enter OpenAI API Key: ")
-
-if not os.environ.get("ANTHROPIC_API_KEY"):
-    os.environ["ANTHROPIC_API_KEY"] = getpass("Enter Anthropic API Key (optional): ")"""
+        config_lines = [
+            "import os",
+            "from getpass import getpass",
+            "",
+            "# Configuration",
+            f"MODEL = {json.dumps(self.model_config.model)}",
+            f"TEMPERATURE = {self.model_config.temperature}",
+            "MAX_ITERATIONS = 10",
+            (
+                f"MAX_TOKENS = {self.model_config.max_tokens}"
+                if self.model_config.max_tokens is not None
+                else "MAX_TOKENS = None"
+            ),
+            (
+                f"API_BASE = {json.dumps(self.model_config.api_base)}"
+                if self.model_config.api_base
+                else "API_BASE = None"
+            ),
+            "",
+            "# API Keys",
+            'if not os.environ.get("OPENAI_API_KEY"):',
+            '    os.environ["OPENAI_API_KEY"] = getpass("Enter OpenAI API Key: ")',
+            "",
+            'if not os.environ.get("ANTHROPIC_API_KEY"):',
+            '    os.environ["ANTHROPIC_API_KEY"] = getpass("Enter Anthropic API Key (optional): ")',
+        ]
+        config_content = "\n".join(config_lines)
 
         return [
             CellSpec(
@@ -223,6 +251,8 @@ if not os.environ.get("ANTHROPIC_API_KEY"):
             state_content = RouterPattern.generate_state_code(state_schema)
         elif architecture_type == "subagents":
             state_content = SubagentsPattern.generate_state_code(state_schema)
+        elif architecture_type == "autoagent":
+            state_content = AutoAgentPattern.generate_state_code(state_schema)
         elif architecture_type == "critique_loop":
             state_content = CritiqueLoopPattern.generate_state_code(state_schema)
         else:
@@ -306,14 +336,12 @@ Common tool categories and approaches:
 Return ONLY the Python function code, nothing else."""
             )
 
-            user_prompt = HumanMessage(
-                content=f"""Tool Name: {tool_name}
+            user_prompt = HumanMessage(content=f"""Tool Name: {tool_name}
 Purpose: {tool_purpose}
 Category: {tool_category}
 Configuration: {tool_config}
 
-Generate the complete Python function implementation."""
-            )
+Generate the complete Python function implementation.""")
 
             # Get LLM response (synchronous)
             response = self.llm.invoke([system_prompt, user_prompt])
@@ -458,7 +486,7 @@ Generate the complete Python function implementation."""
         architecture_type = workflow_design.get("architecture_type", "router")
 
         # Check if we should use pattern-based generation
-        if architecture_type in ["router", "subagents", "critique_loop"]:
+        if architecture_type in ["router", "subagents", "autoagent", "critique_loop"]:
             # Use pattern library for architecture-specific nodes
             pattern_cells = self._generate_nodes_from_pattern(
                 nodes, architecture_type, workflow_design
@@ -518,15 +546,13 @@ Return ONLY the Python function code, nothing else."""
                 [f"- {field}: {desc}" for field, desc in state_schema.items()]
             )
 
-            user_prompt = HumanMessage(
-                content=f"""Node Name: {node_name}
+            user_prompt = HumanMessage(content=f"""Node Name: {node_name}
 Purpose: {node_purpose}
 
 State Schema:
 {state_info}
 
-Generate the complete Python function implementation."""
-            )
+Generate the complete Python function implementation.""")
 
             # Get LLM response
             response = self.llm.invoke([system_prompt, user_prompt])
@@ -570,7 +596,7 @@ Generate the complete Python function implementation."""
             if candidate.get("name") not in {node_name, "router", "supervisor"}
         ]
         default_route = routes[0] if routes else "complete"
-        supervisor_target = default_route if routes else "FINISH"
+        next_worker = routes[0] if routes else "FINISH"
 
         # Serialize values as safe Python string literals for generated code.
         node_name_literal = json.dumps(safe_node_name)
@@ -580,10 +606,10 @@ Generate the complete Python function implementation."""
 
         update_lines = [
             "    updates: dict[str, object] = dict(state)",
-            "    messages = list(state.get(\"messages\", []))",
-            "    last_content = messages[-1].content if messages else \"\"",
-            f"    node_summary = {node_name_literal} + \" completed: \" + (last_content or {node_purpose_literal})",
-            "    updates[\"messages\"] = messages + [HumanMessage(content=node_summary)]",
+            '    messages = list(state.get("messages", []))',
+            '    last_content = messages[-1].content if messages else ""',
+            f'    node_summary = {node_name_literal} + " completed: " + (last_content or {node_purpose_literal})',
+            '    updates["messages"] = messages + [HumanMessage(content=node_summary)]',
         ]
 
         if architecture_type == "router" and node_name == "router":
@@ -595,10 +621,13 @@ Generate the complete Python function implementation."""
                     '    updates["results"] = results',
                 ]
             )
-        elif architecture_type == "subagents" and node_name == "supervisor":
+        elif architecture_type in {"subagents", "autoagent"} and node_name in {
+            "supervisor",
+            "coordinator",
+        }:
             update_lines.extend(
                 [
-                    f'    updates["next"] = "{supervisor_target}"',
+                    f'    updates["next_agent"] = "{next_worker}"',
                     f'    updates["instructions"] = "Continue with the delegated task for {default_route}."',
                 ]
             )
@@ -617,9 +646,9 @@ Generate the complete Python function implementation."""
                     '    updates["revision_count"] = revision_count',
                     '    feedback = state.get("critique_feedback", "")',
                     '    updates["current_draft"] = (',
-                    '        f"{state.get(\'current_draft\', \'\')}\\n\\n"'
+                    "        f\"{state.get('current_draft', '')}\\n\\n\""
                     '        f"Revision {revision_count}: {feedback}"',
-                    '    )',
+                    "    )",
                 ]
             )
         elif architecture_type == "critique_loop":
@@ -673,8 +702,7 @@ Generate the complete Python function implementation."""
         """
         cells = []
 
-        # Create model config from settings
-        model_config = ModelConfig(model=settings.default_model)
+        model_config = self.model_config
 
         if architecture_type == "router":
             # Extract routes from nodes
@@ -683,7 +711,9 @@ Generate the complete Python function implementation."""
             ]
 
             # Generate router node
-            router_code = RouterPattern.generate_router_node_code(routes, model_config=model_config)
+            router_code = RouterPattern.generate_router_node_code(
+                routes, model_config=model_config
+            )
             cells.append(
                 CellSpec(cell_type="code", content=router_code, section="nodes")
             )
@@ -732,20 +762,55 @@ Generate the complete Python function implementation."""
                             cell_type="code", content=subagent_code, section="nodes"
                         )
                     )
+        elif architecture_type == "autoagent":
+            workers = [
+                node.get("name")
+                for node in nodes
+                if node.get("name") not in {"coordinator", "supervisor"}
+            ]
+            worker_descriptions = {
+                node.get("name"): node.get("purpose", "")
+                for node in nodes
+                if node.get("name") not in {"coordinator", "supervisor"}
+            }
+
+            coordinator_code = AutoAgentPattern.generate_coordinator_code(
+                workers, worker_descriptions, model_config=model_config
+            )
+            cells.append(
+                CellSpec(cell_type="code", content=coordinator_code, section="nodes")
+            )
+
+            for node in nodes:
+                if node.get("name") not in {"coordinator", "supervisor"}:
+                    worker_code = AutoAgentPattern.generate_worker_code(
+                        node.get("name"),
+                        node.get("purpose", f"{node.get('name')} worker"),
+                        model_config=model_config,
+                    )
+                    cells.append(
+                        CellSpec(cell_type="code", content=worker_code, section="nodes")
+                    )
 
         elif architecture_type == "critique_loop":
             # Generate critique loop nodes
-            generate_code = CritiqueLoopPattern.generate_generation_node_code(model_config=model_config)
+            generate_code = CritiqueLoopPattern.generate_generation_node_code(
+                model_config=model_config
+            )
             cells.append(
                 CellSpec(cell_type="code", content=generate_code, section="nodes")
             )
 
-            critique_code = CritiqueLoopPattern.generate_critique_node_code(model_config=model_config)
+            critique_code = CritiqueLoopPattern.generate_critique_node_code(
+                model_config=model_config
+            )
             cells.append(
                 CellSpec(cell_type="code", content=critique_code, section="nodes")
             )
 
-            revise_code = CritiqueLoopPattern.generate_revise_node_code(model_config=model_config)
+            revise_code = CritiqueLoopPattern.generate_revise_node_code(
+                model_config=model_config
+            )
             cells.append(
                 CellSpec(cell_type="code", content=revise_code, section="nodes")
             )
@@ -768,6 +833,13 @@ Generate the complete Python function implementation."""
                 node.get("name") for node in nodes if node.get("name") != "supervisor"
             ]
             graph_code = SubagentsPattern.generate_graph_code(subagents)
+        elif architecture_type == "autoagent":
+            workers = [
+                node.get("name")
+                for node in nodes
+                if node.get("name") not in {"coordinator", "supervisor"}
+            ]
+            graph_code = AutoAgentPattern.generate_graph_code(workers)
         elif architecture_type == "critique_loop":
             graph_code = CritiqueLoopPattern.generate_graph_code(
                 max_revisions=3, min_quality_score=0.8
@@ -844,7 +916,9 @@ Generate the complete Python function implementation."""
 
 workflow.add_conditional_edges({safe_source}, {function_name}, {{"__end__": END}})"""
                 )
-            conditional_code = "\n\n# Add conditional edges\n" + "\n\n".join(conditional_blocks)
+            conditional_code = "\n\n# Add conditional edges\n" + "\n\n".join(
+                conditional_blocks
+            )
 
         return f"""from langgraph.graph import END, START, StateGraph
 from langgraph.checkpoint.memory import InMemorySaver
@@ -866,7 +940,9 @@ workflow.add_edge(START, "{entry_point}")
 # Compile graph
 graph = workflow.compile(checkpointer=memory)"""
 
-    def _create_execution_cells(self, workflow_design: Dict[str, Any]) -> List[CellSpec]:
+    def _create_execution_cells(
+        self, workflow_design: Dict[str, Any]
+    ) -> List[CellSpec]:
         """Create execution cells aligned with the generated workflow state."""
         architecture_type = workflow_design.get("architecture_type", "router")
 
@@ -881,6 +957,15 @@ graph = workflow.compile(checkpointer=memory)"""
             initial_state_block = """initial_state: WorkflowState = {
     "messages": [HumanMessage(content="Research the topic, draft a response, and review it before finishing.")],
     "next_agent": "supervisor",
+    "instructions": "",
+    "task_results": {},
+    "dispatch_log": [],
+    "iterations": 0,
+}"""
+        elif architecture_type == "autoagent":
+            initial_state_block = """initial_state: WorkflowState = {
+    "messages": [HumanMessage(content="Plan the task, execute it, and critique the output until it is ready.")],
+    "next_agent": "coordinator",
     "instructions": "",
     "task_results": {},
     "dispatch_log": [],
