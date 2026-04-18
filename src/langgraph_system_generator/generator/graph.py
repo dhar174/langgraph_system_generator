@@ -44,7 +44,7 @@ def should_repair(
     # and should not enter the repair loop because repair cannot provision kernels
     # or missing execution dependencies.
     for report in failed_reports:
-        evidence = getattr(report, "evidence", {}) or {}
+        evidence = report.evidence
         if (
             report.check_name == "Runtime Check"
             and evidence.get("failure_kind") == "runtime_unavailable"
