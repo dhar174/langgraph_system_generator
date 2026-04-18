@@ -85,6 +85,9 @@ graph LR
 For the code-level view, see
 [docs/wiki/Architecture-Deep-Dive.md](docs/wiki/Architecture-Deep-Dive.md).
 
+For a maintainer-focused stage/state map, see
+[docs/diagrams/README.md](docs/diagrams/README.md).
+
 ## Developing Locally
 
 Use the editable install during local development so the CLI and package imports

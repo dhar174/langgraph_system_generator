@@ -12,6 +12,9 @@ See also:
 
 LangGraph System Generator follows a **linear pipeline architecture** with conditional repair loops. Each stage processes and enriches the state, ultimately producing complete, runnable Jupyter notebooks.
 
+For a maintainer-focused visual of the stage writes and adjacent QA, RAG, and
+notebook components, see [Repository visualizations](../diagrams/README.md).
+
 ## Generation Pipeline
 
 ```mermaid
@@ -329,32 +332,35 @@ Exports the notebook to various formats:
 
 The entire pipeline operates on a single `GeneratorState` object that flows through each node:
 
+The [Generator stage state map diagram](../diagrams/generator-stage-state-map.md)
+keeps that state contract aligned with the code paths that write each field.
+
 ```python
 class GeneratorState(TypedDict):
     # Input
     user_prompt: str
     uploaded_files: Optional[List[str]]
     
-    # Requirements Analysis
+    # Extracted requirements
     constraints: Annotated[List[Constraint], operator.add]
+    selected_patterns: Dict[str, Any]
     
     # RAG Retrieval
     docs_context: Annotated[List[DocSnippet], operator.add]
     
-    # Architecture Selection
-    architecture_type: Optional[str]
+    # Planning
+    notebook_plan: Optional[NotebookPlan]
     architecture_justification: str
-    selected_patterns: Dict[str, Any]
-    
-    # Workflow Design
+    architecture_type: Optional[str]
+    generation_config: Optional[GenerationConfig]
+
+    # Workflow design
     workflow_design: Optional[Dict[str, Any]]
-    
-    # Tool Planning
     tools_plan: Optional[List[Dict[str, Any]]]
     
-    # Notebook Composition
-    notebook_plan: Optional[NotebookPlan]
-    generated_cells: Annotated[List[CellSpec], operator.add]
+    # Generation
+    # No reducer: last-write-wins across repair iterations
+    generated_cells: List[CellSpec]
     
     # QA & Repair
     qa_reports: List[QAReport]
@@ -367,7 +373,8 @@ class GeneratorState(TypedDict):
 ```
 
 **Key Features**:
-- **Annotated Lists**: Fields like `constraints` use `operator.add` for merging across parallel nodes
+- **Annotated Lists**: Fields like `constraints` and `docs_context` use `operator.add` to append values across nodes
+- **Last-write-wins cells**: `generated_cells` intentionally has no reducer, so each repair pass replaces prior cells
 - **Immutability**: State updates create new state versions (LangGraph managed)
 - **Type Safety**: TypedDict provides IDE autocomplete and validation
 
