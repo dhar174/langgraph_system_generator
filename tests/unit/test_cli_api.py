@@ -13,6 +13,7 @@ from fastapi.testclient import TestClient
 
 from langgraph_system_generator.api.server import app
 from langgraph_system_generator.cli import GenerationArtifacts, generate_artifacts
+from langgraph_system_generator.utils.config import GenerationConfig
 
 
 def _reload_server_modules():
@@ -50,6 +51,19 @@ async def test_generate_artifacts_stub(tmp_path: Path, monkeypatch: pytest.Monke
     assert artifacts["manifest"]["cell_count"] > 0
     assert Path(artifacts["manifest_path"]).exists()
     assert artifacts["result"]["generation_complete"] is True
+
+
+def test_default_state_includes_generation_mode_and_qa_history():
+    import langgraph_system_generator.cli as cli_module
+
+    state = cli_module._default_state(
+        "Test prompt",
+        GenerationConfig(model="gpt-5-mini"),
+        generation_mode="live",
+    )
+
+    assert state["generation_mode"] == "live"
+    assert state["qa_history"] == []
 
 
 @pytest.mark.asyncio
@@ -145,7 +159,7 @@ async def test_api_generate_stub(tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 
 
 @pytest.mark.asyncio
-async def test_api_rejects_unsupported_advanced_options(
+async def test_api_rejects_removed_advanced_options_as_unknown_fields(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):
     monkeypatch.setenv("LNF_OUTPUT_BASE", "test_api_unsupported_options")
@@ -170,8 +184,8 @@ async def test_api_rejects_unsupported_advanced_options(
             },
         )
 
-    assert response.status_code == 400
-    assert "Unsupported advanced options" in response.json()["detail"]
+    assert response.status_code == 422
+    assert response.json()["detail"][0]["type"] == "extra_forbidden"
 
 
 def test_generation_request_formats_description_mentions_markdown():
