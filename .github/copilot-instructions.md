@@ -161,8 +161,9 @@ it as a warning, not an error.
 ### API server constraints
 
 Supported advanced generation options: `model`, `temperature`, `max_tokens`,
-`custom_endpoint`, `agent_type`. Passing any unsupported field
-(`memory_config`, `preset`, `graph_style`, etc.) raises HTTP 400.
+`custom_endpoint`, `agent_type`. Unsupported roadmap fields such as
+`memory_config`, `preset`, and `graph_style` are not part of the public API
+contract and are rejected by request validation as unknown inputs.
 Concurrency is capped at `LNF_MAX_CONCURRENT_GENERATIONS` (default 5, env-configurable).
 All user-supplied `output_dir` values are resolved relative to the base output
 directory (path-traversal protection).

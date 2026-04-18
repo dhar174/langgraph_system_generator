@@ -68,6 +68,20 @@ def test_advanced_options_html_structure():
         field = soup.find(id=field_id)
         assert field is not None, f"Missing unsupported field with id={field_id}"
         assert field.has_attr("disabled"), f"{field_id} should be disabled until supported"
+
+    unsupported_help_texts = [
+        "Roadmap placeholder only. Not part of the current live-generation contract.",
+        "Roadmap placeholder only. Not part of the current live-generation contract.",
+        "Roadmap placeholder only. Not part of the current live-generation contract.",
+        "Roadmap placeholder only. Not part of the current live-generation contract.",
+        "Roadmap placeholder only. Not part of the current live-generation contract.",
+    ]
+    page_text = soup.get_text(" ", strip=True)
+    for help_text in unsupported_help_texts:
+        assert help_text in page_text, (
+            "Unsupported controls should clearly say they are roadmap placeholders "
+            "and not part of the current contract"
+        )
     
     # Check JavaScript is loaded
     scripts = soup.find_all("script")
@@ -115,6 +129,23 @@ def test_advanced_options_javascript():
         "Missing rerun logic to distinguish explicit model overrides from custom endpoints"
     assert "const explicitModelOption = new Option(data.model, data.model);" in content, \
         "Missing rerun logic to add explicit model overrides back into the model select"
+
+    unsupported_serialization_patterns = [
+        "formData.get('preset')",
+        "formData.get('memoryConfig')",
+        "formData.get('graphStyle')",
+        "formData.get('retrieverType')",
+        "formData.get('documentLoader')",
+        "data.preset",
+        "data.memory_config",
+        "data.graph_style",
+        "data.retriever_type",
+        "data.document_loader",
+    ]
+    for pattern in unsupported_serialization_patterns:
+        assert pattern not in content, (
+            f"Unsupported option should not be serialized into requests: {pattern}"
+        )
 
 
 def test_advanced_options_css():

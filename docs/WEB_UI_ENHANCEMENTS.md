@@ -249,8 +249,7 @@ The backend API has been extended to support new parameters.
   "model": "gpt-4",                       # New
   "temperature": 0.7,                     # New
   "max_tokens": 4000,                     # New
-  "agent_type": "router",                 # New
-  "memory_config": "short"                # New
+  "agent_type": "router"                  # New
 }
 ```
 
@@ -266,7 +265,6 @@ curl -X POST http://localhost:8000/generate \
     "temperature": 0.8,
     "max_tokens": 5000,
     "agent_type": "router",
-    "memory_config": "short",
     "formats": ["ipynb", "html", "docx", "zip"]
   }'
 ```

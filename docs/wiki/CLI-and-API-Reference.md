@@ -222,12 +222,7 @@ Generate a multi-agent system from a prompt.
   "temperature": "float (optional, 0.0-2.0)",
   "max_tokens": "int (optional, 1-32768)",
   "agent_type": "string (optional)",
-  "memory_config": "string (optional)",
-  "graph_style": "string (optional)",
-  "retriever_type": "string (optional)",
-  "document_loader": "string (optional)",
-  "custom_endpoint": "string (optional)",
-  "preset": "string (optional)"
+  "custom_endpoint": "string (optional)"
 }
 ```
 
@@ -293,8 +288,7 @@ curl -X POST http://localhost:8000/generate \
     "model": "gpt-4",
     "temperature": 0.8,
     "max_tokens": 8192,
-    "agent_type": "subagents",
-    "memory_config": "long"
+    "agent_type": "subagents"
   }'
 ```
 
