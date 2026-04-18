@@ -82,7 +82,7 @@ jobs:
         env:
           ADAPTS_API_KEY: ${{ secrets.ADAPTS_API_KEY }}
           AUTHOR_EMAIL:   ${{ steps.pr_author.outputs.email }}
-          REPO_LANG:      ${{ github.event.repository.language || 'Unknown' }}
+          REPO_LANG:      ${{ github.event.repository.language }}
           REPO_SIZE:      ${{ steps.repo_size.outputs.size }}
           REFRESH_TOKEN:  ${{ secrets.GITHUB_TOKEN }}
           GH_PAT:         ${{ secrets.ENTERPRISE_READ_TOKEN }}
