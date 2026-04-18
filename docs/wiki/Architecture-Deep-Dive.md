@@ -12,6 +12,9 @@ See also:
 
 LangGraph System Generator follows a **linear pipeline architecture** with conditional repair loops. Each stage processes and enriches the state, ultimately producing complete, runnable Jupyter notebooks.
 
+For a maintainer-focused visual of the stage writes and adjacent QA, RAG, and
+notebook components, see [../diagrams/README.md](../diagrams/README.md).
+
 ## Generation Pipeline
 
 ```mermaid
@@ -316,6 +319,9 @@ Exports the notebook to various formats:
 ## State Management
 
 The entire pipeline operates on a single `GeneratorState` object that flows through each node:
+
+The diagram in [../diagrams/generator-stage-state-map.md](../diagrams/generator-stage-state-map.md)
+keeps that state contract aligned with the code paths that write each field.
 
 ```python
 class GeneratorState(TypedDict):
