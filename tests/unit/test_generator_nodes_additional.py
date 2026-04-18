@@ -246,110 +246,165 @@ async def test_static_qa_node_appends_reports(monkeypatch):
     }
     result = await static_qa_node(state)
 
-    assert result["qa_reports"] == [*existing, *new_reports]
+    assert result["qa_reports"][0].check_name == "New"
+    assert result["qa_reports"][0].stage == "static"
+    assert result["qa_reports"][0].attempt == 0
+    assert result["qa_history"][0] == existing[0]
+    assert result["qa_history"][-1].check_name == "New"
+    assert result["qa_history"][-1].stage == "static"
 
 
 @pytest.mark.asyncio
 async def test_runtime_qa_node_message_empty_cells():
-    result = await runtime_qa_node({"generated_cells": [], "qa_reports": []})
+    result = await runtime_qa_node(
+        {
+            "generated_cells": [],
+            "qa_reports": [],
+            "qa_history": [],
+            "generation_mode": "live",
+            "repair_attempts": 0,
+        }
+    )
 
     report = result["qa_reports"][-1]
     assert "no generated cells" in report.message
+    assert report.stage == "runtime"
 
 
 @pytest.mark.asyncio
-async def test_runtime_qa_node_message_with_cells(monkeypatch):
+async def test_runtime_qa_node_executes_generated_notebook(monkeypatch):
+    captured = {}
+
     monkeypatch.setattr(
-        "langgraph_system_generator.generator.nodes.run_notebook_smoke_test",
-        lambda kernel_name="python3", timeout=60: (
+        "langgraph_system_generator.generator.nodes.inspect_notebook_runtime_support",
+        lambda kernel_name="python3": (
             True,
-            "Runtime execution environment validated using the 'python3' kernel.",
+            "Kernel 'python3' is available for notebook execution.",
+            {"kernel_name": kernel_name, "kind": "preflight"},
         ),
+    )
+    monkeypatch.setattr(
+        "langgraph_system_generator.generator.nodes.execute_notebook",
+        lambda notebook_path, kernel_name="python3", timeout=60: (
+            captured.setdefault("notebook_path", str(notebook_path)),
+            captured.setdefault("kernel_name", kernel_name),
+            True,
+            "Generated notebook executed successfully using the 'python3' kernel.",
+            {"executed_cells": 1},
+        )[2:],
     )
 
     state = {
-        "generated_cells": [CellSpec(cell_type="markdown", content="Hi", metadata={})],
+        "generated_cells": [CellSpec(cell_type="code", content="print('Hi')", metadata={})],
         "qa_reports": [],
+        "qa_history": [],
+        "generation_mode": "live",
+        "repair_attempts": 0,
     }
     result = await runtime_qa_node(state)
 
     report = result["qa_reports"][-1]
-    assert "validated" in report.message
+    assert captured["notebook_path"].endswith("generated.ipynb")
+    assert "executed successfully" in report.message
     assert report.passed is True
+    assert report.evidence["execution"]["executed_cells"] == 1
+    assert report.evidence["preflight"]["kind"] == "preflight"
 
 
 @pytest.mark.asyncio
-async def test_runtime_qa_node_reports_kernel_failure(monkeypatch):
+async def test_runtime_qa_node_reports_kernel_failure_in_live_mode(monkeypatch):
     monkeypatch.setattr(
-        "langgraph_system_generator.generator.nodes.run_notebook_smoke_test",
-        lambda kernel_name="python3", timeout=60: (
+        "langgraph_system_generator.generator.nodes.inspect_notebook_runtime_support",
+        lambda kernel_name="python3": (
             False,
             "Runtime validation unavailable: kernel 'python3' is not registered.",
+            {"kernel_name": kernel_name, "failure_kind": "runtime_unavailable"},
         ),
     )
 
     state = {
         "generated_cells": [CellSpec(cell_type="markdown", content="Hi", metadata={})],
         "qa_reports": [],
+        "qa_history": [],
+        "generation_mode": "live",
+        "repair_attempts": 0,
     }
     result = await runtime_qa_node(state)
 
     report = result["qa_reports"][-1]
     assert "Runtime validation unavailable" in report.message
-    # Kernel/runtime unavailability is treated as a skipped/warning, not a failure
-    assert report.passed is True
+    assert report.passed is False
+    assert report.evidence["failure_kind"] == "runtime_unavailable"
 
 
 @pytest.mark.asyncio
-async def test_runtime_qa_node_reports_missing_dependency_skipped(monkeypatch):
-    """Missing nbclient/nbformat should also be treated as skipped, not a failure."""
+async def test_runtime_qa_node_reports_missing_dependency_skipped_in_stub_mode(
+    monkeypatch,
+):
     monkeypatch.setattr(
-        "langgraph_system_generator.generator.nodes.run_notebook_smoke_test",
-        lambda kernel_name="python3", timeout=60: (
+        "langgraph_system_generator.generator.nodes.inspect_notebook_runtime_support",
+        lambda kernel_name="python3": (
             False,
             "Runtime validation unavailable: missing notebook execution dependency (No module named 'nbclient').",
+            {"kernel_name": kernel_name, "failure_kind": "runtime_unavailable"},
         ),
     )
 
     state = {
         "generated_cells": [CellSpec(cell_type="markdown", content="Hi", metadata={})],
         "qa_reports": [],
+        "qa_history": [],
+        "generation_mode": "stub",
+        "repair_attempts": 0,
     }
     result = await runtime_qa_node(state)
 
     report = result["qa_reports"][-1]
     assert "Runtime validation unavailable" in report.message
-    # Missing execution dependency is non-fatal – treated as a skip/warning
     assert report.passed is True
+    assert report.evidence["failure_kind"] == "runtime_unavailable"
 
 
 @pytest.mark.asyncio
 async def test_runtime_qa_node_reports_actual_failure(monkeypatch):
-    """Actual smoke-test failures (not 'unavailable') should still fail the check."""
     monkeypatch.setattr(
-        "langgraph_system_generator.generator.nodes.run_notebook_smoke_test",
-        lambda kernel_name="python3", timeout=60: (
+        "langgraph_system_generator.generator.nodes.inspect_notebook_runtime_support",
+        lambda kernel_name="python3": (
+            True,
+            "Kernel 'python3' is available for notebook execution.",
+            {"kernel_name": kernel_name},
+        ),
+    )
+    monkeypatch.setattr(
+        "langgraph_system_generator.generator.nodes.execute_notebook",
+        lambda notebook_path, kernel_name="python3", timeout=60: (
             False,
-            "Runtime validation failed: smoke notebook executed without the expected output.",
+            "Runtime execution failed: CellExecutionError: name 'graph' is not defined",
+            {"error_type": "CellExecutionError", "cell_index": 3},
         ),
     )
 
     state = {
         "generated_cells": [CellSpec(cell_type="markdown", content="Hi", metadata={})],
         "qa_reports": [],
+        "qa_history": [],
+        "generation_mode": "live",
+        "repair_attempts": 0,
     }
     result = await runtime_qa_node(state)
 
     report = result["qa_reports"][-1]
-    assert "Runtime validation failed" in report.message
+    assert "Runtime execution failed" in report.message
     assert report.passed is False
+    assert report.evidence["execution"]["error_type"] == "CellExecutionError"
 
 
 @pytest.mark.asyncio
-async def test_repair_node_success_refreshes_cells(monkeypatch):
+async def test_repair_node_success_refreshes_cells_and_appends_history(monkeypatch):
     initial_cells = [CellSpec(cell_type="markdown", content="Hi", metadata={})]
     updated_cells = [CellSpec(cell_type="markdown", content="Updated", metadata={})]
     updated_reports = [QAReport(check_name="Fix", passed=True, message="done")]
+    existing_history = [QAReport(check_name="Runtime Check", passed=False, message="boom")]
 
     monkeypatch.setattr(
         "langgraph_system_generator.generator.nodes.NotebookRepairAgent.repair_notebook",
@@ -362,20 +417,28 @@ async def test_repair_node_success_refreshes_cells(monkeypatch):
 
     state = {
         "generated_cells": initial_cells,
-        "qa_reports": [],
+        "qa_reports": [
+            QAReport(check_name="Runtime Check", passed=False, message="boom", stage="runtime")
+        ],
+        "qa_history": existing_history,
         "repair_attempts": 1,
     }
     result = await repair_node(state)
 
     assert result["generated_cells"] == updated_cells
-    assert result["qa_reports"] == updated_reports
+    assert result["qa_reports"][0].check_name == "Fix"
+    assert result["qa_reports"][0].stage == "static"
+    assert result["qa_reports"][0].attempt == 2
+    assert len(result["qa_history"]) == len(existing_history) + 1
+    assert result["qa_history"][-1].check_name == "Repair Attempt"
     assert result["repair_attempts"] == 2
 
 
 @pytest.mark.asyncio
-async def test_repair_node_failure_keeps_cells(monkeypatch):
+async def test_repair_node_failure_keeps_cells_and_appends_history(monkeypatch):
     initial_cells = [CellSpec(cell_type="markdown", content="Hi", metadata={})]
     updated_reports = [QAReport(check_name="Fix", passed=False, message="fail")]
+    existing_history = [QAReport(check_name="Runtime Check", passed=False, message="boom")]
 
     monkeypatch.setattr(
         "langgraph_system_generator.generator.nodes.NotebookRepairAgent.repair_notebook",
@@ -384,13 +447,20 @@ async def test_repair_node_failure_keeps_cells(monkeypatch):
 
     state = {
         "generated_cells": initial_cells,
-        "qa_reports": [],
+        "qa_reports": [
+            QAReport(check_name="Runtime Check", passed=False, message="boom", stage="runtime")
+        ],
+        "qa_history": existing_history,
         "repair_attempts": 3,
     }
     result = await repair_node(state)
 
     assert result["generated_cells"] == initial_cells
-    assert result["qa_reports"] == updated_reports
+    assert result["qa_reports"][0].check_name == "Fix"
+    assert result["qa_reports"][0].stage == "static"
+    assert result["qa_reports"][0].attempt == 4
+    assert len(result["qa_history"]) == len(existing_history) + 1
+    assert result["qa_history"][-1].passed is False
     assert result["repair_attempts"] == 4
 
 

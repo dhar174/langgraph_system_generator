@@ -29,8 +29,8 @@ from langgraph_system_generator.notebook.composer import (
     NotebookComposer as NotebookFileComposer,
 )
 from langgraph_system_generator.notebook.runtime import (
-    inspect_kernel_spec,
-    run_notebook_smoke_test,
+    execute_notebook,
+    inspect_notebook_runtime_support,
 )
 from langgraph_system_generator.qa import NotebookRepairAgent, NotebookValidator
 from langgraph_system_generator.rag.embeddings import VectorStoreManager
@@ -87,6 +87,53 @@ def _runtime_qa_suggestions(message: str) -> List[str]:
         "Review the runtime QA error details and rerun notebook execution after fixing the reported issue.",
         "If the environment is managed externally, verify the selected python3 kernel can execute notebooks successfully.",
     ]
+
+
+def _generation_mode(state: GeneratorState) -> str:
+    """Return the current generation mode with a safe live default."""
+
+    return str(state.get("generation_mode") or "live")
+
+
+def _qa_history_from_state(state: GeneratorState) -> List[QAReport]:
+    """Return accumulated QA history, falling back to legacy qa_reports state."""
+
+    if "qa_history" in state and state.get("qa_history") is not None:
+        return list(state.get("qa_history") or [])
+    return list(state.get("qa_reports") or [])
+
+
+def _stamp_report(
+    report: QAReport,
+    *,
+    stage: str,
+    attempt: int,
+    evidence: Dict[str, Any] | None = None,
+) -> QAReport:
+    """Attach structured QA metadata while preserving any existing evidence."""
+
+    merged_evidence = dict(report.evidence or {})
+    if evidence:
+        merged_evidence.update(evidence)
+
+    return report.model_copy(
+        update={
+            "stage": report.stage or stage,
+            "attempt": attempt if report.attempt is None else report.attempt,
+            "evidence": merged_evidence,
+        }
+    )
+
+
+def _stamp_reports(
+    reports: List[QAReport],
+    *,
+    stage: str,
+    attempt: int,
+) -> List[QAReport]:
+    """Attach stage/attempt metadata to a batch of reports."""
+
+    return [_stamp_report(report, stage=stage, attempt=attempt) for report in reports]
 
 
 async def intake_node(state: GeneratorState) -> Dict[str, Any]:
@@ -352,13 +399,21 @@ async def static_qa_node(state: GeneratorState) -> Dict[str, Any]:
                 notebook_path,
             )
 
-    existing_reports = state.get("qa_reports") or []
+    annotated_reports = _stamp_reports(
+        reports,
+        stage="static",
+        attempt=int(state.get("repair_attempts", 0)),
+    )
+    qa_history = [*_qa_history_from_state(state), *annotated_reports]
 
-    return {"qa_reports": [*existing_reports, *reports]}
+    return {
+        "qa_reports": annotated_reports,
+        "qa_history": qa_history,
+    }
 
 
 async def runtime_qa_node(state: GeneratorState) -> Dict[str, Any]:
-    """Run runtime quality checks using a notebook execution smoke test.
+    """Run runtime quality checks by executing the generated notebook.
 
     Args:
         state: Current generator state
@@ -366,53 +421,81 @@ async def runtime_qa_node(state: GeneratorState) -> Dict[str, Any]:
     Returns:
         Updated state with additional QA reports
     """
+    attempt = int(state.get("repair_attempts", 0))
+    generation_mode = _generation_mode(state)
+    existing_reports = list(state.get("qa_reports") or [])
+
     if not state.get("generated_cells"):
-        message = "Runtime checks skipped: no generated cells to execute."
-        report = QAReport(
-            check_name="Runtime Check",
-            passed=True,
-            message=message,
-        )
-    else:
-        passed, message = await asyncio.to_thread(run_notebook_smoke_test)
-        suggestions: List[str] = []
-        if not passed:
-            suggestions = [
-                "Install a healthy python3 Jupyter kernel before running runtime QA.",
-                "Refresh the kernel spec with: python -m ipykernel install --user --name python3",
-            ]
-            # Treat *any* "Runtime validation unavailable: ..." result as a
-            # skipped/warning check so that environments without Jupyter kernels
-            # or notebook execution deps don't trigger the repair loop and block
-            # generation entirely.
-            if (message or "").startswith("Runtime validation unavailable"):
-                logger.warning(
-                    "Runtime QA skipped due to missing notebook kernel/runtime: %s",
-                    message,
-                )
-                report = QAReport(
-                    check_name="Runtime Check",
-                    passed=True,
-                    message=f"Runtime checks skipped: {message}",
-                    suggestions=suggestions,
-                )
-            else:
-                report = QAReport(
-                    check_name="Runtime Check",
-                    passed=False,
-                    message=message,
-                    suggestions=suggestions,
-                )
-        else:
-            report = QAReport(
+        report = _stamp_report(
+            QAReport(
                 check_name="Runtime Check",
                 passed=True,
-                message=message,
-                suggestions=suggestions,
+                message="Runtime checks skipped: no generated cells to execute.",
+            ),
+            stage="runtime",
+            attempt=attempt,
+            evidence={"generation_mode": generation_mode, "failure_kind": "no_cells"},
+        )
+    else:
+        notebook_builder = NotebookFileComposer()
+        with TemporaryDirectory() as temp_dir:
+            notebook = notebook_builder.build_notebook(state.get("generated_cells", []))
+            notebook_path = Path(temp_dir) / "generated.ipynb"
+            notebook_builder.write(notebook, notebook_path)
+
+            preflight_ok, preflight_message, preflight_evidence = await asyncio.to_thread(
+                inspect_notebook_runtime_support
             )
 
-    existing_reports = state.get("qa_reports") or []
-    return {"qa_reports": [*existing_reports, report]}
+            if not preflight_ok:
+                suggestions = _runtime_qa_suggestions(preflight_message)
+                passed = generation_mode != "live"
+                message = (
+                    f"Runtime checks skipped: {preflight_message}"
+                    if passed
+                    else preflight_message
+                )
+                report = _stamp_report(
+                    QAReport(
+                        check_name="Runtime Check",
+                        passed=passed,
+                        message=message,
+                        suggestions=suggestions,
+                    ),
+                    stage="runtime",
+                    attempt=attempt,
+                    evidence={
+                        "generation_mode": generation_mode,
+                        "failure_kind": "runtime_unavailable",
+                        "preflight": preflight_evidence,
+                    },
+                )
+            else:
+                passed, message, execution_evidence = await asyncio.to_thread(
+                    execute_notebook,
+                    notebook_path,
+                )
+                report = _stamp_report(
+                    QAReport(
+                        check_name="Runtime Check",
+                        passed=passed,
+                        message=message,
+                        suggestions=[] if passed else _runtime_qa_suggestions(message),
+                    ),
+                    stage="runtime",
+                    attempt=attempt,
+                    evidence={
+                        "generation_mode": generation_mode,
+                        "failure_kind": (
+                            "execution_passed" if passed else "execution_failed"
+                        ),
+                        "preflight": preflight_evidence,
+                        "execution": execution_evidence,
+                    },
+                )
+
+    qa_history = [*_qa_history_from_state(state), report]
+    return {"qa_reports": [*existing_reports, report], "qa_history": qa_history}
 
 
 async def repair_node(state: GeneratorState) -> Dict[str, Any]:
@@ -428,7 +511,8 @@ async def repair_node(state: GeneratorState) -> Dict[str, Any]:
     notebook_builder = NotebookFileComposer()
 
     cells = state.get("generated_cells", [])
-    qa_reports = state.get("qa_reports", [])
+    qa_reports = list(state.get("qa_reports", []))
+    attempt = int(state.get("repair_attempts", 0))
 
     with TemporaryDirectory() as temp_dir:
         notebook = notebook_builder.build_notebook(cells)
@@ -438,7 +522,7 @@ async def repair_node(state: GeneratorState) -> Dict[str, Any]:
         repair_success, updated_reports = repair_agent.repair_notebook(
             notebook_path,
             qa_reports,
-            attempt=state["repair_attempts"],
+            attempt=attempt,
         )
 
         # Only reload cells if repair was successful
@@ -452,15 +536,42 @@ async def repair_node(state: GeneratorState) -> Dict[str, Any]:
         else:
             # If repair failed (e.g., notebook not safely written), keep original cells
             logger.info(
-                f"Repair attempt {state['repair_attempts']} failed. "
+                f"Repair attempt {attempt} failed. "
                 "Keeping original cells for potential retry."
             )
             regenerated_cells = cells
 
+    normalized_reports = _stamp_reports(
+        updated_reports,
+        stage="static",
+        attempt=attempt + 1,
+    )
+    repair_summary = _stamp_report(
+        QAReport(
+            check_name="Repair Attempt",
+            passed=repair_success,
+            message=(
+                "Notebook repair produced an updated notebook snapshot."
+                if repair_success
+                else "Notebook repair could not resolve the current QA failures."
+            ),
+            suggestions=[] if repair_success else ["Inspect the latest QA reports before retrying."],
+        ),
+        stage="repair",
+        attempt=attempt,
+        evidence={
+            "repair_success": repair_success,
+            "input_report_count": len(qa_reports),
+            "output_report_count": len(normalized_reports),
+            "regenerated_cell_count": len(regenerated_cells),
+        },
+    )
+
     return {
         "generated_cells": regenerated_cells,
-        "qa_reports": updated_reports,
-        "repair_attempts": state["repair_attempts"] + 1,
+        "qa_reports": normalized_reports,
+        "qa_history": [*_qa_history_from_state(state), repair_summary],
+        "repair_attempts": attempt + 1,
     }
 
 

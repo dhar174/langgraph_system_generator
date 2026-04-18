@@ -92,9 +92,9 @@ These node functions are the clearest map of the runtime lifecycle:
 | Workflow design | `graph_design_node` | `GraphDesigner` | `workflow_design`, `notebook_plan` |
 | Tool planning | `tooling_plan_node` | `ToolchainEngineer` | `tools_plan` |
 | Notebook assembly | `notebook_assembly_node` | `NotebookComposer` | `generated_cells` |
-| Static QA | `static_qa_node` | validators under `src/langgraph_system_generator/qa/` | `qa_reports` |
-| Runtime QA | `runtime_qa_node` | notebook runtime helpers | `qa_reports` |
-| Repair | `repair_node` | `NotebookRepairAgent` from `langgraph_system_generator.qa.repair` and notebook repair helpers | `generated_cells`, `repair_attempts`, `qa_reports` |
+| Static QA | `static_qa_node` | validators under `src/langgraph_system_generator/qa/` | `qa_reports`, `qa_history` |
+| Runtime QA | `runtime_qa_node` | notebook runtime helpers | `qa_reports`, `qa_history` |
+| Repair | `repair_node` | `NotebookRepairAgent` from `langgraph_system_generator.qa.repair` and notebook repair helpers | `generated_cells`, `repair_attempts`, `qa_reports`, `qa_history` |
 | Packaging | `package_outputs_node` | notebook/export helpers | `artifacts_manifest`, `generation_complete` |
 
 ### Shared state contract
@@ -108,6 +108,8 @@ Important patterns:
 - `constraints` and `docs_context` are accumulated lists.
 - `generated_cells` is authoritative for the current repair iteration and is
   replaced rather than concatenated.
+- `qa_reports` is the current QA snapshot for the active pass, while
+  `qa_history` preserves attempt-by-attempt QA and repair evidence.
 - `repair_attempts` bounds retry behavior.
 - `artifacts_manifest` and `generation_complete` are the final packaging
   outputs expected by the CLI and API.

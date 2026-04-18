@@ -45,6 +45,7 @@ class GenerationArtifacts(TypedDict):
 def _default_state(
     prompt: str,
     generation_config: GenerationConfig | None = None,
+    generation_mode: GenerationMode = "live",
 ) -> Dict[str, Any]:
     """Return a baseline GeneratorState payload."""
 
@@ -57,15 +58,17 @@ def _default_state(
         "notebook_plan": None,
         "architecture_justification": "",
         "architecture_type": None,
+        "generation_config": generation_config,
+        "generation_mode": generation_mode,
         "workflow_design": None,
         "tools_plan": None,
         "generated_cells": [],
         "qa_reports": [],
+        "qa_history": [],
         "repair_attempts": 0,
         "artifacts_manifest": {},
         "generation_complete": False,
         "error_message": None,
-        "generation_config": generation_config,
     }
 
 
@@ -350,6 +353,8 @@ def _build_stub_result(prompt: str, agent_type: str | None = None) -> Dict[str, 
         "notebook_plan": plan,
         "architecture_type": plan.architecture_type,
         "architecture_justification": justification,
+        "generation_config": None,
+        "generation_mode": "stub",
         "workflow_design": {
             "entry_point": architecture_type,
             "nodes": [
@@ -370,6 +375,7 @@ def _build_stub_result(prompt: str, agent_type: str | None = None) -> Dict[str, 
         "tools_plan": [],
         "generated_cells": cells,
         "qa_reports": [],
+        "qa_history": [],
         "repair_attempts": 0,
         "artifacts_manifest": {},
         "generation_complete": True,
@@ -457,7 +463,9 @@ async def generate_artifacts(
         _report_progress("graph_init", 10, "Creating generator graph...")
         graph = create_generator_graph()
         _report_progress("graph_invoke", 15, "Invoking generator graph...")
-        result = await graph.ainvoke(_default_state(prompt, generation_config))
+        result = await graph.ainvoke(
+            _default_state(prompt, generation_config, generation_mode="live")
+        )
         _report_progress("graph_complete", 60, "Generator graph completed")
     else:
         _report_progress("stub", 30, "Building stub result...")
