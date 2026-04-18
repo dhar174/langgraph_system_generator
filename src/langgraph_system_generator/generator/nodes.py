@@ -92,7 +92,9 @@ def _runtime_qa_suggestions(message: str) -> List[str]:
 def _generation_mode(state: GeneratorState) -> str:
     """Return the current generation mode with a safe live default."""
 
-    return str(state.get("generation_mode") or "live")
+    raw_mode = state.get("generation_mode")
+    normalized_mode = raw_mode.strip().lower() if isinstance(raw_mode, str) else ""
+    return "stub" if normalized_mode == "stub" else "live"
 
 
 def _qa_history_from_state(state: GeneratorState) -> List[QAReport]:
