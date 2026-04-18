@@ -8,6 +8,7 @@ import pytest
 
 from langgraph_system_generator.generator.agents import notebook_composer as composer_module
 from langgraph_system_generator.generator.state import NotebookPlan
+from langgraph_system_generator.utils.config import ModelConfig
 
 
 class DummyLLM:
@@ -286,3 +287,81 @@ def test_graph_fallback_uses_sanitized_function_references(
     assert 'workflow.add_node("start node", start_node_node)' in graph_code
     assert 'workflow.add_node("9 result-node", _9_result_node_node)' in graph_code
     compile(graph_code, "<graph_fallback>", "exec")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "architecture_type",
+    ["router", "subagents", "critique_loop", "autoagent"],
+)
+async def test_pattern_nodes_use_request_scoped_model_config(
+    monkeypatch: pytest.MonkeyPatch,
+    architecture_type: str,
+):
+    monkeypatch.setattr(composer_module, "ChatOpenAI", DummyLLM)
+    composer = composer_module.NotebookComposer(
+        model_config=ModelConfig(
+            model="gpt-5.2",
+            temperature=0.3,
+            api_base="https://example.test/v1",
+            max_tokens=2048,
+        )
+    )
+
+    plan = NotebookPlan(
+        title="Configured Workflow Notebook",
+        sections=["Installation", "Workflow", "Execution"],
+        patterns_used=[architecture_type],
+        architecture_type=architecture_type,
+    )
+
+    if architecture_type == "router":
+        nodes = [
+            {"name": "router", "purpose": "Route requests"},
+            {"name": "search", "purpose": "Search documents"},
+        ]
+    elif architecture_type == "subagents":
+        nodes = [
+            {"name": "supervisor", "purpose": "Coordinate agents"},
+            {"name": "researcher", "purpose": "Research documents"},
+        ]
+    elif architecture_type == "autoagent":
+        nodes = [{"name": "planner", "purpose": "Plan the work"}]
+    else:
+        nodes = [
+            {"name": "generate", "purpose": "Generate an initial draft"},
+            {"name": "critique", "purpose": "Critique the current draft"},
+            {"name": "revise", "purpose": "Revise the draft using feedback"},
+        ]
+
+    cells = await composer.compose_notebook(
+        notebook_plan=plan,
+        workflow_design={
+            "architecture_type": architecture_type,
+            "state_schema": {"user_input": "User question"},
+            "nodes": nodes,
+        },
+        tools=[],
+        architecture={
+            "architecture_type": architecture_type,
+            "justification": "Matches the workflow requirements.",
+        },
+    )
+
+    node_cells = [cell for cell in cells if cell.section == "nodes"]
+    assert node_cells
+    assert any(
+        "ChatOpenAI(model='gpt-5.2', temperature=0.3, base_url='https://example.test/v1', max_tokens=2048)"
+        in cell.content
+        for cell in node_cells
+    )
+
+    setup_code_cells = [
+        cell
+        for cell in cells
+        if cell.section == "setup" and cell.cell_type == "code"
+    ]
+    assert any('MODEL = "gpt-5.2"' in cell.content for cell in setup_code_cells)
+    assert any("TEMPERATURE = 0.3" in cell.content for cell in setup_code_cells)
+    assert any('API_BASE = "https://example.test/v1"' in cell.content for cell in setup_code_cells)
+    assert any("MAX_TOKENS = 2048" in cell.content for cell in setup_code_cells)
