@@ -209,7 +209,7 @@ This notebook implements a LangGraph workflow using the **{plan.architecture_typ
             "from getpass import getpass",
             "",
             "# Configuration",
-            f'MODEL = "{self.model_config.model}"',
+            f"MODEL = {json.dumps(self.model_config.model)}",
             f"TEMPERATURE = {self.model_config.temperature}",
             "MAX_ITERATIONS = 10",
             (
@@ -218,7 +218,7 @@ This notebook implements a LangGraph workflow using the **{plan.architecture_typ
                 else "MAX_TOKENS = None"
             ),
             (
-                f'API_BASE = "{self.model_config.api_base}"'
+                f"API_BASE = {json.dumps(self.model_config.api_base)}"
                 if self.model_config.api_base
                 else "API_BASE = None"
             ),
