@@ -46,3 +46,15 @@
   "governance_level": "standard",
   "status": "clean"
 }
+{
+  "timestamp": "2026-04-18T14:08:06Z",
+  "event": "session_start",
+  "governance_level": "standard",
+  "cwd": "/home/runner/work/langgraph_system_generator/langgraph_system_generator"
+}
+{
+  "timestamp": "2026-04-18T14:08:06Z",
+  "event": "prompt_scanned",
+  "governance_level": "standard",
+  "status": "clean"
+}
