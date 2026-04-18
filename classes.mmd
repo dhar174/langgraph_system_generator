@@ -70,17 +70,12 @@ classDiagram
   class GenerationRequest {
     agent_type : Optional[str]
     custom_endpoint : Optional[str]
-    document_loader : Optional[str]
     formats : Optional[list[str]]
-    graph_style : Optional[str]
     max_tokens : Optional[int]
-    memory_config : Optional[str]
     mode : Optional[GenerationMode]
     model : Optional[str]
     output_dir : Optional[str]
-    preset : Optional[str]
     prompt : Optional[str]
-    retriever_type : Optional[str]
     temperature : Optional[float]
   }
   class GenerationResponse {

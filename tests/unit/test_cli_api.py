@@ -145,7 +145,7 @@ async def test_api_generate_stub(tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 
 
 @pytest.mark.asyncio
-async def test_api_rejects_unsupported_advanced_options(
+async def test_api_rejects_removed_advanced_options_as_unknown_fields(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):
     monkeypatch.setenv("LNF_OUTPUT_BASE", "test_api_unsupported_options")
@@ -170,8 +170,8 @@ async def test_api_rejects_unsupported_advanced_options(
             },
         )
 
-    assert response.status_code == 400
-    assert "Unsupported advanced options" in response.json()["detail"]
+    assert response.status_code == 422
+    assert response.json()["detail"][0]["type"] == "extra_forbidden"
 
 
 def test_generation_request_formats_description_mentions_markdown():
