@@ -130,6 +130,24 @@ async function copyTextToClipboard(text, successMessage) {
     }
 }
 
+function appendLabeledValue(parent, label, value, options = {}) {
+    const item = document.createElement('div');
+    item.className = 'result-item';
+
+    const strong = document.createElement('strong');
+    strong.textContent = `${label}: `;
+    item.appendChild(strong);
+
+    const valueNode = options.asCode ? document.createElement('code') : document.createElement('span');
+    if (options.color) {
+        valueNode.style.color = options.color;
+    }
+    valueNode.textContent = value;
+    item.appendChild(valueNode);
+
+    parent.appendChild(item);
+}
+
 // Update character count
 promptTextarea.addEventListener('input', () => {
     const count = getCharacterCount(promptTextarea.value);
@@ -389,31 +407,23 @@ function showResult(data) {
     resultWrapper.appendChild(successItem);
 
     if (manifest.architecture_type) {
-        const archItem = document.createElement('div');
-        archItem.className = 'result-item';
-        archItem.innerHTML = `<strong>Architecture:</strong> <span style="color: var(--primary-color);">${manifest.architecture_type}</span>`;
-        resultWrapper.appendChild(archItem);
+        appendLabeledValue(resultWrapper, 'Architecture', manifest.architecture_type, {
+            color: 'var(--primary-color)',
+        });
     }
 
     if (manifest.plan_title) {
-        const planItem = document.createElement('div');
-        planItem.className = 'result-item';
-        planItem.innerHTML = `<strong>Plan Title:</strong> ${manifest.plan_title}`;
-        resultWrapper.appendChild(planItem);
+        appendLabeledValue(resultWrapper, 'Plan Title', manifest.plan_title);
     }
 
     if (manifest.cell_count) {
-        const cellItem = document.createElement('div');
-        cellItem.className = 'result-item';
-        cellItem.innerHTML = `<strong>Generated Cells:</strong> ${String(manifest.cell_count)}`;
-        resultWrapper.appendChild(cellItem);
+        appendLabeledValue(resultWrapper, 'Generated Cells', String(manifest.cell_count));
     }
 
     if (data.output_dir) {
-        const outputItem = document.createElement('div');
-        outputItem.className = 'result-item';
-        outputItem.innerHTML = `<strong>Output Directory:</strong> <code>${data.output_dir}</code>`;
-        resultWrapper.appendChild(outputItem);
+        appendLabeledValue(resultWrapper, 'Output Directory', data.output_dir, {
+            asCode: true,
+        });
     }
 
     if (warnings.length > 0) {
@@ -549,6 +559,25 @@ function streamGeneration(streamUrl) {
         const eventSource = new EventSource(streamUrl);
         currentEventSource = eventSource;
         let latestErrorDetails = null;
+        let streamSettled = false;
+
+        const resolveStream = (payload) => {
+            if (streamSettled) {
+                return;
+            }
+            streamSettled = true;
+            closeProgressStream();
+            resolve(payload);
+        };
+
+        const rejectStream = (message) => {
+            if (streamSettled) {
+                return;
+            }
+            streamSettled = true;
+            closeProgressStream();
+            reject(new Error(message));
+        };
 
         eventSource.addEventListener('progress', (event) => {
             const payload = JSON.parse(event.data);
@@ -568,24 +597,35 @@ function streamGeneration(streamUrl) {
 
         eventSource.addEventListener('complete', (event) => {
             const payload = JSON.parse(event.data);
-            closeProgressStream();
-            resolve(payload);
+            resolveStream(payload);
         });
 
         eventSource.addEventListener('error', (event) => {
-            let payload = {};
-            try {
-                payload = event.data ? JSON.parse(event.data) : {};
-            } catch (err) {
-                payload = {};
+            if (event.data) {
+                let payload = {};
+                try {
+                    payload = JSON.parse(event.data);
+                } catch (err) {
+                    payload = {};
+                }
+                rejectStream(extractErrorMessage(payload, latestErrorDetails));
+                return;
             }
-            closeProgressStream();
-            reject(new Error(extractErrorMessage(payload, latestErrorDetails)));
+
+            showProgress(
+                'reconnecting',
+                parseInt(progressPercentage.textContent, 10) || 12,
+                'Connection interrupted. Reconnecting to progress stream...'
+            );
         });
 
         eventSource.onerror = () => {
             if (eventSource.readyState === EventSource.CLOSED) {
-                closeProgressStream();
+                const terminalMessage =
+                    latestErrorDetails && Object.keys(latestErrorDetails).length > 0
+                        ? extractErrorMessage(latestErrorDetails)
+                        : 'Connection to the progress stream was lost. Please try again.';
+                rejectStream(terminalMessage);
             }
         };
     });
