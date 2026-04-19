@@ -71,6 +71,8 @@ def _generation_error_payload(exc: Exception) -> dict[str, Any]:
             details["dependency"] = exc.dependency
         if exc.extra:
             details["extra"] = exc.extra
+        if exc.feature:
+            details["feature"] = exc.feature
         if details:
             payload["details"] = details
         return payload

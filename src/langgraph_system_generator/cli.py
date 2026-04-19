@@ -865,6 +865,11 @@ async def generate_artifacts(
                     ipynb_path = target / "notebook.ipynb"
                     exporter.export_ipynb(notebook, ipynb_path)
                     manifest["notebook_path"] = str(ipynb_path)
+                    manifest["export_results"]["ipynb"] = {
+                        "requested": False,
+                        "status": "completed",
+                        "path": str(ipynb_path),
+                    }
                 pdf_path = target / "notebook.pdf"
                 exporter.export_to_pdf(ipynb_path, pdf_path, method="webpdf")
                 _record_export_success(

@@ -180,6 +180,86 @@ async def test_api_returns_structured_generation_errors(
     assert "Install the full extra" in detail["hint"]
 
 
+@pytest.mark.asyncio
+async def test_api_optional_dependency_errors_include_feature_metadata(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """Structured API dependency errors should keep the OptionalDependencyError feature field."""
+    monkeypatch.setenv("LNF_OUTPUT_BASE", "test_structured_api_dependency_feature")
+
+    import langgraph_system_generator.constants as constants_module
+    import langgraph_system_generator.api.server as server_module
+
+    importlib.reload(constants_module)
+    importlib.reload(server_module)
+
+    async def fail_generation(*_args, **_kwargs):
+        raise optional_deps.OptionalDependencyError(
+            "HTML export requires nbconvert.",
+            hint='Install the full extra with: pip install -e ".[full]"',
+            dependency="nbconvert",
+            extra="full",
+            feature="HTML export",
+        )
+
+    monkeypatch.setattr(server_module, "generate_artifacts", fail_generation)
+
+    transport = httpx.ASGITransport(app=server_module.app)
+    output_dir = constants_module._BASE_OUTPUT / "structured_api_dependency_feature"
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(
+            "/generate",
+            json={
+                "prompt": "Trigger structured dependency error",
+                "mode": "stub",
+                "output_dir": str(output_dir),
+            },
+        )
+
+    assert response.status_code == 503
+    detail = response.json()["detail"]
+    assert detail["details"]["dependency"] == "nbconvert"
+    assert detail["details"]["extra"] == "full"
+    assert detail["details"]["feature"] == "HTML export"
+
+
+@pytest.mark.asyncio
+async def test_pdf_only_generation_records_implicit_notebook_export_result(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """Implicit prerequisite notebook exports should appear in export_results."""
+    monkeypatch.setenv("LNF_OUTPUT_BASE", "test_pdf_implicit_notebook_export")
+
+    import langgraph_system_generator.constants as constants_module
+    import langgraph_system_generator.notebook.exporters as exporters_module
+    import langgraph_system_generator.cli as cli_module
+
+    importlib.reload(constants_module)
+    importlib.reload(exporters_module)
+    importlib.reload(cli_module)
+
+    def fake_pdf(self, notebook_path, output_path, method="webpdf"):
+        output_path = Path(output_path)
+        output_path.write_bytes(b"%PDF-1.4\n%stub")
+        return str(output_path)
+
+    monkeypatch.setattr(exporters_module.NotebookExporter, "export_to_pdf", fake_pdf)
+
+    artifacts = await cli_module.generate_artifacts(
+        "Generate only a PDF artifact",
+        output_dir=str(constants_module._BASE_OUTPUT / "pdf_only"),
+        mode="stub",
+        formats=["pdf"],
+    )
+
+    manifest = artifacts["manifest"]
+    assert manifest["notebook_path"].endswith("notebook.ipynb")
+    assert manifest["export_results"]["ipynb"]["requested"] is False
+    assert manifest["export_results"]["ipynb"]["status"] == "completed"
+    assert manifest["export_results"]["ipynb"]["path"] == manifest["notebook_path"]
+    assert manifest["export_results"]["pdf"]["status"] == "completed"
+
+
 def test_web_ui_uses_async_generation_and_eventsource():
     """The web UI should use SSE-backed async generation instead of fake sync progress."""
     repo_root = Path(__file__).resolve().parent.parent.parent
@@ -190,3 +270,32 @@ def test_web_ui_uses_async_generation_and_eventsource():
     assert "/generate-async" in app_js
     assert "new EventSource(" in app_js
     assert "fetch('/generate'" not in app_js
+
+
+def test_web_ui_avoids_innerhtml_for_manifest_values():
+    """Manifest-derived values should be rendered via DOM APIs instead of innerHTML."""
+    repo_root = Path(__file__).resolve().parent.parent.parent
+    app_js = (repo_root / "src/langgraph_system_generator/api/static/app.js").read_text(
+        encoding="utf-8"
+    )
+
+    forbidden_patterns = [
+        'innerHTML = `<strong>Architecture:</strong>',
+        'innerHTML = `<strong>Plan Title:</strong>',
+        'innerHTML = `<strong>Generated Cells:</strong>',
+        'innerHTML = `<strong>Output Directory:</strong>',
+    ]
+    for pattern in forbidden_patterns:
+        assert pattern not in app_js
+
+
+def test_web_ui_only_treats_server_sent_sse_errors_as_terminal():
+    """Transport-level EventSource errors should be allowed to reconnect."""
+    repo_root = Path(__file__).resolve().parent.parent.parent
+    app_js = (repo_root / "src/langgraph_system_generator/api/static/app.js").read_text(
+        encoding="utf-8"
+    )
+
+    assert "eventSource.addEventListener('error'" in app_js
+    assert "if (event.data)" in app_js
+    assert "'reconnecting'" in app_js
