@@ -299,3 +299,17 @@ def test_web_ui_only_treats_server_sent_sse_errors_as_terminal():
     assert "eventSource.addEventListener('error'" in app_js
     assert "if (event.data)" in app_js
     assert "'reconnecting'" in app_js
+
+
+def test_web_ui_rejects_when_sse_reconnect_is_no_longer_possible():
+    """Permanent EventSource closure should surface as a terminal UI error."""
+    repo_root = Path(__file__).resolve().parent.parent.parent
+    app_js = (repo_root / "src/langgraph_system_generator/api/static/app.js").read_text(
+        encoding="utf-8"
+    )
+
+    marker = "eventSource.onerror = () => {"
+    assert marker in app_js
+    onerror_block = app_js.split(marker, 1)[1].split("});", 1)[0]
+    assert "eventSource.readyState === EventSource.CLOSED" in onerror_block
+    assert "rejectStream(" in onerror_block

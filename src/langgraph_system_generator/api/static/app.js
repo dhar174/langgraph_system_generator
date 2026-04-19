@@ -559,6 +559,25 @@ function streamGeneration(streamUrl) {
         const eventSource = new EventSource(streamUrl);
         currentEventSource = eventSource;
         let latestErrorDetails = null;
+        let streamSettled = false;
+
+        const resolveStream = (payload) => {
+            if (streamSettled) {
+                return;
+            }
+            streamSettled = true;
+            closeProgressStream();
+            resolve(payload);
+        };
+
+        const rejectStream = (message) => {
+            if (streamSettled) {
+                return;
+            }
+            streamSettled = true;
+            closeProgressStream();
+            reject(new Error(message));
+        };
 
         eventSource.addEventListener('progress', (event) => {
             const payload = JSON.parse(event.data);
@@ -578,8 +597,7 @@ function streamGeneration(streamUrl) {
 
         eventSource.addEventListener('complete', (event) => {
             const payload = JSON.parse(event.data);
-            closeProgressStream();
-            resolve(payload);
+            resolveStream(payload);
         });
 
         eventSource.addEventListener('error', (event) => {
@@ -590,8 +608,7 @@ function streamGeneration(streamUrl) {
                 } catch (err) {
                     payload = {};
                 }
-                closeProgressStream();
-                reject(new Error(extractErrorMessage(payload, latestErrorDetails)));
+                rejectStream(extractErrorMessage(payload, latestErrorDetails));
                 return;
             }
 
@@ -604,7 +621,11 @@ function streamGeneration(streamUrl) {
 
         eventSource.onerror = () => {
             if (eventSource.readyState === EventSource.CLOSED) {
-                closeProgressStream();
+                const terminalMessage =
+                    latestErrorDetails && Object.keys(latestErrorDetails).length > 0
+                        ? extractErrorMessage(latestErrorDetails)
+                        : 'Connection to the progress stream was lost. Please try again.';
+                rejectStream(terminalMessage);
             }
         };
     });
