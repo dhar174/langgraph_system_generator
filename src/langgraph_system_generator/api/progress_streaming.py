@@ -252,15 +252,23 @@ def emit_node_progress(
     )
 
 
-def emit_log(job_id: str, level: str, message: str) -> None:
+def emit_log(
+    job_id: str,
+    level: str,
+    message: str,
+    details: Dict[str, Any] | None = None,
+) -> None:
     """Emit a log message to the job's SSE stream."""
+    payload = {
+        "level": level,
+        "message": message,
+    }
+    if details:
+        payload["details"] = details
     emit_progress(
         job_id,
         "log",
-        {
-            "level": level,
-            "message": message,
-        },
+        payload,
         log=False,
     )
 

@@ -472,59 +472,50 @@ Every successful generation produces:
 
 ### Manifest Structure
 
-The `manifest.json` contains complete generation metadata:
+The `manifest.json` contains complete generation metadata, including structured
+phase timing, per-format export status, and non-fatal warnings:
 
 ```json
 {
   "prompt": "User's original prompt",
   "mode": "stub | live",
-  "architecture": "router | subagents | hybrid",
-  "patterns": ["router"],
-  "timestamp": "YYYY-MM-DDTHH:MM:SSZ",
-  "version": "<current_version>",
-  
-  "artifacts": {
-    "notebook": "./notebook.ipynb",
-    "html": "./notebook.html",
-    "docx": "./notebook.docx",
-    "pdf": "./notebook.pdf",
-    "zip": "./notebook_bundle.zip",
-    "plan": "./notebook_plan.json",
-    "cells": "./generated_cells.json"
-  },
-  
-  "qa_status": {
-    "passed": true,
-    "checks_performed": 5,
-    "checks_passed": 5,
-    "checks_failed": 0,
-    "repair_attempts": 0
-  },
-  
-  "metadata": {
-    "cells_generated": 12,
-    "sections": [
-      "Setup & Configuration",
-      "State Definition",
-      "Node Implementation",
-      "Graph Construction",
-      "Execution & Testing"
-    ],
-    "generation_time_ms": 850,
-    "model_used": "gpt-4-turbo-preview",
-    "tokens_used": 15432
-  },
-  
-  "qa_reports": [
+  "architecture_type": "router | subagents | hybrid | autoagent",
+  "plan_title": "LangGraph Workflow: Example",
+  "notebook_path": "./output/api/notebook.ipynb",
+  "html_path": "./output/api/notebook.html",
+  "zip_path": "./output/api/notebook_bundle.zip",
+  "warnings": [
     {
-      "check_name": "json_structure",
-      "passed": true,
-      "message": "Notebook structure is valid"
+      "code": "dependency_unavailable",
+      "phase": "export_pdf",
+      "format": "pdf",
+      "message": "PDF export requires nbconvert.",
+      "hint": "Install the full extra with: pip install -e \".[full]\""
+    }
+  ],
+  "export_results": {
+    "ipynb": {
+      "requested": true,
+      "status": "completed",
+      "path": "./output/api/notebook.ipynb"
     },
+    "pdf": {
+      "requested": false,
+      "status": "failed",
+      "path": null,
+      "error": {
+        "code": "dependency_unavailable",
+        "phase": "export_pdf",
+        "message": "PDF export requires nbconvert."
+      }
+    }
+  },
+  "phase_summary": [
     {
-      "check_name": "required_sections",
-      "passed": true,
-      "message": "All required sections present"
+      "phase": "compose",
+      "status": "completed",
+      "message": "Notebook composed successfully.",
+      "duration_ms": 42
     }
   ]
 }

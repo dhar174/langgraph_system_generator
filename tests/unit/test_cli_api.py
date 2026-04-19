@@ -260,8 +260,11 @@ async def test_api_generate_surfaces_optional_dependency_errors(
             },
         )
 
-    assert response.status_code == 400
-    assert response.json()["detail"] == error_message
+    assert response.status_code == 503
+    detail = response.json()["detail"]
+    assert detail["code"] == "dependency_unavailable"
+    assert detail["message"] == error_message
+    assert detail["status_code"] == 503
 
 
 @pytest.mark.asyncio

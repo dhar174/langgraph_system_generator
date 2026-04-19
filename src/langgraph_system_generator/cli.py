@@ -8,10 +8,12 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+from datetime import datetime, timezone
 import json
 import logging
 import os
 from pathlib import Path
+from time import perf_counter
 from typing import Any, Dict, List, Literal, TypedDict
 
 from langgraph_system_generator.generator.state import (
@@ -19,6 +21,7 @@ from langgraph_system_generator.generator.state import (
     Constraint,
     NotebookPlan,
 )
+from langgraph_system_generator.utils.error_handling import GenerationError
 from langgraph_system_generator.utils.config import GenerationConfig, settings
 from langgraph_system_generator.utils.generation_options import (
     SUPPORTED_AGENT_TYPES,
@@ -31,6 +34,7 @@ from langgraph_system_generator.utils.optional_deps import (
 
 BASE_DIR = Path(__file__).resolve().parents[2]
 DEFAULT_CACHE_PATH = (BASE_DIR / "data" / "cached_docs").resolve()
+logger = logging.getLogger(__name__)
 
 GenerationMode = Literal["stub", "live"]
 
@@ -90,6 +94,178 @@ def _serialize(obj: Any) -> Any:
 
 def _write_json(path: Path, payload: Any) -> None:
     path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+
+
+def _utc_now_iso() -> str:
+    """Return a UTC timestamp string for telemetry payloads."""
+
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _normalize_generation_error(
+    exc: Exception,
+    *,
+    phase: str,
+    default_code: str = "generation_error",
+    default_status_code: int = 500,
+) -> GenerationError:
+    """Normalize arbitrary exceptions into a structured generation error."""
+
+    if isinstance(exc, GenerationError):
+        return exc
+
+    if isinstance(exc, OptionalDependencyError):
+        details = {}
+        if exc.dependency:
+            details["dependency"] = exc.dependency
+        if exc.extra:
+            details["extra"] = exc.extra
+        if exc.feature:
+            details["feature"] = exc.feature
+        return GenerationError(
+            str(exc),
+            code="dependency_unavailable",
+            phase=phase,
+            hint=exc.hint,
+            details=details,
+            status_code=503,
+        )
+
+    return GenerationError(
+        str(exc),
+        code=default_code,
+        phase=phase,
+        details={"error_type": type(exc).__name__},
+        status_code=default_status_code,
+    )
+
+
+class _PhaseTracker:
+    """Track structured phase telemetry across generation and export steps."""
+
+    def __init__(self, progress_callback: Any | None = None) -> None:
+        self.progress_callback = progress_callback
+        self._active: Dict[str, tuple[float, str]] = {}
+        self.summary: List[Dict[str, Any]] = []
+
+    def _emit_progress(
+        self,
+        phase: str,
+        percentage: int,
+        message: str,
+        *,
+        status: str = "running",
+        event: str = "progress",
+        details: Dict[str, Any] | None = None,
+    ) -> None:
+        if not self.progress_callback:
+            return
+
+        payload = {
+            "event": event,
+            "phase": phase,
+            "node": phase,
+            "percentage": min(100, max(0, percentage)),
+            "message": message,
+            "status": status,
+        }
+        if details:
+            payload["details"] = details
+
+        try:
+            self.progress_callback(payload)
+        except TypeError:
+            self.progress_callback(phase, payload["percentage"], message)
+        except Exception:
+            logger.warning(
+                "Progress callback failed for phase=%s percentage=%s",
+                phase,
+                percentage,
+                exc_info=True,
+            )
+
+    def _log_phase(
+        self,
+        phase: str,
+        status: str,
+        message: str,
+        *,
+        duration_ms: int = 0,
+        details: Dict[str, Any] | None = None,
+    ) -> None:
+        logger.info(
+            "Generation phase %s: %s",
+            status,
+            phase,
+            extra={
+                "phase": phase,
+                "status": status,
+                "duration_ms": duration_ms,
+                "phase_message": message,
+                "phase_details": details or {},
+            },
+        )
+
+    def start(
+        self,
+        phase: str,
+        message: str,
+        *,
+        percentage: int | None = None,
+        details: Dict[str, Any] | None = None,
+    ) -> None:
+        started_at = _utc_now_iso()
+        self._active[phase] = (perf_counter(), started_at)
+        self._log_phase(phase, "started", message, details=details)
+        if percentage is not None:
+            self._emit_progress(
+                phase,
+                percentage,
+                message,
+                status="running",
+                details=details,
+            )
+
+    def finish(
+        self,
+        phase: str,
+        message: str,
+        *,
+        percentage: int | None = None,
+        status: str = "completed",
+        details: Dict[str, Any] | None = None,
+    ) -> Dict[str, Any]:
+        timer_start, started_at = self._active.pop(phase, (perf_counter(), _utc_now_iso()))
+        duration_ms = int((perf_counter() - timer_start) * 1000)
+        finished_at = _utc_now_iso()
+        entry = {
+            "phase": phase,
+            "status": status,
+            "message": message,
+            "started_at": started_at,
+            "finished_at": finished_at,
+            "duration_ms": duration_ms,
+            "details": details or {},
+        }
+        self.summary.append(entry)
+        self._log_phase(
+            phase,
+            status,
+            message,
+            duration_ms=duration_ms,
+            details=details,
+        )
+        if percentage is not None:
+            event_type = "log" if status == "warning" else "progress"
+            self._emit_progress(
+                phase,
+                percentage,
+                message,
+                status=status,
+                event=event_type,
+                details=details,
+            )
+        return entry
 
 
 def _infer_stub_architecture(prompt: str) -> tuple[str, str]:
@@ -441,43 +617,44 @@ async def generate_artifacts(
         agent_type=agent_type,
     )
 
-    def _report_progress(node: str, percentage: int, message: str) -> None:
-        """Helper to report progress if callback is provided."""
-        if progress_callback:
-            try:
-                progress_callback(node, percentage, message)
-            except Exception as e:
-                # Log progress callback failures instead of silently swallowing
-                logging.warning(
-                    f"Progress callback failed for node={node}, percentage={percentage}: {e}",
-                    exc_info=True,
-                )
-
+    tracker = _PhaseTracker(progress_callback)
     target = Path(output_dir)
     target.mkdir(parents=True, exist_ok=True)
 
-    _report_progress("init", 5, "Initializing generation...")
+    tracker.start("init", "Initializing generation...", percentage=5)
+    tracker.finish(
+        "init",
+        "Generation initialized.",
+        percentage=10,
+        details={"mode": mode},
+    )
 
     if mode == "live":
         create_generator_graph = _load_generator_graph()
         if not custom_endpoint and not os.environ.get("OPENAI_API_KEY"):
-            raise RuntimeError(
-                "LLM API credentials are required for live generation mode."
+            raise GenerationError(
+                "LLM API credentials are required for live generation mode.",
+                code="credentials_required",
+                phase="graph_init",
+                hint="Set OPENAI_API_KEY or provide a custom_endpoint with an explicit model.",
+                status_code=503,
             )
-        _report_progress("graph_init", 10, "Creating generator graph...")
+        tracker.start("graph_init", "Creating generator graph...", percentage=12)
         graph = create_generator_graph()
-        _report_progress("graph_invoke", 15, "Invoking generator graph...")
+        tracker.finish("graph_init", "Generator graph created.", percentage=15)
+        tracker.start("graph_invoke", "Invoking generator graph...", percentage=18)
         result = await graph.ainvoke(
             _default_state(prompt, generation_config, generation_mode="live")
         )
-        _report_progress("graph_complete", 60, "Generator graph completed")
+        tracker.finish("graph_invoke", "Generator graph completed.", percentage=60)
     else:
-        _report_progress("stub", 30, "Building stub result...")
+        tracker.start("stub_build", "Building stub result...", percentage=30)
         result = _build_stub_result(prompt, agent_type=agent_type)
-        _report_progress("stub_complete", 60, "Stub generation complete")
+        tracker.finish("stub_build", "Stub generation complete.", percentage=60)
 
-    _report_progress("serialize", 62, "Serializing results...")
+    tracker.start("serialize", "Serializing generation results...", percentage=62)
     serialized = _serialize(result)
+    tracker.finish("serialize", "Serialized generation results.", percentage=64)
     if "architecture_type" in serialized and serialized.get("architecture_type"):
         architecture_type = serialized.get("architecture_type")
     else:
@@ -494,6 +671,8 @@ async def generate_artifacts(
         "architecture_type": architecture_type,
         "cell_count": len(serialized.get("generated_cells", []) or []),
         "plan_title": plan_title,
+        "warnings": [],
+        "export_results": {},
     }
 
     # Persist request metadata for reproducibility and downstream consumers.
@@ -521,91 +700,213 @@ async def generate_artifacts(
         _write_json(cells_path, cells)
         manifest["cells_path"] = str(cells_path)
 
-    # Build and export notebook in requested formats
-    if cells:
-        _report_progress("compose", 65, "Composing notebook...")
-        # Convert serialized cells back to CellSpec objects
-        cell_specs = [CellSpec(**cell) for cell in cells]
+    default_formats = ["ipynb", "html", "markdown", "docx", "zip"]
+    requested_formats = list(formats or default_formats)
+    explicit_request = bool(formats)
 
-        # Build the notebook
+    if cells:
+        tracker.start("compose", "Composing notebook...", percentage=65)
+        cell_specs = [CellSpec(**cell) for cell in cells]
         composer = NotebookComposer(colab_friendly=True)
         notebook = composer.build_notebook(cell_specs, ensure_minimum_sections=True)
+        tracker.finish(
+            "compose",
+            "Notebook composed successfully.",
+            percentage=70,
+            details={"cell_count": len(cell_specs)},
+        )
 
-        # Determine which formats to generate
-        if formats is None or not formats:
-            formats = ["ipynb", "html", "markdown", "docx", "zip"]
-
-        _report_progress("export_init", 70, f"Exporting to {len(formats)} format(s)...")
         exporter = NotebookExporter()
+        ipynb_path: Path | None = None
 
-        # Export to requested formats
-        if "ipynb" in formats:
-            _report_progress("export_ipynb", 72, "Exporting to Jupyter notebook...")
-            ipynb_path = target / "notebook.ipynb"
-            exporter.export_ipynb(notebook, ipynb_path)
-            manifest["notebook_path"] = str(ipynb_path)
+        def _record_export_success(
+            format_name: str,
+            phase: str,
+            *,
+            path: Path,
+            manifest_key: str,
+            percentage: int,
+        ) -> None:
+            manifest[manifest_key] = str(path)
+            manifest["export_results"][format_name] = {
+                "requested": explicit_request and format_name in requested_formats,
+                "status": "completed",
+                "path": str(path),
+            }
+            tracker.finish(
+                phase,
+                f"{format_name.upper()} export completed.",
+                percentage=percentage,
+                details={"format": format_name, "path": str(path)},
+            )
 
-        if "html" in formats:
+        def _handle_export_failure(
+            format_name: str,
+            phase: str,
+            exc: Exception,
+            *,
+            percentage: int,
+        ) -> None:
+            error = _normalize_generation_error(
+                exc,
+                phase=phase,
+                default_code="requested_export_failed",
+                default_status_code=500,
+            )
+            requested = explicit_request and format_name in requested_formats
+            manifest["export_results"][format_name] = {
+                "requested": requested,
+                "status": "failed",
+                "path": None,
+                "error": error.to_payload(),
+            }
+            manifest[f"{format_name}_error"] = str(error)
+
+            if requested:
+                tracker.finish(
+                    phase,
+                    str(error),
+                    percentage=percentage,
+                    status="failed",
+                    details=error.to_payload(),
+                )
+                raise error
+
+            manifest["warnings"].append(
+                {
+                    "code": error.code,
+                    "phase": phase,
+                    "format": format_name,
+                    "message": str(error),
+                    "hint": error.hint,
+                }
+            )
+            tracker.finish(
+                phase,
+                f"{format_name.upper()} export unavailable; continuing with remaining exports.",
+                percentage=percentage,
+                status="warning",
+                details=error.to_payload(),
+            )
+
+        if "ipynb" in requested_formats:
+            phase = "export_ipynb"
+            tracker.start(phase, "Exporting to Jupyter notebook...", percentage=72)
             try:
-                _report_progress("export_html", 78, "Exporting to HTML...")
+                ipynb_path = target / "notebook.ipynb"
+                exporter.export_ipynb(notebook, ipynb_path)
+                _record_export_success(
+                    "ipynb",
+                    phase,
+                    path=ipynb_path,
+                    manifest_key="notebook_path",
+                    percentage=74,
+                )
+            except Exception as exc:
+                _handle_export_failure("ipynb", phase, exc, percentage=74)
+
+        if "html" in requested_formats:
+            phase = "export_html"
+            tracker.start(phase, "Exporting to HTML...", percentage=78)
+            try:
                 html_path = target / "notebook.html"
                 exporter.export_to_html(notebook, html_path)
-                manifest["html_path"] = str(html_path)
-            except Exception as e:
-                manifest["html_error"] = str(e)
+                _record_export_success(
+                    "html",
+                    phase,
+                    path=html_path,
+                    manifest_key="html_path",
+                    percentage=80,
+                )
+            except Exception as exc:
+                _handle_export_failure("html", phase, exc, percentage=80)
 
-        if "markdown" in formats:
+        if "markdown" in requested_formats:
+            phase = "export_markdown"
+            tracker.start(phase, "Exporting to Markdown...", percentage=81)
             try:
-                _report_progress("export_markdown", 81, "Exporting to Markdown...")
                 markdown_path = target / "notebook.md"
                 exporter.export_to_markdown(notebook, markdown_path)
-                manifest["markdown_path"] = str(markdown_path)
-            except Exception as e:
-                manifest["markdown_error"] = str(e)
+                _record_export_success(
+                    "markdown",
+                    phase,
+                    path=markdown_path,
+                    manifest_key="markdown_path",
+                    percentage=83,
+                )
+            except Exception as exc:
+                _handle_export_failure("markdown", phase, exc, percentage=83)
 
-        if "docx" in formats:
+        if "docx" in requested_formats:
+            phase = "export_docx"
+            tracker.start(phase, "Exporting to Word document...", percentage=84)
             try:
-                _report_progress("export_docx", 84, "Exporting to Word document...")
                 docx_path = target / "notebook.docx"
                 exporter.export_notebook_to_docx(notebook, docx_path, title=plan_title)
-                manifest["docx_path"] = str(docx_path)
-            except Exception as e:
-                manifest["docx_error"] = str(e)
+                _record_export_success(
+                    "docx",
+                    phase,
+                    path=docx_path,
+                    manifest_key="docx_path",
+                    percentage=87,
+                )
+            except Exception as exc:
+                _handle_export_failure("docx", phase, exc, percentage=87)
 
-        if "pdf" in formats:
+        if "pdf" in requested_formats:
+            phase = "export_pdf"
+            tracker.start(phase, "Exporting to PDF...", percentage=90)
             try:
-                _report_progress("export_pdf", 90, "Exporting to PDF...")
-                # PDF export requires the notebook to be saved first
-                if "ipynb" not in formats:
+                if ipynb_path is None:
                     ipynb_path = target / "notebook.ipynb"
                     exporter.export_ipynb(notebook, ipynb_path)
+                    manifest["notebook_path"] = str(ipynb_path)
                 pdf_path = target / "notebook.pdf"
                 exporter.export_to_pdf(ipynb_path, pdf_path, method="webpdf")
-                manifest["pdf_path"] = str(pdf_path)
-            except Exception as e:
-                manifest["pdf_error"] = str(e)
+                _record_export_success(
+                    "pdf",
+                    phase,
+                    path=pdf_path,
+                    manifest_key="pdf_path",
+                    percentage=92,
+                )
+            except Exception as exc:
+                _handle_export_failure("pdf", phase, exc, percentage=92)
 
-        if "zip" in formats:
+        if "zip" in requested_formats:
+            phase = "export_zip"
+            tracker.start(phase, "Creating ZIP archive...", percentage=95)
             try:
-                _report_progress("export_zip", 95, "Creating ZIP archive...")
-                # Include JSON artifacts in the ZIP
                 extra_files = []
                 if manifest.get("plan_path"):
                     extra_files.append(manifest["plan_path"])
                 if manifest.get("cells_path"):
                     extra_files.append(manifest["cells_path"])
+                for format_name, export_result in manifest["export_results"].items():
+                    if export_result.get("status") == "completed" and export_result.get(
+                        "path"
+                    ):
+                        if format_name not in {"ipynb", "zip"}:
+                            extra_files.append(export_result["path"])
 
                 zip_path = target / "notebook_bundle.zip"
                 exporter.export_zip(notebook, zip_path, extra_files=extra_files)
-                manifest["zip_path"] = str(zip_path)
-            except Exception as e:
-                manifest["zip_error"] = str(e)
+                _record_export_success(
+                    "zip",
+                    phase,
+                    path=zip_path,
+                    manifest_key="zip_path",
+                    percentage=97,
+                )
+            except Exception as exc:
+                _handle_export_failure("zip", phase, exc, percentage=97)
 
-    _report_progress("finalize", 98, "Finalizing artifacts...")
+    tracker.start("finalize", "Finalizing artifacts...", percentage=98)
+    tracker.finish("finalize", "Artifacts finalized.", percentage=100)
+    manifest["phase_summary"] = list(tracker.summary)
     manifest_path = target / "manifest.json"
     _write_json(manifest_path, manifest)
 
-    _report_progress("complete", 100, "Generation complete!")
     return GenerationArtifacts(
         mode=mode,
         prompt=prompt,
@@ -659,8 +960,15 @@ def _run_generate(args: argparse.Namespace) -> int:
                 agent_type=args.agent_type,
             )
         )
+    except GenerationError as exc:
+        print(f"✗ Failed to generate artifacts: {exc}")
+        if exc.hint:
+            print(f"  Hint: {exc.hint}")
+        return 1
     except OptionalDependencyError as exc:
         print(f"✗ Failed to generate artifacts: {exc}")
+        if exc.hint:
+            print(f"  Hint: {exc.hint}")
         return 1
 
     print(f"✓ Generated artifacts in {artifacts['output_dir']}")
@@ -681,6 +989,8 @@ def _run_generate(args: argparse.Namespace) -> int:
         print(f"  PDF: {artifacts['manifest']['pdf_path']}")
     if artifacts["manifest"].get("zip_path"):
         print(f"  ZIP Bundle: {artifacts['manifest']['zip_path']}")
+    for warning in artifacts["manifest"].get("warnings", []):
+        print(f"  Warning: {warning['message']}")
     return 0
 
 
