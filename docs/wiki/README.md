@@ -28,6 +28,7 @@ Comprehensive documentation for the LangGraph System Generator project.
 - Read [Architecture Deep Dive](Architecture-Deep-Dive.md) to understand internals
 - Check [Pattern Library Guide](Pattern-Library-Guide.md) for pattern development
 - Review [CLI & API Reference](CLI-and-API-Reference.md) for integration options
+- Review [Repository Visualizations](../diagrams/README.md) for the maintainer-focused generator stage/state maps
 - Use the README's **Developing Locally** section for the current editable-install
   and validation flow
 

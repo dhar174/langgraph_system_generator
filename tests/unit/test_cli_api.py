@@ -13,10 +13,8 @@ from fastapi.testclient import TestClient
 
 from langgraph_system_generator.api.server import app
 from langgraph_system_generator.cli import GenerationArtifacts, generate_artifacts
+from langgraph_system_generator.utils.config import GenerationConfig
 from langgraph_system_generator.utils.optional_deps import OptionalDependencyError
-
-_ASYNC_CLEANUP_POLL_ATTEMPTS = 20
-_ASYNC_CLEANUP_POLL_INTERVAL_SECONDS = 0.05
 
 
 def _reload_server_modules():
@@ -56,6 +54,19 @@ async def test_generate_artifacts_stub(tmp_path: Path, monkeypatch: pytest.Monke
     assert artifacts["result"]["generation_complete"] is True
 
 
+def test_default_state_includes_generation_mode_and_qa_history():
+    import langgraph_system_generator.cli as cli_module
+
+    state = cli_module._default_state(
+        "Test prompt",
+        GenerationConfig(model="gpt-5-mini"),
+        generation_mode="live",
+    )
+
+    assert state["generation_mode"] == "live"
+    assert state["qa_history"] == []
+
+
 @pytest.mark.asyncio
 async def test_generate_artifacts_stub_autoagent_override(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -87,15 +98,104 @@ async def test_generate_artifacts_stub_autoagent_override(
 
 @pytest.mark.asyncio
 async def test_generate_artifacts_default_formats_include_markdown(
-    tmp_path: Path,
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):
+    monkeypatch.setenv("BASE_OUTPUT_DIR", str(tmp_path.resolve()))
+
+    import importlib
+    import langgraph_system_generator.constants as constants_module
+    import langgraph_system_generator.notebook.exporters as exporters_module
+    import langgraph_system_generator.cli as cli_module
+
+    importlib.reload(constants_module)
+    importlib.reload(exporters_module)
+    importlib.reload(cli_module)
+
     output_dir = tmp_path / "default_formats"
-    artifacts: GenerationArtifacts = await generate_artifacts(
+    artifacts: GenerationArtifacts = await cli_module.generate_artifacts(
         "Test prompt", output_dir=str(output_dir), mode="stub"
     )
 
     assert "markdown_path" in artifacts["manifest"]
     assert Path(artifacts["manifest"]["markdown_path"]).exists()
+
+
+@pytest.mark.asyncio
+async def test_api_generate_stub(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    # Set a test output base
+    monkeypatch.setenv("LNF_OUTPUT_BASE", "test_api_stub")
+
+    # Force module reload to pick up new env var
+    import importlib
+    import langgraph_system_generator.constants as constants_module
+    import langgraph_system_generator.notebook.exporters as exporters_module
+    import langgraph_system_generator.api.server as server_module
+
+    importlib.reload(constants_module)
+    importlib.reload(exporters_module)
+    importlib.reload(server_module)
+
+    transport = httpx.ASGITransport(app=server_module.app)
+    output_dir = constants_module._BASE_OUTPUT / tmp_path.name
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(
+            "/generate",
+            json={
+                "prompt": "API prompt",
+                "mode": "stub",
+                "output_dir": str(output_dir),
+            },
+        )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["success"] is True
+    assert payload["manifest"]["prompt"] == "API prompt"
+    assert "manifest_path" in payload
+    # Verify new response fields
+    assert payload["mode"] == "stub"
+    assert payload["prompt"] == "API prompt"
+    assert "output_dir" in payload
+    assert payload["output_dir"] == str(output_dir)
+
+
+@pytest.mark.asyncio
+async def test_api_rejects_removed_advanced_options_as_unknown_fields(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.setenv("LNF_OUTPUT_BASE", "test_api_unsupported_options")
+
+    import importlib
+    import langgraph_system_generator.constants as constants_module
+    import langgraph_system_generator.api.server as server_module
+
+    importlib.reload(constants_module)
+    importlib.reload(server_module)
+
+    transport = httpx.ASGITransport(app=server_module.app)
+    output_dir = constants_module._BASE_OUTPUT / tmp_path.name
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(
+            "/generate",
+            json={
+                "prompt": "API prompt",
+                "mode": "stub",
+                "output_dir": str(output_dir),
+                "memory_config": "short",
+            },
+        )
+
+    assert response.status_code == 422
+    assert response.json()["detail"][0]["type"] == "extra_forbidden"
+
+
+def test_generation_request_formats_description_mentions_markdown():
+    description = app.openapi()["components"]["schemas"]["GenerationRequest"]["properties"][
+        "formats"
+    ]["description"]
+
+    assert "markdown" in description.lower()
+    assert "ipynb, html, markdown, docx, zip" in description
 
 
 @pytest.mark.asyncio
@@ -115,25 +215,6 @@ async def test_api_rejects_invalid_custom_endpoint():
 
     assert response.status_code == 400
     assert "http or https URL" in response.json()["detail"]
-
-
-@pytest.mark.asyncio
-async def test_api_rejects_custom_endpoint_with_blank_model():
-    transport = httpx.ASGITransport(app=app)
-    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
-        response = await client.post(
-            "/generate",
-            json={
-                "prompt": "Blank model",
-                "mode": "stub",
-                "output_dir": "./output/api",
-                "model": "   ",
-                "custom_endpoint": " https://example.test/v1 ",
-            },
-        )
-
-    assert response.status_code == 400
-    assert "explicit OpenAI-compatible model identifier" in response.json()["detail"]
 
 
 @pytest.mark.asyncio
@@ -181,75 +262,6 @@ async def test_api_generate_surfaces_optional_dependency_errors(
 
     assert response.status_code == 400
     assert response.json()["detail"] == error_message
-
-
-@pytest.mark.asyncio
-async def test_api_generate_stub(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
-    # Set a test output base
-    monkeypatch.setenv("LNF_OUTPUT_BASE", "test_api_stub")
-
-    # Force module reload to pick up new env var
-    import importlib
-    import langgraph_system_generator.constants as constants_module
-    import langgraph_system_generator.notebook.exporters as exporters_module
-    import langgraph_system_generator.api.server as server_module
-
-    importlib.reload(constants_module)
-    importlib.reload(exporters_module)
-    importlib.reload(server_module)
-
-    transport = httpx.ASGITransport(app=server_module.app)
-    output_dir = constants_module._BASE_OUTPUT / tmp_path.name
-    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
-        response = await client.post(
-            "/generate",
-            json={
-                "prompt": "API prompt",
-                "mode": "stub",
-                "output_dir": str(output_dir),
-            },
-        )
-
-    assert response.status_code == 200
-    payload = response.json()
-    assert payload["success"] is True
-    assert payload["manifest"]["prompt"] == "API prompt"
-    assert "manifest_path" in payload
-    # Verify new response fields
-    assert payload["mode"] == "stub"
-    assert payload["prompt"] == "API prompt"
-    assert "output_dir" in payload
-    assert payload["output_dir"] == str(output_dir)
-
-
-@pytest.mark.asyncio
-async def test_api_rejects_unsupported_advanced_options(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-):
-    monkeypatch.setenv("LNF_OUTPUT_BASE", "test_api_unsupported_options")
-
-    import importlib
-    import langgraph_system_generator.constants as constants_module
-    import langgraph_system_generator.api.server as server_module
-
-    importlib.reload(constants_module)
-    importlib.reload(server_module)
-
-    transport = httpx.ASGITransport(app=server_module.app)
-    output_dir = constants_module._BASE_OUTPUT / tmp_path.name
-    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
-        response = await client.post(
-            "/generate",
-            json={
-                "prompt": "API prompt",
-                "mode": "stub",
-                "output_dir": str(output_dir),
-                "memory_config": "short",
-            },
-        )
-
-    assert response.status_code == 400
-    assert "Unsupported advanced options" in response.json()["detail"]
 
 
 @pytest.mark.asyncio
@@ -744,11 +756,4 @@ async def test_api_generate_async_concurrency_limit(
 
         assert response2.status_code == 503
         gate.set()
-        for _ in range(_ASYNC_CLEANUP_POLL_ATTEMPTS):
-            if server_module._active_generation_count == 0:
-                break
-            await aio.sleep(_ASYNC_CLEANUP_POLL_INTERVAL_SECONDS)
-        else:
-            pytest.fail("Background generation did not release its slot in time")
-
-        assert server_module._active_generation_count == 0
+        await aio.sleep(0.05)

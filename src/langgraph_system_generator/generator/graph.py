@@ -40,6 +40,18 @@ def should_repair(
     if not failed_reports:
         return "package"
 
+    # Environment/runtime support failures in live mode are product-gate failures
+    # and should not enter the repair loop because repair cannot provision kernels
+    # or missing execution dependencies.
+    for report in failed_reports:
+        evidence = report.evidence
+        if (
+            report.check_name == "Runtime Check"
+            and evidence.get("failure_kind") == "runtime_unavailable"
+            and evidence.get("generation_mode") == "live"
+        ):
+            return "fail"
+
     # If max repair attempts reached, fail
     if state["repair_attempts"] >= settings.max_repair_attempts:
         return "fail"

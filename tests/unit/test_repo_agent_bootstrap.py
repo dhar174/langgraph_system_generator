@@ -70,6 +70,19 @@ def test_merge_managed_text_preserves_user_content() -> None:
     assert "# Old body" not in merged
 
 
+def test_merge_managed_text_appends_first_managed_block_to_nonempty_text() -> None:
+    existing = "User note before.\n"
+    incoming = wrap_managed_block(
+        "# New body", file_kind="agents-md", provenance="repo-agent-bootstrap@2026-04-15"
+    )
+
+    merged = merge_managed_text(existing, incoming)
+
+    assert merged.startswith("User note before.")
+    assert "# New body" in merged
+    assert "<!-- repo-agent-bootstrap:file-kind=agents-md -->" in merged
+
+
 def test_build_bootstrap_files_renders_core_outputs_and_agents(tmp_path: Path) -> None:
     (tmp_path / "README.md").write_text(
         "# Example Repo\n\nA Python API with docs and tests.\n\n```bash\npytest\nruff check .\nmypy .\n```\n",

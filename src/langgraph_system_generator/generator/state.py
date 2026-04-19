@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import operator
-from typing import Annotated, Any, Dict, List, Optional
+from typing import Annotated, Any, Dict, List, Literal, Optional
 
 from pydantic import BaseModel, Field
 from typing_extensions import TypedDict
@@ -67,6 +67,18 @@ class QAReport(BaseModel):
     passed: bool = Field(description="Whether the check passed")
     message: str = Field(description="Report message or error details")
     suggestions: List[str] = Field(default_factory=list, description="Suggested fixes")
+    stage: Optional[str] = Field(
+        default=None,
+        description="Optional workflow stage for this report (e.g. static, runtime, repair).",
+    )
+    attempt: Optional[int] = Field(
+        default=None,
+        description="Optional repair/QA attempt number associated with this report.",
+    )
+    evidence: Dict[str, Any] = Field(
+        default_factory=dict,
+        description="Optional structured evidence captured during QA or repair.",
+    )
 
 
 class GeneratorState(TypedDict):
@@ -88,11 +100,11 @@ class GeneratorState(TypedDict):
     architecture_justification: str
     architecture_type: Optional[str]
     generation_config: Optional[GenerationConfig]
+    generation_mode: Literal["stub", "live"]
 
     # Workflow design (added for graph designer)
     workflow_design: Optional[Dict[str, Any]]
     tools_plan: Optional[List[Dict[str, Any]]]
-    generation_config: Optional[GenerationConfig]
 
     # Generation
     # NOTE: `generated_cells` is intentionally *not* annotated with `operator.add`.
@@ -104,6 +116,7 @@ class GeneratorState(TypedDict):
 
     # QA & Repair
     qa_reports: List[QAReport]
+    qa_history: List[QAReport]
     repair_attempts: int
 
     # Output

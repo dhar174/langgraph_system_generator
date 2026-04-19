@@ -13,7 +13,7 @@ from urllib.parse import urlparse
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import FileResponse, HTMLResponse, Response
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from langgraph_system_generator.constants import _BASE_OUTPUT, resolve_under_base
 from langgraph_system_generator.cli import (
@@ -48,15 +48,6 @@ _DEFAULT_API_OUTPUT = (_BASE_OUTPUT / "api").resolve()
 _MAX_CONCURRENT_GENERATIONS = int(os.getenv("LNF_MAX_CONCURRENT_GENERATIONS", "5"))
 _generation_lock = asyncio.Lock()
 _active_generation_count = 0
-_UNSUPPORTED_ADVANCED_FIELDS = (
-    "memory_config",
-    "preset",
-    "graph_style",
-    "retriever_type",
-    "document_loader",
-)
-
-
 async def _try_acquire_generation_slot() -> bool:
     """Reserve a generation slot if capacity is available."""
     global _active_generation_count
@@ -146,30 +137,16 @@ def _resolve_artifact_path(path: str | os.PathLike[str]) -> Path:
 def _validate_advanced_options(
     request: "GenerationRequest",
 ) -> tuple[str | None, str | None, str | None]:
-    """Reject unsupported advanced options and return normalized values."""
+    """Normalize and validate supported advanced options."""
     normalized_model = normalize_optional_string(request.model)
     normalized_custom_endpoint = normalize_optional_string(request.custom_endpoint)
     normalized_agent_type = normalize_agent_type(request.agent_type)
+
     if normalized_agent_type and normalized_agent_type not in SUPPORTED_AGENT_TYPES:
         supported = ", ".join(sorted(SUPPORTED_AGENT_TYPES))
         raise HTTPException(
             status_code=400,
             detail=f"Unsupported agent_type. Supported values are: {supported}.",
-        )
-
-    unsupported_fields = [
-        field_name
-        for field_name in _UNSUPPORTED_ADVANCED_FIELDS
-        if getattr(request, field_name) not in (None, "")
-    ]
-    if unsupported_fields:
-        supported_fields = "model, temperature, max_tokens, custom_endpoint, agent_type"
-        raise HTTPException(
-            status_code=400,
-            detail=(
-                f"Unsupported advanced options: {', '.join(unsupported_fields)}. "
-                f"Currently supported options are: {supported_fields}."
-            ),
         )
 
     if normalized_custom_endpoint and normalized_model in (None, "custom"):
@@ -210,6 +187,8 @@ def _normalize_request(request: "GenerationRequest") -> "GenerationRequest":
 
 
 class GenerationRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     prompt: str = Field(
         ...,
         description="User prompt describing the desired system",
@@ -225,7 +204,10 @@ class GenerationRequest(BaseModel):
     )
     formats: Optional[list[str]] = Field(
         default=None,
-        description="List of output formats to generate (ipynb, html, pdf, docx, zip). Generates all if not specified.",
+        description=(
+            "List of output formats to generate (ipynb, html, markdown, pdf, docx, zip). "
+            "If not specified, generates the default export set: ipynb, html, markdown, docx, zip."
+        ),
     )
     # Advanced options
     model: Optional[str] = Field(
@@ -235,10 +217,6 @@ class GenerationRequest(BaseModel):
     custom_endpoint: Optional[str] = Field(
         default=None,
         description="Custom OpenAI-compatible API endpoint URL for self-hosted or proxy deployments.",
-    )
-    preset: Optional[str] = Field(
-        default=None,
-        description="Reserved for future support; currently rejected when set.",
     )
     temperature: Optional[float] = Field(
         default=None,
@@ -260,23 +238,7 @@ class GenerationRequest(BaseModel):
     )
     agent_type: Optional[str] = Field(
         default=None,
-        description="Type of agent architecture (router, subagents, hybrid, autoagent, etc.).",
-    )
-    memory_config: Optional[str] = Field(
-        default=None,
-        description="Reserved for future support; currently rejected when set.",
-    )
-    graph_style: Optional[str] = Field(
-        default=None,
-        description="Reserved for future support; currently rejected when set.",
-    )
-    retriever_type: Optional[str] = Field(
-        default=None,
-        description="Reserved for future support; currently rejected when set.",
-    )
-    document_loader: Optional[str] = Field(
-        default=None,
-        description="Reserved for future support; currently rejected when set.",
+        description="Type of agent architecture (router, subagents, hybrid, autoagent, etc.) when overriding auto-detection.",
     )
 
 
@@ -362,12 +324,7 @@ async def generate_notebook(request: GenerationRequest) -> GenerationResponse:
                 temperature=request.temperature,
                 max_tokens=request.max_tokens,
                 agent_type=normalized_request.agent_type,
-                memory_config=request.memory_config,
                 custom_endpoint=normalized_request.custom_endpoint,
-                preset=request.preset,
-                graph_style=request.graph_style,
-                retriever_type=request.retriever_type,
-                document_loader=request.document_loader,
             )
             return GenerationResponse(
                 success=True,
@@ -491,12 +448,7 @@ async def _run_generation_with_progress(
             temperature=request.temperature,
             max_tokens=request.max_tokens,
             agent_type=request.agent_type,
-            memory_config=request.memory_config,
             custom_endpoint=request.custom_endpoint,
-            preset=request.preset,
-            graph_style=request.graph_style,
-            retriever_type=request.retriever_type,
-            document_loader=request.document_loader,
             progress_callback=progress_callback,
         )
 

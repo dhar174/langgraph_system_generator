@@ -87,6 +87,9 @@ graph LR
 For the code-level view, see
 [docs/wiki/Architecture-Deep-Dive.md](docs/wiki/Architecture-Deep-Dive.md).
 
+For a maintainer-focused stage/state map, see
+[docs/diagrams/README.md](docs/diagrams/README.md).
+
 ## Developing Locally
 
 Use the editable install during local development so the CLI and package imports
@@ -452,17 +455,12 @@ direction TB
   class GenerationRequest {
     agent_type : Optional[str]
     custom_endpoint : Optional[str]
-    document_loader : Optional[str]
     formats : Optional[list[str]]
-    graph_style : Optional[str]
     max_tokens : Optional[int]
-    memory_config : Optional[str]
     mode : Optional[GenerationMode]
     model : Optional[str]
     output_dir : Optional[str]
-    preset : Optional[str]
     prompt : Optional[str]
-    retriever_type : Optional[str]
     temperature : Optional[float]
   }
   class GenerationResponse {
@@ -481,7 +479,7 @@ direction TB
     constraints : Annotated[List[Constraint], operator.add]
     docs_context : Annotated[List[DocSnippet], operator.add]
     error_message : Optional[str]
-    generated_cells : Annotated[List[CellSpec], operator.add]
+    generated_cells : List[CellSpec]
     generation_complete : bool
     notebook_plan : Optional[NotebookPlan]
     qa_reports : List[QAReport]

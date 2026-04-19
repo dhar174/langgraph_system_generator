@@ -49,6 +49,7 @@ class GenerationArtifacts(TypedDict):
 def _default_state(
     prompt: str,
     generation_config: GenerationConfig | None = None,
+    generation_mode: GenerationMode = "live",
 ) -> Dict[str, Any]:
     """Return a baseline GeneratorState payload."""
 
@@ -61,15 +62,17 @@ def _default_state(
         "notebook_plan": None,
         "architecture_justification": "",
         "architecture_type": None,
+        "generation_config": generation_config,
+        "generation_mode": generation_mode,
         "workflow_design": None,
         "tools_plan": None,
         "generated_cells": [],
         "qa_reports": [],
+        "qa_history": [],
         "repair_attempts": 0,
         "artifacts_manifest": {},
         "generation_complete": False,
         "error_message": None,
-        "generation_config": generation_config,
     }
 
 
@@ -354,6 +357,8 @@ def _build_stub_result(prompt: str, agent_type: str | None = None) -> Dict[str, 
         "notebook_plan": plan,
         "architecture_type": plan.architecture_type,
         "architecture_justification": justification,
+        "generation_config": None,
+        "generation_mode": "stub",
         "workflow_design": {
             "entry_point": architecture_type,
             "nodes": [
@@ -374,6 +379,7 @@ def _build_stub_result(prompt: str, agent_type: str | None = None) -> Dict[str, 
         "tools_plan": [],
         "generated_cells": cells,
         "qa_reports": [],
+        "qa_history": [],
         "repair_attempts": 0,
         "artifacts_manifest": {},
         "generation_complete": True,
@@ -391,12 +397,7 @@ async def generate_artifacts(
     temperature: float | None = None,
     max_tokens: int | None = None,
     agent_type: str | None = None,
-    memory_config: str | None = None,
     custom_endpoint: str | None = None,
-    preset: str | None = None,
-    graph_style: str | None = None,
-    retriever_type: str | None = None,
-    document_loader: str | None = None,
     progress_callback: Any | None = None,
 ) -> GenerationArtifacts:
     """Generate notebook artifacts either in stub or live mode.
@@ -414,12 +415,7 @@ async def generate_artifacts(
         temperature: Temperature for LLM sampling (0.0-2.0, optional)
         max_tokens: Maximum tokens for LLM response (optional)
         agent_type: Type of agent architecture (optional, auto-detected if not specified)
-        memory_config: Memory configuration for the agent (optional)
         custom_endpoint: Custom API endpoint URL (optional)
-        preset: Task preset for optimized settings (optional)
-        graph_style: Graph execution style (optional)
-        retriever_type: Document retriever type for RAG (optional)
-        document_loader: Document loader type (optional)
         progress_callback: Optional callback function(node, percentage, message) for progress tracking
     """
 
@@ -471,7 +467,9 @@ async def generate_artifacts(
         _report_progress("graph_init", 10, "Creating generator graph...")
         graph = create_generator_graph()
         _report_progress("graph_invoke", 15, "Invoking generator graph...")
-        result = await graph.ainvoke(_default_state(prompt, generation_config))
+        result = await graph.ainvoke(
+            _default_state(prompt, generation_config, generation_mode="live")
+        )
         _report_progress("graph_complete", 60, "Generator graph completed")
     else:
         _report_progress("stub", 30, "Building stub result...")
@@ -507,18 +505,8 @@ async def generate_artifacts(
         manifest["max_tokens"] = max_tokens
     if agent_type:
         manifest["agent_type"] = agent_type
-    if memory_config:
-        manifest["memory_config"] = memory_config
     if custom_endpoint:
         manifest["custom_endpoint"] = custom_endpoint
-    if preset:
-        manifest["preset"] = preset
-    if graph_style:
-        manifest["graph_style"] = graph_style
-    if retriever_type:
-        manifest["retriever_type"] = retriever_type
-    if document_loader:
-        manifest["document_loader"] = document_loader
 
     # Persist helpful artifacts for downstream consumers
     plan = serialized.get("notebook_plan")
@@ -744,7 +732,11 @@ def build_parser() -> argparse.ArgumentParser:
         nargs="+",
         choices=["ipynb", "html", "markdown", "pdf", "docx", "zip"],
         default=None,
-        help="Output formats to generate (default: all formats). Specify one or more.",
+        help=(
+            "Output formats to generate "
+            "(default: ipynb html markdown docx zip; PDF only when requested). "
+            "Specify one or more."
+        ),
     )
     gen.add_argument(
         "--agent-type",
