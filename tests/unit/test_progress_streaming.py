@@ -81,6 +81,8 @@ async def test_completed_job_cleanup_waits_for_retention_window(
 
     assert sleep_calls == [progress_streaming._COMPLETED_JOB_TTL_SECONDS]
     assert job_id not in progress_streaming._active_jobs
+
+
 @pytest.mark.asyncio
 async def test_progress_streaming_truncates_history_after_configured_limit(
     monkeypatch: pytest.MonkeyPatch,
