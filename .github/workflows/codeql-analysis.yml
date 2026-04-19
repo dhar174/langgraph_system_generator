@@ -1,0 +1,19 @@
+name: CodeQL Analysis
+
+on:
+  pull_request:
+    branches: ["main"]
+  schedule:
+    - cron: "22 0 * * 1"
+
+jobs:
+  codeql:
+    # Main-branch pushes are scanned through caller workflows that sequence
+    # CodeQL before follow-on jobs. This wrapper covers PR and scheduled scans
+    # without duplicating those main push runs.
+    uses: ./.github/workflows/codeql.yml
+    secrets: inherit
+    permissions:
+      contents: read
+      security-events: write
+      actions: read
