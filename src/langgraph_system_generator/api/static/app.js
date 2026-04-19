@@ -17,6 +17,7 @@ const progressFill = document.getElementById('progressFill');
 const progressText = document.getElementById('progressText');
 const progressPercentage = document.getElementById('progressPercentage');
 const progressSteps = document.getElementById('progressSteps');
+let currentEventSource = null;
 
 // Validation constants
 const CHAR_COUNT_MIN = 10;
@@ -360,205 +361,107 @@ function showProgress(step, percentage, message) {
 // Show success result
 function showResult(data) {
     hideResults();
-    
+
     const manifest = data.manifest || {};
     const mode = data.mode || 'unknown';
-    
-    // Clear any previous content
+    const warnings = Array.isArray(manifest.warnings) ? manifest.warnings : [];
+
     resultContent.replaceChildren();
-    
-    // Create result content wrapper
+
     const resultWrapper = document.createElement('div');
     resultWrapper.className = 'result-content';
-    
-    // Success message
+
     const successItem = document.createElement('div');
     successItem.className = 'result-item';
-    
+
     const successHeading = document.createElement('h3');
     successHeading.style.color = 'var(--success-color)';
     successHeading.style.marginBottom = '0.5rem';
-    successHeading.textContent = 'Generation Successful!';
-    
+    successHeading.textContent = warnings.length > 0
+        ? 'Generation Completed With Warnings'
+        : 'Generation Successful!';
+
     const successParagraph = document.createElement('p');
-    successParagraph.textContent = 'Your system was generated in ';
-    
-    const modeStrong = document.createElement('strong');
-    modeStrong.textContent = mode;
-    
-    successParagraph.appendChild(modeStrong);
-    successParagraph.appendChild(document.createTextNode(' mode.'));
-    
+    successParagraph.textContent = `Your system was generated in ${mode} mode.`;
+
     successItem.appendChild(successHeading);
     successItem.appendChild(successParagraph);
     resultWrapper.appendChild(successItem);
-    
-    // Architecture type
+
     if (manifest.architecture_type) {
         const archItem = document.createElement('div');
         archItem.className = 'result-item';
-        
-        const archLabel = document.createElement('strong');
-        archLabel.textContent = 'Architecture: ';
-        
-        const archValue = document.createElement('span');
-        archValue.style.color = 'var(--primary-color)';
-        archValue.textContent = manifest.architecture_type;
-        
-        archItem.appendChild(archLabel);
-        archItem.appendChild(archValue);
+        archItem.innerHTML = `<strong>Architecture:</strong> <span style="color: var(--primary-color);">${manifest.architecture_type}</span>`;
         resultWrapper.appendChild(archItem);
     }
-    
-    // Plan title
+
     if (manifest.plan_title) {
         const planItem = document.createElement('div');
         planItem.className = 'result-item';
-        
-        const planLabel = document.createElement('strong');
-        planLabel.textContent = 'Plan Title: ';
-        
-        const planValue = document.createTextNode(manifest.plan_title);
-        
-        planItem.appendChild(planLabel);
-        planItem.appendChild(planValue);
+        planItem.innerHTML = `<strong>Plan Title:</strong> ${manifest.plan_title}`;
         resultWrapper.appendChild(planItem);
     }
-    
-    // Cell count
+
     if (manifest.cell_count) {
         const cellItem = document.createElement('div');
         cellItem.className = 'result-item';
-        
-        const cellLabel = document.createElement('strong');
-        cellLabel.textContent = 'Generated Cells: ';
-        
-        const cellValue = document.createTextNode(String(manifest.cell_count));
-        
-        cellItem.appendChild(cellLabel);
-        cellItem.appendChild(cellValue);
+        cellItem.innerHTML = `<strong>Generated Cells:</strong> ${String(manifest.cell_count)}`;
         resultWrapper.appendChild(cellItem);
     }
-    
-    // Output directory
-    if (data.manifest_path) {
+
+    if (data.output_dir) {
         const outputItem = document.createElement('div');
         outputItem.className = 'result-item';
-        
-        const outputLabel = document.createElement('strong');
-        outputLabel.textContent = 'Output Directory: ';
-        
-        const outputCode = document.createElement('code');
-        outputCode.style.background = 'var(--bg-tertiary)';
-        outputCode.style.padding = '0.25rem 0.5rem';
-        outputCode.style.borderRadius = '0.25rem';
-        outputCode.textContent = data.output_dir || 'output/';
-        
-        outputItem.appendChild(outputLabel);
-        outputItem.appendChild(outputCode);
+        outputItem.innerHTML = `<strong>Output Directory:</strong> <code>${data.output_dir}</code>`;
         resultWrapper.appendChild(outputItem);
     }
-    
-    // Notebook plan path
-    if (manifest.plan_path) {
-        const planPathItem = document.createElement('div');
-        planPathItem.className = 'result-item';
-        
-        const planPathLabel = document.createElement('strong');
-        planPathLabel.textContent = 'Notebook Plan: ';
-        
-        const planPathCode = document.createElement('code');
-        planPathCode.style.background = 'var(--bg-tertiary)';
-        planPathCode.style.padding = '0.25rem 0.5rem';
-        planPathCode.style.borderRadius = '0.25rem';
-        planPathCode.style.fontSize = '0.875rem';
-        planPathCode.textContent = manifest.plan_path;
-        
-        planPathItem.appendChild(planPathLabel);
-        planPathItem.appendChild(planPathCode);
-        resultWrapper.appendChild(planPathItem);
+
+    if (warnings.length > 0) {
+        const warningItem = document.createElement('div');
+        warningItem.className = 'result-item';
+        warningItem.style.background = 'var(--bg-primary)';
+        warningItem.style.padding = '1rem';
+        warningItem.style.borderRadius = '0.5rem';
+        warningItem.style.marginTop = '1rem';
+
+        const warningHeading = document.createElement('h4');
+        warningHeading.textContent = 'Warnings';
+        warningHeading.style.marginBottom = '0.5rem';
+        warningItem.appendChild(warningHeading);
+
+        const warningList = document.createElement('ul');
+        warnings.forEach((warning) => {
+            const item = document.createElement('li');
+            item.textContent = warning.message || 'A non-fatal export warning occurred.';
+            warningList.appendChild(item);
+        });
+        warningItem.appendChild(warningList);
+        resultWrapper.appendChild(warningItem);
     }
-    
-    // Generated cells path
-    if (manifest.cells_path) {
-        const cellsPathItem = document.createElement('div');
-        cellsPathItem.className = 'result-item';
-        
-        const cellsPathLabel = document.createElement('strong');
-        cellsPathLabel.textContent = 'Generated Cells: ';
-        
-        const cellsPathCode = document.createElement('code');
-        cellsPathCode.style.background = 'var(--bg-tertiary)';
-        cellsPathCode.style.padding = '0.25rem 0.5rem';
-        cellsPathCode.style.borderRadius = '0.25rem';
-        cellsPathCode.style.fontSize = '0.875rem';
-        cellsPathCode.textContent = manifest.cells_path;
-        
-        cellsPathItem.appendChild(cellsPathLabel);
-        cellsPathItem.appendChild(cellsPathCode);
-        resultWrapper.appendChild(cellsPathItem);
-    }
-    
-    // Next steps section
-    const stepsItem = document.createElement('div');
-    stepsItem.className = 'result-item';
-    stepsItem.style.marginTop = '1.5rem';
-    stepsItem.style.padding = '1rem';
-    stepsItem.style.background = 'var(--bg-primary)';
-    stepsItem.style.borderRadius = '0.5rem';
-    
-    const stepsHeading = document.createElement('h4');
-    stepsHeading.style.marginBottom = '0.5rem';
-    stepsHeading.style.color = 'var(--text-primary)';
-    stepsHeading.textContent = 'Next Steps:';
-    
-    const stepsList = document.createElement('ol');
-    stepsList.style.marginLeft = '1.5rem';
-    stepsList.style.color = 'var(--text-secondary)';
-    
-    const steps = [
-        'Check the output directory for generated artifacts',
-        'Review the notebook plan and generated cells',
-        'Import the cells into a Jupyter notebook',
-        'Customize and run your multi-agent system'
-    ];
-    
-    steps.forEach(stepText => {
-        const li = document.createElement('li');
-        li.textContent = stepText;
-        stepsList.appendChild(li);
-    });
-    
-    stepsItem.appendChild(stepsHeading);
-    stepsItem.appendChild(stepsList);
-    resultWrapper.appendChild(stepsItem);
-    
-    // Add export buttons section
+
     const exportSection = document.createElement('div');
     exportSection.className = 'result-item';
     exportSection.style.marginTop = '1.5rem';
-    
+
     const exportHeading = document.createElement('h4');
     exportHeading.style.marginBottom = '1rem';
     exportHeading.style.color = 'var(--text-primary)';
     exportHeading.textContent = 'Available Downloads:';
-    
+    exportSection.appendChild(exportHeading);
+
     const exportButtons = document.createElement('div');
     exportButtons.style.display = 'flex';
     exportButtons.style.gap = '0.75rem';
     exportButtons.style.flexWrap = 'wrap';
-    
-    // Add download buttons for available formats
-    const formats = [
+
+    [
         { key: 'notebook_path', label: 'Notebook (.ipynb)' },
         { key: 'html_path', label: 'HTML' },
         { key: 'docx_path', label: 'Word Doc' },
         { key: 'pdf_path', label: 'PDF' },
         { key: 'zip_path', label: 'ZIP Bundle' },
         { key: 'markdown_path', label: 'Markdown (.md)' }
-    ];
-    
-    formats.forEach(format => {
+    ].forEach((format) => {
         if (manifest[format.key]) {
             const btn = document.createElement('a');
             btn.className = 'btn btn-secondary';
@@ -570,29 +473,58 @@ function showResult(data) {
             exportButtons.appendChild(btn);
         }
     });
-    
-    // Add copy result button
+
     const copyBtn = document.createElement('button');
     copyBtn.className = 'btn btn-secondary';
     copyBtn.textContent = 'Copy Result Info';
-    copyBtn.onclick = () => {
-        const resultText = JSON.stringify(manifest, null, 2);
-        // Use the shared clipboard helper so toasts and errors are handled consistently
-        copyTextToClipboard(resultText, 'Result info copied to clipboard');
-    // Add to DOM
+    copyBtn.addEventListener('click', () => {
+        copyTextToClipboard(JSON.stringify(manifest, null, 2), 'Result info copied to clipboard');
+    });
+    exportButtons.appendChild(copyBtn);
+
+    exportSection.appendChild(exportButtons);
+    resultWrapper.appendChild(exportSection);
+
     resultContent.appendChild(resultWrapper);
     resultCard.style.display = 'block';
     resultCard.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 }
 
+function extractErrorMessage(payload, fallback = null) {
+    if (payload && typeof payload === 'object') {
+        if (typeof payload.message === 'string' && payload.message.trim()) {
+            return payload.message.trim();
+        }
+        if (typeof payload.error === 'string' && payload.error.trim()) {
+            return payload.error.trim();
+        }
+        if (payload.detail) {
+            if (typeof payload.detail === 'string' && payload.detail.trim()) {
+                return payload.detail.trim();
+            }
+            if (typeof payload.detail === 'object') {
+                return extractErrorMessage(payload.detail, fallback);
+            }
+        }
+    }
+    if (fallback && typeof fallback === 'object') {
+        return extractErrorMessage(fallback, null);
+    }
+    return 'Generation failed. Please review the server details and try again.';
+}
+
+function closeProgressStream() {
+    if (currentEventSource) {
+        currentEventSource.close();
+        currentEventSource = null;
+    }
+}
+
 // Show error
 function showError(message) {
     hideResults();
-    
-    // Clear any previous error content
     errorContent.replaceChildren();
 
-    // Build error block safely using DOM APIs
     const wrapper = document.createElement('div');
     wrapper.style.background = 'var(--bg-tertiary)';
     wrapper.style.padding = '1rem';
@@ -604,43 +536,100 @@ function showError(message) {
     messageParagraph.style.marginBottom = '0.5rem';
     messageParagraph.textContent = message;
 
-    const helperText = document.createElement('small');
-    helperText.style.color = 'var(--text-muted)';
-    helperText.textContent = 'Please check your inputs and try again.';
-
     wrapper.appendChild(messageParagraph);
-    wrapper.appendChild(helperText);
     errorContent.appendChild(wrapper);
-    
+
     errorCard.style.display = 'block';
     errorCard.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+function streamGeneration(streamUrl) {
+    return new Promise((resolve, reject) => {
+        closeProgressStream();
+        const eventSource = new EventSource(streamUrl);
+        currentEventSource = eventSource;
+        let latestErrorDetails = null;
+
+        eventSource.addEventListener('progress', (event) => {
+            const payload = JSON.parse(event.data);
+            showProgress(
+                payload.node || payload.phase || 'generation',
+                payload.percentage || 0,
+                payload.message || 'Working...'
+            );
+        });
+
+        eventSource.addEventListener('log', (event) => {
+            const payload = JSON.parse(event.data);
+            if (payload.level === 'error') {
+                latestErrorDetails = payload.details || {};
+            }
+        });
+
+        eventSource.addEventListener('complete', (event) => {
+            const payload = JSON.parse(event.data);
+            closeProgressStream();
+            resolve(payload);
+        });
+
+        eventSource.addEventListener('error', (event) => {
+            let payload = {};
+            try {
+                payload = event.data ? JSON.parse(event.data) : {};
+            } catch (err) {
+                payload = {};
+            }
+            closeProgressStream();
+            reject(new Error(extractErrorMessage(payload, latestErrorDetails)));
+        });
+
+        eventSource.onerror = () => {
+            if (eventSource.readyState === EventSource.CLOSED) {
+                closeProgressStream();
+            }
+        };
+    });
+}
+
+async function startAsyncGeneration(data) {
+    const response = await fetch('/generate-async', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(data)
+    });
+
+    const payload = await response.json();
+    if (!response.ok) {
+        throw new Error(extractErrorMessage(payload));
+    }
+
+    showProgress('queued', 12, 'Generation accepted. Connecting to progress stream...');
+    return streamGeneration(payload.stream_url);
 }
 
 // Handle form submission
 form.addEventListener('submit', async (e) => {
     e.preventDefault();
-    
+
     const formData = new FormData(form);
-    
-    // Collect selected formats
     const formats = [];
     const formatCheckboxes = document.querySelectorAll('input[name="formats"]:checked');
     formatCheckboxes.forEach(cb => formats.push(cb.value));
-    
-    // Validate at least one format is selected
+
     if (formats.length === 0) {
         showError('Please select at least one output format.');
         return;
     }
-    
+
     const data = {
         prompt: formData.get('prompt'),
         mode: formData.get('mode'),
         output_dir: formData.get('outputDir'),
         formats: formats
     };
-    
-    // Add advanced options if specified
+
     const model = formData.get('model');
     const customEndpoint = formData.get('customEndpoint');
     const customModel = formData.get('customModel');
@@ -650,96 +639,47 @@ form.addEventListener('submit', async (e) => {
     } else if (model) {
         data.model = model;
     }
-    
+
     const temperature = parseFloat(formData.get('temperature'));
-    // Only send temperature if it differs from default (0.7)
     if (!isNaN(temperature) && temperature !== 0.7) data.temperature = temperature;
-    
+
     const maxTokens = formData.get('maxTokens');
     if (maxTokens) data.max_tokens = parseInt(maxTokens);
-    
+
     const agentType = formData.get('agentType');
     if (agentType) data.agent_type = agentType;
-    
-    // Validate prompt length (using Unicode code points)
+
     if (getCharacterCount(data.prompt) > CHAR_COUNT_MAX) {
         showError(`Prompt exceeds maximum length of ${CHAR_COUNT_MAX} characters.`);
         return;
     }
-    
+
     if (getCharacterCount(data.prompt.trim()) < CHAR_COUNT_MIN) {
         showError(`Please enter a prompt of at least ${CHAR_COUNT_MIN} characters.`);
         return;
     }
-    
-    // Prevent submission if the output directory path is currently invalid
+
     if (outputDirInput && outputDirInput.classList.contains('invalid')) {
         const errorMsg = outputDirInput.getAttribute('title') || 'Invalid output directory path';
         showError(`Please fix the output directory: ${errorMsg}`);
         outputDirInput.focus();
         return;
     }
-    
-    // Save to history
+
     saveToHistory(data);
-    
+
     setLoading(true);
     hideResults();
-    
-    // Show initial progress
-    showProgress(1, 10, 'Validating input...');
-    
-    // Track progress timeout IDs to clear them if API completes early
-    const progressTimeouts = [];
-    
+    showProgress('validation', 10, 'Validating input...');
+
     try {
-        // Simulate progress updates only if they haven't been overtaken by actual progress
-        progressTimeouts.push(setTimeout(() => {
-            if (progressPercentage.textContent === '10%') {
-                showProgress(2, 25, 'Preparing generation context...');
-            }
-        }, 500));
-        progressTimeouts.push(setTimeout(() => {
-            if (parseInt(progressPercentage.textContent) < 50) {
-                showProgress(3, 50, 'Invoking LLM...');
-            }
-        }, 1000));
-        
-        const response = await fetch('/generate', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify(data)
-        });
-        
-        // Clear any pending simulated progress updates
-        progressTimeouts.forEach(id => clearTimeout(id));
-        
-        showProgress(4, 75, 'Generating artifacts...');
-        
-        const result = await response.json();
-        
-        showProgress(5, 90, 'Finalizing outputs...');
-        
-        if (response.ok && result.success) {
-            setTimeout(() => {
-                showProgress(6, 100, 'Complete!');
-                setTimeout(() => showResult(result), 500);
-            }, 300);
-        } else {
-            // Log detailed error for debugging but show generic message to user
-            const serverErrorDetail = (result && (result.error || result.detail)) || '';
-            if (serverErrorDetail) {
-                console.error('Server error during generation:', serverErrorDetail);
-            }
-            const errorMsg = 'Generation failed. Please try again or contact support if the problem persists.';
-            showError(errorMsg);
-        }
+        const result = await startAsyncGeneration(data);
+        showResult(result);
     } catch (error) {
         console.error('Generation error:', error);
-        showError('Network error: Unable to reach the server. Please ensure the server is running and try again.');
+        showError(error.message || 'Unable to complete generation.');
     } finally {
+        closeProgressStream();
         setLoading(false);
     }
 });

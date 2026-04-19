@@ -25,9 +25,11 @@ from langgraph_system_generator.api.progress_streaming import (
     create_job,
     emit_complete,
     emit_error,
+    emit_log,
     emit_node_progress,
     get_stream_response,
 )
+from langgraph_system_generator.utils.error_handling import GenerationError
 from langgraph_system_generator.utils.generation_options import (
     SUPPORTED_AGENT_TYPES,
     normalize_agent_type,
@@ -48,6 +50,46 @@ _DEFAULT_API_OUTPUT = (_BASE_OUTPUT / "api").resolve()
 _MAX_CONCURRENT_GENERATIONS = int(os.getenv("LNF_MAX_CONCURRENT_GENERATIONS", "5"))
 _generation_lock = asyncio.Lock()
 _active_generation_count = 0
+
+
+def _generation_error_payload(exc: Exception) -> dict[str, Any]:
+    """Normalize exceptions into a structured API error payload."""
+
+    if isinstance(exc, GenerationError):
+        return exc.to_payload()
+
+    if isinstance(exc, OptionalDependencyError):
+        payload: dict[str, Any] = {
+            "code": "dependency_unavailable",
+            "message": str(exc),
+            "status_code": 503,
+        }
+        if exc.hint:
+            payload["hint"] = exc.hint
+        details = {}
+        if exc.dependency:
+            details["dependency"] = exc.dependency
+        if exc.extra:
+            details["extra"] = exc.extra
+        if details:
+            payload["details"] = details
+        return payload
+
+    return {
+        "code": "generation_error",
+        "message": str(exc),
+        "status_code": 500,
+        "details": {"error_type": type(exc).__name__},
+    }
+
+
+def _raise_generation_http_error(exc: Exception) -> None:
+    """Raise an HTTPException from a normalized generation error."""
+
+    payload = _generation_error_payload(exc)
+    raise HTTPException(status_code=payload["status_code"], detail=payload)
+
+
 async def _try_acquire_generation_slot() -> bool:
     """Reserve a generation slot if capacity is available."""
     global _active_generation_count
@@ -309,8 +351,6 @@ async def generate_notebook(request: GenerationRequest) -> GenerationResponse:
     """Generate notebook artifacts via the generator pipeline."""
     normalized_request = _normalize_request(request)
 
-    _validate_advanced_options(request)
-
     # Use the secure path resolution function
     output_path = _resolve_output_dir(request.output_dir)
 
@@ -335,13 +375,15 @@ async def generate_notebook(request: GenerationRequest) -> GenerationResponse:
                 manifest_path=artifacts["manifest_path"],
                 output_dir=artifacts["output_dir"],
             )
-        except (
-            OptionalDependencyError,
-            RuntimeError,
-            ValueError,
-        ) as exc:  # pragma: no cover - surfaced via HTTPException
+        except (GenerationError, OptionalDependencyError) as exc:
+            logging.exception("Generation request failed")
+            _raise_generation_http_error(exc)
+        except ValueError as exc:  # pragma: no cover - surfaced via HTTPException
             logging.exception("Generation request failed")
             raise HTTPException(status_code=400, detail=str(exc))
+        except Exception as exc:  # pragma: no cover - defensive
+            logging.exception("Generation request failed")
+            _raise_generation_http_error(exc)
 
 
 @app.post("/generate-async", response_model=GenerationStartResponse)
@@ -364,8 +406,6 @@ async def start_async_generation(
         HTTPException 503: When concurrent generation limit is reached
     """
     normalized_request = _normalize_request(request)
-
-    # Validate output directory
     output_path = _resolve_output_dir(request.output_dir)
 
     # Acquire capacity before the job is accepted so overload requests fail fast.
@@ -436,9 +476,33 @@ async def _run_generation_with_progress(
         # Run generation
         emit_node_progress(job_id, "generation", 10, "Initializing generator...")
 
-        def progress_callback(node: str, percentage: int, message: str) -> None:
+        def progress_callback(event: Any, percentage: int | None = None, message: str | None = None) -> None:
             """Forward progress to SSE stream."""
-            emit_node_progress(job_id, node, percentage, message)
+            if isinstance(event, dict):
+                event_type = event.get("event", "progress")
+                phase = event.get("phase") or event.get("node") or "generation"
+                event_message = event.get("message", "")
+                if event_type == "log":
+                    emit_log(
+                        job_id,
+                        event.get("status", "info"),
+                        event_message,
+                        details={
+                            "phase": phase,
+                            "details": event.get("details", {}),
+                        },
+                    )
+                else:
+                    emit_node_progress(
+                        job_id,
+                        phase,
+                        int(event.get("percentage", 0)),
+                        event_message,
+                        status=event.get("status", "running"),
+                    )
+                return
+
+            emit_node_progress(job_id, str(event), int(percentage or 0), message or "")
 
         artifacts: GenerationArtifacts = await generate_artifacts(
             request.prompt,
@@ -467,10 +531,29 @@ async def _run_generation_with_progress(
 
     except Exception as exc:
         logging.exception(f"Generation failed for job {job_id}")
+        payload = _generation_error_payload(exc)
+        emit_log(
+            job_id,
+            "error",
+            payload["message"],
+            details={
+                "phase": payload.get("phase"),
+                "code": payload.get("code"),
+                "hint": payload.get("hint"),
+                "details": payload.get("details", {}),
+            },
+        )
         emit_error(
             job_id,
-            str(exc),
-            {"type": type(exc).__name__},
+            payload["message"],
+            {
+                "type": type(exc).__name__,
+                "code": payload.get("code"),
+                "phase": payload.get("phase"),
+                "hint": payload.get("hint"),
+                "status_code": payload.get("status_code"),
+                "details": payload.get("details", {}),
+            },
         )
     finally:
         await _release_generation_slot()

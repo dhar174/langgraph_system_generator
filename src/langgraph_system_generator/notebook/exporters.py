@@ -11,6 +11,10 @@ from typing import Sequence
 
 import nbformat
 from langgraph_system_generator.constants import is_relative_to_base
+from langgraph_system_generator.utils.optional_deps import (
+    OptionalDependencyError,
+    missing_external_tool,
+)
 
 
 def _get_base_output() -> Path:
@@ -137,8 +141,12 @@ class NotebookExporter:
         try:
             from nbconvert import HTMLExporter
         except ImportError as exc:
-            raise ImportError(
-                "nbconvert is required for HTML export. Install it with: pip install nbconvert"
+            raise OptionalDependencyError(
+                "HTML export requires nbconvert.",
+                hint='Install the full extra with: pip install -e ".[full]"',
+                dependency="nbconvert",
+                extra="full",
+                feature="HTML export",
             ) from exc
 
         nbformat.validate(notebook)
@@ -160,8 +168,12 @@ class NotebookExporter:
         try:
             from nbconvert import MarkdownExporter
         except ImportError as exc:
-            raise ImportError(
-                "nbconvert is required for Markdown export. Install it with: pip install nbconvert"
+            raise OptionalDependencyError(
+                "Markdown export requires nbconvert.",
+                hint='Install the full extra with: pip install -e ".[full]"',
+                dependency="nbconvert",
+                extra="full",
+                feature="Markdown export",
             ) from exc
 
         nbformat.validate(notebook)
@@ -196,8 +208,12 @@ class NotebookExporter:
         try:
             from nbconvert import PDFExporter
         except ImportError as exc:
-            raise ImportError(
-                "nbconvert is required for PDF export. Install it with: pip install nbconvert"
+            raise OptionalDependencyError(
+                "PDF export requires nbconvert.",
+                hint='Install the full extra with: pip install -e ".[full]"',
+                dependency="nbconvert",
+                extra="full",
+                feature="PDF export",
             ) from exc
 
         source = Path(notebook_path)
@@ -275,13 +291,28 @@ class NotebookExporter:
                     )
 
             except subprocess.CalledProcessError as exc:
+                stderr = exc.stderr or ""
+                stderr_lower = stderr.lower()
+                if (
+                    "playwright is not installed" in stderr_lower
+                    or "nbconvert[webpdf]" in stderr_lower
+                ):
+                    raise OptionalDependencyError(
+                        "PDF export requires Playwright webpdf dependencies.",
+                        hint='Install the full extra with: pip install -e ".[full]" and ensure nbconvert[webpdf] / Playwright are available.',
+                        dependency="playwright",
+                        extra="full",
+                        feature="PDF export",
+                    ) from exc
                 raise RuntimeError(
-                    f"webpdf export failed: {exc.stderr}. "
+                    f"webpdf export failed: {stderr}. "
                     "Ensure Jupyter and Chromium/Chrome are installed."
                 ) from exc
             except FileNotFoundError as exc:
-                raise RuntimeError(
-                    "jupyter command not found. Ensure Jupyter is installed and in PATH."
+                raise missing_external_tool(
+                    "jupyter",
+                    feature="PDF export",
+                    hint='Install the full extra with: pip install -e ".[full]" and ensure Jupyter is on PATH.',
                 ) from exc
 
     def export_notebook_to_docx(
@@ -310,8 +341,12 @@ class NotebookExporter:
         try:
             from docx import Document
         except ImportError as exc:
-            raise ImportError(
-                "python-docx is required for DOCX export. Install it with: pip install python-docx"
+            raise OptionalDependencyError(
+                "DOCX export requires python-docx.",
+                hint='Install the full extra with: pip install -e ".[full]"',
+                dependency="python-docx",
+                extra="full",
+                feature="DOCX export",
             ) from exc
 
         nbformat.validate(notebook)

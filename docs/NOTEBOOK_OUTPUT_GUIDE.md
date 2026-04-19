@@ -185,20 +185,44 @@ The `NotebookComposer` automatically adds these sections if not present, ensurin
 
 ## Error Handling
 
-Export errors are handled gracefully:
+Export outcomes are tracked in the manifest with structured status:
 
 ```json
 {
   "notebook_path": "./output/notebook.ipynb",
   "html_path": "./output/notebook.html",
-  "pdf_error": "webpdf export failed: jupyter command not found..."
+  "warnings": [
+    {
+      "phase": "export_pdf",
+      "format": "pdf",
+      "message": "PDF export requires nbconvert."
+    }
+  ],
+  "export_results": {
+    "html": {
+      "requested": true,
+      "status": "completed",
+      "path": "./output/notebook.html"
+    },
+    "pdf": {
+      "requested": false,
+      "status": "failed",
+      "path": null,
+      "error": {
+        "code": "dependency_unavailable",
+        "phase": "export_pdf",
+        "message": "PDF export requires nbconvert."
+      }
+    }
+  }
 }
 ```
 
 If an export fails:
-- The error is captured in the manifest (e.g., `pdf_error`)
-- Other exports continue normally
-- The main notebook generation always succeeds
+- Explicitly requested formats fail the overall request with a structured error
+- PDF export remains best-effort even when selected, because `webpdf` host dependencies are environment-sensitive
+- Default convenience exports are downgraded to manifest warnings when possible
+- Legacy `*_error` keys may still appear for compatibility, but `export_results` is the source of truth
 
 ## Dependencies
 
