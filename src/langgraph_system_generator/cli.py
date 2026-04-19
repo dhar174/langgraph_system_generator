@@ -20,6 +20,7 @@ from langgraph_system_generator.generator.state import (
     CellSpec,
     Constraint,
     NotebookPlan,
+    RequirementsFeedback,
 )
 from langgraph_system_generator.utils.error_handling import GenerationError
 from langgraph_system_generator.utils.config import GenerationConfig, settings
@@ -61,6 +62,18 @@ def _default_state(
         "user_prompt": prompt,
         "uploaded_files": None,
         "constraints": [],
+        "requirements_feedback": RequirementsFeedback(
+            fallback_used=False,
+            available_constraint_types=[
+                "goal",
+                "tone",
+                "length",
+                "structure",
+                "runtime",
+                "environment",
+                *settings.requirements_constraint_types,
+            ],
+        ),
         "selected_patterns": {},
         "docs_context": [],
         "notebook_plan": None,
@@ -138,6 +151,55 @@ def _normalize_generation_error(
         details={"error_type": type(exc).__name__},
         status_code=default_status_code,
     )
+
+
+def _requirements_warning_entries(
+    feedback: Dict[str, Any] | None,
+) -> List[Dict[str, Any]]:
+    """Convert structured requirements feedback into manifest warnings."""
+
+    if not isinstance(feedback, dict):
+        return []
+
+    warnings: List[Dict[str, Any]] = []
+    suggestions = list(feedback.get("suggestions") or [])
+    if feedback.get("fallback_used"):
+        warnings.append(
+            {
+                "code": "requirements_fallback",
+                "phase": "intake",
+                "message": feedback.get("fallback_reason")
+                or "Requirements extraction used a fallback goal constraint.",
+                "suggestions": suggestions,
+            }
+        )
+
+    missing_inputs = list(feedback.get("missing_inputs") or [])
+    if missing_inputs:
+        warnings.append(
+            {
+                "code": "requirements_missing_inputs",
+                "phase": "intake",
+                "message": "Missing core requirement categories: "
+                + ", ".join(missing_inputs),
+                "missing_inputs": missing_inputs,
+                "suggestions": suggestions,
+            }
+        )
+
+    conflicts = list(feedback.get("conflicts") or [])
+    if conflicts:
+        warnings.append(
+            {
+                "code": "requirements_conflicts",
+                "phase": "intake",
+                "message": "Conflicting requirements were detected during intake.",
+                "conflicts": conflicts,
+                "suggestions": suggestions,
+            }
+        )
+
+    return warnings
 
 
 class _PhaseTracker:
@@ -528,6 +590,18 @@ def _build_stub_result(prompt: str, agent_type: str | None = None) -> Dict[str, 
 
     return {
         "constraints": constraints,
+        "requirements_feedback": RequirementsFeedback(
+            fallback_used=False,
+            available_constraint_types=[
+                "goal",
+                "tone",
+                "length",
+                "structure",
+                "runtime",
+                "environment",
+                *settings.requirements_constraint_types,
+            ],
+        ),
         "selected_patterns": {"primary": architecture_type},
         "docs_context": [],
         "notebook_plan": plan,
@@ -664,6 +738,7 @@ async def generate_artifacts(
     plan_title = (
         serialized.get("notebook_plan", {}).get("title") or "Generated Notebook"
     )
+    requirements_feedback = serialized.get("requirements_feedback") or {}
 
     manifest: Dict[str, Any] = {
         "prompt": prompt,
@@ -671,7 +746,8 @@ async def generate_artifacts(
         "architecture_type": architecture_type,
         "cell_count": len(serialized.get("generated_cells", []) or []),
         "plan_title": plan_title,
-        "warnings": [],
+        "requirements_feedback": requirements_feedback,
+        "warnings": _requirements_warning_entries(requirements_feedback),
         "export_results": {},
     }
 

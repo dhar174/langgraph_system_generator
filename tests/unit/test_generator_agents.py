@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from unittest.mock import AsyncMock, MagicMock, patch
+
 import pytest
 
 from langgraph_system_generator.generator.agents import (
@@ -49,24 +51,162 @@ def make_capturing_llm(captured_kwargs: dict):
     return CapturingLLM
 
 
+def make_recording_llm(content: str, captured_messages: list):
+    """Create a ChatOpenAI stub that records prompt messages."""
+
+    class RecordingLLM:
+        def __init__(self, *_args, **_kwargs):
+            self._content = content
+
+        async def ainvoke(self, messages):
+            captured_messages.append(messages)
+            return DummyResponse(self._content)
+
+    return RecordingLLM
+
+
 @pytest.mark.asyncio
-@pytest.mark.parametrize(
-    ("payload", "expected_value"),
-    [
-        ('[{"type":"goal","value":"from-json","priority":5}]', "from-json"),
-        ("not json", "x"),
-    ],
-)
-async def test_requirements_analyst_parsing(payload, expected_value, monkeypatch):
-    """RequirementsAnalyst returns parsed constraints or fallback on errors."""
+async def test_requirements_analyst_parsing(monkeypatch):
+    """RequirementsAnalyst returns structured constraints and feedback."""
+    payload = """
+    {
+      "constraints": [
+        {
+          "type": "goal",
+          "value": "from-json",
+          "priority": 5,
+          "confidence": 0.92,
+          "explanation": "Prompt clearly asks for this deliverable."
+        },
+        {
+          "type": "environment",
+          "value": "Run in Colab",
+          "priority": 3,
+          "confidence": 0.61,
+          "explanation": "The prompt references notebook execution."
+        }
+      ],
+      "feedback": {
+        "fallback_used": false,
+        "fallback_reason": null,
+        "missing_inputs": [],
+        "conflicts": [],
+        "suggestions": [],
+        "available_constraint_types": ["goal", "environment"]
+      }
+    }
+    """
     monkeypatch.setattr(
         requirements_analyst,
         "ChatOpenAI",
         make_stub_llm(payload),
     )
     analyst = requirements_analyst.RequirementsAnalyst()
-    results = await analyst.analyze("x")
-    assert results[0].value == expected_value
+    analysis = await analyst.analyze("x")
+    assert analysis.constraints[0].value == "from-json"
+    assert analysis.constraints[0].confidence == pytest.approx(0.92)
+    assert analysis.constraints[0].explanation == "Prompt clearly asks for this deliverable."
+    assert analysis.feedback.fallback_used is False
+    assert "goal" in analysis.feedback.available_constraint_types
+    assert "environment" in analysis.feedback.available_constraint_types
+
+
+@pytest.mark.asyncio
+async def test_requirements_analyst_fallback_truncates_prompt_on_bad_json(monkeypatch):
+    """Malformed model output should produce fallback constraints plus structured feedback."""
+    long_prompt = "Build a workflow " + ("with a long prompt " * 15)
+    assert len(long_prompt) > 200
+
+    mock_llm = MagicMock()
+    mock_llm.ainvoke = AsyncMock()
+    mock_llm.ainvoke.return_value.content = "not-json"
+
+    with patch(
+        "langgraph_system_generator.generator.agents.requirements_analyst.ChatOpenAI",
+        return_value=mock_llm,
+    ):
+        analyst = requirements_analyst.RequirementsAnalyst(model="test-model")
+        analysis = await analyst.analyze(long_prompt)
+
+    assert len(analysis.constraints) == 1
+    constraint = analysis.constraints[0]
+    assert constraint.type == "goal"
+    assert constraint.priority == 5
+    assert constraint.value == long_prompt[:200]
+    assert len(constraint.value) == 200
+    assert analysis.feedback.fallback_used is True
+    assert analysis.feedback.fallback_reason
+    assert {"runtime", "environment"}.issubset(set(analysis.feedback.missing_inputs))
+    assert analysis.feedback.suggestions
+
+
+@pytest.mark.asyncio
+async def test_requirements_analyst_detects_conflicts_and_missing_inputs(monkeypatch):
+    """Conflicting duplicates and missing core inputs should be surfaced in feedback."""
+    payload = """
+    {
+      "constraints": [
+        {"type": "goal", "value": "Build an agent notebook", "priority": 5},
+        {"type": "runtime", "value": "Use gpt-5-mini", "priority": 4},
+        {"type": "runtime", "value": "Use claude-3", "priority": 4}
+      ]
+    }
+    """
+
+    monkeypatch.setattr(
+        requirements_analyst,
+        "ChatOpenAI",
+        make_stub_llm(payload),
+    )
+
+    analyst = requirements_analyst.RequirementsAnalyst()
+    analysis = await analyst.analyze("Build an agent notebook with conflicting model instructions")
+
+    assert analysis.feedback.fallback_used is False
+    assert "environment" in analysis.feedback.missing_inputs
+    assert analysis.feedback.conflicts
+    assert any("runtime" in conflict.lower() for conflict in analysis.feedback.conflicts)
+    assert analysis.feedback.suggestions
+
+
+@pytest.mark.asyncio
+async def test_requirements_analyst_uses_configured_constraint_type_registry(monkeypatch):
+    """Configured extra requirement types should appear in the prompt registry and feedback."""
+    captured_messages = []
+    monkeypatch.setattr(
+        requirements_analyst,
+        "settings",
+        requirements_analyst.settings.model_copy(
+            update={"requirements_constraint_types": ["regulatory"]}
+        ),
+    )
+    monkeypatch.setattr(
+        requirements_analyst,
+        "ChatOpenAI",
+        make_recording_llm(
+            """
+            {
+              "constraints": [
+                {
+                  "type": "regulatory",
+                  "value": "Must follow SOC 2 controls",
+                  "priority": 4,
+                  "confidence": 0.8,
+                  "explanation": "The prompt explicitly names compliance."
+                }
+              ]
+            }
+            """,
+            captured_messages,
+        ),
+    )
+
+    analyst = requirements_analyst.RequirementsAnalyst()
+    analysis = await analyst.analyze("Build a SOC 2 compliant workflow")
+
+    assert analysis.constraints[0].type == "regulatory"
+    assert "regulatory" in analysis.feedback.available_constraint_types
+    assert "regulatory" in captured_messages[0][0].content
 
 
 @pytest.mark.asyncio

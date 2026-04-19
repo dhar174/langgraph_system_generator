@@ -22,6 +22,7 @@ from langgraph_system_generator.generator.nodes import (
     tooling_plan_node,
 )
 from langgraph_system_generator.generator.state import CellSpec, Constraint, QAReport
+from langgraph_system_generator.generator.state import RequirementsFeedback
 from langgraph_system_generator.utils.config import GenerationConfig
 
 
@@ -48,7 +49,19 @@ def make_stub_llm(content: str):
 @pytest.mark.asyncio
 async def test_intake_node_sets_constraints(monkeypatch):
     constraints = [Constraint(type="goal", value="Test", priority=5)]
-    payload = '[{"type":"goal","value":"Test","priority":5}]'
+    payload = """
+    {
+      "constraints": [{"type":"goal","value":"Test","priority":5}],
+      "feedback": {
+        "fallback_used": false,
+        "fallback_reason": null,
+        "missing_inputs": [],
+        "conflicts": [],
+        "suggestions": [],
+        "available_constraint_types": ["goal", "tone"]
+      }
+    }
+    """
 
     monkeypatch.setattr(
         requirements_analyst,
@@ -59,6 +72,9 @@ async def test_intake_node_sets_constraints(monkeypatch):
     result = await intake_node({"user_prompt": "Build a test workflow"})
 
     assert result["constraints"] == constraints
+    assert result["requirements_feedback"].fallback_used is False
+    assert "goal" in result["requirements_feedback"].available_constraint_types
+    assert "tone" in result["requirements_feedback"].available_constraint_types
 
 
 @pytest.mark.asyncio

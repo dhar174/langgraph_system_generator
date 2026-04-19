@@ -154,9 +154,12 @@ async def intake_node(state: GeneratorState) -> Dict[str, Any]:
         Updated state with extracted constraints
     """
     analyst = RequirementsAnalyst(model_config=_resolve_model_config(state))
-    constraints = await analyst.analyze(state["user_prompt"])
+    analysis = await analyst.analyze(state["user_prompt"])
 
-    return {"constraints": constraints}
+    return {
+        "constraints": analysis.constraints,
+        "requirements_feedback": analysis.feedback,
+    }
 
 
 async def rag_retrieval_node(state: GeneratorState) -> Dict[str, Any]:
@@ -599,12 +602,18 @@ async def package_outputs_node(state: GeneratorState) -> Dict[str, Any]:
         Updated state with artifacts manifest and completion flag
     """
     # Create artifacts manifest
+    requirements_feedback = state.get("requirements_feedback")
     manifest = {
         "notebook_plan": str(state.get("notebook_plan")),
         "cell_count": str(len(state.get("generated_cells", []))),
         "architecture_type": state.get("architecture_type")
         or state.get("selected_patterns", {}).get("primary", "router"),
         "constraints_count": str(len(state.get("constraints", []))),
+        "requirements_feedback": (
+            requirements_feedback.model_dump()
+            if hasattr(requirements_feedback, "model_dump")
+            else (requirements_feedback or {})
+        ),
     }
 
     return {

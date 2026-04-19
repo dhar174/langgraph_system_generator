@@ -19,6 +19,58 @@ class Constraint(BaseModel):
     )
     value: str = Field(description="Constraint value or description")
     priority: int = Field(default=1, description="Priority level (1=low, 5=high)")
+    confidence: Optional[float] = Field(
+        default=None,
+        ge=0.0,
+        le=1.0,
+        description="Optional confidence score for the extracted constraint.",
+    )
+    explanation: Optional[str] = Field(
+        default=None,
+        description="Optional human-readable explanation for why the constraint was extracted.",
+    )
+
+
+class RequirementsFeedback(BaseModel):
+    """Advisory feedback captured during requirements extraction."""
+
+    fallback_used: bool = Field(
+        default=False,
+        description="Whether the analyst had to fall back to a synthetic goal constraint.",
+    )
+    fallback_reason: Optional[str] = Field(
+        default=None,
+        description="Reason fallback mode was used, when applicable.",
+    )
+    missing_inputs: List[str] = Field(
+        default_factory=list,
+        description="Core requirement categories that were missing from the prompt.",
+    )
+    conflicts: List[str] = Field(
+        default_factory=list,
+        description="Conflicting requirement interpretations detected during extraction.",
+    )
+    suggestions: List[str] = Field(
+        default_factory=list,
+        description="Actionable follow-up suggestions for improving requirement quality.",
+    )
+    available_constraint_types: List[str] = Field(
+        default_factory=list,
+        description="Constraint types available to the analyst for the current request.",
+    )
+
+
+class RequirementsAnalysis(BaseModel):
+    """Structured single-turn requirements analysis output."""
+
+    constraints: List[Constraint] = Field(
+        default_factory=list,
+        description="Constraints extracted from the user's prompt.",
+    )
+    feedback: RequirementsFeedback = Field(
+        default_factory=RequirementsFeedback,
+        description="Advisory feedback captured during requirements extraction.",
+    )
 
 
 class DocSnippet(BaseModel):
@@ -90,6 +142,7 @@ class GeneratorState(TypedDict):
 
     # Extracted requirements
     constraints: Annotated[List[Constraint], operator.add]
+    requirements_feedback: RequirementsFeedback
     selected_patterns: Dict[str, Any]
 
     # RAG context
@@ -120,6 +173,6 @@ class GeneratorState(TypedDict):
     repair_attempts: int
 
     # Output
-    artifacts_manifest: Dict[str, str]
+    artifacts_manifest: Dict[str, Any]
     generation_complete: bool
     error_message: Optional[str]

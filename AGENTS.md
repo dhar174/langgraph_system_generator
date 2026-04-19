@@ -86,7 +86,7 @@ These node functions are the clearest map of the runtime lifecycle:
 
 | Pipeline stage | Node | Main collaborator | Typical state written |
 | --- | --- | --- | --- |
-| Intake | `intake_node` | `RequirementsAnalyst` | `constraints` |
+| Intake | `intake_node` | `RequirementsAnalyst` | `constraints`, `requirements_feedback` |
 | Retrieval | `rag_retrieval_node` | `DocsRetriever` | `docs_context` |
 | Architecture selection | `architecture_selection_node` | `ArchitectureSelector` | `selected_patterns`, `architecture_type`, `architecture_justification` |
 | Workflow design | `graph_design_node` | `GraphDesigner` | `workflow_design`, `notebook_plan` |
@@ -106,6 +106,7 @@ That state is the integration contract between stages.
 Important patterns:
 
 - `constraints` and `docs_context` are accumulated lists.
+- `requirements_feedback` is advisory metadata from intake. It should surface fallback/gap/conflict guidance without replacing `constraints` as the downstream source of truth.
 - `generated_cells` is authoritative for the current repair iteration and is
   replaced rather than concatenated.
 - `qa_reports` is the current QA snapshot for the active pass, while
