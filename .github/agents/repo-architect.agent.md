@@ -151,7 +151,7 @@ Validate existing agentic project structure (focus on structure, not deep file i
 
    Agents Layer:
      ✅ .github/agents/reviewer.md
-     ⚠️ .github/agents/architect.md - missing 'model' field
+     ⚠️ .github/agents/architect.md - unexpected 'model' field
 
    Skills Layer:
      ✅ .github/skills/git-workflow.md

@@ -33,9 +33,9 @@ LNF includes precached LangGraph and LangChain documentation (~300KB, 19+ pages)
 
 Official references:
 
-- **LangChain docs**: <https://docs.langchain.com>
-- **LangChain Python API reference**: <https://reference.langchain.com/python>
-- **LangGraph overview**: <https://docs.langchain.com/oss/python/langgraph/overview>
+- [LangChain docs](https://docs.langchain.com)
+- [LangChain Python API reference](https://reference.langchain.com/python)
+- [LangGraph overview](https://docs.langchain.com/oss/python/langgraph/overview)
 
 #### 📦 Multi-Format Export
 Every generation produces multiple artifact formats for different use cases:

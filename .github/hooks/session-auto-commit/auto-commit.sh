@@ -1,9 +1,15 @@
 #!/bin/bash
 
 # Session Auto-Commit Hook
-# Automatically commits and pushes changes when a Copilot session ends
+# Opt-in hook that commits tracked changes when a Copilot session ends
 
 set -euo pipefail
+
+# Require explicit opt-in
+if [[ "${ENABLE_AUTO_COMMIT:-false}" != "true" ]]; then
+  echo "⏭️  Auto-commit disabled (set ENABLE_AUTO_COMMIT=true to enable)"
+  exit 0
+fi
 
 # Check if SKIP_AUTO_COMMIT is set
 if [[ "${SKIP_AUTO_COMMIT:-}" == "true" ]]; then
@@ -23,23 +29,24 @@ if [[ -z "$(git status --porcelain)" ]]; then
   exit 0
 fi
 
-echo "📦 Auto-committing changes from Copilot session..."
+echo "📦 Auto-committing tracked changes from Copilot session..."
 
-# Stage all changes
-git add -A
+# Stage tracked changes only
+git add -u
+
+# Skip if only untracked files remain
+if [[ -z "$(git diff --cached --name-only)" ]]; then
+  echo "✨ No tracked changes to commit"
+  exit 0
+fi
 
 # Create timestamped commit
 TIMESTAMP=$(date '+%Y-%m-%d %H:%M:%S')
-git commit -m "auto-commit: $TIMESTAMP" --no-verify 2>/dev/null || {
+git commit -m "auto-commit: $TIMESTAMP" 2>/dev/null || {
   echo "⚠️  Commit failed"
   exit 0
 }
 
-# Attempt to push
-if git push 2>/dev/null; then
-  echo "✅ Changes committed and pushed successfully"
-else
-  echo "⚠️  Push failed - changes committed locally"
-fi
+echo "✅ Tracked changes committed locally"
 
 exit 0
