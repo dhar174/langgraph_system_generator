@@ -82,7 +82,7 @@ def should_retry_after_repair(
     return "fail"
 
 
-def create_generator_graph() -> StateGraph:
+def create_generator_graph(*, generation_config=None) -> StateGraph:
     """Build the outer generator graph.
 
     Returns:

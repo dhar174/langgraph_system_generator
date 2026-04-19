@@ -14,17 +14,19 @@ Prompt -> Full Agentic System. Generates entire multiagent systems based on user
 1. Create a Python `3.10+` virtual environment, install dependencies, and
    install the package so the `lnf` CLI is available:
    ```bash
-    python -m venv .venv
-    source .venv/bin/activate  # Windows: .venv\Scripts\activate
-    python -m pip install --upgrade pip
-    pip install -r requirements.txt
-    pip install -e ".[full]"
-    pip install flake8
-    ```
+   python -m venv .venv
+   source .venv/bin/activate  # Windows: .venv\Scripts\activate
+   pip install -r requirements.txt
+   ```
 
-2. Copy `.env.example` to `.env` and add your API keys. Live generation
-   currently expects `OPENAI_API_KEY`; stub mode works without external model
-   credentials.
+   If you prefer extras-based installs instead of `requirements.txt`, use:
+
+   - `pip install -e .` for the core Python package/config/types only
+   - `pip install -e ".[api]"` for the FastAPI/web server
+   - `pip install -e ".[full]"` for notebook generation, export, and live-mode dependencies
+   - `pip install -e ".[full,dev]"` for contributor/test tooling
+
+2. Copy `.env.example` to `.env` and add your API keys.
 
 3. (Optional) Build the vector index from precached docs:
    ```bash

@@ -8,6 +8,7 @@ import logging
 import os
 from pathlib import Path
 from typing import Any, Dict, Optional
+from urllib.parse import urlparse
 
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import FileResponse, HTMLResponse, Response
@@ -27,6 +28,12 @@ from langgraph_system_generator.api.progress_streaming import (
     emit_node_progress,
     get_stream_response,
 )
+from langgraph_system_generator.utils.generation_options import (
+    SUPPORTED_AGENT_TYPES,
+    normalize_agent_type,
+    normalize_optional_string,
+)
+from langgraph_system_generator.utils.optional_deps import OptionalDependencyError
 
 app = FastAPI(title="LangGraph Notebook Foundry API", version="0.1.1")
 
@@ -127,25 +134,56 @@ def _resolve_artifact_path(path: str | os.PathLike[str]) -> Path:
     return artifact_path
 
 
-def _validate_advanced_options(request: "GenerationRequest") -> None:
+def _validate_advanced_options(
+    request: "GenerationRequest",
+) -> tuple[str | None, str | None, str | None]:
     """Normalize and validate supported advanced options."""
-    request.model = request.model.strip() if request.model else None
-    request.custom_endpoint = (
-        request.custom_endpoint.strip() if request.custom_endpoint else None
-    )
+    normalized_model = normalize_optional_string(request.model)
+    normalized_custom_endpoint = normalize_optional_string(request.custom_endpoint)
+    normalized_agent_type = normalize_agent_type(request.agent_type)
 
-    if request.custom_endpoint and request.model in (None, "", "custom"):
+    if normalized_agent_type and normalized_agent_type not in SUPPORTED_AGENT_TYPES:
+        supported = ", ".join(sorted(SUPPORTED_AGENT_TYPES))
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unsupported agent_type. Supported values are: {supported}.",
+        )
+
+    if normalized_custom_endpoint and normalized_model in (None, "custom"):
         raise HTTPException(
             status_code=400,
             detail="custom_endpoint requires an explicit OpenAI-compatible model identifier.",
         )
 
-    if request.model == "custom":
+    if normalized_custom_endpoint:
+        parsed_endpoint = urlparse(normalized_custom_endpoint)
+        if parsed_endpoint.scheme not in {"http", "https"} or not parsed_endpoint.hostname:
+            raise HTTPException(
+                status_code=400,
+                detail="custom_endpoint must be a valid http or https URL with a hostname.",
+            )
+
+    if normalized_model == "custom":
         raise HTTPException(
             status_code=400,
             detail="Provide an explicit model identifier instead of the placeholder value 'custom'.",
         )
 
+    return normalized_model, normalized_custom_endpoint, normalized_agent_type
+
+
+def _normalize_request(request: "GenerationRequest") -> "GenerationRequest":
+    """Return a copy of the request with normalized advanced option values."""
+    normalized_model, normalized_custom_endpoint, normalized_agent_type = (
+        _validate_advanced_options(request)
+    )
+    return request.model_copy(
+        update={
+            "model": normalized_model,
+            "custom_endpoint": normalized_custom_endpoint,
+            "agent_type": normalized_agent_type,
+        }
+    )
 
 class GenerationRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -269,6 +307,7 @@ async def chrome_devtools_endpoint():
 @app.post("/generate", response_model=GenerationResponse)
 async def generate_notebook(request: GenerationRequest) -> GenerationResponse:
     """Generate notebook artifacts via the generator pipeline."""
+    normalized_request = _normalize_request(request)
 
     _validate_advanced_options(request)
 
@@ -282,11 +321,11 @@ async def generate_notebook(request: GenerationRequest) -> GenerationResponse:
                 output_dir=str(output_path),
                 mode=request.mode,
                 formats=request.formats,
-                model=request.model,
+                model=normalized_request.model,
                 temperature=request.temperature,
                 max_tokens=request.max_tokens,
-                agent_type=request.agent_type,
-                custom_endpoint=request.custom_endpoint,
+                agent_type=normalized_request.agent_type,
+                custom_endpoint=normalized_request.custom_endpoint,
             )
             return GenerationResponse(
                 success=True,
@@ -297,6 +336,7 @@ async def generate_notebook(request: GenerationRequest) -> GenerationResponse:
                 output_dir=artifacts["output_dir"],
             )
         except (
+            OptionalDependencyError,
             RuntimeError,
             ValueError,
         ) as exc:  # pragma: no cover - surfaced via HTTPException
@@ -323,7 +363,7 @@ async def start_async_generation(
     Raises:
         HTTPException 503: When concurrent generation limit is reached
     """
-    _validate_advanced_options(request)
+    normalized_request = _normalize_request(request)
 
     # Validate output directory
     output_path = _resolve_output_dir(request.output_dir)
@@ -335,7 +375,9 @@ async def start_async_generation(
     job_id = create_job()
 
     try:
-        asyncio.create_task(_run_generation_with_progress(job_id, request, output_path))
+        asyncio.create_task(
+            _run_generation_with_progress(job_id, normalized_request, output_path)
+        )
     except Exception:
         await _release_generation_slot()
         raise

@@ -26,3 +26,5 @@ def require_optional_module(module_name: str, *, feature: str, extra: str) -> An
             f"{feature} requires optional dependencies that are not installed. "
             f"Install the '{extra}' extra with: {hint}"
         ) from exc
+    except ImportError:
+        raise

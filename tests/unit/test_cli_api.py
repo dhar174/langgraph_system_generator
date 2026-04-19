@@ -14,6 +14,7 @@ from fastapi.testclient import TestClient
 from langgraph_system_generator.api.server import app
 from langgraph_system_generator.cli import GenerationArtifacts, generate_artifacts
 from langgraph_system_generator.utils.config import GenerationConfig
+from langgraph_system_generator.utils.optional_deps import OptionalDependencyError
 
 
 def _reload_server_modules():
@@ -99,7 +100,7 @@ async def test_generate_artifacts_stub_autoagent_override(
 async def test_generate_artifacts_default_formats_include_markdown(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):
-    monkeypatch.setenv("LNF_OUTPUT_BASE", "test_generate_artifacts_default_formats")
+    monkeypatch.setenv("BASE_OUTPUT_DIR", str(tmp_path.resolve()))
 
     import importlib
     import langgraph_system_generator.constants as constants_module
@@ -110,7 +111,7 @@ async def test_generate_artifacts_default_formats_include_markdown(
     importlib.reload(exporters_module)
     importlib.reload(cli_module)
 
-    output_dir = constants_module._BASE_OUTPUT / "default_formats"
+    output_dir = tmp_path / "default_formats"
     artifacts: GenerationArtifacts = await cli_module.generate_artifacts(
         "Test prompt", output_dir=str(output_dir), mode="stub"
     )
@@ -195,6 +196,72 @@ def test_generation_request_formats_description_mentions_markdown():
 
     assert "markdown" in description.lower()
     assert "ipynb, html, markdown, docx, zip" in description
+
+
+@pytest.mark.asyncio
+async def test_api_rejects_invalid_custom_endpoint():
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(
+            "/generate",
+            json={
+                "prompt": "Invalid endpoint",
+                "mode": "stub",
+                "output_dir": "./output/api",
+                "model": "gpt-5-mini",
+                "custom_endpoint": "ftp://example.test/v1",
+            },
+        )
+
+    assert response.status_code == 400
+    assert "http or https URL" in response.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_api_rejects_unsupported_agent_type():
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(
+            "/generate",
+            json={
+                "prompt": "Unsupported agent type",
+                "mode": "stub",
+                "output_dir": "./output/api",
+                "agent_type": " swarm ",
+            },
+        )
+
+    assert response.status_code == 400
+    assert "Unsupported agent_type" in response.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_api_generate_surfaces_optional_dependency_errors(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    error_message = "optional dependency unavailable"
+
+    async def fake_generate_artifacts(*_args, **_kwargs):
+        raise OptionalDependencyError(error_message)
+
+    monkeypatch.setattr(
+        "langgraph_system_generator.api.server.generate_artifacts",
+        fake_generate_artifacts,
+    )
+
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(
+            "/generate",
+            json={
+                "prompt": "Missing optional dependencies",
+                "mode": "stub",
+                "output_dir": "./output/api",
+            },
+        )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == error_message
 
 
 @pytest.mark.asyncio
