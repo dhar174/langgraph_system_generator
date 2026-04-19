@@ -185,7 +185,6 @@ def _normalize_request(request: "GenerationRequest") -> "GenerationRequest":
         }
     )
 
-
 class GenerationRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
