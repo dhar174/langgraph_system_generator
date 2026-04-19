@@ -309,6 +309,8 @@ async def generate_notebook(request: GenerationRequest) -> GenerationResponse:
     """Generate notebook artifacts via the generator pipeline."""
     normalized_request = _normalize_request(request)
 
+    _validate_advanced_options(request)
+
     # Use the secure path resolution function
     output_path = _resolve_output_dir(request.output_dir)
 
