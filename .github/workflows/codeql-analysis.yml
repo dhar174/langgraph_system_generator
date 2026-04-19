@@ -6,11 +6,11 @@ on:
   schedule:
     - cron: "22 0 * * 1"
 
-permissions:
-  contents: read
-
 jobs:
   codeql:
+    # Main-branch pushes are scanned through caller workflows that sequence
+    # CodeQL before follow-on jobs. This wrapper covers PR and scheduled scans
+    # without duplicating those main push runs.
     uses: ./.github/workflows/codeql.yml
     permissions:
       contents: read
