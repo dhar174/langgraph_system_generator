@@ -291,8 +291,21 @@ class NotebookExporter:
                     )
 
             except subprocess.CalledProcessError as exc:
+                stderr = exc.stderr or ""
+                stderr_lower = stderr.lower()
+                if (
+                    "playwright is not installed" in stderr_lower
+                    or "nbconvert[webpdf]" in stderr_lower
+                ):
+                    raise OptionalDependencyError(
+                        "PDF export requires Playwright webpdf dependencies.",
+                        hint='Install the full extra with: pip install -e ".[full]" and ensure nbconvert[webpdf] / Playwright are available.',
+                        dependency="playwright",
+                        extra="full",
+                        feature="PDF export",
+                    ) from exc
                 raise RuntimeError(
-                    f"webpdf export failed: {exc.stderr}. "
+                    f"webpdf export failed: {stderr}. "
                     "Ensure Jupyter and Chromium/Chrome are installed."
                 ) from exc
             except FileNotFoundError as exc:

@@ -762,7 +762,11 @@ async def generate_artifacts(
             }
             manifest[f"{format_name}_error"] = str(error)
 
-            if requested:
+            # PDF export remains best-effort because the webpdf toolchain depends on
+            # host Playwright/browser support that is not guaranteed across environments.
+            requested_is_fatal = requested and format_name != "pdf"
+
+            if requested_is_fatal:
                 tracker.finish(
                     phase,
                     str(error),

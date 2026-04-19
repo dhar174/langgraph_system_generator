@@ -220,6 +220,7 @@ Export outcomes are tracked in the manifest with structured status:
 
 If an export fails:
 - Explicitly requested formats fail the overall request with a structured error
+- PDF export remains best-effort even when selected, because `webpdf` host dependencies are environment-sensitive
 - Default convenience exports are downgraded to manifest warnings when possible
 - Legacy `*_error` keys may still appear for compatibility, but `export_results` is the source of truth
 

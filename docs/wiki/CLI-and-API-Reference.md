@@ -521,6 +521,10 @@ phase timing, per-format export status, and non-fatal warnings:
 }
 ```
 
+Requested formats are strict by default, but PDF remains best-effort because
+the `webpdf` toolchain depends on host Playwright/browser support that may not
+be installed in every environment.
+
 ## Advanced Usage
 
 ### Custom Pipeline Stages
