@@ -17,6 +17,7 @@ from time import perf_counter
 from typing import Any, Dict, List, Literal, TypedDict
 
 from langgraph_system_generator.generator.state import (
+    build_constraint_type_registry,
     CellSpec,
     Constraint,
     NotebookPlan,
@@ -51,6 +52,12 @@ class GenerationArtifacts(TypedDict):
     result: Dict[str, Any]
 
 
+def _available_constraint_types() -> List[str]:
+    """Return the normalized intake constraint registry for manifests and defaults."""
+
+    return build_constraint_type_registry(settings.requirements_constraint_types)
+
+
 def _default_state(
     prompt: str,
     generation_config: GenerationConfig | None = None,
@@ -64,15 +71,7 @@ def _default_state(
         "constraints": [],
         "requirements_feedback": RequirementsFeedback(
             fallback_used=False,
-            available_constraint_types=[
-                "goal",
-                "tone",
-                "length",
-                "structure",
-                "runtime",
-                "environment",
-                *settings.requirements_constraint_types,
-            ],
+            available_constraint_types=_available_constraint_types(),
         ),
         "selected_patterns": {},
         "docs_context": [],
@@ -592,15 +591,7 @@ def _build_stub_result(prompt: str, agent_type: str | None = None) -> Dict[str, 
         "constraints": constraints,
         "requirements_feedback": RequirementsFeedback(
             fallback_used=False,
-            available_constraint_types=[
-                "goal",
-                "tone",
-                "length",
-                "structure",
-                "runtime",
-                "environment",
-                *settings.requirements_constraint_types,
-            ],
+            available_constraint_types=_available_constraint_types(),
         ),
         "selected_patterns": {"primary": architecture_type},
         "docs_context": [],

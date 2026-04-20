@@ -71,6 +71,40 @@ def test_default_state_includes_generation_mode_and_qa_history():
     assert "goal" in state["requirements_feedback"].available_constraint_types
 
 
+def test_default_and_stub_results_normalize_constraint_type_registry(monkeypatch):
+    import langgraph_system_generator.cli as cli_module
+
+    monkeypatch.setattr(
+        cli_module,
+        "settings",
+        cli_module.settings.model_copy(
+            update={
+                "requirements_constraint_types": [
+                    "Custom Type",
+                    " runtime ",
+                    "custom-type",
+                ]
+            }
+        ),
+    )
+
+    expected_registry = [
+        "goal",
+        "tone",
+        "length",
+        "structure",
+        "runtime",
+        "environment",
+        "custom_type",
+    ]
+
+    state = cli_module._default_state("Test prompt")
+    stub_result = cli_module._build_stub_result("Test prompt")
+
+    assert state["requirements_feedback"].available_constraint_types == expected_registry
+    assert stub_result["requirements_feedback"].available_constraint_types == expected_registry
+
+
 @pytest.mark.asyncio
 async def test_generate_artifacts_stub_autoagent_override(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch

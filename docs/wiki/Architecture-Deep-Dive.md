@@ -48,9 +48,9 @@ The Requirements Analyst extracts structured constraints from the natural langua
 {
   "user_prompt": "Create a customer support chatbot with routing",
   "constraints": [
-    {"type": "architecture", "value": "routing", "priority": 1},
-    {"type": "domain", "value": "customer support", "priority": 1},
-    {"type": "capability", "value": "classification", "priority": 2}
+    {"type": "goal", "value": "Build a customer support chatbot", "priority": 5},
+    {"type": "structure", "value": "Use routing between support flows", "priority": 3},
+    {"type": "environment", "value": "Run in a notebook-friendly environment", "priority": 2}
   ],
   "requirements_feedback": {
     "fallback_used": false,

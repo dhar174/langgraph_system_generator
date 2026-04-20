@@ -8,10 +8,10 @@ import json
 import os
 from pathlib import Path
 import sys
-from typing import Optional, Union
+from typing import Annotated, Optional, Union
 
 from pydantic import BaseModel, Field, field_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 
 class ModelConfig(BaseModel):
@@ -132,7 +132,7 @@ class Settings(BaseSettings):
         default=100000,
         description="Default token budget allocated for a generation run.",
     )
-    requirements_constraint_types: list[str] = Field(
+    requirements_constraint_types: Annotated[list[str], NoDecode] = Field(
         default_factory=list,
         description="Optional extra requirement constraint types made available during intake.",
     )
@@ -150,7 +150,12 @@ class Settings(BaseSettings):
             if not stripped:
                 return []
             if stripped.startswith("["):
-                parsed = json.loads(stripped)
+                try:
+                    parsed = json.loads(stripped)
+                except json.JSONDecodeError as exc:
+                    raise ValueError(
+                        f"Invalid JSON in requirements_constraint_types: {exc}"
+                    ) from exc
                 if not isinstance(parsed, list):
                     raise ValueError("requirements_constraint_types must decode to a list")
                 return parsed

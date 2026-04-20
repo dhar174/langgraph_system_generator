@@ -22,7 +22,6 @@ from langgraph_system_generator.generator.nodes import (
     tooling_plan_node,
 )
 from langgraph_system_generator.generator.state import CellSpec, Constraint, QAReport
-from langgraph_system_generator.generator.state import RequirementsFeedback
 from langgraph_system_generator.utils.config import GenerationConfig
 
 

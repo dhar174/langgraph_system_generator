@@ -3,14 +3,16 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, List
+from typing import Any, Dict, List, Set
 
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
 
 from langgraph_system_generator.generator.agents._llm import build_chat_llm
 from langgraph_system_generator.generator.state import (
+    build_constraint_type_registry,
     Constraint,
+    normalize_constraint_type,
     RequirementsAnalysis,
     RequirementsFeedback,
 )
@@ -19,14 +21,6 @@ from langgraph_system_generator.utils.config import ModelConfig, settings
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_CONSTRAINT_TYPES = (
-    "goal",
-    "tone",
-    "length",
-    "structure",
-    "runtime",
-    "environment",
-)
 CORE_CONSTRAINT_TYPES = ("goal", "runtime", "environment")
 CONSTRAINT_TYPE_DESCRIPTIONS = {
     "goal": "The main objective, deliverable, or workflow outcome.",
@@ -41,13 +35,6 @@ MISSING_INPUT_SUGGESTIONS = {
     "runtime": "Add runtime constraints such as model choice, latency, budget, or retry limits.",
     "environment": "Describe the target environment, such as Colab, local Jupyter, deployment target, or required libraries.",
 }
-
-
-def _normalize_constraint_type(value: str) -> str:
-    """Return a normalized constraint type name."""
-
-    return value.strip().lower().replace(" ", "_")
-
 
 class RequirementsAnalyst:
     """Extracts structured constraints from user prompt."""
@@ -66,13 +53,7 @@ class RequirementsAnalyst:
 
     def _constraint_type_registry(self) -> List[str]:
         """Return the current ordered registry of supported constraint types."""
-
-        registry: List[str] = []
-        for raw_type in [*DEFAULT_CONSTRAINT_TYPES, *settings.requirements_constraint_types]:
-            normalized = _normalize_constraint_type(raw_type)
-            if normalized and normalized not in registry:
-                registry.append(normalized)
-        return registry
+        return build_constraint_type_registry(settings.requirements_constraint_types)
 
     def _build_analysis_prompt(self) -> SystemMessage:
         """Return the system prompt used for requirements extraction."""
@@ -130,7 +111,15 @@ class RequirementsAnalyst:
         for item in payload:
             if not isinstance(item, dict):
                 raise ValueError("Each extracted constraint must be an object.")
-            normalized_type = _normalize_constraint_type(str(item.get("type", "")))
+            raw_type = item.get("type")
+            normalized_type = normalize_constraint_type(raw_type)
+            if not normalized_type:
+                raise ValueError("Each extracted constraint must include a non-empty type.")
+            if normalized_type not in self.constraint_types:
+                raise ValueError(
+                    f"Unsupported constraint type '{raw_type}'. "
+                    "Use one of the configured intake registry types."
+                )
             constraint = Constraint(
                 **{
                     **item,
@@ -158,7 +147,7 @@ class RequirementsAnalyst:
     def _detect_conflicts(self, constraints: List[Constraint]) -> List[str]:
         """Return conflicts where the same constraint type has divergent values."""
 
-        values_by_type: dict[str, set[str]] = {}
+        values_by_type: Dict[str, Set[str]] = {}
         for constraint in constraints:
             values_by_type.setdefault(constraint.type, set()).add(
                 constraint.value.strip().lower()
@@ -175,7 +164,7 @@ class RequirementsAnalyst:
     def _missing_core_inputs(self, constraints: List[Constraint]) -> List[str]:
         """Return missing core requirement categories."""
 
-        present = {_normalize_constraint_type(constraint.type) for constraint in constraints}
+        present = {normalize_constraint_type(constraint.type) for constraint in constraints}
         return [constraint_type for constraint_type in CORE_CONSTRAINT_TYPES if constraint_type not in present]
 
     def _build_feedback(

@@ -141,6 +141,52 @@ async def test_requirements_analyst_fallback_truncates_prompt_on_bad_json(monkey
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("payload", "reason_fragment"),
+    [
+        (
+            """
+            {
+              "constraints": [
+                {"value": "Build an agent notebook", "priority": 5}
+              ]
+            }
+            """,
+            "must include a non-empty type",
+        ),
+        (
+            """
+            {
+              "constraints": [
+                {"type": "architecture", "value": "router", "priority": 4}
+              ]
+            }
+            """,
+            "Unsupported constraint type",
+        ),
+    ],
+)
+async def test_requirements_analyst_falls_back_for_invalid_constraint_types(
+    monkeypatch, payload, reason_fragment
+):
+    """Invalid or unsupported constraint types should trigger the fallback path."""
+
+    monkeypatch.setattr(
+        requirements_analyst,
+        "ChatOpenAI",
+        make_stub_llm(payload),
+    )
+
+    analyst = requirements_analyst.RequirementsAnalyst()
+    analysis = await analyst.analyze("Build an agent notebook")
+
+    assert analysis.feedback.fallback_used is True
+    assert reason_fragment in (analysis.feedback.fallback_reason or "")
+    assert len(analysis.constraints) == 1
+    assert analysis.constraints[0].type == "goal"
+
+
+@pytest.mark.asyncio
 async def test_requirements_analyst_detects_conflicts_and_missing_inputs(monkeypatch):
     """Conflicting duplicates and missing core inputs should be surfaced in feedback."""
     payload = """
@@ -177,7 +223,13 @@ async def test_requirements_analyst_uses_configured_constraint_type_registry(mon
         requirements_analyst,
         "settings",
         requirements_analyst.settings.model_copy(
-            update={"requirements_constraint_types": ["regulatory"]}
+            update={
+                "requirements_constraint_types": [
+                    "Regulatory",
+                    " regulatory ",
+                    "custom type",
+                ]
+            }
         ),
     )
     monkeypatch.setattr(
@@ -206,7 +258,10 @@ async def test_requirements_analyst_uses_configured_constraint_type_registry(mon
 
     assert analysis.constraints[0].type == "regulatory"
     assert "regulatory" in analysis.feedback.available_constraint_types
+    assert "custom_type" in analysis.feedback.available_constraint_types
+    assert analysis.feedback.available_constraint_types.count("regulatory") == 1
     assert "regulatory" in captured_messages[0][0].content
+    assert "custom_type" in captured_messages[0][0].content
 
 
 @pytest.mark.asyncio

@@ -10,17 +10,17 @@ from langgraph_system_generator.generator.agents.requirements_analyst import (
 from langgraph_system_generator.generator.nodes import (
     intake_node,
     notebook_assembly_node,
+    rag_retrieval_node,
     tooling_plan_node,
 )
 from langgraph_system_generator.generator.state import (
     CellSpec,
     Constraint,
+    DocSnippet,
     NotebookPlan,
     RequirementsAnalysis,
     RequirementsFeedback,
 )
-from langgraph_system_generator.generator.nodes import intake_node, rag_retrieval_node
-from langgraph_system_generator.generator.state import Constraint, DocSnippet
 
 
 @pytest.mark.asyncio
@@ -59,7 +59,6 @@ async def test_intake_node_returns_constraints():
 async def test_tooling_plan_node_returns_tools_plan():
     constraints = [Constraint(type="goal", value="Build agents", priority=5)]
     workflow_design = {"nodes": [{"name": "agent", "purpose": "coordinate"}]}
-    expected_tools = [{"name": "search", "category": "search"}]
     expected_tools = [{"name": "search", "category": "search"}]
 
     # Patch ChatOpenAI used inside ToolchainEngineer.__init__ to avoid requiring OPENAI_API_KEY

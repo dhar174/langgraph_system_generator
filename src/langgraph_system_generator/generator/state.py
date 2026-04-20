@@ -10,12 +10,47 @@ from typing_extensions import TypedDict
 
 from langgraph_system_generator.utils.config import GenerationConfig
 
+DEFAULT_REQUIREMENTS_CONSTRAINT_TYPES = (
+    "goal",
+    "tone",
+    "length",
+    "structure",
+    "runtime",
+    "environment",
+)
+
+
+def normalize_constraint_type(value: str) -> str:
+    """Return a normalized constraint type token."""
+
+    if not isinstance(value, str):
+        return ""
+    return value.strip().lower().replace("-", "_").replace(" ", "_")
+
+
+def build_constraint_type_registry(extra_types: Optional[List[str]] = None) -> List[str]:
+    """Build the ordered, de-duplicated registry of supported constraint types."""
+
+    registry: List[str] = []
+    for raw_type in [
+        *DEFAULT_REQUIREMENTS_CONSTRAINT_TYPES,
+        *(extra_types or []),
+    ]:
+        normalized = normalize_constraint_type(raw_type)
+        if normalized and normalized not in registry:
+            registry.append(normalized)
+    return registry
+
 
 class Constraint(BaseModel):
     """User constraint specification."""
 
     type: str = Field(
-        description="Constraint type: 'goal', 'tone', 'length', 'structure', 'runtime', 'environment'"
+        description=(
+            "Constraint type from the current intake registry, such as "
+            "'goal', 'tone', 'length', 'structure', 'runtime', "
+            "'environment', or configured extras."
+        )
     )
     value: str = Field(description="Constraint value or description")
     priority: int = Field(default=1, description="Priority level (1=low, 5=high)")
