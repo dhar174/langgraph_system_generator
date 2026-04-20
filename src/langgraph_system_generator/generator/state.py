@@ -108,6 +108,92 @@ class RequirementsAnalysis(BaseModel):
     )
 
 
+ArchitectureType = Literal["router", "subagents", "hybrid", "autoagent"]
+
+
+class ArchitectureAlternative(BaseModel):
+    """Advisory alternative architecture considered during selection."""
+
+    architecture_type: ArchitectureType = Field(
+        description="Alternative architecture option considered during selection."
+    )
+    score: Optional[float] = Field(
+        default=None,
+        ge=0.0,
+        le=1.0,
+        description="Optional relative score for this alternative.",
+    )
+    rationale: Optional[str] = Field(
+        default=None,
+        description="Short rationale for why this alternative ranked below the winner.",
+    )
+
+
+class ArchitecturePatternSelection(BaseModel):
+    """Normalized selected-pattern payload for architecture selection."""
+
+    primary: ArchitectureType = Field(
+        description="Primary architecture pattern selected for the workflow."
+    )
+    secondary: List[ArchitectureType] = Field(
+        default_factory=list,
+        description="Secondary patterns that complement the primary architecture.",
+    )
+
+
+class ArchitectureFeedback(BaseModel):
+    """Advisory feedback captured during architecture selection."""
+
+    confidence: Optional[float] = Field(
+        default=None,
+        ge=0.0,
+        le=1.0,
+        description="Optional confidence score for the selected architecture.",
+    )
+    alternatives: List[ArchitectureAlternative] = Field(
+        default_factory=list,
+        description="Alternative architectures considered during selection.",
+    )
+    tradeoffs: List[str] = Field(
+        default_factory=list,
+        description="Short tradeoffs associated with the selected architecture.",
+    )
+    fallback_used: bool = Field(
+        default=False,
+        description="Whether the selector fell back to a default architecture.",
+    )
+    fallback_reason: Optional[str] = Field(
+        default=None,
+        description="Reason fallback mode was used, when applicable.",
+    )
+    validation_errors: List[str] = Field(
+        default_factory=list,
+        description="Validation or normalization issues detected in selector output.",
+    )
+    docs_considered: List[str] = Field(
+        default_factory=list,
+        description="Documentation snippets or pattern docs considered during selection.",
+    )
+
+
+class ArchitectureSelectionResult(BaseModel):
+    """Structured architecture-selection output."""
+
+    architecture_type: ArchitectureType = Field(
+        description="Final selected architecture type."
+    )
+    patterns: ArchitecturePatternSelection = Field(
+        description="Normalized selected pattern payload."
+    )
+    justification: str = Field(
+        description="Human-readable explanation for why this architecture was chosen."
+    )
+    feedback: ArchitectureFeedback = Field(
+        default_factory=ArchitectureFeedback,
+        description="Advisory architecture-selection metadata.",
+    )
+
+
 class DocSnippet(BaseModel):
     """Retrieved documentation snippet."""
 
@@ -178,6 +264,7 @@ class GeneratorState(TypedDict):
     # Extracted requirements
     constraints: Annotated[List[Constraint], operator.add]
     requirements_feedback: RequirementsFeedback
+    architecture_feedback: ArchitectureFeedback
     selected_patterns: Dict[str, Any]
 
     # RAG context

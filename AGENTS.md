@@ -88,7 +88,7 @@ These node functions are the clearest map of the runtime lifecycle:
 | --- | --- | --- | --- |
 | Intake | `intake_node` | `RequirementsAnalyst` | `constraints`, `requirements_feedback` |
 | Retrieval | `rag_retrieval_node` | `DocsRetriever` | `docs_context` |
-| Architecture selection | `architecture_selection_node` | `ArchitectureSelector` | `selected_patterns`, `architecture_type`, `architecture_justification` |
+| Architecture selection | `architecture_selection_node` | `ArchitectureSelector` | `selected_patterns`, `architecture_type`, `architecture_justification`, `architecture_feedback` |
 | Workflow design | `graph_design_node` | `GraphDesigner` | `workflow_design`, `notebook_plan` |
 | Tool planning | `tooling_plan_node` | `ToolchainEngineer` | `tools_plan` |
 | Notebook assembly | `notebook_assembly_node` | `NotebookComposer` | `generated_cells` |
@@ -107,6 +107,7 @@ Important patterns:
 
 - `constraints` and `docs_context` are accumulated lists.
 - `requirements_feedback` is advisory metadata from intake. It should surface fallback/gap/conflict guidance without replacing `constraints` as the downstream source of truth.
+- `architecture_feedback` is advisory metadata from architecture selection. It should surface fallback, tradeoff, and validation guidance without replacing `architecture_type` or `selected_patterns` as the downstream contract.
 - `generated_cells` is authoritative for the current repair iteration and is
   replaced rather than concatenated.
 - `qa_reports` is the current QA snapshot for the active pass, while

@@ -51,7 +51,9 @@ async def test_generate_artifacts_stub(tmp_path: Path, monkeypatch: pytest.Monke
     assert artifacts["manifest"]["prompt"] == "Test prompt"
     assert artifacts["manifest"]["cell_count"] > 0
     assert artifacts["manifest"]["requirements_feedback"]["fallback_used"] is False
+    assert artifacts["manifest"]["architecture_feedback"]["fallback_used"] is False
     assert artifacts["result"]["requirements_feedback"]["fallback_used"] is False
+    assert artifacts["result"]["architecture_feedback"]["fallback_used"] is False
     assert Path(artifacts["manifest_path"]).exists()
     assert artifacts["result"]["generation_complete"] is True
 
@@ -68,6 +70,7 @@ def test_default_state_includes_generation_mode_and_qa_history():
     assert state["generation_mode"] == "live"
     assert state["qa_history"] == []
     assert state["requirements_feedback"].fallback_used is False
+    assert state["architecture_feedback"].fallback_used is False
     assert "goal" in state["requirements_feedback"].available_constraint_types
 
 
@@ -196,6 +199,7 @@ async def test_api_generate_stub(tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     assert "output_dir" in payload
     assert payload["output_dir"] == str(output_dir)
     assert payload["manifest"]["requirements_feedback"]["fallback_used"] is False
+    assert payload["manifest"]["architecture_feedback"]["fallback_used"] is False
 
 
 @pytest.mark.asyncio
@@ -240,6 +244,50 @@ async def test_generate_artifacts_surfaces_requirements_feedback_as_warnings(
     assert "requirements_missing_inputs" in warning_codes
     assert "requirements_conflicts" in warning_codes
     assert artifacts["manifest"]["requirements_feedback"]["fallback_used"] is True
+
+
+@pytest.mark.asyncio
+async def test_generate_artifacts_surfaces_architecture_feedback_as_warnings(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.setenv("LNF_OUTPUT_BASE", "test_architecture_feedback_warning")
+
+    import langgraph_system_generator.constants as constants_module
+    import langgraph_system_generator.notebook.exporters as exporters_module
+    import langgraph_system_generator.cli as cli_module
+
+    importlib.reload(constants_module)
+    importlib.reload(exporters_module)
+    importlib.reload(cli_module)
+
+    original_build_stub_result = cli_module._build_stub_result
+
+    def build_stub_result_with_feedback(prompt: str, agent_type: str | None = None):
+        result = original_build_stub_result(prompt, agent_type=agent_type)
+        result["architecture_feedback"] = {
+            "confidence": 0.21,
+            "fallback_used": True,
+            "fallback_reason": "Architecture selection fallback used after validation failed.",
+            "validation_errors": ["Unsupported architecture_type 'swarm'."],
+            "tradeoffs": ["Router fallback may underfit specialized workflows."],
+            "alternatives": [],
+            "docs_considered": ["router", "subagents"],
+        }
+        return result
+
+    monkeypatch.setattr(cli_module, "_build_stub_result", build_stub_result_with_feedback)
+
+    output_dir = constants_module._BASE_OUTPUT / tmp_path.name
+    artifacts = await cli_module.generate_artifacts(
+        "Ambiguous architecture prompt",
+        output_dir=str(output_dir),
+        mode="stub",
+    )
+
+    warning_codes = {warning["code"] for warning in artifacts["manifest"]["warnings"]}
+    assert "architecture_fallback" in warning_codes
+    assert "architecture_validation" in warning_codes
+    assert artifacts["manifest"]["architecture_feedback"]["fallback_used"] is True
 
 
 @pytest.mark.asyncio
