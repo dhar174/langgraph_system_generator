@@ -41,6 +41,8 @@ class GraphDesigner:
         """
         architecture_type = architecture.get("architecture_type", "router")
         justification = architecture.get("justification", "")
+        selected_patterns = architecture.get("selected_patterns", {}) or {}
+        secondary_patterns = selected_patterns.get("secondary", [])
 
         constraints_text = "\n".join(
             [f"- [{c.type}] {c.value} (priority: {c.priority})" for c in constraints]
@@ -89,6 +91,7 @@ Return a JSON object with this structure:
 
         user_message = HumanMessage(content=f"""Architecture Type: {architecture_type}
 Architecture Justification: {justification}
+Selected Patterns: primary={selected_patterns.get("primary", architecture_type)}, secondary={secondary_patterns}
 
 Requirements:
 {constraints_text}
@@ -99,6 +102,8 @@ Design the workflow graph.""")
 
         try:
             result = extract_json_from_llm_response(response.content)
+            if selected_patterns.get("primary") == "hybrid":
+                result.setdefault("selected_patterns", selected_patterns)
             return result
         except (ValueError, KeyError, TypeError):
             # Fallback to a basic workflow
@@ -106,6 +111,62 @@ Design the workflow graph.""")
 
     def _fallback_design(self, architecture_type: str) -> Dict[str, Any]:
         """Provide a fallback design if LLM parsing fails."""
+        if architecture_type == "hybrid":
+            return {
+                "state_schema": {
+                    "messages": "List of messages",
+                    "route": "Selected router branch",
+                    "next_agent": "Next worker to call when the team path is chosen",
+                    "instructions": "Supervisor guidance for the selected worker",
+                    "results": "Direct specialist outputs",
+                    "task_results": "Worker-team outputs",
+                },
+                "nodes": [
+                    {"name": "router", "purpose": "Route to a direct specialist or the team path"},
+                    {
+                        "name": "specialist_1",
+                        "purpose": "Handle direct specialist work without team coordination",
+                    },
+                    {
+                        "name": "supervisor",
+                        "purpose": "Coordinate the worker team when deeper collaboration is needed",
+                    },
+                    {
+                        "name": "researcher",
+                        "purpose": "Gather supporting facts and intermediate context",
+                    },
+                    {
+                        "name": "reviewer",
+                        "purpose": "Review worker output and request refinements before finishing",
+                    },
+                ],
+                "edges": [
+                    {"from": "specialist_1", "to": "finish"},
+                    {"from": "researcher", "to": "supervisor"},
+                    {"from": "reviewer", "to": "supervisor"},
+                ],
+                "conditional_edges": [
+                    {
+                        "from": "router",
+                        "condition": "Route to a direct specialist or the worker team",
+                        "branches": {
+                            "specialist_1": "specialist_1",
+                            "team_path": "supervisor",
+                        },
+                    },
+                    {
+                        "from": "supervisor",
+                        "condition": "Route to next worker or finish after synthesis",
+                        "branches": {
+                            "researcher": "researcher",
+                            "reviewer": "reviewer",
+                            "FINISH": "finish",
+                        },
+                    },
+                ],
+                "entry_point": "router",
+                "checkpointing": True,
+            }
         if architecture_type in {"subagents", "autoagent"}:
             coordinator_name = (
                 "coordinator" if architecture_type == "autoagent" else "supervisor"

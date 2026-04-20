@@ -17,6 +17,9 @@ from langgraph_system_generator.generator.agents import (
     RequirementsAnalyst,
     ToolchainEngineer,
 )
+from langgraph_system_generator.generator.architecture_registry import (
+    get_default_architecture_registry,
+)
 from langgraph_system_generator.generator.state import (
     ArchitectureFeedback,
     CellSpec,
@@ -45,6 +48,7 @@ logger = logging.getLogger(__name__)
 
 RUNTIME_UNAVAILABLE_PREFIX = "runtime validation unavailable"
 TRUSTED_SMOKE_TEST_SCOPE = "trusted_smoke_test"
+ARCHITECTURE_REGISTRY = get_default_architecture_registry()
 
 
 def _resolve_model_config(state: GeneratorState):
@@ -211,17 +215,22 @@ async def architecture_selection_node(state: GeneratorState) -> Dict[str, Any]:
     """
     requested_architecture = _requested_architecture_type(state)
     if requested_architecture:
+        primary, secondary = ARCHITECTURE_REGISTRY.normalize_patterns(
+            requested_architecture
+        )
+        docs_metadata = ARCHITECTURE_REGISTRY.docs_queries_for(primary)
         return {
-            "selected_patterns": {"primary": requested_architecture, "secondary": []},
-            "architecture_type": requested_architecture,
+            "selected_patterns": {"primary": primary, "secondary": secondary},
+            "architecture_type": primary,
             "architecture_justification": (
-                f"Architecture forced by request-scoped agent_type override: {requested_architecture}."
+                f"Architecture forced by request-scoped agent_type override: {primary}."
             ),
             "architecture_feedback": ArchitectureFeedback(
                 confidence=1.0,
                 tradeoffs=[
                     "Selection was forced by request-scoped agent_type override; automatic ranking was skipped."
                 ],
+                docs_considered=docs_metadata,
             ),
         }
 
@@ -272,9 +281,12 @@ async def graph_design_node(state: GeneratorState) -> Dict[str, Any]:
     architecture = {
         "architecture_type": architecture_type,
         "justification": state["architecture_justification"],
+        "selected_patterns": selected_patterns,
     }
 
     workflow_design = await designer.design_workflow(architecture, state["constraints"])
+    if selected_patterns.get("primary") == "hybrid":
+        workflow_design.setdefault("selected_patterns", selected_patterns)
 
     # Create notebook plan
     notebook_plan = NotebookPlan(

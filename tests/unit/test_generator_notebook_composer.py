@@ -50,6 +50,15 @@ class DummyLLM:
             "revision_count: int",
             ['"revision_count": 0', '"quality_score": 0.0', '"approved": False'],
         ),
+        (
+            "hybrid",
+            "next_agent: str",
+            [
+                '"route": ""',
+                '"next_agent": "supervisor"',
+                '"task_results": {}',
+            ],
+        ),
     ],
 )
 async def test_compose_notebook_sections_and_packages(
@@ -78,6 +87,14 @@ async def test_compose_notebook_sections_and_packages(
         nodes = [
             {"name": "supervisor", "purpose": "Coordinate agents"},
             {"name": "researcher", "purpose": "Research documents"},
+        ]
+    elif architecture_type == "hybrid":
+        nodes = [
+            {"name": "router", "purpose": "Route requests"},
+            {"name": "specialist_1", "purpose": "Handle direct specialist work"},
+            {"name": "supervisor", "purpose": "Coordinate worker team"},
+            {"name": "researcher", "purpose": "Research documents"},
+            {"name": "reviewer", "purpose": "Review worker output"},
         ]
     else:
         nodes = [
@@ -168,6 +185,16 @@ async def test_compose_notebook_sections_and_packages(
     assert "stream" in execution_cell.content or "invoke" in execution_cell.content
     for marker in expected_execution_markers:
         assert marker in execution_cell.content
+
+    if architecture_type == "hybrid":
+        assert "route: str" in state_cells[0].content
+        assert 'workflow.add_node("router", router_node)' in graph_cells[0].content
+        assert 'workflow.add_node("supervisor", supervisor_node)' in graph_cells[0].content
+        assert 'workflow.add_edge("specialist_1", "finish")' in graph_cells[0].content
+        node_source = "\n\n".join(cell.content for cell in cells if cell.section == "nodes")
+        assert "def router_node" in node_source
+        assert "def supervisor_node" in node_source
+        assert "def reviewer_node" in node_source
 
     sections = {cell.section for cell in cells}
     assert {"intro", "setup", "state", "tools", "graph", "execution"}.issubset(
@@ -292,7 +319,7 @@ def test_graph_fallback_uses_sanitized_function_references(
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "architecture_type",
-    ["router", "subagents", "critique_loop", "autoagent"],
+    ["router", "subagents", "critique_loop", "autoagent", "hybrid"],
 )
 async def test_pattern_nodes_use_request_scoped_model_config(
     monkeypatch: pytest.MonkeyPatch,
@@ -327,6 +354,14 @@ async def test_pattern_nodes_use_request_scoped_model_config(
         ]
     elif architecture_type == "autoagent":
         nodes = [{"name": "planner", "purpose": "Plan the work"}]
+    elif architecture_type == "hybrid":
+        nodes = [
+            {"name": "router", "purpose": "Route requests"},
+            {"name": "specialist_1", "purpose": "Handle direct specialist work"},
+            {"name": "supervisor", "purpose": "Coordinate worker team"},
+            {"name": "researcher", "purpose": "Research documents"},
+            {"name": "reviewer", "purpose": "Review worker output"},
+        ]
     else:
         nodes = [
             {"name": "generate", "purpose": "Generate an initial draft"},

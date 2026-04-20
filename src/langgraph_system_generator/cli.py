@@ -24,6 +24,9 @@ from langgraph_system_generator.generator.state import (
     NotebookPlan,
     RequirementsFeedback,
 )
+from langgraph_system_generator.generator.architecture_registry import (
+    get_default_architecture_registry,
+)
 from langgraph_system_generator.utils.error_handling import GenerationError
 from langgraph_system_generator.utils.config import GenerationConfig, settings
 from langgraph_system_generator.utils.generation_options import (
@@ -406,7 +409,7 @@ def _infer_stub_architecture(prompt: str) -> tuple[str, str]:
     )
 
 
-def _load_patterns() -> tuple[Any, Any, Any]:
+def _load_patterns() -> tuple[Any, Any, Any, Any]:
     """Import pattern generators lazily to preserve minimal installs."""
     patterns_module = require_optional_module(
         "langgraph_system_generator.patterns",
@@ -416,6 +419,7 @@ def _load_patterns() -> tuple[Any, Any, Any]:
     return (
         patterns_module.RouterPattern,
         patterns_module.SubagentsPattern,
+        patterns_module.HybridPattern,
         patterns_module.AutoAgentPattern,
     )
 
@@ -432,11 +436,13 @@ def _load_generator_graph() -> Any:
 
 def _build_stub_result(prompt: str, agent_type: str | None = None) -> Dict[str, Any]:
     """Create a deterministic, offline-friendly generation result."""
-    RouterPattern, SubagentsPattern, AutoAgentPattern = _load_patterns()
+    RouterPattern, SubagentsPattern, HybridPattern, AutoAgentPattern = _load_patterns()
+    architecture_registry = get_default_architecture_registry()
 
     normalized_agent_type = normalize_agent_type(agent_type)
     if normalized_agent_type in SUPPORTED_AGENT_TYPES:
         architecture_type = normalized_agent_type
+        _, secondary_patterns = architecture_registry.normalize_patterns(architecture_type)
         justification = (
             f"{normalized_agent_type.title()} pattern selected from the requested "
             "agent_type override."
@@ -446,14 +452,17 @@ def _build_stub_result(prompt: str, agent_type: str | None = None) -> Dict[str, 
             tradeoffs=[
                 "Selection was forced by request-scoped agent_type override; heuristic ranking was skipped."
             ],
+            docs_considered=architecture_registry.docs_queries_for(architecture_type),
         )
     else:
         architecture_type, justification = _infer_stub_architecture(prompt)
+        _, secondary_patterns = architecture_registry.normalize_patterns(architecture_type)
         architecture_feedback = ArchitectureFeedback(
             confidence=0.45,
             tradeoffs=[
                 "Stub mode uses heuristic architecture inference instead of live architecture ranking."
             ],
+            docs_considered=architecture_registry.docs_queries_for(architecture_type),
         )
 
     constraints = [
@@ -588,6 +597,73 @@ def _build_stub_result(prompt: str, agent_type: str | None = None) -> Dict[str, 
                 section="graph",
             )
         )
+    elif architecture_type == "hybrid":
+        direct_specialists = ["specialist_1"]
+        team_workers = ["researcher", "reviewer"]
+        direct_descriptions = {
+            "specialist_1": "Handle direct specialist work without team coordination",
+        }
+        worker_descriptions = {
+            "researcher": "Gather supporting information",
+            "reviewer": "Review worker output before finishing",
+        }
+
+        cells.append(
+            CellSpec(
+                cell_type="code",
+                content=HybridPattern.generate_state_code(),
+                section="state_definition",
+            )
+        )
+        cells.append(
+            CellSpec(
+                cell_type="code",
+                content=HybridPattern.generate_router_node_code(direct_specialists),
+                section="nodes",
+            )
+        )
+        for specialist in direct_specialists:
+            cells.append(
+                CellSpec(
+                    cell_type="code",
+                    content=HybridPattern.generate_direct_specialist_code(
+                        specialist,
+                        direct_descriptions[specialist],
+                    ),
+                    section="nodes",
+                )
+            )
+        cells.append(
+            CellSpec(
+                cell_type="code",
+                content=HybridPattern.generate_supervisor_code(
+                    team_workers,
+                    worker_descriptions,
+                ),
+                section="nodes",
+            )
+        )
+        for worker in team_workers:
+            cells.append(
+                CellSpec(
+                    cell_type="code",
+                    content=HybridPattern.generate_worker_code(
+                        worker,
+                        worker_descriptions[worker],
+                    ),
+                    section="nodes",
+                )
+            )
+        cells.append(
+            CellSpec(
+                cell_type="code",
+                content=HybridPattern.generate_graph_code(
+                    direct_specialists,
+                    team_workers,
+                ),
+                section="graph",
+            )
+        )
     elif architecture_type == "autoagent":
         workers = ["planner", "executor", "critic"]
         worker_descriptions = {
@@ -648,7 +724,10 @@ def _build_stub_result(prompt: str, agent_type: str | None = None) -> Dict[str, 
             available_constraint_types=_available_constraint_types(),
         ),
         "architecture_feedback": architecture_feedback,
-        "selected_patterns": {"primary": architecture_type, "secondary": []},
+        "selected_patterns": {
+            "primary": architecture_type,
+            "secondary": secondary_patterns,
+        },
         "docs_context": [],
         "notebook_plan": plan,
         "architecture_type": plan.architecture_type,
