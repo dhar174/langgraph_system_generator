@@ -17,6 +17,7 @@ from time import perf_counter
 from typing import Any, Dict, List, Literal, TypedDict
 
 from langgraph_system_generator.generator.state import (
+    ArchitectureFeedback,
     build_constraint_type_registry,
     CellSpec,
     Constraint,
@@ -73,6 +74,7 @@ def _default_state(
             fallback_used=False,
             available_constraint_types=_available_constraint_types(),
         ),
+        "architecture_feedback": ArchitectureFeedback(fallback_used=False),
         "selected_patterns": {},
         "docs_context": [],
         "notebook_plan": None,
@@ -195,6 +197,46 @@ def _requirements_warning_entries(
                 "message": "Conflicting requirements were detected during intake.",
                 "conflicts": conflicts,
                 "suggestions": suggestions,
+            }
+        )
+
+    return warnings
+
+
+def _architecture_warning_entries(
+    feedback: Dict[str, Any] | None,
+) -> List[Dict[str, Any]]:
+    """Convert structured architecture feedback into manifest warnings."""
+
+    if not isinstance(feedback, dict):
+        return []
+
+    warnings: List[Dict[str, Any]] = []
+    tradeoffs = list(feedback.get("tradeoffs") or [])
+    docs_considered = list(feedback.get("docs_considered") or [])
+
+    if feedback.get("fallback_used"):
+        warnings.append(
+            {
+                "code": "architecture_fallback",
+                "phase": "architecture_selection",
+                "message": feedback.get("fallback_reason")
+                or "Architecture selection used a router fallback.",
+                "tradeoffs": tradeoffs,
+                "docs_considered": docs_considered,
+            }
+        )
+
+    validation_errors = list(feedback.get("validation_errors") or [])
+    if validation_errors:
+        warnings.append(
+            {
+                "code": "architecture_validation",
+                "phase": "architecture_selection",
+                "message": "Architecture selection reported validation issues.",
+                "validation_errors": validation_errors,
+                "tradeoffs": tradeoffs,
+                "docs_considered": docs_considered,
             }
         )
 
@@ -399,8 +441,20 @@ def _build_stub_result(prompt: str, agent_type: str | None = None) -> Dict[str, 
             f"{normalized_agent_type.title()} pattern selected from the requested "
             "agent_type override."
         )
+        architecture_feedback = ArchitectureFeedback(
+            confidence=1.0,
+            tradeoffs=[
+                "Selection was forced by request-scoped agent_type override; heuristic ranking was skipped."
+            ],
+        )
     else:
         architecture_type, justification = _infer_stub_architecture(prompt)
+        architecture_feedback = ArchitectureFeedback(
+            confidence=0.45,
+            tradeoffs=[
+                "Stub mode uses heuristic architecture inference instead of live architecture ranking."
+            ],
+        )
 
     constraints = [
         Constraint(type="goal", value=f"Deliver a notebook for: {prompt}", priority=5),
@@ -593,7 +647,8 @@ def _build_stub_result(prompt: str, agent_type: str | None = None) -> Dict[str, 
             fallback_used=False,
             available_constraint_types=_available_constraint_types(),
         ),
-        "selected_patterns": {"primary": architecture_type},
+        "architecture_feedback": architecture_feedback,
+        "selected_patterns": {"primary": architecture_type, "secondary": []},
         "docs_context": [],
         "notebook_plan": plan,
         "architecture_type": plan.architecture_type,
@@ -730,6 +785,7 @@ async def generate_artifacts(
         serialized.get("notebook_plan", {}).get("title") or "Generated Notebook"
     )
     requirements_feedback = serialized.get("requirements_feedback") or {}
+    architecture_feedback = serialized.get("architecture_feedback") or {}
 
     manifest: Dict[str, Any] = {
         "prompt": prompt,
@@ -738,7 +794,11 @@ async def generate_artifacts(
         "cell_count": len(serialized.get("generated_cells", []) or []),
         "plan_title": plan_title,
         "requirements_feedback": requirements_feedback,
-        "warnings": _requirements_warning_entries(requirements_feedback),
+        "architecture_feedback": architecture_feedback,
+        "warnings": [
+            *_requirements_warning_entries(requirements_feedback),
+            *_architecture_warning_entries(architecture_feedback),
+        ],
         "export_results": {},
     }
 

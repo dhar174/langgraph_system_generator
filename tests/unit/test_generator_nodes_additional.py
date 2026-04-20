@@ -21,7 +21,12 @@ from langgraph_system_generator.generator.nodes import (
     static_qa_node,
     tooling_plan_node,
 )
-from langgraph_system_generator.generator.state import CellSpec, Constraint, QAReport
+from langgraph_system_generator.generator.state import (
+    ArchitectureFeedback,
+    CellSpec,
+    Constraint,
+    QAReport,
+)
 from langgraph_system_generator.utils.config import GenerationConfig
 
 
@@ -124,9 +129,32 @@ async def test_architecture_selection_node_defaults_when_missing(monkeypatch):
 
     result = await architecture_selection_node({"constraints": [], "docs_context": []})
 
-    assert result["selected_patterns"] == {}
+    assert result["selected_patterns"] == {"primary": "router", "secondary": []}
     assert result["architecture_type"] == "router"
     assert result["architecture_justification"] == "Because"
+    assert result["architecture_feedback"].fallback_used is False
+
+
+@pytest.mark.asyncio
+async def test_architecture_selection_node_surfaces_selector_fallback_feedback(monkeypatch):
+    payload = '{"architecture_type":"swarm","patterns":{"primary":"swarm","secondary":[]},"justification":"x"}'
+
+    monkeypatch.setattr(
+        architecture_selector,
+        "ChatOpenAI",
+        make_stub_llm(payload),
+    )
+    monkeypatch.setattr(
+        "langgraph_system_generator.generator.agents.architecture_selector.DocsRetriever.retrieve_for_pattern",
+        lambda self, pattern_name: [],
+    )
+
+    result = await architecture_selection_node({"constraints": [], "docs_context": []})
+
+    assert result["architecture_type"] == "router"
+    assert result["selected_patterns"] == {"primary": "router", "secondary": []}
+    assert result["architecture_feedback"].fallback_used is True
+    assert result["architecture_feedback"].validation_errors
 
 
 @pytest.mark.asyncio
@@ -142,6 +170,9 @@ async def test_architecture_selection_node_honors_agent_type_override():
     assert result["selected_patterns"] == {"primary": "subagents", "secondary": []}
     assert result["architecture_type"] == "subagents"
     assert "agent_type override" in result["architecture_justification"]
+    assert result["architecture_feedback"].fallback_used is False
+    assert result["architecture_feedback"].confidence == pytest.approx(1.0)
+    assert result["architecture_feedback"].tradeoffs
 
 
 @pytest.mark.asyncio
@@ -157,6 +188,7 @@ async def test_architecture_selection_node_honors_autoagent_override():
     assert result["selected_patterns"] == {"primary": "autoagent", "secondary": []}
     assert result["architecture_type"] == "autoagent"
     assert "agent_type override" in result["architecture_justification"]
+    assert result["architecture_feedback"].fallback_used is False
 
 
 @pytest.mark.asyncio
@@ -481,6 +513,11 @@ async def test_package_outputs_node_manifest_fields():
         "constraints": [Constraint(type="goal", value="Test", priority=1)],
         "selected_patterns": {"primary": "hybrid"},
         "architecture_type": None,
+        "architecture_feedback": ArchitectureFeedback(
+            fallback_used=True,
+            fallback_reason="Validation failed.",
+            validation_errors=["Unsupported architecture_type 'swarm'."],
+        ),
     }
     result = await package_outputs_node(state)
 
@@ -488,4 +525,5 @@ async def test_package_outputs_node_manifest_fields():
     assert manifest["cell_count"] == "1"
     assert manifest["constraints_count"] == "1"
     assert manifest["architecture_type"] == "hybrid"
+    assert manifest["architecture_feedback"]["fallback_used"] is True
     assert result["generation_complete"] is True

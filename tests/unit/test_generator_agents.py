@@ -14,7 +14,10 @@ from langgraph_system_generator.generator.agents import (
     requirements_analyst,
     toolchain_engineer,
 )
-from langgraph_system_generator.generator.state import Constraint
+from langgraph_system_generator.generator.state import (
+    ArchitectureSelectionResult,
+    Constraint,
+)
 from langgraph_system_generator.utils.config import ModelConfig
 
 
@@ -265,18 +268,28 @@ async def test_requirements_analyst_uses_configured_constraint_type_registry(mon
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize(
-    ("payload", "expected_arch"),
-    [
-        (
-            '{"architecture_type":"subagents","patterns":{"primary":"subagents","secondary":[]},"justification":"x"}',
-            "subagents",
-        ),
-        ("nope", "router"),
-    ],
-)
-async def test_architecture_selector_parsing(payload, expected_arch, monkeypatch):
-    """ArchitectureSelector falls back to router on parse errors."""
+async def test_architecture_selector_parsing(monkeypatch):
+    """ArchitectureSelector returns typed results with structured feedback."""
+    payload = """
+    {
+      "architecture_type": "subagents",
+      "patterns": {"primary": "subagents", "secondary": ["router"]},
+      "justification": "Subagents fit specialized worker contexts better than a single router.",
+      "feedback": {
+        "confidence": 0.82,
+        "alternatives": [
+          {
+            "architecture_type": "router",
+            "score": 0.47,
+            "rationale": "Simpler, but weaker for isolated specialist contexts."
+          }
+        ],
+        "tradeoffs": [
+          "Higher coordination overhead than a single router."
+        ]
+      }
+    }
+    """
     monkeypatch.setattr(
         architecture_selector,
         "ChatOpenAI",
@@ -285,7 +298,80 @@ async def test_architecture_selector_parsing(payload, expected_arch, monkeypatch
     selector = architecture_selector.ArchitectureSelector()
     constraints = [Constraint(type="goal", value="x", priority=5)]
     result = await selector.select_architecture(constraints, [])
-    assert result["architecture_type"] == expected_arch
+    assert isinstance(result, ArchitectureSelectionResult)
+    assert result.architecture_type == "subagents"
+    assert result.patterns.primary == "subagents"
+    assert result.patterns.secondary == ["router"]
+    assert result.feedback.confidence == pytest.approx(0.82)
+    assert result.feedback.alternatives[0].architecture_type == "router"
+    assert result.feedback.tradeoffs
+    assert result.feedback.fallback_used is False
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("payload", "reason_fragment"),
+    [
+        (
+            '{"architecture_type":"swarm","patterns":{"primary":"swarm","secondary":[]},"justification":"x"}',
+            "Unsupported architecture_type",
+        ),
+        (
+            '{"architecture_type":"router","patterns":"router","justification":"x"}',
+            "malformed patterns",
+        ),
+        (
+            '{"architecture_type":"router","patterns":{"primary":"router","secondary":[]},"justification":"  "}',
+            "non-empty justification",
+        ),
+    ],
+)
+async def test_architecture_selector_falls_back_on_invalid_payload(
+    payload, reason_fragment, monkeypatch
+):
+    """ArchitectureSelector should surface fallback feedback for invalid model payloads."""
+    monkeypatch.setattr(
+        architecture_selector,
+        "ChatOpenAI",
+        make_stub_llm(payload),
+    )
+    selector = architecture_selector.ArchitectureSelector()
+    constraints = [Constraint(type="goal", value="x", priority=5)]
+    result = await selector.select_architecture(constraints, [])
+    assert result.architecture_type == "router"
+    assert result.patterns.primary == "router"
+    assert result.feedback.fallback_used is True
+    assert result.feedback.fallback_reason
+    assert any(reason_fragment in error for error in result.feedback.validation_errors)
+
+
+@pytest.mark.asyncio
+async def test_architecture_selector_normalizes_pattern_primary(monkeypatch):
+    """ArchitectureSelector should normalize the primary pattern to match architecture_type."""
+    payload = """
+    {
+      "architecture_type": "autoagent",
+      "patterns": {"primary": "router", "secondary": ["subagents"]},
+      "justification": "AutoAgent best fits the planner/executor/critic loop.",
+      "feedback": {
+        "confidence": 0.73
+      }
+    }
+    """
+    monkeypatch.setattr(
+        architecture_selector,
+        "ChatOpenAI",
+        make_stub_llm(payload),
+    )
+    selector = architecture_selector.ArchitectureSelector()
+    constraints = [Constraint(type="goal", value="x", priority=5)]
+    result = await selector.select_architecture(constraints, [])
+    assert result.architecture_type == "autoagent"
+    assert result.patterns.primary == "autoagent"
+    assert any(
+        "primary pattern did not match architecture_type" in error
+        for error in result.feedback.validation_errors
+    )
 
 
 @pytest.mark.asyncio

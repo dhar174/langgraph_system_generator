@@ -18,6 +18,7 @@ from langgraph_system_generator.generator.agents import (
     ToolchainEngineer,
 )
 from langgraph_system_generator.generator.state import (
+    ArchitectureFeedback,
     CellSpec,
     DocSnippet,
     GeneratorState,
@@ -216,6 +217,12 @@ async def architecture_selection_node(state: GeneratorState) -> Dict[str, Any]:
             "architecture_justification": (
                 f"Architecture forced by request-scoped agent_type override: {requested_architecture}."
             ),
+            "architecture_feedback": ArchitectureFeedback(
+                confidence=1.0,
+                tradeoffs=[
+                    "Selection was forced by request-scoped agent_type override; automatic ranking was skipped."
+                ],
+            ),
         }
 
     try:
@@ -236,13 +243,14 @@ async def architecture_selection_node(state: GeneratorState) -> Dict[str, Any]:
         state["constraints"], state["docs_context"]
     )
 
-    selected_patterns = architecture.get("patterns", {}) or {}
-    architecture_type = architecture.get("architecture_type") or "router"
+    selected_patterns = architecture.patterns.model_dump()
+    architecture_type = architecture.architecture_type
 
     return {
         "selected_patterns": selected_patterns,
         "architecture_type": architecture_type,
-        "architecture_justification": architecture.get("justification", ""),
+        "architecture_justification": architecture.justification,
+        "architecture_feedback": architecture.feedback,
     }
 
 
@@ -603,6 +611,7 @@ async def package_outputs_node(state: GeneratorState) -> Dict[str, Any]:
     """
     # Create artifacts manifest
     requirements_feedback = state.get("requirements_feedback")
+    architecture_feedback = state.get("architecture_feedback")
     manifest = {
         "notebook_plan": str(state.get("notebook_plan")),
         "cell_count": str(len(state.get("generated_cells", []))),
@@ -613,6 +622,11 @@ async def package_outputs_node(state: GeneratorState) -> Dict[str, Any]:
             requirements_feedback.model_dump()
             if hasattr(requirements_feedback, "model_dump")
             else (requirements_feedback or {})
+        ),
+        "architecture_feedback": (
+            architecture_feedback.model_dump()
+            if hasattr(architecture_feedback, "model_dump")
+            else (architecture_feedback or {})
         ),
     }
 

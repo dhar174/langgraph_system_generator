@@ -94,7 +94,7 @@ Retrieves relevant LangGraph/LangChain documentation based on the requirements:
 
 #### 3. Architecture Selection
 **Input**: Constraints + Documentation context  
-**Output**: Selected architecture and justification
+**Output**: Selected architecture, justification, and advisory architecture feedback
 
 Selects the most appropriate multi-agent pattern:
 
@@ -104,8 +104,15 @@ Selects the most appropriate multi-agent pattern:
   "architecture_justification": "Router pattern selected for customer support routing based on classification requirements",
   "selected_patterns": {
     "primary": "router",
-    "secondary": null,
-    "hybrid": false
+    "secondary": []
+  },
+  "architecture_feedback": {
+    "confidence": 0.78,
+    "fallback_used": false,
+    "validation_errors": [],
+    "tradeoffs": [
+      "Router keeps coordination simple but offers less worker specialization than subagents."
+    ]
   }
 }
 ```
@@ -113,8 +120,8 @@ Selects the most appropriate multi-agent pattern:
 **Available Architectures**:
 - `router`: Dynamic routing pattern
 - `subagents`: Supervisor-subagent coordination
-- `critique_revise`: Iterative refinement loop
 - `hybrid`: Combination of multiple patterns
+- `autoagent`: Planner/executor/critic loop for autonomous multi-step execution
 
 **Agent**: `ArchitectureSelector`  
 **LLM-Powered**: Yes (live mode) / Heuristics (stub mode)
