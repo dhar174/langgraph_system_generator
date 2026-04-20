@@ -50,6 +50,8 @@ async def test_generate_artifacts_stub(tmp_path: Path, monkeypatch: pytest.Monke
 
     assert artifacts["manifest"]["prompt"] == "Test prompt"
     assert artifacts["manifest"]["cell_count"] > 0
+    assert artifacts["manifest"]["requirements_feedback"]["fallback_used"] is False
+    assert artifacts["result"]["requirements_feedback"]["fallback_used"] is False
     assert Path(artifacts["manifest_path"]).exists()
     assert artifacts["result"]["generation_complete"] is True
 
@@ -65,6 +67,42 @@ def test_default_state_includes_generation_mode_and_qa_history():
 
     assert state["generation_mode"] == "live"
     assert state["qa_history"] == []
+    assert state["requirements_feedback"].fallback_used is False
+    assert "goal" in state["requirements_feedback"].available_constraint_types
+
+
+def test_default_and_stub_results_normalize_constraint_type_registry(monkeypatch):
+    import langgraph_system_generator.cli as cli_module
+
+    monkeypatch.setattr(
+        cli_module,
+        "settings",
+        cli_module.settings.model_copy(
+            update={
+                "requirements_constraint_types": [
+                    "Custom Type",
+                    " runtime ",
+                    "custom-type",
+                ]
+            }
+        ),
+    )
+
+    expected_registry = [
+        "goal",
+        "tone",
+        "length",
+        "structure",
+        "runtime",
+        "environment",
+        "custom_type",
+    ]
+
+    state = cli_module._default_state("Test prompt")
+    stub_result = cli_module._build_stub_result("Test prompt")
+
+    assert state["requirements_feedback"].available_constraint_types == expected_registry
+    assert stub_result["requirements_feedback"].available_constraint_types == expected_registry
 
 
 @pytest.mark.asyncio
@@ -157,6 +195,51 @@ async def test_api_generate_stub(tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     assert payload["prompt"] == "API prompt"
     assert "output_dir" in payload
     assert payload["output_dir"] == str(output_dir)
+    assert payload["manifest"]["requirements_feedback"]["fallback_used"] is False
+
+
+@pytest.mark.asyncio
+async def test_generate_artifacts_surfaces_requirements_feedback_as_warnings(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.setenv("LNF_OUTPUT_BASE", "test_requirements_feedback_warning")
+
+    import langgraph_system_generator.constants as constants_module
+    import langgraph_system_generator.notebook.exporters as exporters_module
+    import langgraph_system_generator.cli as cli_module
+
+    importlib.reload(constants_module)
+    importlib.reload(exporters_module)
+    importlib.reload(cli_module)
+
+    original_build_stub_result = cli_module._build_stub_result
+
+    def build_stub_result_with_feedback(prompt: str, agent_type: str | None = None):
+        result = original_build_stub_result(prompt, agent_type=agent_type)
+        result["requirements_feedback"] = {
+            "fallback_used": True,
+            "fallback_reason": "Failed to parse requirements payload.",
+            "missing_inputs": ["runtime", "environment"],
+            "conflicts": ["Conflicting runtime instructions were detected."],
+            "suggestions": ["Clarify the target runtime and environment constraints."],
+            "available_constraint_types": ["goal", "runtime", "environment"],
+        }
+        return result
+
+    monkeypatch.setattr(cli_module, "_build_stub_result", build_stub_result_with_feedback)
+
+    output_dir = constants_module._BASE_OUTPUT / tmp_path.name
+    artifacts = await cli_module.generate_artifacts(
+        "Ambiguous prompt",
+        output_dir=str(output_dir),
+        mode="stub",
+    )
+
+    warning_codes = {warning["code"] for warning in artifacts["manifest"]["warnings"]}
+    assert "requirements_fallback" in warning_codes
+    assert "requirements_missing_inputs" in warning_codes
+    assert "requirements_conflicts" in warning_codes
+    assert artifacts["manifest"]["requirements_feedback"]["fallback_used"] is True
 
 
 @pytest.mark.asyncio

@@ -1,5 +1,6 @@
 from pathlib import Path
 
+import pytest
 from pydantic_settings import SettingsConfigDict
 
 from langgraph_system_generator.utils.config import (
@@ -139,6 +140,27 @@ def test_settings_default_load_ignores_lnf_env_file_under_pytest(tmp_path, monke
 
     assert explicit.openai_api_key == "from-env-file"
     assert explicit.default_model == "from-env-file"
+
+
+def test_settings_reject_invalid_requirements_constraint_types_json(tmp_path):
+    from pydantic import ValidationError
+
+    env_path = Path(tmp_path) / ".env"
+    env_path.write_text(
+        'REQUIREMENTS_CONSTRAINT_TYPES=["goal",}\n',
+        encoding="utf-8",
+    )
+
+    class FileSettings(Settings):
+        model_config = SettingsConfigDict(
+            env_file=env_path, env_file_encoding="utf-8", extra="ignore"
+        )
+
+    with pytest.raises(
+        ValidationError,
+        match="Invalid JSON in requirements_constraint_types",
+    ):
+        FileSettings()
 
 
 def test_model_config_defaults():

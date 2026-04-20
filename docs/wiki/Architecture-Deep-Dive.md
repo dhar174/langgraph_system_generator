@@ -40,7 +40,7 @@ graph TB
 
 #### 1. Requirements Analysis (Intake)
 **Input**: User prompt  
-**Output**: Structured constraints
+**Output**: Structured constraints plus advisory requirements feedback
 
 The Requirements Analyst extracts structured constraints from the natural language prompt:
 
@@ -48,10 +48,16 @@ The Requirements Analyst extracts structured constraints from the natural langua
 {
   "user_prompt": "Create a customer support chatbot with routing",
   "constraints": [
-    {"type": "architecture", "value": "routing", "priority": 1},
-    {"type": "domain", "value": "customer support", "priority": 1},
-    {"type": "capability", "value": "classification", "priority": 2}
-  ]
+    {"type": "goal", "value": "Build a customer support chatbot", "priority": 5},
+    {"type": "structure", "value": "Use routing between support flows", "priority": 3},
+    {"type": "environment", "value": "Run in a notebook-friendly environment", "priority": 2}
+  ],
+  "requirements_feedback": {
+    "fallback_used": false,
+    "missing_inputs": [],
+    "conflicts": [],
+    "suggestions": []
+  }
 }
 ```
 
@@ -343,6 +349,7 @@ class GeneratorState(TypedDict):
     
     # Extracted requirements
     constraints: Annotated[List[Constraint], operator.add]
+    requirements_feedback: RequirementsFeedback
     selected_patterns: Dict[str, Any]
     
     # RAG Retrieval
@@ -374,6 +381,7 @@ class GeneratorState(TypedDict):
 
 **Key Features**:
 - **Annotated Lists**: Fields like `constraints` and `docs_context` use `operator.add` to append values across nodes
+- **Advisory Intake Feedback**: `requirements_feedback` captures fallback, conflict, and missing-input guidance without replacing `constraints` as the downstream planning contract
 - **Last-write-wins cells**: `generated_cells` intentionally has no reducer, so each repair pass replaces prior cells
 - **Immutability**: State updates create new state versions (LangGraph managed)
 - **Type Safety**: TypedDict provides IDE autocomplete and validation

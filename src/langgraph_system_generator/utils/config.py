@@ -4,13 +4,14 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 from functools import lru_cache
+import json
 import os
 from pathlib import Path
 import sys
-from typing import Optional, Union
+from typing import Annotated, Optional, Union
 
-from pydantic import BaseModel, Field
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import BaseModel, Field, field_validator
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 
 class ModelConfig(BaseModel):
@@ -131,6 +132,35 @@ class Settings(BaseSettings):
         default=100000,
         description="Default token budget allocated for a generation run.",
     )
+    requirements_constraint_types: Annotated[list[str], NoDecode] = Field(
+        default_factory=list,
+        description="Optional extra requirement constraint types made available during intake.",
+    )
+
+    @field_validator("requirements_constraint_types", mode="before")
+    @classmethod
+    def _parse_requirements_constraint_types(cls, value):
+        """Accept JSON arrays or comma-separated strings from the environment."""
+        if value in (None, ""):
+            return []
+        if isinstance(value, list):
+            return value
+        if isinstance(value, str):
+            stripped = value.strip()
+            if not stripped:
+                return []
+            if stripped.startswith("["):
+                try:
+                    parsed = json.loads(stripped)
+                except json.JSONDecodeError as exc:
+                    raise ValueError(
+                        f"Invalid JSON in requirements_constraint_types: {exc}"
+                    ) from exc
+                if not isinstance(parsed, list):
+                    raise ValueError("requirements_constraint_types must decode to a list")
+                return parsed
+            return [item.strip() for item in stripped.split(",") if item.strip()]
+        return value
 
 
 _DEFAULT_ENV_FILE = object()
@@ -144,6 +174,7 @@ _TEST_SETTINGS_ENV_KEYS = (
     "DEFAULT_MODEL",
     "MAX_REPAIR_ATTEMPTS",
     "DEFAULT_BUDGET_TOKENS",
+    "REQUIREMENTS_CONSTRAINT_TYPES",
 )
 
 

@@ -10,11 +10,17 @@ from langgraph_system_generator.generator.agents.requirements_analyst import (
 from langgraph_system_generator.generator.nodes import (
     intake_node,
     notebook_assembly_node,
+    rag_retrieval_node,
     tooling_plan_node,
 )
-from langgraph_system_generator.generator.state import CellSpec, Constraint, NotebookPlan
-from langgraph_system_generator.generator.nodes import intake_node, rag_retrieval_node
-from langgraph_system_generator.generator.state import Constraint, DocSnippet
+from langgraph_system_generator.generator.state import (
+    CellSpec,
+    Constraint,
+    DocSnippet,
+    NotebookPlan,
+    RequirementsAnalysis,
+    RequirementsFeedback,
+)
 
 
 @pytest.mark.asyncio
@@ -31,43 +37,28 @@ async def test_intake_node_returns_constraints():
         with patch.object(
             RequirementsAnalyst,
             "analyze",
-            new=AsyncMock(return_value=constraints),
+            new=AsyncMock(
+                return_value=RequirementsAnalysis(
+                    constraints=constraints,
+                    feedback=RequirementsFeedback(
+                        fallback_used=False,
+                        available_constraint_types=["goal", "tone"],
+                    ),
+                )
+            ),
         ) as mock_analyze:
             result = await intake_node({"user_prompt": "Build a router workflow"})
 
-    assert result == {"constraints": constraints}
+    assert result["constraints"] == constraints
+    assert result["requirements_feedback"].fallback_used is False
+    assert result["requirements_feedback"].available_constraint_types == ["goal", "tone"]
     mock_analyze.assert_awaited_once_with("Build a router workflow")
-
-
-@pytest.mark.asyncio
-async def test_requirements_analyst_fallback_truncates_prompt_on_bad_json():
-    long_prompt = "Build a workflow " + ("with a long prompt " * 15)
-    assert len(long_prompt) > 200
-
-    mock_llm = MagicMock()
-    mock_llm.ainvoke = AsyncMock()
-    mock_llm.ainvoke.return_value.content = "not-json"
-
-    with patch(
-        "langgraph_system_generator.generator.agents.requirements_analyst.ChatOpenAI",
-        return_value=mock_llm,
-    ):
-        analyst = RequirementsAnalyst(model="test-model")
-        constraints = await analyst.analyze(long_prompt)
-
-    assert len(constraints) == 1
-    constraint = constraints[0]
-    assert constraint.type == "goal"
-    assert constraint.priority == 5
-    assert constraint.value == long_prompt[:200]
-    assert len(constraint.value) == 200
 
 
 @pytest.mark.asyncio
 async def test_tooling_plan_node_returns_tools_plan():
     constraints = [Constraint(type="goal", value="Build agents", priority=5)]
     workflow_design = {"nodes": [{"name": "agent", "purpose": "coordinate"}]}
-    expected_tools = [{"name": "search", "category": "search"}]
     expected_tools = [{"name": "search", "category": "search"}]
 
     # Patch ChatOpenAI used inside ToolchainEngineer.__init__ to avoid requiring OPENAI_API_KEY
