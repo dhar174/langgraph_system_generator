@@ -43,6 +43,7 @@ from langgraph_system_generator.rag.retriever import DocsRetriever
 from langgraph_system_generator.utils.generation_options import (
     SUPPORTED_AGENT_TYPES,
     normalize_agent_type,
+    resolve_architecture_type,
 )
 from langgraph_system_generator.utils.config import settings
 
@@ -276,9 +277,10 @@ async def graph_design_node(state: GeneratorState) -> Dict[str, Any]:
     designer = GraphDesigner(model_config=_resolve_model_config(state))
 
     selected_patterns = state.get("selected_patterns", {}) or {}
-    architecture_type = state.get("architecture_type")
-    if not architecture_type:
-        architecture_type = selected_patterns.get("primary", "router")
+    architecture_type = resolve_architecture_type(
+        state.get("architecture_type"),
+        selected_patterns,
+    )
     architecture = {
         "architecture_type": architecture_type,
         "justification": state["architecture_justification"],
@@ -302,7 +304,7 @@ async def graph_design_node(state: GeneratorState) -> Dict[str, Any]:
             "Execution",
         ],
         cell_count_estimate=len(design_result.nodes) * 3 + 10,
-        patterns_used=[state.get("selected_patterns", {}).get("primary", "router")],
+        patterns_used=[architecture_type],
         architecture_type=architecture["architecture_type"],
     )
 
@@ -354,8 +356,10 @@ async def notebook_assembly_node(state: GeneratorState) -> Dict[str, Any]:
     tools_plan = state.get("tools_plan", [])
 
     architecture = {
-        "architecture_type": state.get("architecture_type")
-        or state.get("selected_patterns", {}).get("primary", "router"),
+        "architecture_type": resolve_architecture_type(
+            state.get("architecture_type"),
+            state.get("selected_patterns", {}) or {},
+        ),
         "justification": state["architecture_justification"],
     }
 
@@ -640,8 +644,10 @@ async def package_outputs_node(state: GeneratorState) -> Dict[str, Any]:
     manifest = {
         "notebook_plan": str(state.get("notebook_plan")),
         "cell_count": str(len(state.get("generated_cells", []))),
-        "architecture_type": state.get("architecture_type")
-        or state.get("selected_patterns", {}).get("primary", "router"),
+        "architecture_type": resolve_architecture_type(
+            state.get("architecture_type"),
+            state.get("selected_patterns", {}) or {},
+        ),
         "constraints_count": str(len(state.get("constraints", []))),
         "requirements_feedback": (
             requirements_feedback.model_dump()

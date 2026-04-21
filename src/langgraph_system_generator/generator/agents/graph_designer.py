@@ -28,6 +28,7 @@ from langgraph_system_generator.generator.state import (
 from langgraph_system_generator.generator.utils import extract_json_from_llm_response
 from langgraph_system_generator.utils.config import ModelConfig, settings
 from langgraph_system_generator.utils.error_handling import GenerationError
+from langgraph_system_generator.utils.generation_options import resolve_architecture_type
 
 logger = logging.getLogger(__name__)
 
@@ -59,13 +60,12 @@ class GraphDesigner:
     ) -> GraphDesignResult:
         """Create a complete, validated graph specification."""
 
-        architecture_type = str(
-            architecture.get("architecture_type")
-            or architecture.get("selected_patterns", {}).get("primary")
-            or "router"
-        ).strip().lower()
-        registration = self._registration_for(architecture_type)
         selected_patterns = architecture.get("selected_patterns", {}) or {}
+        architecture_type = resolve_architecture_type(
+            architecture.get("architecture_type"),
+            selected_patterns,
+        )
+        registration = self._registration_for(architecture_type)
         secondary_patterns = list(selected_patterns.get("secondary") or [])
         justification = architecture.get("justification", "")
 

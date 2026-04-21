@@ -13,7 +13,12 @@ from fastapi.testclient import TestClient
 
 from langgraph_system_generator.api.server import app
 from langgraph_system_generator.cli import GenerationArtifacts, generate_artifacts
+from langgraph_system_generator.generator.graph_design_registry import (
+    GraphDesignRegistration,
+    get_graph_design_registry,
+)
 from langgraph_system_generator.utils.config import GenerationConfig
+from langgraph_system_generator.utils.error_handling import GenerationError
 from langgraph_system_generator.utils.optional_deps import OptionalDependencyError
 
 
@@ -400,6 +405,37 @@ async def test_generate_artifacts_surfaces_graph_design_feedback_as_warnings(
     assert "graph_design_validation" in warning_codes
     assert artifacts["manifest"]["graph_design_feedback"]["fallback_used"] is True
     assert "flowchart TD" in artifacts["manifest"]["graph_exports"]["mermaid"]
+
+
+def test_build_stub_result_raises_for_invalid_stub_graph_design(monkeypatch):
+    import langgraph_system_generator.cli as cli_module
+
+    registry = get_graph_design_registry().clone()
+    router_registration = get_graph_design_registry().get("router")
+    registry.register(
+        GraphDesignRegistration(
+            architecture_id="router",
+            supported_entry_shapes=router_registration.supported_entry_shapes,
+            supported_exit_shapes=router_registration.supported_exit_shapes,
+            cycles_allowed=router_registration.cycles_allowed,
+            fallback_builder=lambda *_args, **_kwargs: {
+                "state_schema": {},
+                "nodes": [{"name": "router", "purpose": "Route requests"}],
+                "edges": [{"from": "router", "to": "missing_target"}],
+                "conditional_edges": [],
+                "entry_point": "router",
+                "checkpointing": False,
+            },
+            normalization_hook=router_registration.normalization_hook,
+            validation_hook=router_registration.validation_hook,
+            export_label_defaults=router_registration.export_label_defaults,
+            composition_strategy=router_registration.composition_strategy,
+        )
+    )
+    monkeypatch.setattr(cli_module, "get_graph_design_registry", lambda: registry)
+
+    with pytest.raises(GenerationError, match="invalid workflow"):
+        cli_module._build_stub_result("Build a test workflow")
 
 
 @pytest.mark.asyncio

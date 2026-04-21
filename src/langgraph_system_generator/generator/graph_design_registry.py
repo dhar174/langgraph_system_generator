@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections import Counter, deque
 from dataclasses import dataclass, field
 from functools import lru_cache
 import importlib
@@ -69,6 +70,25 @@ def _mermaid_id(value: str) -> str:
     if slug[0].isdigit():
         slug = f"n_{slug}"
     return slug
+
+
+def _mermaid_label(value: str) -> str:
+    """Return Mermaid-safe label text for node and edge annotations."""
+
+    text = str(value or "").replace("\r\n", "\n").replace("\r", "\n").strip()
+    if not text:
+        return ""
+    return (
+        text.replace("&", "&amp;")
+        .replace('"', "&quot;")
+        .replace("[", "&#91;")
+        .replace("]", "&#93;")
+        .replace("{", "&#123;")
+        .replace("}", "&#125;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+        .replace("\n", "<br/>")
+    )
 
 
 def _issue(
@@ -420,15 +440,15 @@ def _reachable_nodes(result: GraphDesignResult) -> set[str]:
         return set()
 
     seen: set[str] = set()
-    queue = [result.entry_point]
+    queue = deque([result.entry_point])
     while queue:
-        current = queue.pop(0)
+        current = queue.popleft()
         if current in seen:
             continue
         seen.add(current)
-        queue.extend(
-            target for target in adjacency.get(current, set()) if target not in seen
-        )
+        for target in adjacency.get(current, set()):
+            if target not in seen:
+                queue.append(target)
     return seen
 
 
@@ -479,6 +499,7 @@ def validate_graph_design(
 
     issues: list[GraphValidationIssue] = []
     node_names = [node.name for node in result.nodes]
+    duplicate_counts = Counter(node_names)
     node_id_set = set(node_names)
 
     if not result.entry_point:
@@ -498,7 +519,7 @@ def validate_graph_design(
         )
 
     duplicate_node_ids = sorted(
-        {node_name for node_name in node_names if node_names.count(node_name) > 1}
+        node_name for node_name, count in duplicate_counts.items() if count > 1
     )
     for node_id in duplicate_node_ids:
         issues.append(
@@ -627,7 +648,7 @@ def build_graph_exports(
     mermaid_lines = ["flowchart TD", f"    START([START]) --> {_mermaid_id(result.entry_point)}"]
     for node in result.nodes:
         mermaid_lines.append(
-            f'    {_mermaid_id(node.name)}["{node.name}: {node.purpose}"]'
+            f'    {_mermaid_id(node.name)}["{_mermaid_label(f"{node.name}: {node.purpose}")}"]'
         )
     for edge in result.edges:
         mermaid_lines.append(
@@ -637,7 +658,7 @@ def build_graph_exports(
         for branch_label, target in conditional_edge.branches.items():
             target_id = "END" if target in END_TARGETS else _mermaid_id(target)
             mermaid_lines.append(
-                f'    {_mermaid_id(conditional_edge.source)} -- "{branch_label}" --> {target_id}'
+                f'    {_mermaid_id(conditional_edge.source)} -- "{_mermaid_label(branch_label)}" --> {target_id}'
             )
     mermaid_lines.append("    END([END])")
 
@@ -689,7 +710,7 @@ def _default_registrations() -> list[GraphDesignRegistration]:
             architecture_id="hybrid",
             supported_entry_shapes=["router"],
             supported_exit_shapes=["finish"],
-            cycles_allowed=False,
+            cycles_allowed=True,
             fallback_builder=_build_hybrid_fallback,
             export_label_defaults={"title": "Hybrid Workflow"},
             composition_strategy="router_plus_team",
@@ -724,14 +745,26 @@ def _load_plugin_modules(
     """Load plugin registrations into a cloned registry."""
 
     for module_name in plugin_modules:
-        module = importlib.import_module(module_name)
+        try:
+            module = importlib.import_module(module_name)
+        except Exception as exc:
+            raise ValueError(
+                f"Failed to import graph design plugin module '{module_name}': "
+                f"{type(exc).__name__}: {exc}"
+            ) from exc
         register = getattr(module, "register_graph_designers", None)
         if not callable(register):
             raise ValueError(
                 f"Graph design plugin module '{module_name}' must define register_graph_designers(registry)."
             )
         hook: PluginHook = register
-        hook(registry)
+        try:
+            hook(registry)
+        except Exception as exc:
+            raise ValueError(
+                f"Graph design plugin module '{module_name}' failed while running "
+                f"register_graph_designers(registry): {type(exc).__name__}: {exc}"
+            ) from exc
     return registry
 
 

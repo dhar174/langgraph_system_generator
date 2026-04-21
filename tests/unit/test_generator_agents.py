@@ -19,9 +19,11 @@ from langgraph_system_generator.generator.architecture_registry import (
     get_default_architecture_registry,
 )
 from langgraph_system_generator.generator.graph_design_registry import (
+    build_graph_exports,
     GraphDesignRegistration,
     GraphDesignRegistry,
     get_graph_design_registry,
+    normalize_graph_design,
     validate_graph_design,
 )
 from langgraph_system_generator.generator.state import (
@@ -962,6 +964,23 @@ def test_graph_design_registry_loads_plugin_modules(monkeypatch):
     assert registry.get("plugin_router").composition_strategy == "plugin"
 
 
+def test_graph_design_registry_surfaces_plugin_import_failures(monkeypatch):
+    """Plugin import failures should name the module and the original import error."""
+
+    def broken_import(name: str):
+        if name == "broken_graph_plugin":
+            raise ModuleNotFoundError("No module named 'missing_graph_extension'")
+        raise AssertionError(f"Unexpected import request: {name}")
+
+    monkeypatch.setattr(graph_designer.importlib, "import_module", broken_import)
+
+    with pytest.raises(
+        ValueError,
+        match="Failed to import graph design plugin module 'broken_graph_plugin'",
+    ):
+        get_graph_design_registry(plugin_modules=("broken_graph_plugin",))
+
+
 def test_graph_designer_hybrid_fallback_contains_router_supervisor_and_team(monkeypatch):
     """Hybrid fallback should produce a real mixed routing/team workflow shape."""
     monkeypatch.setattr(
@@ -995,6 +1014,50 @@ def test_graph_designer_hybrid_fallback_contains_router_supervisor_and_team(monk
     assert router_edges[0]["branches"]["team_path"] == "supervisor"
     assert supervisor_edges
     assert "FINISH" in supervisor_edges[0]["branches"]
+
+    registration = get_graph_design_registry().get("hybrid")
+    normalized = normalize_graph_design(result, "hybrid", registration)
+    issues = validate_graph_design(normalized, registration)
+    assert not [issue for issue in issues if issue.severity == "error"]
+
+
+def test_graph_design_exports_escape_mermaid_labels():
+    """Mermaid exports should escape labels that contain quotes, brackets, or newlines."""
+
+    result = GraphDesignResult(
+        architecture_type="router",
+        state_schema={"messages": "Conversation state"},
+        nodes=[
+            GraphNodeSpec(
+                name='router "alpha"',
+                purpose="Route [requests]\ncarefully",
+            ),
+            GraphNodeSpec(name="finish", purpose="Finish the workflow"),
+        ],
+        edges=[],
+        conditional_edges=[
+            GraphConditionalEdgeSpec.model_validate(
+                {
+                    "from": 'router "alpha"',
+                    "condition": "Dispatch by route",
+                    "branches": {
+                        'team "path"\n[1]': "finish",
+                        "END": "END",
+                    },
+                }
+            )
+        ],
+        entry_point='router "alpha"',
+        checkpointing=False,
+    )
+
+    exports = build_graph_exports(result, get_graph_design_registry().get("router"))
+
+    assert "&quot;" in exports.mermaid
+    assert "&#91;" in exports.mermaid
+    assert "&#93;" in exports.mermaid
+    assert "<br/>" in exports.mermaid
+
 
 
 @pytest.mark.asyncio

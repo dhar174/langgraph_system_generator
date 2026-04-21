@@ -31,14 +31,17 @@ from langgraph_system_generator.generator.architecture_registry import (
 )
 from langgraph_system_generator.generator.graph_design_registry import (
     build_graph_exports,
+    graph_design_issue_messages,
     get_graph_design_registry,
     normalize_graph_design,
+    validate_graph_design,
 )
 from langgraph_system_generator.utils.error_handling import GenerationError
 from langgraph_system_generator.utils.config import GenerationConfig, settings
 from langgraph_system_generator.utils.generation_options import (
     SUPPORTED_AGENT_TYPES,
     normalize_agent_type,
+    resolve_architecture_type,
 )
 from langgraph_system_generator.utils.optional_deps import (
     OptionalDependencyError,
@@ -552,9 +555,36 @@ def _build_stub_result(prompt: str, agent_type: str | None = None) -> Dict[str, 
         architecture_type,
         graph_registration,
     )
-    graph_exports = build_graph_exports(graph_design, graph_registration)
+    graph_design_issues = validate_graph_design(graph_design, graph_registration)
+    graph_design_errors = graph_design_issue_messages(
+        graph_design_issues, severity="error"
+    )
+    graph_design_warnings = graph_design_issue_messages(
+        graph_design_issues, severity="warning"
+    )
+    if graph_design_errors:
+        raise GenerationError(
+            "Stub graph design produced an invalid workflow and could not be exported safely.",
+            code="stub_graph_design_invalid",
+            phase="graph_design",
+            hint="Inspect the graph design fallback builder or registration for this architecture.",
+            details={
+                "architecture_type": architecture_type,
+                "validation_errors": graph_design_errors,
+            },
+            status_code=500,
+        )
+    graph_exports = build_graph_exports(
+        graph_design,
+        graph_registration,
+        graph_design_issues,
+        graph_design_warnings,
+    )
     graph_design_feedback = GraphDesignFeedback(
         fallback_used=False,
+        validation_errors=graph_design_errors,
+        warnings=graph_design_warnings,
+        validation_issues=graph_design_issues,
         composition_strategy=graph_registration.composition_strategy,
     )
     workflow_design = graph_design.to_workflow_design_payload()
@@ -914,11 +944,10 @@ async def generate_artifacts(
     tracker.start("serialize", "Serializing generation results...", percentage=62)
     serialized = _serialize(result)
     tracker.finish("serialize", "Serialized generation results.", percentage=64)
-    if "architecture_type" in serialized and serialized.get("architecture_type"):
-        architecture_type = serialized.get("architecture_type")
-    else:
-        selected_patterns = serialized.get("selected_patterns") or {}
-        architecture_type = selected_patterns.get("primary") or "router"
+    architecture_type = resolve_architecture_type(
+        serialized.get("architecture_type"),
+        serialized.get("selected_patterns") or {},
+    )
 
     plan_title = (
         serialized.get("notebook_plan", {}).get("title") or "Generated Notebook"
