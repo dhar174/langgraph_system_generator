@@ -2,12 +2,21 @@
 
 from __future__ import annotations
 
+import asyncio
 import ast
+import re
+import sys
+import types
 
 import pytest
 
 from langgraph_system_generator.generator.agents import notebook_composer as composer_module
-from langgraph_system_generator.generator.state import NotebookPlan
+import langgraph_system_generator.generator.notebook_composer_registry as registry_module
+from langgraph_system_generator.generator.notebook_composer_registry import (
+    NotebookComposerArchitectureRegistration,
+    get_notebook_composer_registry,
+)
+from langgraph_system_generator.generator.state import CellSpec, NotebookPlan
 from langgraph_system_generator.utils.config import ModelConfig
 
 
@@ -24,7 +33,213 @@ class DummyLLM:
             def __init__(self, content: str) -> None:
                 self.content = content
 
-        return Response("")
+        content = args[0] if args and isinstance(args[0], str) else ""
+        return Response(content)
+
+    async def ainvoke(self, *args, **kwargs):
+        """Async invoke stub matching the synchronous empty-response behavior."""
+
+        return self.invoke(*args, **kwargs)
+
+
+class TrackingLLM(DummyLLM):
+    """Async LLM stub that records concurrency and returns meaningful code."""
+
+    delay_map: dict[str, float] = {}
+    default_delay: float = 0.01
+    active_calls: int = 0
+    max_active_calls: int = 0
+    completed_items: list[str] = []
+
+    @classmethod
+    def reset(cls, *, delay_map: dict[str, float] | None = None) -> None:
+        cls.delay_map = dict(delay_map or {})
+        cls.active_calls = 0
+        cls.max_active_calls = 0
+        cls.completed_items = []
+
+    async def ainvoke(self, messages, *args, **kwargs):
+        user_content = getattr(messages[-1], "content", "")
+        tool_match = re.search(r"Tool Name:\s*(.+)", user_content)
+        node_match = re.search(r"Node Name:\s*(.+)", user_content)
+        label = ""
+        if tool_match:
+            label = tool_match.group(1).strip()
+            safe_identifier = composer_module.NotebookComposer._safe_identifier(
+                label, "tool"
+            )
+            content = (
+                f"def {safe_identifier}(query: str) -> str:\n"
+                f"    return {label!r}"
+            )
+        elif node_match:
+            label = node_match.group(1).strip()
+            safe_identifier = composer_module.NotebookComposer._safe_identifier(
+                label, "node"
+            )
+            content = (
+                f"def {safe_identifier}_node(state: WorkflowState) -> WorkflowState:\n"
+                "    updates = dict(state)\n"
+                f"    updates['last_node'] = {label!r}\n"
+                "    return updates"
+            )
+        else:
+            content = ""
+
+        type(self).active_calls += 1
+        type(self).max_active_calls = max(
+            type(self).max_active_calls,
+            type(self).active_calls,
+        )
+        await asyncio.sleep(type(self).delay_map.get(label, type(self).default_delay))
+        type(self).completed_items.append(label)
+        type(self).active_calls -= 1
+        return self.invoke(content)
+
+
+def test_notebook_composer_registry_includes_builtin_architectures():
+    registry = get_notebook_composer_registry().clone()
+
+    for architecture_type in [
+        "router",
+        "subagents",
+        "hybrid",
+        "autoagent",
+        "critique_loop",
+    ]:
+        registration = registry.get(architecture_type)
+        assert registration.section_overrides["nodes"].endswith("_nodes")
+        assert registration.section_overrides["graph"].endswith("_graph")
+
+
+@pytest.mark.asyncio
+async def test_notebook_composer_registry_plugins_can_inject_pre_section_cells(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    module_name = "tests.fake_notebook_composer_plugin"
+    plugin_module = types.ModuleType(module_name)
+
+    def register_notebook_composer_builders(registry):
+        def plugin_intro_banner(_composer, _context):
+            return [
+                CellSpec(
+                    cell_type="markdown",
+                    content="> Plugin intro banner",
+                    section="intro",
+                )
+            ]
+
+        registry.register_builder("plugin_intro_banner", plugin_intro_banner)
+        base = registry.get("router")
+        registry.register(
+            NotebookComposerArchitectureRegistration(
+                architecture_id="router",
+                section_order=base.section_order,
+                section_overrides=dict(base.section_overrides),
+                pre_section_hooks={
+                    "intro": ["plugin_intro_banner"],
+                    **base.pre_section_hooks,
+                },
+                post_section_hooks=base.post_section_hooks,
+            )
+        )
+
+    plugin_module.register_notebook_composer_builders = (
+        register_notebook_composer_builders
+    )
+    monkeypatch.setitem(sys.modules, module_name, plugin_module)
+    monkeypatch.setattr(
+        registry_module.settings,
+        "notebook_composer_plugin_modules",
+        [module_name],
+    )
+    registry_module.get_notebook_composer_registry.cache_clear()
+    monkeypatch.setattr(composer_module, "ChatOpenAI", DummyLLM)
+
+    composer = composer_module.NotebookComposer()
+    composition = await composer.compose_notebook(
+        notebook_plan=NotebookPlan(
+            title="Plugin Notebook",
+            sections=["Setup", "Workflow", "Execution"],
+            patterns_used=["router"],
+            architecture_type="router",
+        ),
+        workflow_design={
+            "architecture_type": "router",
+            "state_schema": {"messages": "Conversation state"},
+            "nodes": [
+                {"name": "router", "purpose": "Route requests"},
+                {"name": "search", "purpose": "Search documents"},
+            ],
+        },
+        tools=[],
+        architecture={"architecture_type": "router", "justification": "Plugin test."},
+    )
+
+    intro_cells = [cell.content for cell in composition.cells if cell.section == "intro"]
+    assert any("Plugin intro banner" in cell for cell in intro_cells)
+    registry_module.get_notebook_composer_registry.cache_clear()
+
+
+@pytest.mark.asyncio
+async def test_custom_registry_can_override_graph_section_builder(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    monkeypatch.setattr(composer_module, "ChatOpenAI", DummyLLM)
+    registry = get_notebook_composer_registry().clone()
+
+    def custom_graph_section(_composer, _context):
+        return [
+            CellSpec(
+                cell_type="markdown",
+                content="## Custom Graph",
+                section="graph",
+            ),
+            CellSpec(
+                cell_type="code",
+                content="graph = 'custom_graph'",
+                section="graph",
+            ),
+        ]
+
+    registry.register_builder("custom_graph", custom_graph_section)
+    router_base = registry.get("router")
+    registry.register(
+        NotebookComposerArchitectureRegistration(
+            architecture_id="router",
+            section_order=router_base.section_order,
+            section_overrides={
+                **router_base.section_overrides,
+                "graph": "custom_graph",
+            },
+            pre_section_hooks=router_base.pre_section_hooks,
+            post_section_hooks=router_base.post_section_hooks,
+        )
+    )
+    composer = composer_module.NotebookComposer(registry=registry)
+
+    composition = await composer.compose_notebook(
+        notebook_plan=NotebookPlan(
+            title="Override Graph",
+            sections=["Setup", "Workflow", "Execution"],
+            patterns_used=["router"],
+            architecture_type="router",
+        ),
+        workflow_design={
+            "architecture_type": "router",
+            "state_schema": {"messages": "Conversation state"},
+            "nodes": [
+                {"name": "router", "purpose": "Route requests"},
+                {"name": "search", "purpose": "Search documents"},
+            ],
+        },
+        tools=[],
+        architecture={"architecture_type": "router", "justification": "Override test."},
+    )
+
+    graph_cells = [cell.content for cell in composition.cells if cell.section == "graph"]
+    assert "## Custom Graph" in graph_cells[0]
+    assert "graph = 'custom_graph'" in graph_cells[1]
 
 
 @pytest.mark.asyncio
@@ -251,6 +466,171 @@ async def test_compose_notebook_sections_and_packages(
 
 
 @pytest.mark.asyncio
+async def test_compose_notebook_parallel_tool_generation_preserves_order_and_cap(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    TrackingLLM.reset(
+        delay_map={
+            "Tool Alpha": 0.04,
+            "Tool Beta": 0.01,
+            "Tool Gamma": 0.02,
+        }
+    )
+    monkeypatch.setattr(composer_module, "ChatOpenAI", TrackingLLM)
+    monkeypatch.setattr(
+        composer_module.settings,
+        "notebook_composer_parallelism_mode",
+        "parallel",
+    )
+    monkeypatch.setattr(
+        composer_module.settings,
+        "notebook_composer_max_concurrency",
+        2,
+    )
+    composer = composer_module.NotebookComposer()
+
+    composition = await composer.compose_notebook(
+        notebook_plan=NotebookPlan(
+            title="Parallel Tools",
+            sections=["Setup", "Workflow", "Execution"],
+            patterns_used=["router"],
+            architecture_type="router",
+        ),
+        workflow_design={
+            "architecture_type": "router",
+            "state_schema": {"messages": "Conversation state"},
+            "nodes": [
+                {"name": "router", "purpose": "Route requests"},
+                {"name": "search", "purpose": "Search documents"},
+            ],
+        },
+        tools=[
+            {"name": "Tool Alpha", "purpose": "First tool", "category": "misc"},
+            {"name": "Tool Beta", "purpose": "Second tool", "category": "misc"},
+            {"name": "Tool Gamma", "purpose": "Third tool", "category": "misc"},
+        ],
+        architecture={"architecture_type": "router", "justification": "Parallel tools."},
+    )
+
+    tool_cells = [
+        cell.content
+        for cell in composition.cells
+        if cell.section == "tools" and cell.cell_type == "code"
+    ]
+    assert "def Tool_Alpha" in tool_cells[0]
+    assert "def Tool_Beta" in tool_cells[1]
+    assert "def Tool_Gamma" in tool_cells[2]
+    assert TrackingLLM.max_active_calls == 2
+    assert composition.feedback.fallback_used is False
+
+
+@pytest.mark.asyncio
+async def test_compose_notebook_parallel_custom_node_generation_preserves_order(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    TrackingLLM.reset(
+        delay_map={
+            "enrich": 0.04,
+            "summarize": 0.01,
+            "finalize": 0.02,
+        }
+    )
+    monkeypatch.setattr(composer_module, "ChatOpenAI", TrackingLLM)
+    monkeypatch.setattr(
+        composer_module.settings,
+        "notebook_composer_parallelism_mode",
+        "parallel",
+    )
+    monkeypatch.setattr(
+        composer_module.settings,
+        "notebook_composer_max_concurrency",
+        2,
+    )
+    composer = composer_module.NotebookComposer()
+
+    composition = await composer.compose_notebook(
+        notebook_plan=NotebookPlan(
+            title="Parallel Nodes",
+            sections=["Setup", "Workflow", "Execution"],
+            patterns_used=["custom"],
+            architecture_type="custom",
+        ),
+        workflow_design={
+            "architecture_type": "custom",
+            "state_schema": {"last_node": "Last processed node"},
+            "nodes": [
+                {"name": "enrich", "purpose": "Enrich results"},
+                {"name": "summarize", "purpose": "Summarize results"},
+                {"name": "finalize", "purpose": "Finalize results"},
+            ],
+        },
+        tools=[],
+        architecture={"architecture_type": "custom", "justification": "Parallel nodes."},
+    )
+
+    node_cells = [
+        cell.content
+        for cell in composition.cells
+        if cell.section == "nodes" and cell.cell_type == "code"
+    ]
+    assert "def enrich_node" in node_cells[0]
+    assert "def summarize_node" in node_cells[1]
+    assert "def finalize_node" in node_cells[2]
+    assert TrackingLLM.max_active_calls == 2
+    assert composition.feedback.fallback_used is False
+
+
+@pytest.mark.asyncio
+async def test_compose_notebook_sequential_mode_serializes_llm_generation(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    TrackingLLM.reset(
+        delay_map={
+            "Tool One": 0.01,
+            "Tool Two": 0.01,
+            "Tool Three": 0.01,
+        }
+    )
+    monkeypatch.setattr(composer_module, "ChatOpenAI", TrackingLLM)
+    monkeypatch.setattr(
+        composer_module.settings,
+        "notebook_composer_parallelism_mode",
+        "sequential",
+    )
+    monkeypatch.setattr(
+        composer_module.settings,
+        "notebook_composer_max_concurrency",
+        3,
+    )
+    composer = composer_module.NotebookComposer()
+
+    await composer.compose_notebook(
+        notebook_plan=NotebookPlan(
+            title="Sequential Tools",
+            sections=["Setup", "Workflow", "Execution"],
+            patterns_used=["router"],
+            architecture_type="router",
+        ),
+        workflow_design={
+            "architecture_type": "router",
+            "state_schema": {"messages": "Conversation state"},
+            "nodes": [
+                {"name": "router", "purpose": "Route requests"},
+                {"name": "search", "purpose": "Search documents"},
+            ],
+        },
+        tools=[
+            {"name": "Tool One", "purpose": "First tool", "category": "misc"},
+            {"name": "Tool Two", "purpose": "Second tool", "category": "misc"},
+            {"name": "Tool Three", "purpose": "Third tool", "category": "misc"},
+        ],
+        architecture={"architecture_type": "router", "justification": "Sequential tools."},
+    )
+
+    assert TrackingLLM.max_active_calls == 1
+
+
+@pytest.mark.asyncio
 async def test_compose_notebook_hybrid_sparse_nodes_keep_defaults_aligned(
     monkeypatch: pytest.MonkeyPatch,
 ):
@@ -399,14 +779,15 @@ async def test_compose_notebook_includes_graph_overview_from_exports(
     assert "terminal_nodes" in intro_markdown
 
 
-def test_generate_node_implementation_falls_back_to_meaningful_state_updates(
+@pytest.mark.asyncio
+async def test_generate_node_implementation_falls_back_to_meaningful_state_updates(
     monkeypatch: pytest.MonkeyPatch,
 ):
     """Custom architectures should fall back to runnable node code."""
     monkeypatch.setattr(composer_module, "ChatOpenAI", DummyLLM)
     composer = composer_module.NotebookComposer()
 
-    node_code = composer._generate_node_implementation(
+    node_code = await composer._generate_node_implementation(
         {"name": "enrich", "purpose": "Enrich the current workflow results"},
         {
             "architecture_type": "custom",
@@ -426,14 +807,15 @@ def test_generate_node_implementation_falls_back_to_meaningful_state_updates(
     assert "TODO" not in node_code
 
 
-def test_generate_tool_implementation_records_visible_fallback_warning(
+@pytest.mark.asyncio
+async def test_generate_tool_implementation_records_visible_fallback_warning(
     monkeypatch: pytest.MonkeyPatch,
 ):
     monkeypatch.setattr(composer_module, "ChatOpenAI", DummyLLM)
     composer = composer_module.NotebookComposer()
     feedback = composer_module.NotebookCompositionFeedback()
 
-    fallback_code = composer._generate_tool_implementation(
+    fallback_code = await composer._generate_tool_implementation(
         {"name": "Example Tool", "purpose": "Fallback to a deterministic helper", "category": "misc"},
         feedback=feedback,
     )
@@ -443,14 +825,15 @@ def test_generate_tool_implementation_records_visible_fallback_warning(
     assert feedback.fallback_events[0].kind == "tool"
 
 
-def test_generate_node_implementation_records_visible_fallback_warning(
+@pytest.mark.asyncio
+async def test_generate_node_implementation_records_visible_fallback_warning(
     monkeypatch: pytest.MonkeyPatch,
 ):
     monkeypatch.setattr(composer_module, "ChatOpenAI", DummyLLM)
     composer = composer_module.NotebookComposer()
     feedback = composer_module.NotebookCompositionFeedback()
 
-    fallback_code = composer._generate_node_implementation(
+    fallback_code = await composer._generate_node_implementation(
         {"name": "enrich", "purpose": "Enrich the current workflow results"},
         {
             "architecture_type": "custom",

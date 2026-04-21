@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+import asyncio
+import inspect
 import json
 import keyword
 import re
@@ -12,6 +13,11 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
 
 from langgraph_system_generator.generator.agents._llm import build_chat_llm
+from langgraph_system_generator.generator.notebook_composer_registry import (
+    NotebookComposerContext,
+    NotebookComposerRegistry,
+    get_notebook_composer_registry,
+)
 from langgraph_system_generator.generator.state import (
     CellSpec,
     NotebookCompositionFeedback,
@@ -46,18 +52,6 @@ _PACKAGE_FAMILIES = {
 }
 
 
-@dataclass
-class _NotebookCompositionContext:
-    """Internal notebook composition context shared across section builders."""
-
-    notebook_plan: NotebookPlan
-    workflow_design: Dict[str, Any]
-    tools: List[Dict[str, Any]]
-    architecture: Dict[str, Any]
-    dependency_plan: NotebookDependencyPlan
-    feedback: NotebookCompositionFeedback
-
-
 class NotebookComposer:
     """Generate notebook cell specifications with pattern-first code synthesis.
 
@@ -72,6 +66,7 @@ class NotebookComposer:
         self,
         model: str | None = None,
         model_config: ModelConfig | None = None,
+        registry: NotebookComposerRegistry | None = None,
     ):
         self.model_config = model_config or ModelConfig(
             model=model or settings.default_model,
@@ -81,6 +76,11 @@ class NotebookComposer:
             model=model,
             model_config=self.model_config,
             chat_openai_class=ChatOpenAI,
+        )
+        self.registry = (
+            registry.clone()
+            if registry is not None
+            else get_notebook_composer_registry().clone()
         )
 
     @staticmethod
@@ -280,56 +280,50 @@ class NotebookComposer:
             ]
         return plan
 
-    def _section_builders(
-        self,
-        context: _NotebookCompositionContext,
-    ) -> List[tuple[str, Any]]:
-        """Return the ordered internal section builders for notebook composition."""
+    async def _resolve_builder_output(self, builder_output: Any) -> List[CellSpec]:
+        """Normalize sync or async section-builder output into a cell list."""
 
-        resolved_max_iterations = context.feedback.resolved_max_iterations or 1
-        return [
-            (
-                "intro",
-                lambda: self._create_intro_cells(
-                    context.notebook_plan,
-                    context.architecture.get("justification"),
-                    context.workflow_design.get("graph_exports"),
-                ),
-            ),
-            ("install", lambda: self._create_install_cells(context.dependency_plan)),
-            (
-                "config",
-                lambda: self._create_config_cells(
-                    context.dependency_plan,
-                    context.feedback,
-                ),
-            ),
-            ("state", lambda: self._create_state_cells(context.workflow_design)),
-            (
-                "tools",
-                lambda: self._create_tool_cells(context.tools, context.feedback)
-                if context.tools
-                else [],
-            ),
-            (
-                "nodes",
-                lambda: self._create_node_cells(
-                    context.workflow_design,
-                    context.feedback,
-                ),
-            ),
-            (
-                "graph",
-                lambda: self._create_graph_cells(
-                    context.workflow_design,
-                    resolved_max_iterations,
-                ),
-            ),
-            (
-                "execution",
-                lambda: self._create_execution_cells(context.workflow_design),
-            ),
-        ]
+        if inspect.isawaitable(builder_output):
+            builder_output = await builder_output
+        if builder_output is None:
+            return []
+        return list(builder_output)
+
+    async def _execute_llm_tasks_in_order(
+        self,
+        items: List[Any],
+        worker: Any,
+    ) -> List[str]:
+        """Execute async LLM-backed generation while preserving input order."""
+
+        if not items:
+            return []
+        if (
+            settings.notebook_composer_parallelism_mode == "sequential"
+            or len(items) == 1
+        ):
+            results: List[str] = []
+            for item in items:
+                results.append(await worker(item))
+            return results
+
+        semaphore = asyncio.Semaphore(settings.notebook_composer_max_concurrency)
+
+        async def run(item: Any) -> str:
+            async with semaphore:
+                return await worker(item)
+
+        return list(await asyncio.gather(*(run(item) for item in items)))
+
+    async def _invoke_llm(self, messages: List[Any]) -> Any:
+        """Invoke the configured LLM using the async path when available."""
+
+        if hasattr(self.llm, "ainvoke"):
+            result = self.llm.ainvoke(messages)
+            if inspect.isawaitable(result):
+                return await result
+            return result
+        return await asyncio.to_thread(self.llm.invoke, messages)
 
     async def compose_notebook(
         self,
@@ -362,7 +356,7 @@ class NotebookComposer:
             resolved_max_iterations=self._resolve_max_iterations(workflow_design),
         )
         dependency_plan = self._plan_dependencies(tools, workflow_design)
-        context = _NotebookCompositionContext(
+        context = NotebookComposerContext(
             notebook_plan=notebook_plan,
             workflow_design=workflow_design,
             tools=tools,
@@ -371,9 +365,39 @@ class NotebookComposer:
             feedback=feedback,
         )
 
+        architecture_type = str(
+            workflow_design.get("architecture_type")
+            or architecture.get("architecture_type")
+            or notebook_plan.architecture_type
+            or "router"
+        ).strip().lower()
+        registration = self.registry.resolve(architecture_type)
         cells: List[CellSpec] = []
-        for section_name, builder in self._section_builders(context):
-            section_cells = builder()
+        for section_name in registration.section_order:
+            section_cells: List[CellSpec] = []
+            for hook in self.registry.resolve_hooks(
+                architecture_type,
+                section_name,
+                when="pre",
+            ):
+                section_cells.extend(
+                    await self._resolve_builder_output(hook(self, context))
+                )
+
+            builder = self.registry.resolve_builder(architecture_type, section_name)
+            section_cells.extend(
+                await self._resolve_builder_output(builder(self, context))
+            )
+
+            for hook in self.registry.resolve_hooks(
+                architecture_type,
+                section_name,
+                when="post",
+            ):
+                section_cells.extend(
+                    await self._resolve_builder_output(hook(self, context))
+                )
+
             if section_cells:
                 feedback.sections_built.append(section_name)
                 cells.extend(section_cells)
@@ -600,7 +624,7 @@ class WorkflowState(MessagesState):
             CellSpec(cell_type="code", content=state_content, section="state"),
         ]
 
-    def _create_tool_cells(
+    async def _create_tool_cells(
         self,
         tools: List[Dict[str, Any]],
         feedback: NotebookCompositionFeedback,
@@ -614,15 +638,19 @@ class WorkflowState(MessagesState):
             )
         ]
 
-        for tool in tools:
-            # Try to generate real implementation with LLM
-            tool_code = self._generate_tool_implementation(tool, feedback=feedback)
-
+        tool_codes = await self._execute_llm_tasks_in_order(
+            tools,
+            lambda tool: self._generate_tool_implementation(
+                tool,
+                feedback=feedback,
+            ),
+        )
+        for tool_code in tool_codes:
             cells.append(CellSpec(cell_type="code", content=tool_code, section="tools"))
 
         return cells
 
-    def _generate_tool_implementation(
+    async def _generate_tool_implementation(
         self,
         tool: Dict[str, Any],
         *,
@@ -673,8 +701,8 @@ Configuration: {tool_config}
 
 Generate the complete Python function implementation.""")
 
-            # Get LLM response (synchronous)
-            response = self.llm.invoke([system_prompt, user_prompt])
+            # Use the async LLM path so multiple tool implementations can run concurrently.
+            response = await self._invoke_llm([system_prompt, user_prompt])
             generated_code = self._strip_code_fences(response.content)
             if not self._is_meaningful_tool_code(generated_code):
                 return self._generate_tool_fallback(
@@ -833,7 +861,7 @@ Generate the complete Python function implementation.""")
 
         return header + implementation
 
-    def _create_node_cells(
+    async def _create_node_cells(
         self,
         workflow_design: Dict[str, Any],
         feedback: NotebookCompositionFeedback,
@@ -859,25 +887,28 @@ Generate the complete Python function implementation.""")
             "critique_loop",
         ]:
             # Use pattern library for architecture-specific nodes
-            pattern_cells = self._generate_nodes_from_pattern(
+            pattern_cells = self._create_pattern_node_cells(
                 nodes, architecture_type, workflow_design
             )
             cells.extend(pattern_cells)
         else:
             # Use LLM for custom node generation
-            for node in nodes:
-                node_code = self._generate_node_implementation(
+            node_codes = await self._execute_llm_tasks_in_order(
+                nodes,
+                lambda node: self._generate_node_implementation(
                     node,
                     workflow_design,
                     feedback=feedback,
-                )
+                ),
+            )
+            for node_code in node_codes:
                 cells.append(
                     CellSpec(cell_type="code", content=node_code, section="nodes")
                 )
 
         return cells
 
-    def _generate_node_implementation(
+    async def _generate_node_implementation(
         self,
         node: Dict[str, Any],
         workflow_design: Dict[str, Any],
@@ -933,8 +964,8 @@ State Schema:
 
 Generate the complete Python function implementation.""")
 
-            # Get LLM response
-            response = self.llm.invoke([system_prompt, user_prompt])
+            # Use the async LLM path so custom nodes can run concurrently.
+            response = await self._invoke_llm([system_prompt, user_prompt])
             generated_code = self._strip_code_fences(response.content)
             if not self._is_meaningful_node_code(generated_code):
                 return self._generate_node_fallback(
@@ -1157,7 +1188,7 @@ def {safe_node_identifier}_node(state: WorkflowState) -> WorkflowState:
             worker_descriptions,
         )
 
-    def _generate_nodes_from_pattern(
+    def _create_pattern_node_cells(
         self,
         nodes: List[Dict[str, Any]],
         architecture_type: str,
@@ -1347,9 +1378,30 @@ def {safe_node_identifier}_node(state: WorkflowState) -> WorkflowState:
     ) -> List[CellSpec]:
         """Create graph construction cells using pattern library or custom generation."""
         architecture_type = workflow_design.get("architecture_type", "router")
-        nodes = workflow_design.get("nodes", [])
+        if architecture_type in {
+            "router",
+            "subagents",
+            "hybrid",
+            "autoagent",
+            "critique_loop",
+        }:
+            return self._create_pattern_graph_cells(
+                workflow_design,
+                architecture_type,
+                max_iterations,
+            )
 
-        # Use pattern library for known architectures
+        return self._wrap_graph_cells(self._generate_graph_fallback(workflow_design))
+
+    def _create_pattern_graph_cells(
+        self,
+        workflow_design: Dict[str, Any],
+        architecture_type: str,
+        max_iterations: int,
+    ) -> List[CellSpec]:
+        """Create graph construction cells for a known architecture pattern."""
+
+        nodes = workflow_design.get("nodes", [])
         if architecture_type == "router":
             routes = [
                 node.get("name") for node in nodes if node.get("name") != "router"
@@ -1380,14 +1432,17 @@ def {safe_node_identifier}_node(state: WorkflowState) -> WorkflowState:
                 workers,
                 max_iterations=max_iterations,
             )
-        elif architecture_type == "critique_loop":
+        else:
             graph_code = CritiqueLoopPattern.generate_graph_code(
                 max_revisions=max_iterations,
                 min_quality_score=0.8,
             )
-        else:
-            # Fallback to enhanced template-based generation
-            graph_code = self._generate_graph_fallback(workflow_design)
+
+        return self._wrap_graph_cells(graph_code)
+
+    @staticmethod
+    def _wrap_graph_cells(graph_code: str) -> List[CellSpec]:
+        """Wrap graph code with the standard notebook graph section cells."""
 
         return [
             CellSpec(
