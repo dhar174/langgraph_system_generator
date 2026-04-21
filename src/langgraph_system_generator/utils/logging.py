@@ -8,14 +8,15 @@ import os
 logger = logging.getLogger(__name__)
 
 TRACE_LEVEL_NUM = 5
-_VALID_LEVEL_NAMES = {
+LOG_LEVEL_CHOICES = (
     "TRACE",
     "DEBUG",
     "INFO",
     "WARNING",
     "ERROR",
     "CRITICAL",
-}
+)
+_VALID_LEVEL_NAMES = set(LOG_LEVEL_CHOICES)
 
 
 def _ensure_trace_level() -> None:
@@ -24,11 +25,15 @@ def _ensure_trace_level() -> None:
         logging.addLevelName(TRACE_LEVEL_NUM, "TRACE")
 
     if not hasattr(logging.Logger, "trace"):
-        logging.Logger.trace = (  # type: ignore[attr-defined]
-            lambda self, message, *args, **kwargs: self.log(
-                TRACE_LEVEL_NUM, message, *args, **kwargs
-            )
-        )
+        def trace(
+            self,
+            message: str,
+            *args: object,
+            **kwargs: object,
+        ) -> None:
+            self.log(TRACE_LEVEL_NUM, message, *args, **kwargs)
+
+        logging.Logger.trace = trace  # type: ignore[attr-defined]
 
 
 def _resolve_level_name(level: str | None) -> str:

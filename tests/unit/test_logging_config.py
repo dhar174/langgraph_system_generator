@@ -12,6 +12,12 @@ from langgraph_system_generator.utils.logging import (
 )
 
 
+@pytest.fixture(autouse=True)
+def _reset_logging_configuration():
+    yield
+    configure_logging("INFO", force=True)
+
+
 def test_configure_logging_prefers_explicit_level_over_env(
     monkeypatch: pytest.MonkeyPatch,
 ):

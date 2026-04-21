@@ -183,15 +183,15 @@ async def test_requirements_analyst_fallback_truncates_prompt_on_bad_json(
     mock_llm = MagicMock()
     mock_llm.ainvoke = AsyncMock()
     mock_llm.ainvoke.return_value.content = "not-json"
+    caplog.set_level(
+        logging.WARNING,
+        logger="langgraph_system_generator.generator.agents.requirements_analyst",
+    )
 
     with patch(
         "langgraph_system_generator.generator.agents.requirements_analyst.ChatOpenAI",
         return_value=mock_llm,
     ):
-        caplog.set_level(
-            logging.WARNING,
-            logger="langgraph_system_generator.generator.agents.requirements_analyst",
-        )
         analyst = requirements_analyst.RequirementsAnalyst(model="test-model")
         analysis = await analyst.analyze(long_prompt)
 
@@ -207,6 +207,7 @@ async def test_requirements_analyst_fallback_truncates_prompt_on_bad_json(
     assert analysis.feedback.suggestions
     assert any(
         "Requirements extraction fallback used" in record.message
+        and record.levelname == "WARNING"
         for record in caplog.records
     )
 
@@ -401,14 +402,14 @@ async def test_architecture_selector_falls_back_on_invalid_payload(
     caplog: pytest.LogCaptureFixture,
 ):
     """ArchitectureSelector should surface fallback feedback for invalid model payloads."""
+    caplog.set_level(
+        logging.WARNING,
+        logger="langgraph_system_generator.generator.agents.architecture_selector",
+    )
     monkeypatch.setattr(
         architecture_selector,
         "ChatOpenAI",
         make_stub_llm(payload),
-    )
-    caplog.set_level(
-        logging.WARNING,
-        logger="langgraph_system_generator.generator.agents.architecture_selector",
     )
     selector = architecture_selector.ArchitectureSelector()
     constraints = [Constraint(type="goal", value="x", priority=5)]
@@ -420,6 +421,7 @@ async def test_architecture_selector_falls_back_on_invalid_payload(
     assert any(reason_fragment in error for error in result.feedback.validation_errors)
     assert any(
         "Architecture selection fallback used" in record.message
+        and record.levelname == "WARNING"
         for record in caplog.records
     )
 

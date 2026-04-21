@@ -33,7 +33,7 @@ from langgraph_system_generator.utils.generation_options import (
     SUPPORTED_AGENT_TYPES,
     normalize_agent_type,
 )
-from langgraph_system_generator.utils.logging import configure_logging
+from langgraph_system_generator.utils.logging import configure_logging, LOG_LEVEL_CHOICES
 from langgraph_system_generator.utils.optional_deps import (
     OptionalDependencyError,
     require_optional_module,
@@ -1238,7 +1238,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--log-level",
         type=str.upper,
-        choices=["TRACE", "DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
+        choices=list(LOG_LEVEL_CHOICES),
         default=None,
         help=(
             "Set CLI logging verbosity. "

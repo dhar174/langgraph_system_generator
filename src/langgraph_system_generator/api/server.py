@@ -38,7 +38,8 @@ from langgraph_system_generator.utils.generation_options import (
 from langgraph_system_generator.utils.logging import configure_logging
 from langgraph_system_generator.utils.optional_deps import OptionalDependencyError
 
-configure_logging()
+if not logging.getLogger().handlers:
+    configure_logging()
 logger = logging.getLogger(__name__)
 
 app = FastAPI(title="LangGraph Notebook Foundry API", version="0.1.1")

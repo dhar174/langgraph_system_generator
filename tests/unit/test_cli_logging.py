@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import logging
+
 import langgraph_system_generator.cli as cli_module
 
 
@@ -17,6 +19,7 @@ def test_main_configures_logging_before_dispatch(monkeypatch):
 
     def fake_configure_logging(level):
         observed["level"] = level
+        logging.getLogger().setLevel(getattr(logging, level or "INFO"))
         return level or "INFO"
 
     def fake_run_generate(_args):
@@ -31,3 +34,4 @@ def test_main_configures_logging_before_dispatch(monkeypatch):
     assert exit_code == 0
     assert observed["level"] == "WARNING"
     assert observed["command_ran"] is True
+    assert logging.getLogger().level == logging.WARNING
