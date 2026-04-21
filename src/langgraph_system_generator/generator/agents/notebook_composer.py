@@ -235,10 +235,15 @@ class NotebookComposer:
 
         for tool in tools:
             category = self._normalize_inline_text(tool.get("category", ""), "").lower()
-            requested_packages = tool.get("configuration", {}).get("packages", [])
+            tool_configuration = tool.get("configuration")
+            if not isinstance(tool_configuration, dict):
+                tool_configuration = {}
+            requested_packages = tool_configuration.get("packages", [])
             if isinstance(requested_packages, str):
                 requested_packages = [requested_packages]
-            for package_name in requested_packages if isinstance(requested_packages, list) else []:
+            if not isinstance(requested_packages, list):
+                requested_packages = []
+            for package_name in requested_packages:
                 self._add_dependency_candidate(
                     plan,
                     selected_packages,
