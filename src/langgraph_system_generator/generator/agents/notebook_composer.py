@@ -162,6 +162,22 @@ class NotebookComposer:
             )
         )
 
+    @staticmethod
+    def _merge_feedback(
+        target: NotebookCompositionFeedback,
+        source: NotebookCompositionFeedback | None,
+    ) -> None:
+        """Merge per-task feedback into the main composition feedback in order."""
+
+        if source is None:
+            return
+        if source.fallback_used:
+            target.fallback_used = True
+        for warning in source.warnings:
+            if warning not in target.warnings:
+                target.warnings.append(warning)
+        target.fallback_events.extend(source.fallback_events)
+
     def _fallback_banner(self, label: str, reason: str) -> str:
         """Return a visible notebook-facing warning comment for fallback code."""
 
@@ -293,7 +309,7 @@ class NotebookComposer:
         self,
         items: List[Any],
         worker: Any,
-    ) -> List[str]:
+    ) -> List[Any]:
         """Execute async LLM-backed generation while preserving input order."""
 
         if not items:
@@ -307,13 +323,13 @@ class NotebookComposer:
                 results.append(await worker(item))
             return results
 
-        semaphore = asyncio.Semaphore(settings.notebook_composer_max_concurrency)
+        semaphore = asyncio.Semaphore(max(1, settings.notebook_composer_max_concurrency))
 
         async def run(item: Any) -> str:
             async with semaphore:
                 return await worker(item)
 
-        return list(await asyncio.gather(*(run(item) for item in items)))
+        return await asyncio.gather(*(run(item) for item in items))
 
     async def _invoke_llm(self, messages: List[Any]) -> Any:
         """Invoke the configured LLM using the async path when available."""
@@ -371,6 +387,7 @@ class NotebookComposer:
             or notebook_plan.architecture_type
             or "router"
         ).strip().lower()
+        workflow_design["architecture_type"] = architecture_type
         registration = self.registry.resolve(architecture_type)
         cells: List[CellSpec] = []
         for section_name in registration.section_order:
@@ -638,14 +655,22 @@ class WorkflowState(MessagesState):
             )
         ]
 
-        tool_codes = await self._execute_llm_tasks_in_order(
-            tools,
-            lambda tool: self._generate_tool_implementation(
+        async def build_tool_code(
+            tool: Dict[str, Any],
+        ) -> tuple[str, NotebookCompositionFeedback]:
+            tool_feedback = NotebookCompositionFeedback()
+            tool_code = await self._generate_tool_implementation(
                 tool,
-                feedback=feedback,
-            ),
+                feedback=tool_feedback,
+            )
+            return tool_code, tool_feedback
+
+        tool_results = await self._execute_llm_tasks_in_order(
+            tools,
+            build_tool_code,
         )
-        for tool_code in tool_codes:
+        for tool_code, tool_feedback in tool_results:
+            self._merge_feedback(feedback, tool_feedback)
             cells.append(CellSpec(cell_type="code", content=tool_code, section="tools"))
 
         return cells
@@ -893,15 +918,23 @@ Generate the complete Python function implementation.""")
             cells.extend(pattern_cells)
         else:
             # Use LLM for custom node generation
-            node_codes = await self._execute_llm_tasks_in_order(
-                nodes,
-                lambda node: self._generate_node_implementation(
+            async def build_node_code(
+                node: Dict[str, Any],
+            ) -> tuple[str, NotebookCompositionFeedback]:
+                node_feedback = NotebookCompositionFeedback()
+                node_code = await self._generate_node_implementation(
                     node,
                     workflow_design,
-                    feedback=feedback,
-                ),
+                    feedback=node_feedback,
+                )
+                return node_code, node_feedback
+
+            node_results = await self._execute_llm_tasks_in_order(
+                nodes,
+                build_node_code,
             )
-            for node_code in node_codes:
+            for node_code, node_feedback in node_results:
+                self._merge_feedback(feedback, node_feedback)
                 cells.append(
                     CellSpec(cell_type="code", content=node_code, section="nodes")
                 )

@@ -97,6 +97,40 @@ class TrackingLLM(DummyLLM):
         return self.invoke(content)
 
 
+class DelayedEmptyLLM(DummyLLM):
+    """Async LLM stub that delays and forces fallback behavior."""
+
+    delay_map: dict[str, float] = {}
+    default_delay: float = 0.01
+    active_calls: int = 0
+    max_active_calls: int = 0
+
+    @classmethod
+    def reset(cls, *, delay_map: dict[str, float] | None = None) -> None:
+        cls.delay_map = dict(delay_map or {})
+        cls.active_calls = 0
+        cls.max_active_calls = 0
+
+    async def ainvoke(self, messages, *args, **kwargs):
+        user_content = getattr(messages[-1], "content", "")
+        tool_match = re.search(r"Tool Name:\s*(.+)", user_content)
+        node_match = re.search(r"Node Name:\s*(.+)", user_content)
+        label = ""
+        if tool_match:
+            label = tool_match.group(1).strip()
+        elif node_match:
+            label = node_match.group(1).strip()
+
+        type(self).active_calls += 1
+        type(self).max_active_calls = max(
+            type(self).max_active_calls,
+            type(self).active_calls,
+        )
+        await asyncio.sleep(type(self).delay_map.get(label, type(self).default_delay))
+        type(self).active_calls -= 1
+        return self.invoke("")
+
+
 def test_notebook_composer_registry_includes_builtin_architectures():
     registry = get_notebook_composer_registry().clone()
 
@@ -110,6 +144,19 @@ def test_notebook_composer_registry_includes_builtin_architectures():
         registration = registry.get(architecture_type)
         assert registration.section_overrides["nodes"].endswith("_nodes")
         assert registration.section_overrides["graph"].endswith("_graph")
+
+
+def test_notebook_composer_registry_preserves_explicit_section_subset():
+    registry = get_notebook_composer_registry().clone()
+    registry.register(
+        NotebookComposerArchitectureRegistration(
+            architecture_id="focused",
+            section_order=["intro", "state"],
+        )
+    )
+
+    registration = registry.get("focused")
+    assert registration.section_order == ["intro", "state"]
 
 
 @pytest.mark.asyncio
@@ -525,6 +572,65 @@ async def test_compose_notebook_parallel_tool_generation_preserves_order_and_cap
 
 
 @pytest.mark.asyncio
+async def test_compose_notebook_parallel_tool_fallback_metadata_preserves_input_order(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    DelayedEmptyLLM.reset(
+        delay_map={
+            "Tool Alpha": 0.04,
+            "Tool Beta": 0.01,
+            "Tool Gamma": 0.02,
+        }
+    )
+    monkeypatch.setattr(composer_module, "ChatOpenAI", DelayedEmptyLLM)
+    monkeypatch.setattr(
+        composer_module.settings,
+        "notebook_composer_parallelism_mode",
+        "parallel",
+    )
+    monkeypatch.setattr(
+        composer_module.settings,
+        "notebook_composer_max_concurrency",
+        2,
+    )
+    composer = composer_module.NotebookComposer()
+
+    composition = await composer.compose_notebook(
+        notebook_plan=NotebookPlan(
+            title="Parallel Tool Fallback Order",
+            sections=["Setup", "Workflow", "Execution"],
+            patterns_used=["router"],
+            architecture_type="router",
+        ),
+        workflow_design={
+            "architecture_type": "router",
+            "state_schema": {"messages": "Conversation state"},
+            "nodes": [
+                {"name": "router", "purpose": "Route requests"},
+                {"name": "search", "purpose": "Search documents"},
+            ],
+        },
+        tools=[
+            {"name": "Tool Alpha", "purpose": "First tool", "category": "misc"},
+            {"name": "Tool Beta", "purpose": "Second tool", "category": "misc"},
+            {"name": "Tool Gamma", "purpose": "Third tool", "category": "misc"},
+        ],
+        architecture={"architecture_type": "router", "justification": "Parallel tools."},
+    )
+
+    assert [event.item_name for event in composition.feedback.fallback_events] == [
+        "Tool Alpha",
+        "Tool Beta",
+        "Tool Gamma",
+    ]
+    assert composition.feedback.warnings == [
+        'Deterministic fallback used for tool "Tool Alpha".',
+        'Deterministic fallback used for tool "Tool Beta".',
+        'Deterministic fallback used for tool "Tool Gamma".',
+    ]
+
+
+@pytest.mark.asyncio
 async def test_compose_notebook_parallel_custom_node_generation_preserves_order(
     monkeypatch: pytest.MonkeyPatch,
 ):
@@ -581,6 +687,62 @@ async def test_compose_notebook_parallel_custom_node_generation_preserves_order(
 
 
 @pytest.mark.asyncio
+async def test_compose_notebook_parallel_node_fallback_metadata_preserves_input_order(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    DelayedEmptyLLM.reset(
+        delay_map={
+            "enrich": 0.04,
+            "summarize": 0.01,
+            "finalize": 0.02,
+        }
+    )
+    monkeypatch.setattr(composer_module, "ChatOpenAI", DelayedEmptyLLM)
+    monkeypatch.setattr(
+        composer_module.settings,
+        "notebook_composer_parallelism_mode",
+        "parallel",
+    )
+    monkeypatch.setattr(
+        composer_module.settings,
+        "notebook_composer_max_concurrency",
+        2,
+    )
+    composer = composer_module.NotebookComposer()
+
+    composition = await composer.compose_notebook(
+        notebook_plan=NotebookPlan(
+            title="Parallel Node Fallback Order",
+            sections=["Setup", "Workflow", "Execution"],
+            patterns_used=["custom"],
+            architecture_type="custom",
+        ),
+        workflow_design={
+            "architecture_type": "custom",
+            "state_schema": {"last_node": "Last processed node"},
+            "nodes": [
+                {"name": "enrich", "purpose": "Enrich results"},
+                {"name": "summarize", "purpose": "Summarize results"},
+                {"name": "finalize", "purpose": "Finalize results"},
+            ],
+        },
+        tools=[],
+        architecture={"architecture_type": "custom", "justification": "Parallel nodes."},
+    )
+
+    assert [event.item_name for event in composition.feedback.fallback_events] == [
+        "enrich",
+        "summarize",
+        "finalize",
+    ]
+    assert composition.feedback.warnings == [
+        'Deterministic fallback used for node "enrich".',
+        'Deterministic fallback used for node "summarize".',
+        'Deterministic fallback used for node "finalize".',
+    ]
+
+
+@pytest.mark.asyncio
 async def test_compose_notebook_sequential_mode_serializes_llm_generation(
     monkeypatch: pytest.MonkeyPatch,
 ):
@@ -625,6 +787,54 @@ async def test_compose_notebook_sequential_mode_serializes_llm_generation(
             {"name": "Tool Three", "purpose": "Third tool", "category": "misc"},
         ],
         architecture={"architecture_type": "router", "justification": "Sequential tools."},
+    )
+
+    assert TrackingLLM.max_active_calls == 1
+
+
+@pytest.mark.asyncio
+async def test_compose_notebook_parallel_mode_treats_zero_concurrency_as_one(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    TrackingLLM.reset(
+        delay_map={
+            "Tool One": 0.01,
+            "Tool Two": 0.01,
+        }
+    )
+    monkeypatch.setattr(composer_module, "ChatOpenAI", TrackingLLM)
+    monkeypatch.setattr(
+        composer_module.settings,
+        "notebook_composer_parallelism_mode",
+        "parallel",
+    )
+    monkeypatch.setattr(
+        composer_module.settings,
+        "notebook_composer_max_concurrency",
+        0,
+    )
+    composer = composer_module.NotebookComposer()
+
+    await composer.compose_notebook(
+        notebook_plan=NotebookPlan(
+            title="Zero Concurrency Tools",
+            sections=["Setup", "Workflow", "Execution"],
+            patterns_used=["router"],
+            architecture_type="router",
+        ),
+        workflow_design={
+            "architecture_type": "router",
+            "state_schema": {"messages": "Conversation state"},
+            "nodes": [
+                {"name": "router", "purpose": "Route requests"},
+                {"name": "search", "purpose": "Search documents"},
+            ],
+        },
+        tools=[
+            {"name": "Tool One", "purpose": "First tool", "category": "misc"},
+            {"name": "Tool Two", "purpose": "Second tool", "category": "misc"},
+        ],
+        architecture={"architecture_type": "router", "justification": "Zero concurrency."},
     )
 
     assert TrackingLLM.max_active_calls == 1
@@ -676,6 +886,49 @@ async def test_compose_notebook_hybrid_sparse_nodes_keep_defaults_aligned(
     assert 'workflow.add_node("researcher", researcher_node)' in graph_code
     assert 'workflow.add_node("reviewer", reviewer_node)' in graph_code
     assert 'workflow.add_edge("specialist_1", "finish")' in graph_code
+
+
+@pytest.mark.asyncio
+async def test_compose_notebook_normalizes_mixed_case_architecture_type(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    monkeypatch.setattr(composer_module, "ChatOpenAI", DummyLLM)
+    composer = composer_module.NotebookComposer()
+
+    composition = await composer.compose_notebook(
+        notebook_plan=NotebookPlan(
+            title="Mixed Case Router",
+            sections=["Setup", "Workflow", "Execution"],
+            patterns_used=["router"],
+            architecture_type="router",
+        ),
+        workflow_design={
+            "architecture_type": "Router",
+            "state_schema": {"messages": "Conversation state"},
+            "nodes": [
+                {"name": "router", "purpose": "Route requests"},
+                {"name": "search", "purpose": "Search documents"},
+            ],
+        },
+        tools=[],
+        architecture={"architecture_type": "Router", "justification": "Mixed case input."},
+    )
+
+    state_code = next(
+        cell.content
+        for cell in composition.cells
+        if cell.section == "state" and cell.cell_type == "code"
+    )
+    execution_code = next(
+        cell.content
+        for cell in composition.cells
+        if cell.section == "execution" and cell.cell_type == "code"
+    )
+
+    assert "route: str" in state_code
+    assert '"route": ""' in execution_code
+    assert '"results": {}' in execution_code
+    assert '"final_output": ""' in execution_code
 
 
 @pytest.mark.asyncio

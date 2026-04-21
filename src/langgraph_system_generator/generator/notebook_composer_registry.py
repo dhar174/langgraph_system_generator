@@ -97,9 +97,6 @@ class NotebookComposerArchitectureRegistration:
         section_order = _normalize_string_list(self.section_order) or list(
             default_section_order
         )
-        for section_name in default_section_order:
-            if section_name not in section_order:
-                section_order.append(section_name)
 
         normalized_overrides = {
             str(section or "").strip(): _normalize_builder_name(
