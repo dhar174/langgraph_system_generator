@@ -6,8 +6,9 @@ import asyncio
 import inspect
 import json
 import keyword
+import logging
 import re
-from typing import Any, Dict, List
+from typing import Any, Awaitable, Callable, Dict, List, TypeVar
 
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
@@ -50,6 +51,9 @@ _PACKAGE_FAMILIES = {
     "pdfminer.six": "pdf_parser",
     "pymupdf": "pdf_parser",
 }
+
+_T = TypeVar("_T")
+logger = logging.getLogger(__name__)
 
 
 class NotebookComposer:
@@ -308,8 +312,8 @@ class NotebookComposer:
     async def _execute_llm_tasks_in_order(
         self,
         items: List[Any],
-        worker: Any,
-    ) -> List[Any]:
+        worker: Callable[[Any], Awaitable[_T]],
+    ) -> List[_T]:
         """Execute async LLM-backed generation while preserving input order."""
 
         if not items:
@@ -323,9 +327,15 @@ class NotebookComposer:
                 results.append(await worker(item))
             return results
 
-        semaphore = asyncio.Semaphore(max(1, settings.notebook_composer_max_concurrency))
+        max_concurrency = settings.notebook_composer_max_concurrency
+        if max_concurrency <= 0:
+            logger.warning(
+                "Invalid notebook_composer_max_concurrency=%s; using 1 instead.",
+                max_concurrency,
+            )
+        semaphore = asyncio.Semaphore(max(1, max_concurrency))
 
-        async def run(item: Any) -> str:
+        async def run(item: Any) -> _T:
             async with semaphore:
                 return await worker(item)
 

@@ -45,18 +45,18 @@ class DummyLLM:
 class TrackingLLM(DummyLLM):
     """Async LLM stub that records concurrency and returns meaningful code."""
 
-    delay_map: dict[str, float] = {}
+    _class_delay_map: dict[str, float] = {}
     default_delay: float = 0.01
-    active_calls: int = 0
-    max_active_calls: int = 0
-    completed_items: list[str] = []
+    _class_active_calls: int = 0
+    _class_max_active_calls: int = 0
+    _class_completed_items: list[str] = []
 
     @classmethod
     def reset(cls, *, delay_map: dict[str, float] | None = None) -> None:
-        cls.delay_map = dict(delay_map or {})
-        cls.active_calls = 0
-        cls.max_active_calls = 0
-        cls.completed_items = []
+        cls._class_delay_map = dict(delay_map or {})
+        cls._class_active_calls = 0
+        cls._class_max_active_calls = 0
+        cls._class_completed_items = []
 
     async def ainvoke(self, messages, *args, **kwargs):
         user_content = getattr(messages[-1], "content", "")
@@ -86,30 +86,32 @@ class TrackingLLM(DummyLLM):
         else:
             content = ""
 
-        type(self).active_calls += 1
-        type(self).max_active_calls = max(
-            type(self).max_active_calls,
-            type(self).active_calls,
+        type(self)._class_active_calls += 1
+        type(self)._class_max_active_calls = max(
+            type(self)._class_max_active_calls,
+            type(self)._class_active_calls,
         )
-        await asyncio.sleep(type(self).delay_map.get(label, type(self).default_delay))
-        type(self).completed_items.append(label)
-        type(self).active_calls -= 1
+        await asyncio.sleep(
+            type(self)._class_delay_map.get(label, type(self).default_delay)
+        )
+        type(self)._class_completed_items.append(label)
+        type(self)._class_active_calls -= 1
         return self.invoke(content)
 
 
 class DelayedEmptyLLM(DummyLLM):
     """Async LLM stub that delays and forces fallback behavior."""
 
-    delay_map: dict[str, float] = {}
+    _class_delay_map: dict[str, float] = {}
     default_delay: float = 0.01
-    active_calls: int = 0
-    max_active_calls: int = 0
+    _class_active_calls: int = 0
+    _class_max_active_calls: int = 0
 
     @classmethod
     def reset(cls, *, delay_map: dict[str, float] | None = None) -> None:
-        cls.delay_map = dict(delay_map or {})
-        cls.active_calls = 0
-        cls.max_active_calls = 0
+        cls._class_delay_map = dict(delay_map or {})
+        cls._class_active_calls = 0
+        cls._class_max_active_calls = 0
 
     async def ainvoke(self, messages, *args, **kwargs):
         user_content = getattr(messages[-1], "content", "")
@@ -121,13 +123,15 @@ class DelayedEmptyLLM(DummyLLM):
         elif node_match:
             label = node_match.group(1).strip()
 
-        type(self).active_calls += 1
-        type(self).max_active_calls = max(
-            type(self).max_active_calls,
-            type(self).active_calls,
+        type(self)._class_active_calls += 1
+        type(self)._class_max_active_calls = max(
+            type(self)._class_max_active_calls,
+            type(self)._class_active_calls,
         )
-        await asyncio.sleep(type(self).delay_map.get(label, type(self).default_delay))
-        type(self).active_calls -= 1
+        await asyncio.sleep(
+            type(self)._class_delay_map.get(label, type(self).default_delay)
+        )
+        type(self)._class_active_calls -= 1
         return self.invoke("")
 
 
@@ -567,7 +571,7 @@ async def test_compose_notebook_parallel_tool_generation_preserves_order_and_cap
     assert "def Tool_Alpha" in tool_cells[0]
     assert "def Tool_Beta" in tool_cells[1]
     assert "def Tool_Gamma" in tool_cells[2]
-    assert TrackingLLM.max_active_calls == 2
+    assert TrackingLLM._class_max_active_calls == 2
     assert composition.feedback.fallback_used is False
 
 
@@ -682,7 +686,7 @@ async def test_compose_notebook_parallel_custom_node_generation_preserves_order(
     assert "def enrich_node" in node_cells[0]
     assert "def summarize_node" in node_cells[1]
     assert "def finalize_node" in node_cells[2]
-    assert TrackingLLM.max_active_calls == 2
+    assert TrackingLLM._class_max_active_calls == 2
     assert composition.feedback.fallback_used is False
 
 
@@ -789,7 +793,7 @@ async def test_compose_notebook_sequential_mode_serializes_llm_generation(
         architecture={"architecture_type": "router", "justification": "Sequential tools."},
     )
 
-    assert TrackingLLM.max_active_calls == 1
+    assert TrackingLLM._class_max_active_calls == 1
 
 
 @pytest.mark.asyncio
@@ -837,7 +841,7 @@ async def test_compose_notebook_parallel_mode_treats_zero_concurrency_as_one(
         architecture={"architecture_type": "router", "justification": "Zero concurrency."},
     )
 
-    assert TrackingLLM.max_active_calls == 1
+    assert TrackingLLM._class_max_active_calls == 1
 
 
 @pytest.mark.asyncio
