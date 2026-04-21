@@ -112,7 +112,11 @@ class NotebookComposer:
 
         # Title and intro cells
         cells.extend(
-            self._create_intro_cells(notebook_plan, architecture.get("justification"))
+            self._create_intro_cells(
+                notebook_plan,
+                architecture.get("justification"),
+                workflow_design.get("graph_exports"),
+            )
         )
 
         # Installation cells
@@ -140,7 +144,10 @@ class NotebookComposer:
         return cells
 
     def _create_intro_cells(
-        self, plan: NotebookPlan, justification: str | None
+        self,
+        plan: NotebookPlan,
+        justification: str | None,
+        graph_exports: Dict[str, Any] | None = None,
     ) -> List[CellSpec]:
         """Create title and introduction cells."""
         title_cell = CellSpec(
@@ -172,7 +179,41 @@ This notebook implements a LangGraph workflow using the **{plan.architecture_typ
             section="intro",
         )
 
-        return [title_cell, overview_cell]
+        cells = [title_cell, overview_cell]
+
+        if isinstance(graph_exports, dict):
+            mermaid = str(graph_exports.get("mermaid", "")).strip()
+            schema = graph_exports.get("schema", {})
+            if mermaid or schema:
+                graph_overview_lines = ["## Graph Overview", ""]
+                if mermaid:
+                    graph_overview_lines.extend(
+                        [
+                            "```mermaid",
+                            mermaid,
+                            "```",
+                            "",
+                        ]
+                    )
+                if schema:
+                    graph_overview_lines.extend(
+                        [
+                            "### Workflow Schema",
+                            "",
+                            "```json",
+                            json.dumps(schema, indent=2),
+                            "```",
+                        ]
+                    )
+                cells.append(
+                    CellSpec(
+                        cell_type="markdown",
+                        content="\n".join(graph_overview_lines),
+                        section="intro",
+                    )
+                )
+
+        return cells
 
     def _create_install_cells(self, tools: List[Dict[str, Any]]) -> List[CellSpec]:
         """Create installation cells."""

@@ -18,11 +18,22 @@ from langgraph_system_generator.generator.architecture_registry import (
     ArchitectureRegistration,
     get_default_architecture_registry,
 )
+from langgraph_system_generator.generator.graph_design_registry import (
+    GraphDesignRegistration,
+    GraphDesignRegistry,
+    get_graph_design_registry,
+    validate_graph_design,
+)
 from langgraph_system_generator.generator.state import (
     ArchitectureSelectionResult,
     Constraint,
     DocSnippet,
+    GraphConditionalEdgeSpec,
+    GraphDesignResult,
+    GraphEdgeSpec,
+    GraphNodeSpec,
 )
+from langgraph_system_generator.utils.error_handling import GenerationError
 from langgraph_system_generator.utils.config import ModelConfig
 
 
@@ -729,7 +740,7 @@ async def test_architecture_selector_normalizes_hybrid_secondary_patterns(monkey
 @pytest.mark.asyncio
 @pytest.mark.parametrize("arch_type", ["router", "subagents"])
 async def test_graph_designer_fallback(arch_type, monkeypatch):
-    """GraphDesigner falls back to the correct design when parsing fails."""
+    """GraphDesigner should return typed fallback output when parsing fails."""
     monkeypatch.setattr(
         graph_designer,
         "ChatOpenAI",
@@ -740,7 +751,215 @@ async def test_graph_designer_fallback(arch_type, monkeypatch):
     architecture = {"architecture_type": arch_type, "justification": "x"}
     expected = designer._fallback_design(arch_type)
     result = await designer.design_workflow(architecture, constraints)
-    assert result == expected
+    assert isinstance(result, GraphDesignResult)
+    assert result.feedback.fallback_used is True
+    assert result.to_workflow_design_payload()["entry_point"] == expected["entry_point"]
+    assert result.to_workflow_design_payload()["nodes"] == expected["nodes"]
+
+
+@pytest.mark.asyncio
+async def test_graph_designer_returns_typed_result_with_exports(monkeypatch):
+    """GraphDesigner should normalize a valid design into typed output plus exports."""
+
+    payload = """
+    {
+      "state_schema": {
+        "messages": "Conversation state",
+        "route": "Selected route"
+      },
+      "nodes": [
+        {"name": "router", "purpose": "Route requests"},
+        {"name": "search", "purpose": "Search documents"}
+      ],
+      "edges": [],
+      "conditional_edges": [
+        {
+          "from": "router",
+          "condition": "Dispatch by route",
+          "branches": {"search": "search", "END": "END"}
+        }
+      ],
+      "entry_point": "router",
+      "checkpointing": false
+    }
+    """
+    monkeypatch.setattr(graph_designer, "ChatOpenAI", make_stub_llm(payload))
+
+    designer = graph_designer.GraphDesigner()
+    result = await designer.design_workflow(
+        {
+            "architecture_type": "router",
+            "justification": "Routing is sufficient.",
+            "selected_patterns": {"primary": "router", "secondary": []},
+        },
+        [Constraint(type="goal", value="Build a router workflow", priority=5)],
+    )
+
+    assert isinstance(result, GraphDesignResult)
+    assert result.architecture_type == "router"
+    assert result.nodes[0].name == "router"
+    assert result.feedback.fallback_used is False
+    assert "flowchart TD" in result.exports.mermaid
+    assert result.exports.schema["entry_point"] == "router"
+    assert result.exports.schema["terminal_nodes"]
+
+
+@pytest.mark.asyncio
+async def test_graph_designer_falls_back_for_invalid_live_graph(monkeypatch):
+    """Invalid live graph payloads should trigger validated fallback feedback."""
+
+    payload = """
+    {
+      "state_schema": {"messages": "Conversation state"},
+      "nodes": [
+        {"name": "router", "purpose": "Route requests"},
+        {"name": "router", "purpose": "Duplicate node"},
+        {"name": "orphan", "purpose": "Never reached"}
+      ],
+      "edges": [
+        {"from": "router", "to": "missing_target"}
+      ],
+      "conditional_edges": [],
+      "entry_point": "router",
+      "checkpointing": false
+    }
+    """
+    monkeypatch.setattr(graph_designer, "ChatOpenAI", make_stub_llm(payload))
+
+    designer = graph_designer.GraphDesigner()
+    result = await designer.design_workflow(
+        {
+            "architecture_type": "router",
+            "justification": "Routing is sufficient.",
+            "selected_patterns": {"primary": "router", "secondary": []},
+        },
+        [Constraint(type="goal", value="Build a router workflow", priority=5)],
+    )
+
+    assert isinstance(result, GraphDesignResult)
+    assert result.feedback.fallback_used is True
+    assert result.feedback.fallback_reason
+    assert any("duplicate" in message.lower() for message in result.feedback.validation_errors)
+    assert any("missing_target" in message for message in result.feedback.validation_errors)
+    assert result.entry_point == "router"
+    assert "flowchart TD" in result.exports.mermaid
+
+
+@pytest.mark.asyncio
+async def test_graph_designer_raises_when_fallback_is_invalid(monkeypatch):
+    """If fallback normalization still fails, GraphDesigner should raise a structured error."""
+
+    monkeypatch.setattr(graph_designer, "ChatOpenAI", make_stub_llm("not-json"))
+
+    registry = GraphDesignRegistry()
+    registry.register(
+        GraphDesignRegistration(
+            architecture_id="broken",
+            supported_entry_shapes=["broken"],
+            supported_exit_shapes=["broken"],
+            cycles_allowed=False,
+            fallback_builder=lambda *_args, **_kwargs: {
+                "state_schema": {},
+                "nodes": [],
+                "edges": [],
+                "conditional_edges": [],
+                "entry_point": "",
+                "checkpointing": False,
+            },
+            normalization_hook=None,
+            validation_hook=None,
+            export_label_defaults={"title": "Broken"},
+            composition_strategy="broken",
+        )
+    )
+
+    designer = graph_designer.GraphDesigner(registry=registry)
+    with pytest.raises(GenerationError, match="fallback"):
+        await designer.design_workflow(
+            {
+                "architecture_type": "broken",
+                "justification": "Broken architecture for validation testing.",
+                "selected_patterns": {"primary": "broken", "secondary": []},
+            },
+            [Constraint(type="goal", value="Break the graph designer", priority=5)],
+        )
+
+
+def test_graph_design_validation_detects_cycles_and_unreachable_nodes():
+    """Graph validation should detect structural errors before export or use."""
+
+    result = GraphDesignResult(
+        architecture_type="router",
+        state_schema={"messages": "Conversation state"},
+        nodes=[
+            GraphNodeSpec(name="router", purpose="Route requests"),
+            GraphNodeSpec(name="search", purpose="Search documents"),
+            GraphNodeSpec(name="dead_end", purpose="Never reached"),
+        ],
+        edges=[
+            GraphEdgeSpec.model_validate({"from": "search", "to": "router"}),
+        ],
+        conditional_edges=[
+            GraphConditionalEdgeSpec.model_validate(
+                {
+                    "from": "router",
+                    "condition": "Dispatch by route",
+                    "branches": {"search": "search"},
+                }
+            )
+        ],
+        entry_point="router",
+        checkpointing=False,
+    )
+
+    issues = validate_graph_design(result, get_graph_design_registry().get("router"))
+    issue_codes = {issue.code for issue in issues}
+
+    assert "cycle_detected" in issue_codes
+    assert "unreachable_node" in issue_codes
+    assert "missing_terminal_path" in issue_codes
+
+
+def test_graph_design_registry_loads_plugin_modules(monkeypatch):
+    """Graph design plugin modules should be able to register new architectures."""
+
+    class FakePluginModule:
+        @staticmethod
+        def register_graph_designers(registry):
+            registry.register(
+                GraphDesignRegistration(
+                    architecture_id="plugin_router",
+                    supported_entry_shapes=["router"],
+                    supported_exit_shapes=["terminal"],
+                    cycles_allowed=False,
+                    fallback_builder=lambda *_args, **_kwargs: {
+                        "state_schema": {"messages": "Conversation state"},
+                        "nodes": [
+                            {"name": "router", "purpose": "Route requests"},
+                            {"name": "finish", "purpose": "Finish requests"},
+                        ],
+                        "edges": [{"from": "router", "to": "finish"}],
+                        "conditional_edges": [],
+                        "entry_point": "router",
+                        "checkpointing": False,
+                    },
+                    normalization_hook=None,
+                    validation_hook=None,
+                    export_label_defaults={"title": "Plugin Router"},
+                    composition_strategy="plugin",
+                )
+            )
+
+    monkeypatch.setattr(
+        graph_designer.importlib,
+        "import_module",
+        lambda name: FakePluginModule if name == "fake_graph_plugin" else None,
+    )
+
+    registry = get_graph_design_registry(plugin_modules=("fake_graph_plugin",))
+
+    assert "plugin_router" in registry.supported_architecture_types()
+    assert registry.get("plugin_router").composition_strategy == "plugin"
 
 
 def test_graph_designer_hybrid_fallback_contains_router_supervisor_and_team(monkeypatch):

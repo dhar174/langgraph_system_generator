@@ -25,6 +25,8 @@ from langgraph_system_generator.generator.state import (
     CellSpec,
     DocSnippet,
     GeneratorState,
+    GraphDesignFeedback,
+    GraphExportBundle,
     NotebookPlan,
     QAReport,
 )
@@ -283,7 +285,8 @@ async def graph_design_node(state: GeneratorState) -> Dict[str, Any]:
         "selected_patterns": selected_patterns,
     }
 
-    workflow_design = await designer.design_workflow(architecture, state["constraints"])
+    design_result = await designer.design_workflow(architecture, state["constraints"])
+    workflow_design = design_result.to_workflow_design_payload()
     if selected_patterns.get("primary") == "hybrid":
         workflow_design.setdefault("selected_patterns", selected_patterns)
 
@@ -298,13 +301,15 @@ async def graph_design_node(state: GeneratorState) -> Dict[str, Any]:
             "Graph Construction",
             "Execution",
         ],
-        cell_count_estimate=len(workflow_design.get("nodes", [])) * 3 + 10,
+        cell_count_estimate=len(design_result.nodes) * 3 + 10,
         patterns_used=[state.get("selected_patterns", {}).get("primary", "router")],
         architecture_type=architecture["architecture_type"],
     )
 
     return {
         "workflow_design": workflow_design,
+        "graph_design_feedback": design_result.feedback,
+        "graph_exports": design_result.exports,
         "notebook_plan": notebook_plan,
     }
 
@@ -338,7 +343,14 @@ async def notebook_assembly_node(state: GeneratorState) -> Dict[str, Any]:
     composer = NotebookComposer(model_config=_resolve_model_config(state))
 
     notebook_plan = state.get("notebook_plan")
-    workflow_design = state.get("workflow_design", {})
+    workflow_design = dict(state.get("workflow_design", {}) or {})
+    graph_exports = state.get("graph_exports")
+    if graph_exports and "graph_exports" not in workflow_design:
+        workflow_design["graph_exports"] = (
+            graph_exports.model_dump(by_alias=True)
+            if hasattr(graph_exports, "model_dump")
+            else graph_exports
+        )
     tools_plan = state.get("tools_plan", [])
 
     architecture = {
@@ -623,6 +635,8 @@ async def package_outputs_node(state: GeneratorState) -> Dict[str, Any]:
     # Create artifacts manifest
     requirements_feedback = state.get("requirements_feedback")
     architecture_feedback = state.get("architecture_feedback")
+    graph_design_feedback = state.get("graph_design_feedback")
+    graph_exports = state.get("graph_exports")
     manifest = {
         "notebook_plan": str(state.get("notebook_plan")),
         "cell_count": str(len(state.get("generated_cells", []))),
@@ -638,6 +652,19 @@ async def package_outputs_node(state: GeneratorState) -> Dict[str, Any]:
             architecture_feedback.model_dump()
             if hasattr(architecture_feedback, "model_dump")
             else (architecture_feedback or {})
+        ),
+        "graph_design_feedback": (
+            graph_design_feedback.model_dump()
+            if hasattr(graph_design_feedback, "model_dump")
+            else (
+                graph_design_feedback
+                or GraphDesignFeedback(fallback_used=False).model_dump()
+            )
+        ),
+        "graph_exports": (
+            graph_exports.model_dump(by_alias=True)
+            if hasattr(graph_exports, "model_dump")
+            else (graph_exports or GraphExportBundle().model_dump(by_alias=True))
         ),
     }
 

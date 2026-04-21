@@ -2,243 +2,291 @@
 
 from __future__ import annotations
 
+import importlib
+import logging
 from typing import Any, Dict, List
 
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
+from pydantic import ValidationError
 
 from langgraph_system_generator.generator.agents._llm import build_chat_llm
-from langgraph_system_generator.generator.state import Constraint
+from langgraph_system_generator.generator.graph_design_registry import (
+    GraphDesignRegistration,
+    GraphDesignRegistry,
+    build_graph_exports,
+    get_graph_design_registry,
+    graph_design_issue_messages,
+    normalize_graph_design,
+    validate_graph_design,
+)
+from langgraph_system_generator.generator.state import (
+    Constraint,
+    GraphDesignFeedback,
+    GraphDesignResult,
+)
 from langgraph_system_generator.generator.utils import extract_json_from_llm_response
-from langgraph_system_generator.utils.config import ModelConfig
+from langgraph_system_generator.utils.config import ModelConfig, settings
+from langgraph_system_generator.utils.error_handling import GenerationError
+
+logger = logging.getLogger(__name__)
 
 
 class GraphDesigner:
-    """Designs the inner workflow state, nodes, and edges."""
+    """Design the workflow graph for the selected architecture."""
 
     def __init__(
         self,
         model: str | None = None,
         model_config: ModelConfig | None = None,
+        registry: GraphDesignRegistry | None = None,
     ):
         self.llm = build_chat_llm(
             model=model,
             model_config=model_config,
             chat_openai_class=ChatOpenAI,
         )
+        if registry is None:
+            plugin_modules = tuple(settings.graph_designer_plugin_modules)
+            if plugin_modules:
+                importlib.invalidate_caches()
+            self.registry = get_graph_design_registry(plugin_modules=plugin_modules)
+        else:
+            self.registry = registry
 
     async def design_workflow(
         self, architecture: Dict[str, Any], constraints: List[Constraint]
-    ) -> Dict[str, Any]:
-        """Create complete graph specification.
+    ) -> GraphDesignResult:
+        """Create a complete, validated graph specification."""
 
-        Args:
-            architecture: Selected architecture from ArchitectureSelector
-            constraints: Project constraints
-
-        Returns:
-            Dictionary with state_schema, nodes, edges, conditional_logic, etc.
-        """
-        architecture_type = architecture.get("architecture_type", "router")
-        justification = architecture.get("justification", "")
+        architecture_type = str(
+            architecture.get("architecture_type")
+            or architecture.get("selected_patterns", {}).get("primary")
+            or "router"
+        ).strip().lower()
+        registration = self._registration_for(architecture_type)
         selected_patterns = architecture.get("selected_patterns", {}) or {}
-        secondary_patterns = selected_patterns.get("secondary", [])
+        secondary_patterns = list(selected_patterns.get("secondary") or [])
+        justification = architecture.get("justification", "")
 
         constraints_text = "\n".join(
-            [f"- [{c.type}] {c.value} (priority: {c.priority})" for c in constraints]
+            [
+                f"- [{constraint.type}] {constraint.value} (priority: {constraint.priority})"
+                for constraint in constraints
+            ]
         )
 
-        design_prompt = SystemMessage(content="""You are a LangGraph workflow designer.
-Design a complete graph specification for the given architecture type.
+        design_prompt = SystemMessage(
+            content=(
+                "You are a LangGraph workflow designer.\n"
+                "Design a complete graph specification for the requested architecture.\n\n"
+                f"Architecture id: {registration.architecture_id}\n"
+                f"Supported entry shapes: {registration.supported_entry_shapes}\n"
+                f"Supported exit shapes: {registration.supported_exit_shapes}\n"
+                f"Composition strategy: {registration.composition_strategy}\n"
+                f"Cycles allowed: {registration.cycles_allowed}\n\n"
+                "For the workflow, specify:\n"
+                "1. state_schema: TypedDict fields needed for the workflow\n"
+                "2. nodes: List of node names and their purposes\n"
+                "3. edges: Direct edges between nodes\n"
+                "4. conditional_edges: Conditional routing logic with conditions\n"
+                "5. entry_point: Starting node\n"
+                "6. checkpointing: Whether to enable checkpointing\n\n"
+                "Return a JSON object with this structure:\n"
+                "{\n"
+                '  "state_schema": {"field_name": "description"},\n'
+                '  "nodes": [{"name": "node_name", "purpose": "description"}],\n'
+                '  "edges": [{"from": "node_a", "to": "node_b"}],\n'
+                '  "conditional_edges": [\n'
+                "    {\n"
+                '      "from": "node_name",\n'
+                '      "condition": "condition_description",\n'
+                '      "branches": {"branch_name": "target_node", "FINISH": "END"}\n'
+                "    }\n"
+                "  ],\n"
+                '  "entry_point": "start_node",\n'
+                '  "checkpointing": true\n'
+                "}\n"
+            )
+        )
 
-Supported architecture types include router, subagents, hybrid, and autoagent.
-For autoagent, use a coordinator + worker-team shape with explicit planning,
-execution, and critique/review responsibilities.
+        user_message = HumanMessage(
+            content=(
+                f"Architecture Type: {architecture_type}\n"
+                f"Architecture Justification: {justification}\n"
+                f"Selected Patterns: primary={selected_patterns.get('primary', architecture_type)}, "
+                f"secondary={secondary_patterns}\n\n"
+                f"Requirements:\n{constraints_text}\n\n"
+                "Design the workflow graph."
+            )
+        )
 
-For the workflow, specify:
-1. **state_schema**: TypedDict fields needed for the workflow
-2. **nodes**: List of node names and their purposes
-3. **edges**: Direct edges between nodes
-4. **conditional_edges**: Conditional routing logic with conditions
-5. **entry_point**: Starting node
-6. **checkpointing**: Whether to enable checkpointing
-
-Return a JSON object with this structure:
-{
-  "state_schema": {
-    "field_name": "description",
-    ...
-  },
-  "nodes": [
-    {"name": "node_name", "purpose": "description"},
-    ...
-  ],
-  "edges": [
-    {"from": "node_a", "to": "node_b"},
-    ...
-  ],
-  "conditional_edges": [
-    {
-      "from": "node_name",
-      "condition": "condition_description",
-      "branches": {"branch_name": "target_node", ...}
-    },
-    ...
-  ],
-  "entry_point": "start_node",
-  "checkpointing": true
-}""")
-
-        user_message = HumanMessage(content=f"""Architecture Type: {architecture_type}
-Architecture Justification: {justification}
-Selected Patterns: primary={selected_patterns.get("primary", architecture_type)}, secondary={secondary_patterns}
-
-Requirements:
-{constraints_text}
-
-Design the workflow graph.""")
-
-        response = await self.llm.ainvoke([design_prompt, user_message])
+        live_issues = []
+        fallback_reason: str | None = None
 
         try:
-            result = extract_json_from_llm_response(response.content)
-            if selected_patterns.get("primary") == "hybrid":
-                result.setdefault("selected_patterns", selected_patterns)
-            return result
-        except (ValueError, KeyError, TypeError):
-            # Fallback to a basic workflow
-            return self._fallback_design(architecture_type)
-
-    def _fallback_design(self, architecture_type: str) -> Dict[str, Any]:
-        """Provide a fallback design if LLM parsing fails."""
-        if architecture_type == "hybrid":
-            return {
-                "state_schema": {
-                    "messages": "List of messages",
-                    "route": "Selected router branch",
-                    "next_agent": "Next worker to call when the team path is chosen",
-                    "instructions": "Supervisor guidance for the selected worker",
-                    "results": "Direct specialist outputs",
-                    "task_results": "Worker-team outputs",
-                },
-                "nodes": [
-                    {"name": "router", "purpose": "Route to a direct specialist or the team path"},
-                    {
-                        "name": "specialist_1",
-                        "purpose": "Handle direct specialist work without team coordination",
-                    },
-                    {
-                        "name": "supervisor",
-                        "purpose": "Coordinate the worker team when deeper collaboration is needed",
-                    },
-                    {
-                        "name": "researcher",
-                        "purpose": "Gather supporting facts and intermediate context",
-                    },
-                    {
-                        "name": "reviewer",
-                        "purpose": "Review worker output and request refinements before finishing",
-                    },
-                    {
-                        "name": "finish",
-                        "purpose": "Synthesize final results from all branches",
-                    },
-                ],
-                "edges": [
-                    {"from": "specialist_1", "to": "finish"},
-                    {"from": "researcher", "to": "supervisor"},
-                    {"from": "reviewer", "to": "supervisor"},
-                ],
-                "conditional_edges": [
-                    {
-                        "from": "router",
-                        "condition": "Route to a direct specialist or the worker team",
-                        "branches": {
-                            "specialist_1": "specialist_1",
-                            "team_path": "supervisor",
-                        },
-                    },
-                    {
-                        "from": "supervisor",
-                        "condition": "Route to next worker or finish after synthesis",
-                        "branches": {
-                            "researcher": "researcher",
-                            "reviewer": "reviewer",
-                            "FINISH": "finish",
-                        },
-                    },
-                ],
-                "entry_point": "router",
-                "checkpointing": True,
-            }
-        if architecture_type in {"subagents", "autoagent"}:
-            coordinator_name = (
-                "coordinator" if architecture_type == "autoagent" else "supervisor"
+            response = await self.llm.ainvoke([design_prompt, user_message])
+            payload = extract_json_from_llm_response(response.content)
+            live_result = normalize_graph_design(payload, architecture_type, registration)
+            live_issues = validate_graph_design(live_result, registration)
+            if self._has_blocking_issues(live_issues):
+                fallback_reason = "Live graph design validation failed."
+                logger.warning(
+                    "Graph design validation failed for %s: %s",
+                    architecture_type,
+                    graph_design_issue_messages(live_issues),
+                )
+                return self._finalize_fallback(
+                    registration,
+                    architecture,
+                    constraints,
+                    fallback_reason=fallback_reason,
+                    live_issues=live_issues,
+                )
+            return self._finalize_result(
+                live_result,
+                registration,
+                fallback_used=False,
+                fallback_reason=None,
+                validation_issues=live_issues,
             )
-            return {
-                "state_schema": {
-                    "messages": "List of messages",
-                    "next_agent": "Next worker to call",
-                    "instructions": "Coordinator guidance for the selected worker",
-                    "task_results": "Merged worker outputs",
+        except (ValueError, KeyError, TypeError, ValidationError) as exc:
+            fallback_reason = f"Graph design parsing failed: {exc}"
+            logger.warning(
+                "Graph design parsing failed for %s: %s",
+                architecture_type,
+                exc,
+            )
+            return self._finalize_fallback(
+                registration,
+                architecture,
+                constraints,
+                fallback_reason=fallback_reason,
+                live_issues=live_issues,
+            )
+
+    def _registration_for(self, architecture_type: str) -> GraphDesignRegistration:
+        """Return the registry entry for the selected architecture."""
+
+        try:
+            return self.registry.get(architecture_type)
+        except KeyError as exc:
+            raise GenerationError(
+                f"Unsupported graph design architecture '{architecture_type}'.",
+                code="unsupported_graph_architecture",
+                phase="graph_design",
+                hint="Select a registered architecture type before graph design.",
+                details={
+                    "architecture_type": architecture_type,
+                    "supported_architecture_types": self.registry.supported_architecture_types(),
                 },
-                "nodes": [
-                    {
-                        "name": coordinator_name,
-                        "purpose": "Coordinate worker delegation and synthesis",
-                    },
-                    {
-                        "name": "planner",
-                        "purpose": "Break down goals into executable steps",
-                    },
-                    {
-                        "name": "executor",
-                        "purpose": "Execute planned steps and produce outputs",
-                    },
-                    {
-                        "name": "critic",
-                        "purpose": "Review output quality and request refinements",
-                    },
-                ],
-                "edges": [],
-                "conditional_edges": [
-                    {
-                        "from": coordinator_name,
-                        "condition": "Route to next worker",
-                        "branches": {
-                            "planner": "planner",
-                            "executor": "executor",
-                            "critic": "critic",
-                            "FINISH": "END",
-                        },
-                    }
-                ],
-                "entry_point": coordinator_name,
-                "checkpointing": True,
-            }
-        else:
-            # Router fallback
-            return {
-                "state_schema": {
-                    "messages": "List of messages",
-                    "route": "Selected route",
+                status_code=400,
+            ) from exc
+
+    def _finalize_result(
+        self,
+        result: GraphDesignResult,
+        registration: GraphDesignRegistration,
+        *,
+        fallback_used: bool,
+        fallback_reason: str | None,
+        validation_issues: List[Any],
+        warnings: List[str] | None = None,
+    ) -> GraphDesignResult:
+        """Attach feedback and exports to the normalized graph design."""
+
+        warning_messages = list(warnings or [])
+        warning_messages.extend(
+            graph_design_issue_messages(validation_issues, severity="warning")
+        )
+        warning_messages = list(dict.fromkeys(warning_messages))
+        feedback = GraphDesignFeedback(
+            fallback_used=fallback_used,
+            fallback_reason=fallback_reason,
+            validation_errors=graph_design_issue_messages(
+                validation_issues, severity="error"
+            ),
+            warnings=warning_messages,
+            validation_issues=validation_issues,
+            composition_strategy=registration.composition_strategy,
+        )
+        exports = build_graph_exports(
+            result,
+            registration,
+            validation_issues,
+            warning_messages,
+        )
+        return result.model_copy(update={"feedback": feedback, "exports": exports})
+
+    def _finalize_fallback(
+        self,
+        registration: GraphDesignRegistration,
+        architecture: Dict[str, Any],
+        constraints: List[Constraint],
+        *,
+        fallback_reason: str,
+        live_issues: List[Any],
+    ) -> GraphDesignResult:
+        """Build, validate, and return the deterministic fallback graph design."""
+
+        fallback_payload = self._fallback_design(
+            registration.architecture_id,
+            architecture=architecture,
+            constraints=constraints,
+        )
+        fallback_result = normalize_graph_design(
+            fallback_payload,
+            registration.architecture_id,
+            registration,
+        )
+        fallback_issues = validate_graph_design(fallback_result, registration)
+        if self._has_blocking_issues(fallback_issues):
+            blocking_messages = graph_design_issue_messages(
+                fallback_issues, severity="error"
+            )
+            raise GenerationError(
+                (
+                    "Graph designer fallback produced an invalid workflow and could not "
+                    "recover safely."
+                ),
+                code="graph_design_fallback_invalid",
+                phase="graph_design",
+                hint="Inspect the fallback builder or registry registration for this architecture.",
+                details={
+                    "architecture_type": registration.architecture_id,
+                    "fallback_reason": fallback_reason,
+                    "validation_errors": blocking_messages,
                 },
-                "nodes": [
-                    {"name": "router", "purpose": "Route to specialist"},
-                    {"name": "specialist_1", "purpose": "Specialist function 1"},
-                    {"name": "specialist_2", "purpose": "Specialist function 2"},
-                ],
-                "edges": [],
-                "conditional_edges": [
-                    {
-                        "from": "router",
-                        "condition": "Route based on input",
-                        "branches": {
-                            "specialist_1": "specialist_1",
-                            "specialist_2": "specialist_2",
-                        },
-                    }
-                ],
-                "entry_point": "router",
-                "checkpointing": False,
-            }
+                status_code=500,
+            )
+
+        warnings = [f"Recovered using deterministic {registration.architecture_id} fallback."]
+        return self._finalize_result(
+            fallback_result,
+            registration,
+            fallback_used=True,
+            fallback_reason=fallback_reason,
+            validation_issues=[*live_issues, *fallback_issues],
+            warnings=warnings,
+        )
+
+    @staticmethod
+    def _has_blocking_issues(validation_issues: List[Any]) -> bool:
+        """Return True when validation includes blocking errors."""
+
+        return any(issue.severity == "error" for issue in validation_issues)
+
+    def _fallback_design(
+        self,
+        architecture_type: str,
+        *,
+        architecture: Dict[str, Any] | None = None,
+        constraints: List[Constraint] | None = None,
+    ) -> Dict[str, Any]:
+        """Provide a deterministic registry-backed fallback design."""
+
+        registration = self._registration_for(architecture_type)
+        return registration.fallback_builder(
+            architecture=architecture or {},
+            constraints=constraints or [],
+        )

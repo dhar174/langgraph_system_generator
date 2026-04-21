@@ -25,6 +25,8 @@ from langgraph_system_generator.generator.state import (
     ArchitectureFeedback,
     CellSpec,
     Constraint,
+    GraphDesignFeedback,
+    GraphExportBundle,
     QAReport,
 )
 from langgraph_system_generator.utils.config import GenerationConfig
@@ -213,7 +215,33 @@ async def test_architecture_selection_node_honors_hybrid_override():
 
 @pytest.mark.asyncio
 async def test_graph_design_node_defaults_architecture_type(monkeypatch):
-    payload = '{"nodes":["a","b"]}'
+    payload = """
+    {
+      "state_schema": {
+        "messages": "Conversation state",
+        "next_agent": "Selected worker"
+      },
+      "nodes": [
+        {"name": "supervisor", "purpose": "Coordinate workers"},
+        {"name": "researcher", "purpose": "Research documents"},
+        {"name": "critic", "purpose": "Critique results"}
+      ],
+      "edges": [],
+      "conditional_edges": [
+        {
+          "from": "supervisor",
+          "condition": "Dispatch to next worker",
+          "branches": {
+            "researcher": "researcher",
+            "critic": "critic",
+            "FINISH": "END"
+          }
+        }
+      ],
+      "entry_point": "supervisor",
+      "checkpointing": true
+    }
+    """
 
     monkeypatch.setattr(
         graph_designer,
@@ -241,7 +269,11 @@ async def test_graph_design_node_defaults_architecture_type(monkeypatch):
     ]
     assert notebook_plan.patterns_used == ["subagents"]
     assert notebook_plan.architecture_type == "subagents"
-    assert result["workflow_design"] == {"nodes": ["a", "b"]}
+    assert result["workflow_design"]["architecture_type"] == "subagents"
+    assert result["workflow_design"]["entry_point"] == "supervisor"
+    assert result["graph_design_feedback"].fallback_used is False
+    assert "flowchart TD" in result["graph_exports"].mermaid
+    assert result["graph_exports"].schema["entry_point"] == "supervisor"
 
 
 @pytest.mark.asyncio
@@ -285,7 +317,16 @@ async def test_notebook_assembly_node_returns_generated_cells(monkeypatch):
 
     state = {
         "notebook_plan": None,
-        "workflow_design": {},
+        "workflow_design": {
+            "graph_exports": {
+                "mermaid": "flowchart TD\n    A-->B",
+                "schema": {"entry_point": "router"},
+            }
+        },
+        "graph_exports": GraphExportBundle(
+            mermaid="flowchart TD\n    A-->B",
+            schema={"entry_point": "router"},
+        ),
         "tools_plan": [],
         "selected_patterns": {"primary": "router"},
         "architecture_justification": "Reason",
@@ -538,6 +579,23 @@ async def test_package_outputs_node_manifest_fields():
             fallback_reason="Validation failed.",
             validation_errors=["Unsupported architecture_type 'swarm'."],
         ),
+        "graph_design_feedback": GraphDesignFeedback(
+            fallback_used=True,
+            fallback_reason="Live graph design validation failed.",
+            validation_errors=["Duplicate node id 'router'."],
+            warnings=["Recovered using deterministic hybrid fallback."],
+        ),
+        "graph_exports": GraphExportBundle(
+            mermaid="flowchart TD\n    router --> finish",
+            schema={
+                "entry_point": "router",
+                "terminal_nodes": ["finish"],
+                "validation_summary": {
+                    "errors": ["Duplicate node id 'router'."],
+                    "warnings": ["Recovered using deterministic hybrid fallback."],
+                },
+            },
+        ),
     }
     result = await package_outputs_node(state)
 
@@ -546,4 +604,6 @@ async def test_package_outputs_node_manifest_fields():
     assert manifest["constraints_count"] == "1"
     assert manifest["architecture_type"] == "hybrid"
     assert manifest["architecture_feedback"]["fallback_used"] is True
+    assert manifest["graph_design_feedback"]["fallback_used"] is True
+    assert "flowchart TD" in manifest["graph_exports"]["mermaid"]
     assert result["generation_complete"] is True

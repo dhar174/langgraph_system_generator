@@ -53,9 +53,13 @@ async def test_generate_artifacts_stub(tmp_path: Path, monkeypatch: pytest.Monke
     assert artifacts["manifest"]["requirements_feedback"]["fallback_used"] is False
     assert artifacts["manifest"]["architecture_feedback"]["fallback_used"] is False
     assert artifacts["manifest"]["architecture_feedback"]["docs_considered"] == []
+    assert artifacts["manifest"]["graph_design_feedback"]["fallback_used"] is False
+    assert "flowchart TD" in artifacts["manifest"]["graph_exports"]["mermaid"]
     assert artifacts["result"]["requirements_feedback"]["fallback_used"] is False
     assert artifacts["result"]["architecture_feedback"]["fallback_used"] is False
     assert artifacts["result"]["architecture_feedback"]["docs_considered"] == []
+    assert artifacts["result"]["graph_design_feedback"]["fallback_used"] is False
+    assert "flowchart TD" in artifacts["result"]["graph_exports"]["mermaid"]
     assert Path(artifacts["manifest_path"]).exists()
     assert artifacts["result"]["generation_complete"] is True
 
@@ -73,6 +77,8 @@ def test_default_state_includes_generation_mode_and_qa_history():
     assert state["qa_history"] == []
     assert state["requirements_feedback"].fallback_used is False
     assert state["architecture_feedback"].fallback_used is False
+    assert state["graph_design_feedback"].fallback_used is False
+    assert state["graph_exports"].schema == {}
     assert "goal" in state["requirements_feedback"].available_constraint_types
 
 
@@ -326,6 +332,74 @@ async def test_generate_artifacts_surfaces_architecture_feedback_as_warnings(
     assert "architecture_fallback" in warning_codes
     assert "architecture_validation" in warning_codes
     assert artifacts["manifest"]["architecture_feedback"]["fallback_used"] is True
+
+
+@pytest.mark.asyncio
+async def test_generate_artifacts_surfaces_graph_design_feedback_as_warnings(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.setenv("LNF_OUTPUT_BASE", "test_graph_design_feedback_warning")
+
+    import langgraph_system_generator.constants as constants_module
+    import langgraph_system_generator.notebook.exporters as exporters_module
+    import langgraph_system_generator.cli as cli_module
+
+    importlib.reload(constants_module)
+    importlib.reload(exporters_module)
+    importlib.reload(cli_module)
+
+    original_build_stub_result = cli_module._build_stub_result
+
+    def build_stub_result_with_graph_feedback(prompt: str, agent_type: str | None = None):
+        result = original_build_stub_result(prompt, agent_type=agent_type)
+        result["graph_design_feedback"] = {
+            "fallback_used": True,
+            "fallback_reason": "Live graph design validation failed.",
+            "validation_errors": [
+                "Duplicate node id 'router'.",
+                "Unknown edge target 'missing_target'.",
+            ],
+            "warnings": ["Recovered using deterministic fallback."],
+            "validation_issues": [
+                {
+                    "code": "duplicate_node_id",
+                    "message": "Duplicate node id 'router'.",
+                    "severity": "error",
+                    "nodes": ["router"],
+                    "details": {},
+                }
+            ],
+        }
+        result["graph_exports"] = {
+            "mermaid": "flowchart TD\n    router --> finish",
+            "schema": {
+                "entry_point": "router",
+                "terminal_nodes": ["finish"],
+                "validation_summary": {
+                    "errors": [
+                        "Duplicate node id 'router'.",
+                        "Unknown edge target 'missing_target'.",
+                    ],
+                    "warnings": ["Recovered using deterministic fallback."],
+                },
+            },
+        }
+        return result
+
+    monkeypatch.setattr(cli_module, "_build_stub_result", build_stub_result_with_graph_feedback)
+
+    output_dir = constants_module._BASE_OUTPUT / "graph_feedback_stub"
+    artifacts = await cli_module.generate_artifacts(
+        "Graph feedback prompt",
+        output_dir=str(output_dir),
+        mode="stub",
+    )
+
+    warning_codes = {warning["code"] for warning in artifacts["manifest"]["warnings"]}
+    assert "graph_design_fallback" in warning_codes
+    assert "graph_design_validation" in warning_codes
+    assert artifacts["manifest"]["graph_design_feedback"]["fallback_used"] is True
+    assert "flowchart TD" in artifacts["manifest"]["graph_exports"]["mermaid"]
 
 
 @pytest.mark.asyncio

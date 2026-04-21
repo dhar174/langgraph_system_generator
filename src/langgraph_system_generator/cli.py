@@ -21,11 +21,18 @@ from langgraph_system_generator.generator.state import (
     build_constraint_type_registry,
     CellSpec,
     Constraint,
+    GraphDesignFeedback,
+    GraphExportBundle,
     NotebookPlan,
     RequirementsFeedback,
 )
 from langgraph_system_generator.generator.architecture_registry import (
     get_default_architecture_registry,
+)
+from langgraph_system_generator.generator.graph_design_registry import (
+    build_graph_exports,
+    get_graph_design_registry,
+    normalize_graph_design,
 )
 from langgraph_system_generator.utils.error_handling import GenerationError
 from langgraph_system_generator.utils.config import GenerationConfig, settings
@@ -78,6 +85,8 @@ def _default_state(
             available_constraint_types=_available_constraint_types(),
         ),
         "architecture_feedback": ArchitectureFeedback(fallback_used=False),
+        "graph_design_feedback": GraphDesignFeedback(fallback_used=False),
+        "graph_exports": GraphExportBundle(),
         "selected_patterns": {},
         "docs_context": [],
         "notebook_plan": None,
@@ -101,7 +110,7 @@ def _serialize(obj: Any) -> Any:
     """Recursively convert Pydantic models and objects into plain dicts/lists."""
 
     if hasattr(obj, "model_dump"):
-        return obj.model_dump()
+        return obj.model_dump(by_alias=True)
     if isinstance(obj, list):
         return [_serialize(item) for item in obj]
     if isinstance(obj, dict):
@@ -240,6 +249,44 @@ def _architecture_warning_entries(
                 "validation_errors": validation_errors,
                 "tradeoffs": tradeoffs,
                 "docs_considered": docs_considered,
+            }
+        )
+
+    return warnings
+
+
+def _graph_design_warning_entries(
+    feedback: Dict[str, Any] | None,
+) -> List[Dict[str, Any]]:
+    """Convert structured graph-design feedback into manifest warnings."""
+
+    if not isinstance(feedback, dict):
+        return []
+
+    warnings: List[Dict[str, Any]] = []
+    validation_errors = list(feedback.get("validation_errors") or [])
+    advisory_warnings = list(feedback.get("warnings") or [])
+
+    if feedback.get("fallback_used"):
+        warnings.append(
+            {
+                "code": "graph_design_fallback",
+                "phase": "graph_design",
+                "message": feedback.get("fallback_reason")
+                or "Graph design used a deterministic fallback workflow.",
+                "validation_errors": validation_errors,
+                "warnings": advisory_warnings,
+            }
+        )
+
+    if validation_errors:
+        warnings.append(
+            {
+                "code": "graph_design_validation",
+                "phase": "graph_design",
+                "message": "Graph design reported validation issues.",
+                "validation_errors": validation_errors,
+                "warnings": advisory_warnings,
             }
         )
 
@@ -438,6 +485,7 @@ def _build_stub_result(prompt: str, agent_type: str | None = None) -> Dict[str, 
     """Create a deterministic, offline-friendly generation result."""
     RouterPattern, SubagentsPattern, HybridPattern, AutoAgentPattern = _load_patterns()
     architecture_registry = get_default_architecture_registry()
+    graph_design_registry = get_graph_design_registry()
 
     normalized_agent_type = normalize_agent_type(agent_type)
     if normalized_agent_type in SUPPORTED_AGENT_TYPES:
@@ -488,6 +536,32 @@ def _build_stub_result(prompt: str, agent_type: str | None = None) -> Dict[str, 
         patterns_used=[architecture_type],
         architecture_type=architecture_type,
     )
+
+    graph_registration = graph_design_registry.get(architecture_type)
+    graph_design = normalize_graph_design(
+        graph_registration.fallback_builder(
+            architecture={
+                "architecture_type": architecture_type,
+                "selected_patterns": {
+                    "primary": architecture_type,
+                    "secondary": secondary_patterns,
+                },
+            },
+            constraints=constraints,
+        ),
+        architecture_type,
+        graph_registration,
+    )
+    graph_exports = build_graph_exports(graph_design, graph_registration)
+    graph_design_feedback = GraphDesignFeedback(
+        fallback_used=False,
+        composition_strategy=graph_registration.composition_strategy,
+    )
+    workflow_design = graph_design.to_workflow_design_payload()
+    workflow_design["selected_patterns"] = {
+        "primary": architecture_type,
+        "secondary": secondary_patterns,
+    }
 
     cells: List[CellSpec] = [
         CellSpec(
@@ -724,6 +798,8 @@ def _build_stub_result(prompt: str, agent_type: str | None = None) -> Dict[str, 
             available_constraint_types=_available_constraint_types(),
         ),
         "architecture_feedback": architecture_feedback,
+        "graph_design_feedback": graph_design_feedback,
+        "graph_exports": graph_exports,
         "selected_patterns": {
             "primary": architecture_type,
             "secondary": secondary_patterns,
@@ -734,23 +810,7 @@ def _build_stub_result(prompt: str, agent_type: str | None = None) -> Dict[str, 
         "architecture_justification": justification,
         "generation_config": None,
         "generation_mode": "stub",
-        "workflow_design": {
-            "entry_point": architecture_type,
-            "nodes": [
-                {
-                    "name": architecture_type,
-                    "purpose": (
-                        "Dispatch to specialists"
-                        if architecture_type == "router"
-                        else (
-                            "Coordinate AutoAgent workers"
-                            if architecture_type == "autoagent"
-                            else "Coordinate sub-agents"
-                        )
-                    ),
-                }
-            ],
-        },
+        "workflow_design": workflow_design,
         "tools_plan": [],
         "generated_cells": cells,
         "qa_reports": [],
@@ -865,6 +925,8 @@ async def generate_artifacts(
     )
     requirements_feedback = serialized.get("requirements_feedback") or {}
     architecture_feedback = serialized.get("architecture_feedback") or {}
+    graph_design_feedback = serialized.get("graph_design_feedback") or {}
+    graph_exports = serialized.get("graph_exports") or {}
 
     manifest: Dict[str, Any] = {
         "prompt": prompt,
@@ -874,9 +936,12 @@ async def generate_artifacts(
         "plan_title": plan_title,
         "requirements_feedback": requirements_feedback,
         "architecture_feedback": architecture_feedback,
+        "graph_design_feedback": graph_design_feedback,
+        "graph_exports": graph_exports,
         "warnings": [
             *_requirements_warning_entries(requirements_feedback),
             *_architecture_warning_entries(architecture_feedback),
+            *_graph_design_warning_entries(graph_design_feedback),
         ],
         "export_results": {},
     }

@@ -316,6 +316,55 @@ async def test_compose_notebook_hybrid_sanitizes_worker_and_specialist_graph_ids
     assert '"fact checker": "fact_checker"' in graph_code
 
 
+@pytest.mark.asyncio
+async def test_compose_notebook_includes_graph_overview_from_exports(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """Graph exports should appear in the intro section as notebook-facing context."""
+
+    monkeypatch.setattr(composer_module, "ChatOpenAI", DummyLLM)
+    composer = composer_module.NotebookComposer()
+
+    plan = NotebookPlan(
+        title="Graph Overview Notebook",
+        sections=["Setup", "Workflow", "Execution"],
+        patterns_used=["router"],
+        architecture_type="router",
+    )
+    workflow_design = {
+        "architecture_type": "router",
+        "state_schema": {"messages": "Conversation state"},
+        "nodes": [
+            {"name": "router", "purpose": "Route requests"},
+            {"name": "search", "purpose": "Search documents"},
+        ],
+        "graph_exports": {
+            "mermaid": "flowchart TD\n    START --> router\n    router --> search",
+            "schema": {
+                "entry_point": "router",
+                "terminal_nodes": ["search"],
+                "validation_summary": {"errors": [], "warnings": []},
+            },
+        },
+    }
+
+    cells = await composer.compose_notebook(
+        notebook_plan=plan,
+        workflow_design=workflow_design,
+        tools=[],
+        architecture={"architecture_type": "router", "justification": "Router is sufficient."},
+    )
+
+    intro_markdown = "\n\n".join(
+        cell.content for cell in cells if cell.section == "intro" and cell.cell_type == "markdown"
+    )
+
+    assert "Graph Overview" in intro_markdown
+    assert "```mermaid" in intro_markdown
+    assert "flowchart TD" in intro_markdown
+    assert "terminal_nodes" in intro_markdown
+
+
 def test_generate_node_implementation_falls_back_to_meaningful_state_updates(
     monkeypatch: pytest.MonkeyPatch,
 ):
