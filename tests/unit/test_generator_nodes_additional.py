@@ -27,6 +27,9 @@ from langgraph_system_generator.generator.state import (
     Constraint,
     GraphDesignFeedback,
     GraphExportBundle,
+    NotebookCompositionFeedback,
+    NotebookCompositionResult,
+    NotebookDependencyPlan,
     QAReport,
 )
 from langgraph_system_generator.utils.config import GenerationConfig
@@ -298,6 +301,13 @@ async def test_tooling_plan_node_returns_tools_plan(monkeypatch):
 @pytest.mark.asyncio
 async def test_notebook_assembly_node_returns_generated_cells(monkeypatch):
     cells = [CellSpec(cell_type="markdown", content="Hi", metadata={})]
+    feedback = NotebookCompositionFeedback(
+        fallback_used=True,
+        warnings=["Notebook composition used deterministic fallback content."],
+    )
+    dependency_plan = NotebookDependencyPlan(
+        packages=["langgraph", "langchain-openai"]
+    )
     # Mock NotebookComposer to return cells without needing LLM
     payload = "[]"  # Dummy payload since we'll mock the compose method
 
@@ -308,7 +318,11 @@ async def test_notebook_assembly_node_returns_generated_cells(monkeypatch):
     )
 
     async def fake_compose_notebook(*_args, **_kwargs):
-        return cells
+        return NotebookCompositionResult(
+            cells=cells,
+            feedback=feedback,
+            dependency_plan=dependency_plan,
+        )
 
     monkeypatch.setattr(
         "langgraph_system_generator.generator.nodes.NotebookComposer.compose_notebook",
@@ -334,6 +348,8 @@ async def test_notebook_assembly_node_returns_generated_cells(monkeypatch):
     result = await notebook_assembly_node(state)
 
     assert result["generated_cells"] == cells
+    assert result["notebook_composition_feedback"] == feedback
+    assert result["notebook_dependency_plan"] == dependency_plan
 
 
 @pytest.mark.asyncio
@@ -596,6 +612,15 @@ async def test_package_outputs_node_manifest_fields():
                 },
             },
         ),
+        "notebook_composition_feedback": NotebookCompositionFeedback(
+            fallback_used=True,
+            warnings=["Deterministic fallback used for node \"enrich\"."],
+            sections_built=["intro", "install", "config", "state", "nodes", "graph"],
+        ),
+        "notebook_dependency_plan": NotebookDependencyPlan(
+            packages=["langgraph", "langchain-openai", "requests"],
+            provider_env_vars=["OPENAI_API_KEY"],
+        ),
     }
     result = await package_outputs_node(state)
 
@@ -606,4 +631,6 @@ async def test_package_outputs_node_manifest_fields():
     assert manifest["architecture_feedback"]["fallback_used"] is True
     assert manifest["graph_design_feedback"]["fallback_used"] is True
     assert "flowchart TD" in manifest["graph_exports"]["mermaid"]
+    assert manifest["notebook_composition_feedback"]["fallback_used"] is True
+    assert "requests" in manifest["notebook_dependency_plan"]["packages"]
     assert result["generation_complete"] is True

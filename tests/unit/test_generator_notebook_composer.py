@@ -122,12 +122,13 @@ async def test_compose_notebook_sections_and_packages(
         "justification": "Matches the workflow requirements.",
     }
 
-    cells = await composer.compose_notebook(
+    composition = await composer.compose_notebook(
         notebook_plan=plan,
         workflow_design=workflow_design,
         tools=tools,
         architecture=architecture,
     )
+    cells = composition.cells
 
     intro_cells = [cell for cell in cells if cell.section == "intro"]
     assert len(intro_cells) >= 2
@@ -147,10 +148,21 @@ async def test_compose_notebook_sections_and_packages(
         for cell in cells
         if cell.section == "setup"
         and cell.cell_type == "code"
-        and "pip install" in cell.content
+        and "missing_packages" in cell.content
     ]
     assert install_cells
     assert "pypdf" in install_cells[0].content
+    assert "subprocess.check_call" in install_cells[0].content
+
+    config_cells = [
+        cell
+        for cell in cells
+        if cell.section == "setup" and cell.cell_type == "code" and "MODEL =" in cell.content
+    ]
+    assert config_cells
+    assert 'OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")' in config_cells[0].content
+    assert "ANTHROPIC_API_KEY" not in config_cells[0].content
+    assert "MAX_ITERATIONS = 10" in config_cells[0].content
 
     state_cells = [
         cell for cell in cells if cell.section == "state" and cell.cell_type == "code"
@@ -162,6 +174,7 @@ async def test_compose_notebook_sections_and_packages(
         cell for cell in cells if cell.section == "tools" and cell.cell_type == "code"
     ]
     assert tool_cells
+    assert tool_cells[0].content.startswith("# WARNING: Deterministic fallback generated")
     assert "def File_Reader" in tool_cells[0].content
     assert "Path(" in tool_cells[0].content
     assert "pass" not in tool_cells[0].content
@@ -195,6 +208,24 @@ async def test_compose_notebook_sections_and_packages(
         assert "def router_node" in node_source
         assert "def supervisor_node" in node_source
         assert "def reviewer_node" in node_source
+
+    assert composition.feedback.fallback_used is True
+    assert composition.feedback.resolved_model
+    assert composition.feedback.fallback_events[0].kind == "tool"
+    assert composition.feedback.fallback_events[0].item_name == "File Reader"
+    assert composition.feedback.sections_built == [
+        "intro",
+        "install",
+        "config",
+        "state",
+        "tools",
+        "nodes",
+        "graph",
+        "execution",
+    ]
+    assert "langgraph" in composition.dependency_plan.packages
+    assert "langchain-openai" in composition.dependency_plan.packages
+    assert "OPENAI_API_KEY" in composition.dependency_plan.provider_env_vars
 
     sections = {cell.section for cell in cells}
     assert {"intro", "setup", "state", "tools", "graph", "execution"}.issubset(
@@ -243,12 +274,13 @@ async def test_compose_notebook_hybrid_sparse_nodes_keep_defaults_aligned(
         ],
     }
 
-    cells = await composer.compose_notebook(
+    composition = await composer.compose_notebook(
         notebook_plan=plan,
         workflow_design=workflow_design,
         tools=[],
         architecture={"architecture_type": "hybrid", "justification": "Fallback hybrid."},
     )
+    cells = composition.cells
 
     node_source = "\n\n".join(cell.content for cell in cells if cell.section == "nodes")
     graph_code = next(
@@ -293,12 +325,13 @@ async def test_compose_notebook_hybrid_sanitizes_worker_and_specialist_graph_ids
         ],
     }
 
-    cells = await composer.compose_notebook(
+    composition = await composer.compose_notebook(
         notebook_plan=plan,
         workflow_design=workflow_design,
         tools=[],
         architecture={"architecture_type": "hybrid", "justification": "Hybrid sanitization."},
     )
+    cells = composition.cells
 
     node_source = "\n\n".join(cell.content for cell in cells if cell.section == "nodes")
     graph_code = next(
@@ -348,12 +381,13 @@ async def test_compose_notebook_includes_graph_overview_from_exports(
         },
     }
 
-    cells = await composer.compose_notebook(
+    composition = await composer.compose_notebook(
         notebook_plan=plan,
         workflow_design=workflow_design,
         tools=[],
         architecture={"architecture_type": "router", "justification": "Router is sufficient."},
     )
+    cells = composition.cells
 
     intro_markdown = "\n\n".join(
         cell.content for cell in cells if cell.section == "intro" and cell.cell_type == "markdown"
@@ -392,6 +426,45 @@ def test_generate_node_implementation_falls_back_to_meaningful_state_updates(
     assert "TODO" not in node_code
 
 
+def test_generate_tool_implementation_records_visible_fallback_warning(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    monkeypatch.setattr(composer_module, "ChatOpenAI", DummyLLM)
+    composer = composer_module.NotebookComposer()
+    feedback = composer_module.NotebookCompositionFeedback()
+
+    fallback_code = composer._generate_tool_implementation(
+        {"name": "Example Tool", "purpose": "Fallback to a deterministic helper", "category": "misc"},
+        feedback=feedback,
+    )
+
+    assert fallback_code.startswith("# WARNING: Deterministic fallback generated")
+    assert feedback.fallback_used is True
+    assert feedback.fallback_events[0].kind == "tool"
+
+
+def test_generate_node_implementation_records_visible_fallback_warning(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    monkeypatch.setattr(composer_module, "ChatOpenAI", DummyLLM)
+    composer = composer_module.NotebookComposer()
+    feedback = composer_module.NotebookCompositionFeedback()
+
+    fallback_code = composer._generate_node_implementation(
+        {"name": "enrich", "purpose": "Enrich the current workflow results"},
+        {
+            "architecture_type": "custom",
+            "state_schema": {"results": "Collected outputs"},
+            "nodes": [{"name": "enrich", "purpose": "Enrich the current workflow results"}],
+        },
+        feedback=feedback,
+    )
+
+    assert fallback_code.startswith("# WARNING: Deterministic fallback generated")
+    assert feedback.fallback_used is True
+    assert feedback.fallback_events[0].kind == "node"
+
+
 def test_tool_fallback_sanitizes_identifier_and_compiles(
     monkeypatch: pytest.MonkeyPatch,
 ):
@@ -410,7 +483,9 @@ def test_tool_fallback_sanitizes_identifier_and_compiles(
     assert '# Tool: 9 bad tool"; print("oops")' in fallback_code
     assert '9 bad tool";\nprint("oops")' not in fallback_code
     assert '"category": "api\\" # injected"' in fallback_code
-    assert fallback_code.splitlines()[0] == '# Tool: 9 bad tool"; print("oops")'
+    assert fallback_code.splitlines()[0].startswith(
+        "# WARNING: Deterministic fallback generated"
+    )
     compile(fallback_code, "<tool_fallback>", "exec")
     parsed = ast.parse(fallback_code)
     assert len(parsed.body) == 1
@@ -515,7 +590,7 @@ async def test_pattern_nodes_use_request_scoped_model_config(
             {"name": "revise", "purpose": "Revise the draft using feedback"},
         ]
 
-    cells = await composer.compose_notebook(
+    composition = await composer.compose_notebook(
         notebook_plan=plan,
         workflow_design={
             "architecture_type": architecture_type,
@@ -528,6 +603,7 @@ async def test_pattern_nodes_use_request_scoped_model_config(
             "justification": "Matches the workflow requirements.",
         },
     )
+    cells = composition.cells
 
     node_cells = [cell for cell in cells if cell.section == "nodes"]
     assert node_cells
@@ -546,3 +622,5 @@ async def test_pattern_nodes_use_request_scoped_model_config(
     assert any("TEMPERATURE = 0.3" in cell.content for cell in setup_code_cells)
     assert any('API_BASE = "https://example.test/v1"' in cell.content for cell in setup_code_cells)
     assert any("MAX_TOKENS = 2048" in cell.content for cell in setup_code_cells)
+    assert composition.feedback.resolved_model == "gpt-5.2"
+    assert composition.feedback.resolved_api_base == "https://example.test/v1"

@@ -17,6 +17,9 @@ from langgraph_system_generator.generator.state import (
     CellSpec,
     Constraint,
     DocSnippet,
+    NotebookCompositionFeedback,
+    NotebookCompositionResult,
+    NotebookDependencyPlan,
     NotebookPlan,
     RequirementsAnalysis,
     RequirementsFeedback,
@@ -94,13 +97,24 @@ async def test_notebook_assembly_node_passes_architecture_and_plans():
     expected_cells = [
         CellSpec(cell_type="markdown", content="# Intro", metadata={}, section="Setup")
     ]
+    expected_feedback = NotebookCompositionFeedback(
+        fallback_used=True,
+        warnings=["Notebook composition used deterministic fallback content."],
+    )
+    expected_dependency_plan = NotebookDependencyPlan(
+        packages=["langgraph", "langchain-openai"]
+    )
 
     async def capture_compose(plan, design, tools, architecture):
         captured_args["plan"] = plan
         captured_args["design"] = design
         captured_args["tools"] = tools
         captured_args["architecture"] = architecture
-        return expected_cells
+        return NotebookCompositionResult(
+            cells=expected_cells,
+            feedback=expected_feedback,
+            dependency_plan=expected_dependency_plan,
+        )
 
     with patch(
         "langgraph_system_generator.generator.agents.notebook_composer.ChatOpenAI",
@@ -121,7 +135,11 @@ async def test_notebook_assembly_node_passes_architecture_and_plans():
                 }
             )
 
-    assert result == {"generated_cells": expected_cells}
+    assert result == {
+        "generated_cells": expected_cells,
+        "notebook_composition_feedback": expected_feedback,
+        "notebook_dependency_plan": expected_dependency_plan,
+    }
     assert captured_args["plan"] is notebook_plan
     assert captured_args["design"] == workflow_design
     assert captured_args["tools"] == tools_plan
@@ -148,10 +166,16 @@ async def test_notebook_assembly_node_fallback_when_primary_missing():
     expected_cells = [
         CellSpec(cell_type="markdown", content="# Intro", metadata={}, section="Setup")
     ]
+    expected_feedback = NotebookCompositionFeedback(fallback_used=False)
+    expected_dependency_plan = NotebookDependencyPlan()
 
     async def capture_compose(plan, design, tools, architecture):
         captured_args["architecture"] = architecture
-        return expected_cells
+        return NotebookCompositionResult(
+            cells=expected_cells,
+            feedback=expected_feedback,
+            dependency_plan=expected_dependency_plan,
+        )
 
     with patch(
         "langgraph_system_generator.generator.agents.notebook_composer.ChatOpenAI",
@@ -172,7 +196,11 @@ async def test_notebook_assembly_node_fallback_when_primary_missing():
                 }
             )
 
-    assert result == {"generated_cells": expected_cells}
+    assert result == {
+        "generated_cells": expected_cells,
+        "notebook_composition_feedback": expected_feedback,
+        "notebook_dependency_plan": expected_dependency_plan,
+    }
     assert captured_args["architecture"] == {
         "architecture_type": "router",  # Should default to "router"
         "justification": "Fits the request.",
@@ -196,10 +224,16 @@ async def test_notebook_assembly_node_fallback_when_selected_patterns_missing():
     expected_cells = [
         CellSpec(cell_type="markdown", content="# Intro", metadata={}, section="Setup")
     ]
+    expected_feedback = NotebookCompositionFeedback(fallback_used=False)
+    expected_dependency_plan = NotebookDependencyPlan()
 
     async def capture_compose(plan, design, tools, architecture):
         captured_args["architecture"] = architecture
-        return expected_cells
+        return NotebookCompositionResult(
+            cells=expected_cells,
+            feedback=expected_feedback,
+            dependency_plan=expected_dependency_plan,
+        )
 
     with patch(
         "langgraph_system_generator.generator.agents.notebook_composer.ChatOpenAI",
@@ -220,7 +254,11 @@ async def test_notebook_assembly_node_fallback_when_selected_patterns_missing():
                 }
             )
 
-    assert result == {"generated_cells": expected_cells}
+    assert result == {
+        "generated_cells": expected_cells,
+        "notebook_composition_feedback": expected_feedback,
+        "notebook_dependency_plan": expected_dependency_plan,
+    }
     assert captured_args["architecture"] == {
         "architecture_type": "router",  # Should default to "router"
         "justification": "Fits the request.",
