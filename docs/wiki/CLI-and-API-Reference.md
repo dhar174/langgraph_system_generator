@@ -39,15 +39,8 @@ lnf generate PROMPT [OPTIONS]
 |--------|------|---------|-------------|
 | `--output DIR` | path | `./output` | Output directory for artifacts |
 | `--mode MODE` | choice | `stub` | Generation mode: `stub` or `live` |
-| `--formats FORMAT [FORMAT ...]` | list | all | Output formats: `ipynb`, `html`, `docx`, `pdf`, `zip` |
-| `--model MODEL` | string | from config | LLM model (e.g., `gpt-4`, `gpt-3.5-turbo`) |
-| `--temperature FLOAT` | float | 0.7 | LLM temperature (0.0-2.0) |
-| `--max-tokens INT` | int | 4096 | Maximum tokens for LLM response |
-| `--agent-type TYPE` | string | auto | Agent architecture: `router`, `subagents`, `hybrid`, `autoagent` |
-| `--memory-config CONFIG` | string | `none` | Memory configuration: `none`, `short`, `long`, `full` |
-| `--graph-style STYLE` | string | auto | Graph style: `sequential`, `parallel`, `conditional`, `cyclic` |
-| `--retriever-type TYPE` | string | `vector` | Retriever type: `vector`, `keyword`, `hybrid`, `mmr` |
-| `--document-loader LOADER` | string | `text` | Loader type: `text`, `pdf`, `web`, `markdown`, `json`, `csv` |
+| `--formats FORMAT [FORMAT ...]` | list | `ipynb html markdown docx zip` | Output formats: `ipynb`, `html`, `markdown`, `pdf`, `docx`, `zip` |
+| `--agent-type TYPE` | string | auto | Architecture override: `router`, `subagents`, `hybrid`, `autoagent` |
 
 **Examples:**
 
@@ -56,12 +49,12 @@ Basic generation (stub mode):
 lnf generate "Create a customer support chatbot" --output ./my_chatbot
 ```
 
-Full generation with live mode:
+Live generation:
 ```bash
 lnf generate "Build a research assistant with multiple agents" \
   --output ./research_assistant \
   --mode live \
-  --model gpt-4
+  --agent-type subagents
 ```
 
 Specific formats only:
@@ -71,18 +64,9 @@ lnf generate "Create a data analyzer" \
   --formats ipynb html
 ```
 
-Advanced options:
-```bash
-lnf generate "Complex multi-agent system" \
-  --output ./complex_system \
-  --mode live \
-  --model gpt-4 \
-  --temperature 0.8 \
-  --max-tokens 8192 \
-  --agent-type subagents \
-  --memory-config long \
-  --graph-style conditional
-```
+The CLI intentionally keeps advanced model/provider overrides out of the flag
+surface. For request-scoped `model`, `temperature`, `max_tokens`, or
+`custom_endpoint`, use the API instead of the CLI.
 
 #### `lnf build-index`
 
@@ -99,19 +83,21 @@ lnf build-index [OPTIONS]
 |--------|------|---------|-------------|
 | `--cache DIR` | path | `./data/cached_docs` | Cached documentation directory |
 | `--store DIR` | path | `./data/vector_store` | Vector store output directory |
-| `--fake-embeddings` | flag | False | Use fake embeddings (no API key needed) |
+| `--use-openai` | flag | False | Use OpenAI embeddings instead of local fake embeddings |
+| `--chunk-size INT` | int | `500` | Chunk size for document splitting |
+| `--chunk-overlap INT` | int | `50` | Chunk overlap for document splitting |
 
 **Examples:**
 
 Build with OpenAI embeddings:
 ```bash
 export OPENAI_API_KEY='sk-...'
-lnf build-index
+lnf build-index --use-openai
 ```
 
-Build with fake embeddings (testing):
+Build with local fake embeddings (testing/default):
 ```bash
-lnf build-index --fake-embeddings
+lnf build-index
 ```
 
 Custom paths:
@@ -133,10 +119,11 @@ The CLI respects these environment variables:
 | `LANGSMITH_PROJECT` | LangSmith project name | `langgraph-notebook-foundry` |
 | `VECTOR_STORE_TYPE` | Vector store backend | `faiss` |
 | `VECTOR_STORE_PATH` | Vector store location | `./data/vector_store` |
-| `DEFAULT_MODEL` | Default LLM model | `gpt-4-turbo-preview` |
+| `DEFAULT_MODEL` | Default LLM model | `gpt-5-mini` |
 | `MAX_REPAIR_ATTEMPTS` | QA repair attempts | `3` |
 | `DEFAULT_BUDGET_TOKENS` | Token budget | `100000` |
 | `LNF_OUTPUT_BASE` | Base output directory | `.` |
+| `GRAPH_DESIGNER_PLUGIN_MODULES` | Extra graph designer registry modules | None |
 
 ### Exit Codes
 
@@ -195,8 +182,7 @@ Health check endpoint.
 **Response:**
 ```json
 {
-  "status": "healthy",
-  "version": "<current_version>"
+  "status": "ok"
 }
 ```
 
@@ -235,13 +221,26 @@ Generate a multi-agent system from a prompt.
   "output_dir": "./output/api",
   "manifest_path": "./output/api/manifest.json",
   "manifest": {
-    "notebook_path": "./output/api/notebook.ipynb",
-    "html_path": "./output/api/notebook.html",
-    "docx_path": "./output/api/notebook.docx",
-    "pdf_path": "./output/api/notebook.pdf",
-    "zip_path": "./output/api/notebook_bundle.zip",
-    "plan_path": "./output/api/notebook_plan.json",
-    "cells_path": "./output/api/generated_cells.json"
+    "architecture_type": "router",
+    "requirements_feedback": {"fallback_used": false},
+    "architecture_feedback": {"fallback_used": false},
+    "graph_design_feedback": {
+      "fallback_used": false,
+      "validation_errors": [],
+      "warnings": []
+    },
+    "graph_exports": {
+      "mermaid": "flowchart TD ...",
+      "schema": {
+        "entry_point": "router",
+        "terminal_nodes": ["finish"],
+        "validation_summary": {"errors": [], "warnings": []}
+      }
+    },
+    "warnings": [],
+    "export_results": {
+      "ipynb": {"status": "completed", "path": "./output/api/notebook.ipynb"}
+    }
   }
 }
 ```
@@ -354,6 +353,8 @@ All requests are validated using Pydantic models:
 - `temperature`: Must be 0.0-2.0
 - `max_tokens`: Must be 1-32768
 - `formats`: Must be valid format names
+- `agent_type`: Must be one of `router`, `subagents`, `hybrid`, `autoagent`
+- `custom_endpoint`: Must be a valid `http` or `https` URL when provided, and requires an explicit model
 
 **Validation Error Response:**
 ```json
@@ -418,18 +419,22 @@ async def generate_endpoint(request: GenerationRequest):
 For programmatic access from Python, use the CLI functions directly:
 
 ```python
+import asyncio
+
 from langgraph_system_generator.cli import generate_artifacts
 
 # Generate in stub mode
-result = generate_artifacts(
-    prompt="Create a customer support chatbot",
-    mode="stub",
-    output_dir="./output/my_system",
-    formats=["ipynb", "html", "docx"]
+artifacts = asyncio.run(
+    generate_artifacts(
+        prompt="Create a customer support chatbot",
+        mode="stub",
+        output_dir="./output/my_system",
+        formats=["ipynb", "html", "docx"],
+    )
 )
 
-print(f"Success: {result['success']}")
-print(f"Notebook: {result['manifest']['notebook_path']}")
+print(f"Mode: {artifacts['mode']}")
+print(f"Notebook: {artifacts['manifest']['notebook_path']}")
 ```
 
 Or use the generator graph directly:
@@ -437,15 +442,18 @@ Or use the generator graph directly:
 ```python
 from langgraph_system_generator.generator.graph import create_generator_graph
 
-# Create the graph
-graph = create_generator_graph()
-app = graph.compile()
+# Create the compiled app
+app = create_generator_graph()
 
 # Run generation
 initial_state = {
     "user_prompt": "Create a research assistant",
     "uploaded_files": None,
     "constraints": [],
+    "requirements_feedback": {"fallback_used": False},
+    "architecture_feedback": {"fallback_used": False},
+    "graph_design_feedback": {"fallback_used": False},
+    "graph_exports": {"mermaid": "", "schema": {}},
     # ... other state fields ...
 }
 
@@ -473,7 +481,7 @@ Every successful generation produces:
 ### Manifest Structure
 
 The `manifest.json` contains complete generation metadata, including structured
-phase timing, per-format export status, and non-fatal warnings:
+phase timing, per-format export status, graph-design exports, and non-fatal warnings:
 
 ```json
 {
@@ -481,6 +489,24 @@ phase timing, per-format export status, and non-fatal warnings:
   "mode": "stub | live",
   "architecture_type": "router | subagents | hybrid | autoagent",
   "plan_title": "LangGraph Workflow: Example",
+  "requirements_feedback": {"fallback_used": false},
+  "architecture_feedback": {"fallback_used": false},
+  "graph_design_feedback": {
+    "fallback_used": false,
+    "validation_errors": [],
+    "warnings": []
+  },
+  "graph_exports": {
+    "mermaid": "flowchart TD ...",
+    "schema": {
+      "entry_point": "router",
+      "terminal_nodes": ["finish"],
+      "validation_summary": {
+        "errors": [],
+        "warnings": []
+      }
+    }
+  },
   "notebook_path": "./output/api/notebook.ipynb",
   "html_path": "./output/api/notebook.html",
   "zip_path": "./output/api/notebook_bundle.zip",

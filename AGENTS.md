@@ -89,7 +89,7 @@ These node functions are the clearest map of the runtime lifecycle:
 | Intake | `intake_node` | `RequirementsAnalyst` | `constraints`, `requirements_feedback` |
 | Retrieval | `rag_retrieval_node` | `DocsRetriever` | `docs_context` |
 | Architecture selection | `architecture_selection_node` | `ArchitectureSelector` | `selected_patterns`, `architecture_type`, `architecture_justification`, `architecture_feedback` |
-| Workflow design | `graph_design_node` | `GraphDesigner` | `workflow_design`, `notebook_plan` |
+| Workflow design | `graph_design_node` | `GraphDesigner` | `workflow_design`, `graph_design_feedback`, `graph_exports`, `notebook_plan` |
 | Tool planning | `tooling_plan_node` | `ToolchainEngineer` | `tools_plan` |
 | Notebook assembly | `notebook_assembly_node` | `NotebookComposer` | `generated_cells` |
 | Static QA | `static_qa_node` | validators under `src/langgraph_system_generator/qa/` | `qa_reports`, `qa_history` |
@@ -115,6 +115,9 @@ Important patterns:
 - `repair_attempts` bounds retry behavior.
 - `artifacts_manifest` and `generation_complete` are the final packaging
   outputs expected by the CLI and API.
+- `workflow_design` remains the backward-compatible downstream graph payload,
+  while `graph_design_feedback` and `graph_exports` carry validation/fallback
+  metadata plus Mermaid/schema exports for manifests and notebooks.
 
 When adding a new runtime agent or stage:
 
@@ -173,6 +176,24 @@ Use this checklist before writing code:
 5. Add or update focused tests under `tests/unit/` or `tests/patterns/`.
 6. Update documentation if the public workflow, outputs, or contributor
    expectations changed.
+
+### GraphDesigner-specific expectations
+
+`GraphDesigner.design_workflow()` now returns a typed `GraphDesignResult`, not a
+raw dict. Keep these conventions aligned when changing graph design behavior:
+
+- normalize and validate every live-model graph before it reaches downstream
+  notebook/tooling stages
+- prefer deterministic registry-backed fallbacks over partial graph output when
+  validation fails
+- keep `workflow_design` backward-compatible for `ToolchainEngineer` and
+  `NotebookComposer`
+- surface recoverable graph issues through `graph_design_feedback` and
+  `graph_exports` instead of silently discarding them
+- register new architecture-specific graph behavior through
+  `src/langgraph_system_generator/generator/graph_design_registry.py`
+  and `GRAPH_DESIGNER_PLUGIN_MODULES` rather than hardcoding more branches into
+  the agent
 
 ### Minimal runtime-agent skeleton
 

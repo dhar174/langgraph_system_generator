@@ -13,7 +13,12 @@ from fastapi.testclient import TestClient
 
 from langgraph_system_generator.api.server import app
 from langgraph_system_generator.cli import GenerationArtifacts, generate_artifacts
+from langgraph_system_generator.generator.graph_design_registry import (
+    GraphDesignRegistration,
+    get_graph_design_registry,
+)
 from langgraph_system_generator.utils.config import GenerationConfig
+from langgraph_system_generator.utils.error_handling import GenerationError
 from langgraph_system_generator.utils.optional_deps import OptionalDependencyError
 
 
@@ -53,9 +58,13 @@ async def test_generate_artifacts_stub(tmp_path: Path, monkeypatch: pytest.Monke
     assert artifacts["manifest"]["requirements_feedback"]["fallback_used"] is False
     assert artifacts["manifest"]["architecture_feedback"]["fallback_used"] is False
     assert artifacts["manifest"]["architecture_feedback"]["docs_considered"] == []
+    assert artifacts["manifest"]["graph_design_feedback"]["fallback_used"] is False
+    assert "flowchart TD" in artifacts["manifest"]["graph_exports"]["mermaid"]
     assert artifacts["result"]["requirements_feedback"]["fallback_used"] is False
     assert artifacts["result"]["architecture_feedback"]["fallback_used"] is False
     assert artifacts["result"]["architecture_feedback"]["docs_considered"] == []
+    assert artifacts["result"]["graph_design_feedback"]["fallback_used"] is False
+    assert "flowchart TD" in artifacts["result"]["graph_exports"]["mermaid"]
     assert Path(artifacts["manifest_path"]).exists()
     assert artifacts["result"]["generation_complete"] is True
 
@@ -73,6 +82,8 @@ def test_default_state_includes_generation_mode_and_qa_history():
     assert state["qa_history"] == []
     assert state["requirements_feedback"].fallback_used is False
     assert state["architecture_feedback"].fallback_used is False
+    assert state["graph_design_feedback"].fallback_used is False
+    assert state["graph_exports"].schema == {}
     assert "goal" in state["requirements_feedback"].available_constraint_types
 
 
@@ -326,6 +337,105 @@ async def test_generate_artifacts_surfaces_architecture_feedback_as_warnings(
     assert "architecture_fallback" in warning_codes
     assert "architecture_validation" in warning_codes
     assert artifacts["manifest"]["architecture_feedback"]["fallback_used"] is True
+
+
+@pytest.mark.asyncio
+async def test_generate_artifacts_surfaces_graph_design_feedback_as_warnings(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.setenv("LNF_OUTPUT_BASE", "test_graph_design_feedback_warning")
+
+    import langgraph_system_generator.constants as constants_module
+    import langgraph_system_generator.notebook.exporters as exporters_module
+    import langgraph_system_generator.cli as cli_module
+
+    importlib.reload(constants_module)
+    importlib.reload(exporters_module)
+    importlib.reload(cli_module)
+
+    original_build_stub_result = cli_module._build_stub_result
+
+    def build_stub_result_with_graph_feedback(prompt: str, agent_type: str | None = None):
+        result = original_build_stub_result(prompt, agent_type=agent_type)
+        result["graph_design_feedback"] = {
+            "fallback_used": True,
+            "fallback_reason": "Live graph design validation failed.",
+            "validation_errors": [
+                "Duplicate node id 'router'.",
+                "Unknown edge target 'missing_target'.",
+            ],
+            "warnings": ["Recovered using deterministic fallback."],
+            "validation_issues": [
+                {
+                    "code": "duplicate_node_id",
+                    "message": "Duplicate node id 'router'.",
+                    "severity": "error",
+                    "nodes": ["router"],
+                    "details": {},
+                }
+            ],
+        }
+        result["graph_exports"] = {
+            "mermaid": "flowchart TD\n    router --> finish",
+            "schema": {
+                "entry_point": "router",
+                "terminal_nodes": ["finish"],
+                "validation_summary": {
+                    "errors": [
+                        "Duplicate node id 'router'.",
+                        "Unknown edge target 'missing_target'.",
+                    ],
+                    "warnings": ["Recovered using deterministic fallback."],
+                },
+            },
+        }
+        return result
+
+    monkeypatch.setattr(cli_module, "_build_stub_result", build_stub_result_with_graph_feedback)
+
+    output_dir = constants_module._BASE_OUTPUT / "graph_feedback_stub"
+    artifacts = await cli_module.generate_artifacts(
+        "Graph feedback prompt",
+        output_dir=str(output_dir),
+        mode="stub",
+    )
+
+    warning_codes = {warning["code"] for warning in artifacts["manifest"]["warnings"]}
+    assert "graph_design_fallback" in warning_codes
+    assert "graph_design_validation" in warning_codes
+    assert artifacts["manifest"]["graph_design_feedback"]["fallback_used"] is True
+    assert "flowchart TD" in artifacts["manifest"]["graph_exports"]["mermaid"]
+
+
+def test_build_stub_result_raises_for_invalid_stub_graph_design(monkeypatch):
+    import langgraph_system_generator.cli as cli_module
+
+    registry = get_graph_design_registry().clone()
+    router_registration = get_graph_design_registry().get("router")
+    registry.register(
+        GraphDesignRegistration(
+            architecture_id="router",
+            supported_entry_shapes=router_registration.supported_entry_shapes,
+            supported_exit_shapes=router_registration.supported_exit_shapes,
+            cycles_allowed=router_registration.cycles_allowed,
+            fallback_builder=lambda *_args, **_kwargs: {
+                "state_schema": {},
+                "nodes": [{"name": "router", "purpose": "Route requests"}],
+                "edges": [{"from": "router", "to": "missing_target"}],
+                "conditional_edges": [],
+                "entry_point": "router",
+                "checkpointing": False,
+            },
+            normalization_hook=router_registration.normalization_hook,
+            validation_hook=router_registration.validation_hook,
+            export_label_defaults=router_registration.export_label_defaults,
+            composition_strategy=router_registration.composition_strategy,
+        )
+    )
+    monkeypatch.setattr(cli_module, "get_graph_design_registry", lambda: registry)
+
+    with pytest.raises(GenerationError, match="invalid workflow"):
+        cli_module._build_stub_result("Build a test workflow")
 
 
 @pytest.mark.asyncio

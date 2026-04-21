@@ -5,7 +5,7 @@ from __future__ import annotations
 import operator
 from typing import Annotated, Any, Dict, List, Literal, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from typing_extensions import TypedDict
 
 from langgraph_system_generator.utils.config import GenerationConfig
@@ -194,6 +194,155 @@ class ArchitectureSelectionResult(BaseModel):
     )
 
 
+class GraphNodeSpec(BaseModel):
+    """Normalized graph node specification."""
+
+    name: str = Field(description="Stable node identifier used in graph wiring.")
+    purpose: str = Field(description="Human-readable purpose for the node.")
+
+
+class GraphEdgeSpec(BaseModel):
+    """Normalized directed edge between two workflow nodes."""
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    source: str = Field(alias="from", description="Source node identifier.")
+    target: str = Field(alias="to", description="Target node identifier.")
+
+
+class GraphConditionalEdgeSpec(BaseModel):
+    """Normalized conditional edge specification."""
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    source: str = Field(
+        alias="from",
+        description="Node identifier that owns the conditional routing logic.",
+    )
+    condition: str = Field(description="Human-readable routing condition description.")
+    branches: Dict[str, str] = Field(
+        default_factory=dict,
+        description="Mapping from branch labels to target node identifiers or END.",
+    )
+
+
+class GraphValidationIssue(BaseModel):
+    """Structured graph validation issue surfaced during design."""
+
+    code: str = Field(description="Stable validation issue code.")
+    message: str = Field(description="Human-readable validation issue description.")
+    severity: Literal["error", "warning"] = Field(
+        default="error",
+        description="Whether the issue is blocking or advisory.",
+    )
+    nodes: List[str] = Field(
+        default_factory=list,
+        description="Node identifiers associated with the issue, when applicable.",
+    )
+
+
+class GraphExportBundle(BaseModel):
+    """Serializable graph-design export surfaces."""
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    mermaid: str = Field(
+        default="",
+        description="Mermaid flowchart representation of the normalized graph.",
+    )
+    schema_payload: Dict[str, Any] = Field(
+        default_factory=dict,
+        alias="schema",
+        description="JSON-serializable workflow schema and validation summary.",
+    )
+
+    @property
+    def schema(self) -> Dict[str, Any]:
+        """Return the serialized graph schema payload."""
+
+        return self.schema_payload
+
+
+class GraphDesignFeedback(BaseModel):
+    """Advisory feedback captured during graph design."""
+
+    fallback_used: bool = Field(
+        default=False,
+        description="Whether the designer had to use a deterministic fallback graph.",
+    )
+    fallback_reason: Optional[str] = Field(
+        default=None,
+        description="Reason fallback mode was used, when applicable.",
+    )
+    validation_errors: List[str] = Field(
+        default_factory=list,
+        description="Blocking validation errors encountered during live graph design.",
+    )
+    warnings: List[str] = Field(
+        default_factory=list,
+        description="Advisory warnings captured during graph design.",
+    )
+    validation_issues: List[GraphValidationIssue] = Field(
+        default_factory=list,
+        description="Structured validation issues captured during graph design.",
+    )
+    composition_strategy: Optional[str] = Field(
+        default=None,
+        description="Composition strategy used to normalize or build the graph.",
+    )
+
+
+class GraphDesignResult(BaseModel):
+    """Structured graph-design output consumed by downstream stages."""
+
+    architecture_type: str = Field(description="Normalized architecture identifier.")
+    state_schema: Dict[str, str] = Field(
+        default_factory=dict,
+        description="Normalized workflow state schema mapping.",
+    )
+    nodes: List[GraphNodeSpec] = Field(
+        default_factory=list,
+        description="Normalized workflow node specifications.",
+    )
+    edges: List[GraphEdgeSpec] = Field(
+        default_factory=list,
+        description="Normalized direct graph edges.",
+    )
+    conditional_edges: List[GraphConditionalEdgeSpec] = Field(
+        default_factory=list,
+        description="Normalized conditional graph edges.",
+    )
+    entry_point: str = Field(description="Entry point node identifier.")
+    checkpointing: bool = Field(
+        default=False,
+        description="Whether the generated workflow should enable checkpointing.",
+    )
+    feedback: GraphDesignFeedback = Field(
+        default_factory=GraphDesignFeedback,
+        description="Advisory graph-design feedback.",
+    )
+    exports: GraphExportBundle = Field(
+        default_factory=GraphExportBundle,
+        description="Serializable graph exports for manifests and notebooks.",
+    )
+
+    def to_workflow_design_payload(self) -> Dict[str, Any]:
+        """Return the backward-compatible workflow_design payload."""
+
+        return {
+            "architecture_type": self.architecture_type,
+            "state_schema": dict(self.state_schema),
+            "nodes": [node.model_dump() for node in self.nodes],
+            "edges": [edge.model_dump(by_alias=True) for edge in self.edges],
+            "conditional_edges": [
+                edge.model_dump(by_alias=True) for edge in self.conditional_edges
+            ],
+            "entry_point": self.entry_point,
+            "checkpointing": self.checkpointing,
+            "graph_exports": self.exports.model_dump(by_alias=True),
+        }
+
+
 class DocSnippet(BaseModel):
     """Retrieved documentation snippet."""
 
@@ -265,6 +414,8 @@ class GeneratorState(TypedDict):
     constraints: Annotated[List[Constraint], operator.add]
     requirements_feedback: RequirementsFeedback
     architecture_feedback: ArchitectureFeedback
+    graph_design_feedback: GraphDesignFeedback
+    graph_exports: GraphExportBundle
     selected_patterns: Dict[str, Any]
 
     # RAG context

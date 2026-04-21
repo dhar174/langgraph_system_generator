@@ -154,6 +154,12 @@ class Settings(BaseSettings):
         ge=1,
         description="Maximum number of weighted docs snippets included in the architecture selector prompt.",
     )
+    graph_designer_plugin_modules: Annotated[list[str], NoDecode] = Field(
+        default_factory=list,
+        description=(
+            "Optional graph designer plugin modules loaded to extend the graph design registry."
+        ),
+    )
 
     @field_validator("requirements_constraint_types", mode="before")
     @classmethod
@@ -257,6 +263,42 @@ class Settings(BaseSettings):
                 ) from exc
         return normalized
 
+    @field_validator("graph_designer_plugin_modules", mode="before")
+    @classmethod
+    def _parse_graph_designer_plugin_modules(cls, value):
+        """Accept JSON arrays or comma-separated plugin module strings."""
+        if value in (None, ""):
+            return []
+        if isinstance(value, list):
+            raw_items = value
+        elif isinstance(value, str):
+            stripped = value.strip()
+            if not stripped:
+                return []
+            if stripped.startswith("["):
+                try:
+                    parsed = json.loads(stripped)
+                except json.JSONDecodeError as exc:
+                    raise ValueError(
+                        f"Invalid JSON in graph_designer_plugin_modules: {exc}"
+                    ) from exc
+                if not isinstance(parsed, list):
+                    raise ValueError(
+                        "graph_designer_plugin_modules must decode to a list"
+                    )
+                raw_items = parsed
+            else:
+                raw_items = stripped.split(",")
+        else:
+            return value
+
+        normalized: list[str] = []
+        for raw_item in raw_items:
+            module_name = str(raw_item or "").strip()
+            if module_name and module_name not in normalized:
+                normalized.append(module_name)
+        return normalized
+
 
 _DEFAULT_ENV_FILE = object()
 _TEST_SETTINGS_ENV_KEYS = (
@@ -273,6 +315,7 @@ _TEST_SETTINGS_ENV_KEYS = (
     "ARCHITECTURE_PATTERN_DOC_QUERIES",
     "ARCHITECTURE_PATTERN_DOC_WEIGHTS",
     "ARCHITECTURE_PROMPT_DOC_LIMIT",
+    "GRAPH_DESIGNER_PLUGIN_MODULES",
 )
 
 

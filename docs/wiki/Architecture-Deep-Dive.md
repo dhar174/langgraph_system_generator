@@ -128,32 +128,62 @@ Selects the most appropriate multi-agent pattern:
 
 #### 4. Workflow Design
 **Input**: Architecture + Constraints + Docs  
-**Output**: Detailed workflow specification
+**Output**: Detailed workflow specification plus advisory graph-design feedback and exports
 
 Designs the specific graph structure, nodes, and edges:
 
 ```python
 {
   "workflow_design": {
+    "architecture_type": "router",
+    "state_schema": {
+      "messages": "Conversation state",
+      "route": "Selected route"
+    },
     "nodes": [
-      {"name": "router", "type": "classifier", "purpose": "Route to appropriate handler"},
-      {"name": "technical_support", "type": "handler", "purpose": "Handle technical queries"},
-      {"name": "billing_support", "type": "handler", "purpose": "Handle billing queries"},
-      {"name": "general_support", "type": "handler", "purpose": "Handle general queries"}
+      {"name": "router", "purpose": "Route to appropriate handler"},
+      {"name": "technical_support", "purpose": "Handle technical queries"},
+      {"name": "billing_support", "purpose": "Handle billing queries"},
+      {"name": "general_support", "purpose": "Handle general queries"}
     ],
     "edges": [
-      {"from": "router", "to": "technical_support", "condition": "route == 'technical'"},
-      {"from": "router", "to": "billing_support", "condition": "route == 'billing'"},
-      {"from": "router", "to": "general_support", "condition": "route == 'general'"}
+      {"from": "technical_support", "to": "finish"},
+      {"from": "billing_support", "to": "finish"},
+      {"from": "general_support", "to": "finish"}
+    ],
+    "conditional_edges": [
+      {
+        "from": "router",
+        "condition": "route == 'technical' | 'billing' | 'general'",
+        "branches": {
+          "technical": "technical_support",
+          "billing": "billing_support",
+          "general": "general_support"
+        }
+      }
     ],
     "entry_point": "router",
-    "graph_type": "conditional"
+    "checkpointing": false,
+    "graph_exports": {
+      "mermaid": "flowchart TD ...",
+      "schema": {
+        "entry_point": "router",
+        "terminal_nodes": ["finish"],
+        "validation_summary": {"errors": [], "warnings": []}
+      }
+    }
+  },
+  "graph_design_feedback": {
+    "fallback_used": false,
+    "validation_errors": [],
+    "warnings": [],
+    "composition_strategy": "router_direct"
   }
 }
 ```
 
 **Agent**: `GraphDesigner`  
-**LLM-Powered**: Yes (live mode) / Template-based (stub mode)
+**LLM-Powered**: Yes (live mode) / Deterministic registry-backed fallback (stub mode and recovery)
 
 #### 5. Tool Planning
 **Input**: Workflow design + Constraints  
@@ -357,6 +387,9 @@ class GeneratorState(TypedDict):
     # Extracted requirements
     constraints: Annotated[List[Constraint], operator.add]
     requirements_feedback: RequirementsFeedback
+    architecture_feedback: ArchitectureFeedback
+    graph_design_feedback: GraphDesignFeedback
+    graph_exports: GraphExportBundle
     selected_patterns: Dict[str, Any]
     
     # RAG Retrieval
@@ -389,6 +422,7 @@ class GeneratorState(TypedDict):
 **Key Features**:
 - **Annotated Lists**: Fields like `constraints` and `docs_context` use `operator.add` to append values across nodes
 - **Advisory Intake Feedback**: `requirements_feedback` captures fallback, conflict, and missing-input guidance without replacing `constraints` as the downstream planning contract
+- **Advisory Graph Feedback**: `graph_design_feedback` captures validation and fallback details while `graph_exports` stores Mermaid/schema bundles for manifests and notebook overview cells
 - **Last-write-wins cells**: `generated_cells` intentionally has no reducer, so each repair pass replaces prior cells
 - **Immutability**: State updates create new state versions (LangGraph managed)
 - **Type Safety**: TypedDict provides IDE autocomplete and validation
@@ -580,25 +614,25 @@ Every generation produces a `manifest.json`:
 {
   "prompt": "Create a customer support chatbot with routing",
   "mode": "stub",
-  "architecture": "router",
-  "patterns": ["router"],
-  "timestamp": "YYYY-MM-DDTHH:MM:SSZ",
-  "artifacts": {
-    "notebook": "./notebook.ipynb",
-    "html": "./notebook.html",
-    "docx": "./notebook.docx",
-    "zip": "./notebook_bundle.zip"
+  "architecture_type": "router",
+  "graph_design_feedback": {
+    "fallback_used": false,
+    "validation_errors": [],
+    "warnings": []
   },
-  "qa_status": {
-    "passed": true,
-    "checks": 5,
-    "failures": 0
+  "graph_exports": {
+    "mermaid": "flowchart TD ...",
+    "schema": {
+      "entry_point": "router",
+      "terminal_nodes": ["finish"],
+      "validation_summary": {"errors": [], "warnings": []}
+    }
   },
-  "metadata": {
-    "cells_generated": 12,
-    "repair_attempts": 0,
-    "generation_time_ms": 850
-  }
+  "warnings": [],
+  "export_results": {
+    "ipynb": {"status": "completed", "path": "./notebook.ipynb"}
+  },
+  "phase_summary": [{"phase": "compose", "status": "completed"}]
 }
 ```
 
@@ -618,9 +652,10 @@ class Settings(BaseSettings):
     vector_store_path: str = "./data/vector_store"
     
     # Generation
-    default_model: str = "gpt-4-turbo-preview"
+    default_model: str = "gpt-5-mini"
     max_repair_attempts: int = 3
     default_budget_tokens: int = 100000
+    graph_designer_plugin_modules: list[str] = []
     
     # LangSmith
     langsmith_project: Optional[str] = None
