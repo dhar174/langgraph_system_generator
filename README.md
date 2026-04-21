@@ -73,7 +73,7 @@ graph LR
 3. **RAG**: `rag_retrieval_node` queries the cached LangChain/LangGraph docs and
    stores relevant snippets in `docs_context`.
 4. **Architecture Select**: `architecture_selection_node` picks the best-fit
-   pattern, such as router, subagents, or autoagent, and records the rationale.
+   pattern, such as router, subagents, hybrid, or autoagent, and records the rationale.
 5. **Plan**: `graph_design_node` and `tooling_plan_node` define the workflow
    shape, notebook outline, and any tool integrations.
 6. **Generate**: `notebook_assembly_node` turns the plan into notebook cells and

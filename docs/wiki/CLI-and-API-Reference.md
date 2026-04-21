@@ -43,7 +43,7 @@ lnf generate PROMPT [OPTIONS]
 | `--model MODEL` | string | from config | LLM model (e.g., `gpt-4`, `gpt-3.5-turbo`) |
 | `--temperature FLOAT` | float | 0.7 | LLM temperature (0.0-2.0) |
 | `--max-tokens INT` | int | 4096 | Maximum tokens for LLM response |
-| `--agent-type TYPE` | string | auto | Agent architecture: `router`, `subagents`, `hybrid` |
+| `--agent-type TYPE` | string | auto | Agent architecture: `router`, `subagents`, `hybrid`, `autoagent` |
 | `--memory-config CONFIG` | string | `none` | Memory configuration: `none`, `short`, `long`, `full` |
 | `--graph-style STYLE` | string | auto | Graph style: `sequential`, `parallel`, `conditional`, `cyclic` |
 | `--retriever-type TYPE` | string | `vector` | Retriever type: `vector`, `keyword`, `hybrid`, `mmr` |
