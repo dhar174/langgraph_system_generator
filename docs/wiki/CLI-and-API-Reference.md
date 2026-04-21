@@ -137,6 +137,7 @@ The CLI respects these environment variables:
 | `MAX_REPAIR_ATTEMPTS` | QA repair attempts | `3` |
 | `DEFAULT_BUDGET_TOKENS` | Token budget | `100000` |
 | `LNF_OUTPUT_BASE` | Base output directory | `.` |
+| `LNF_LOG_LEVEL` | App log verbosity (`TRACE`/`DEBUG`/`INFO`/`WARNING`/`ERROR`/`CRITICAL`) | `INFO` |
 
 ### Exit Codes
 

@@ -196,10 +196,7 @@ async def rag_retrieval_node(state: GeneratorState) -> Dict[str, Any]:
 
         return {"docs_context": docs}
     except Exception as e:
-        # Log the error for debugging
-        import logging
-
-        logging.warning(f"RAG retrieval failed: {e}")
+        logger.warning("RAG retrieval failed: %s", e)
         # If RAG fails, continue without docs
         return {"docs_context": []}
 
@@ -237,9 +234,10 @@ async def architecture_selection_node(state: GeneratorState) -> Dict[str, Any]:
         vector_store_manager = VectorStoreManager(settings.vector_store_path)
         retriever = DocsRetriever(vector_store_manager)
     except Exception as e:
-        import logging
-
-        logging.warning(f"Failed to load vector store for architecture selection: {e}")
+        logger.warning(
+            "Failed to load vector store for architecture selection: %s",
+            e,
+        )
         retriever = None
 
     selector = ArchitectureSelector(

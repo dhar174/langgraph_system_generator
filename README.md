@@ -171,9 +171,14 @@ lnf generate "Create a chatbot" --output ./output/demo --formats ipynb html mark
 
 # Build the FAISS index from cached docs with fake embeddings (no API key needed)
 lnf build-index --cache ./data/cached_docs --store ./data/vector_store
+
+# Increase CLI verbosity for debugging/tracing fallback/error behavior
+lnf --log-level DEBUG generate "Create a router-based chatbot" --output ./output/debug
 ```
 
 Pass `--mode live` to `lnf generate` when you have `OPENAI_API_KEY` configured and want to invoke the full generator graph.
+For API and CLI default verbosity, set `LNF_LOG_LEVEL` (or `LOG_LEVEL`) to one of:
+`TRACE`, `DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL`.
 
 ### Output Formats
 
