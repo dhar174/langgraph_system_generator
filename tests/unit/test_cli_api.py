@@ -52,8 +52,10 @@ async def test_generate_artifacts_stub(tmp_path: Path, monkeypatch: pytest.Monke
     assert artifacts["manifest"]["cell_count"] > 0
     assert artifacts["manifest"]["requirements_feedback"]["fallback_used"] is False
     assert artifacts["manifest"]["architecture_feedback"]["fallback_used"] is False
+    assert artifacts["manifest"]["architecture_feedback"]["docs_considered"] == []
     assert artifacts["result"]["requirements_feedback"]["fallback_used"] is False
     assert artifacts["result"]["architecture_feedback"]["fallback_used"] is False
+    assert artifacts["result"]["architecture_feedback"]["docs_considered"] == []
     assert Path(artifacts["manifest_path"]).exists()
     assert artifacts["result"]["generation_complete"] is True
 

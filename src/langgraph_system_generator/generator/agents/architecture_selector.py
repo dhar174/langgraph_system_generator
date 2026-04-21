@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+import hashlib
 import logging
 from typing import Any, Dict, List
 
@@ -60,7 +62,7 @@ class ArchitectureSelector:
     ) -> ArchitectureSelectionResult:
         """Select router vs subagents vs hybrid vs autoagent pattern."""
 
-        prompt_docs = self._select_prompt_docs(docs_context)
+        prompt_docs = await self._select_prompt_docs(docs_context)
         docs_considered = [self._doc_label(doc) for doc in prompt_docs]
 
         constraints_text = "\n".join(
@@ -150,12 +152,19 @@ Recommend the best architecture."""
             "relevance_score": 0.0,
         }
 
-    def _doc_key(self, doc: Dict[str, Any]) -> tuple[str, str]:
+    def _doc_key(self, doc: Dict[str, Any]) -> tuple[str, str, str]:
         """Return the dedupe key for selector prompt docs."""
 
         source = str(doc.get("source") or "").strip()
         heading = str(doc.get("heading") or "").strip()
-        return source, heading
+        content_fallback = ""
+        if not source or not heading:
+            content = str(doc.get("content") or "").strip()
+            if content:
+                content_fallback = hashlib.sha1(
+                    content.encode("utf-8", "ignore")
+                ).hexdigest()[:12]
+        return source, heading, content_fallback
 
     def _doc_score(self, doc: Dict[str, Any]) -> float:
         """Return a sortable relevance score for a prompt doc."""
@@ -165,13 +174,18 @@ Recommend the best architecture."""
         except (TypeError, ValueError):
             return 0.0
 
-    def _select_prompt_docs(self, docs_context: List[DocSnippet]) -> List[Dict[str, Any]]:
+    async def _select_prompt_docs(
+        self,
+        docs_context: List[DocSnippet],
+    ) -> List[Dict[str, Any]]:
         """Collect, weight, dedupe, and cap selector prompt docs."""
 
+        prompt_limit = max(1, int(settings.architecture_prompt_doc_limit))
         normalized_docs: list[Dict[str, Any]] = []
         if self.docs_retriever:
             query_overrides = settings.architecture_pattern_doc_queries
             weight_overrides = settings.architecture_pattern_doc_weights
+            query_specs: list[tuple[str, float]] = []
             for architecture_id in self.architecture_registry.supported_architecture_types():
                 queries = self.architecture_registry.docs_queries_for(
                     architecture_id,
@@ -182,21 +196,31 @@ Recommend the best architecture."""
                     weight_overrides=weight_overrides,
                 )
                 for query in queries:
-                    for doc in self.docs_retriever.retrieve(query, k=10) or []:
+                    query_specs.append((query, weight))
+
+            if query_specs:
+                retrieved_groups = await asyncio.gather(
+                    *[
+                        asyncio.to_thread(self.docs_retriever.retrieve, query, prompt_limit)
+                        for query, _weight in query_specs
+                    ]
+                )
+                for (_query, weight), docs in zip(query_specs, retrieved_groups):
+                    for doc in docs or []:
                         normalized = self._normalize_doc(doc)
                         normalized["weighted_relevance_score"] = self._doc_score(normalized) * weight
                         normalized_docs.append(normalized)
-        else:
+
+        if not normalized_docs:
             normalized_docs = [self._normalize_doc(doc) for doc in docs_context]
 
-        deduped: dict[tuple[str, str], Dict[str, Any]] = {}
+        deduped: dict[tuple[str, str, str], Dict[str, Any]] = {}
         for doc in normalized_docs:
             key = self._doc_key(doc)
             existing = deduped.get(key)
             if existing is None or self._doc_score(doc) > self._doc_score(existing):
                 deduped[key] = doc
 
-        prompt_limit = max(1, int(settings.architecture_prompt_doc_limit))
         ranked_docs = sorted(
             deduped.values(),
             key=lambda item: (self._doc_score(item), self._doc_label(item)),

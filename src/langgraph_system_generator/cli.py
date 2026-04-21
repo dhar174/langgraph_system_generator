@@ -452,7 +452,7 @@ def _build_stub_result(prompt: str, agent_type: str | None = None) -> Dict[str, 
             tradeoffs=[
                 "Selection was forced by request-scoped agent_type override; heuristic ranking was skipped."
             ],
-            docs_considered=architecture_registry.docs_queries_for(architecture_type),
+            docs_considered=[],
         )
     else:
         architecture_type, justification = _infer_stub_architecture(prompt)
@@ -462,7 +462,7 @@ def _build_stub_result(prompt: str, agent_type: str | None = None) -> Dict[str, 
             tradeoffs=[
                 "Stub mode uses heuristic architecture inference instead of live architecture ranking."
             ],
-            docs_considered=architecture_registry.docs_queries_for(architecture_type),
+            docs_considered=[],
         )
 
     constraints = [

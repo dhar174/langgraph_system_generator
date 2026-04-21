@@ -139,6 +139,10 @@ Design the workflow graph.""")
                         "name": "reviewer",
                         "purpose": "Review worker output and request refinements before finishing",
                     },
+                    {
+                        "name": "finish",
+                        "purpose": "Synthesize final results from all branches",
+                    },
                 ],
                 "edges": [
                     {"from": "specialist_1", "to": "finish"},

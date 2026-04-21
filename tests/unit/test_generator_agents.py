@@ -21,6 +21,7 @@ from langgraph_system_generator.generator.architecture_registry import (
 from langgraph_system_generator.generator.state import (
     ArchitectureSelectionResult,
     Constraint,
+    DocSnippet,
 )
 from langgraph_system_generator.utils.config import ModelConfig
 
@@ -99,6 +100,28 @@ def test_architecture_registry_includes_builtin_architectures():
     hybrid = registry.get("hybrid")
     assert hybrid.default_secondary_patterns == ["router", "subagents"]
     assert hybrid.deterministic is True
+
+
+def test_architecture_registry_preserves_zero_docs_weight_and_filters_unknown_patterns():
+    """Registry normalization should preserve explicit zero weights and drop unknown patterns."""
+
+    registry = get_default_architecture_registry().clone()
+    registry.register(
+        ArchitectureRegistration(
+            architecture_id="custom_router",
+            selector_prompt_description="Custom router variant.",
+            docs_queries=["custom router docs"],
+            docs_weight=0.0,
+        )
+    )
+
+    assert registry.get("custom_router").docs_weight == 0.0
+    primary, secondary = registry.normalize_patterns(
+        "hybrid",
+        secondary_patterns=["router", "unknown", "subagents", "router"],
+    )
+    assert primary == "hybrid"
+    assert secondary == ["router", "subagents"]
 
 
 @pytest.mark.asyncio
@@ -501,12 +524,121 @@ async def test_architecture_selector_uses_registry_weighted_docs_and_limit(monke
         "Light autoagent doc",
         "Hybrid routing doc",
     }
+    assert {k for _, k in retriever.queries} == {2}
     assert result.feedback.docs_considered == [
         "shared.md#Overview",
         "subagents.md#Team",
     ]
     assert "Subagent team guidance should win the dedupe race." in captured_messages[0][1].content
     assert "AutoAgent notes." not in captured_messages[0][1].content
+
+
+@pytest.mark.asyncio
+async def test_architecture_selector_uses_docs_context_when_registry_retrieval_is_empty(
+    monkeypatch,
+):
+    """Selector should fall back to the existing docs_context when weighted retrieval is empty."""
+
+    captured_messages = []
+    retriever = StubDocsRetriever({})
+    monkeypatch.setattr(
+        architecture_selector,
+        "ChatOpenAI",
+        make_recording_llm(
+            """
+            {
+              "architecture_type": "router",
+              "patterns": {"primary": "router", "secondary": []},
+              "justification": "Router is enough for this task."
+            }
+            """,
+            captured_messages,
+        ),
+    )
+
+    selector = architecture_selector.ArchitectureSelector(docs_retriever=retriever)
+    docs_context = [
+        DocSnippet(
+            content="Existing RAG docs should still inform the selector prompt.",
+            source="rag.md",
+            heading="Useful",
+            relevance_score=0.7,
+        )
+    ]
+    result = await selector.select_architecture(
+        [Constraint(type="goal", value="Route requests reliably", priority=5)],
+        docs_context,
+    )
+
+    assert result.feedback.docs_considered == ["rag.md#Useful"]
+    assert "Existing RAG docs should still inform the selector prompt." in captured_messages[0][1].content
+
+
+@pytest.mark.asyncio
+async def test_architecture_selector_dedupes_blank_metadata_by_content(monkeypatch):
+    """Distinct blank-metadata snippets should survive prompt-doc dedupe."""
+
+    captured_messages = []
+    retriever = StubDocsRetriever(
+        {
+            "Blank metadata docs": [
+                {
+                    "content": "First blank metadata doc",
+                    "source": "",
+                    "heading": "",
+                    "relevance_score": 0.8,
+                },
+                {
+                    "content": "Second blank metadata doc",
+                    "source": "",
+                    "heading": "",
+                    "relevance_score": 0.7,
+                },
+            ]
+        }
+    )
+    monkeypatch.setattr(
+        architecture_selector,
+        "settings",
+        architecture_selector.settings.model_copy(
+            update={
+                "architecture_pattern_doc_queries": {
+                    "router": ["Blank metadata docs"],
+                    "subagents": [],
+                    "autoagent": [],
+                    "hybrid": [],
+                },
+                "architecture_prompt_doc_limit": 5,
+            }
+        ),
+    )
+    monkeypatch.setattr(
+        architecture_selector,
+        "ChatOpenAI",
+        make_recording_llm(
+            """
+            {
+              "architecture_type": "router",
+              "patterns": {"primary": "router", "secondary": []},
+              "justification": "Router remains the best fit."
+            }
+            """,
+            captured_messages,
+        ),
+    )
+
+    selector = architecture_selector.ArchitectureSelector(docs_retriever=retriever)
+    result = await selector.select_architecture(
+        [Constraint(type="goal", value="Handle metadata-poor docs", priority=5)],
+        [],
+    )
+
+    assert result.feedback.docs_considered == [
+        "First blank metadata doc",
+        "Second blank metadata doc",
+    ]
+    assert "First blank metadata doc" in captured_messages[0][1].content
+    assert "Second blank metadata doc" in captured_messages[0][1].content
 
 
 @pytest.mark.asyncio
@@ -611,8 +743,13 @@ async def test_graph_designer_fallback(arch_type, monkeypatch):
     assert result == expected
 
 
-def test_graph_designer_hybrid_fallback_contains_router_supervisor_and_team():
+def test_graph_designer_hybrid_fallback_contains_router_supervisor_and_team(monkeypatch):
     """Hybrid fallback should produce a real mixed routing/team workflow shape."""
+    monkeypatch.setattr(
+        graph_designer,
+        "ChatOpenAI",
+        make_stub_llm("invalid"),
+    )
     designer = graph_designer.GraphDesigner()
 
     result = designer._fallback_design("hybrid")
@@ -620,9 +757,15 @@ def test_graph_designer_hybrid_fallback_contains_router_supervisor_and_team():
     node_names = [node["name"] for node in result["nodes"]]
     assert node_names.count("router") == 1
     assert node_names.count("supervisor") == 1
+    assert node_names.count("finish") == 1
     assert len([name for name in node_names if name.startswith("specialist_")]) >= 1
     assert len(
-        [name for name in node_names if name not in {"router", "supervisor"} and not name.startswith("specialist_")]
+        [
+            name
+            for name in node_names
+            if name not in {"router", "supervisor", "finish"}
+            and not name.startswith("specialist_")
+        ]
     ) >= 2
     router_edges = [edge for edge in result["conditional_edges"] if edge["from"] == "router"]
     supervisor_edges = [

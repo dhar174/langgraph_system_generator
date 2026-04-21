@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 from functools import lru_cache
 from typing import Iterable, Mapping
 
+
 def _normalize_architecture_id(value: str) -> str:
     """Return a normalized architecture identifier."""
 
@@ -67,7 +68,7 @@ class ArchitectureRegistration:
                 self.default_secondary_patterns
             ),
             docs_queries=_normalize_queries(self.docs_queries),
-            docs_weight=float(self.docs_weight or 1.0),
+            docs_weight=1.0 if self.docs_weight is None else float(self.docs_weight),
             deterministic=bool(self.deterministic),
         )
 
@@ -127,6 +128,7 @@ class ArchitectureRegistry:
             if (
                 normalized
                 and normalized != normalized_primary
+                and normalized in self._registrations
                 and normalized not in normalized_secondary
             ):
                 normalized_secondary.append(normalized)

@@ -208,7 +208,7 @@ async def test_architecture_selection_node_honors_hybrid_override():
     assert result["architecture_type"] == "hybrid"
     assert "agent_type override" in result["architecture_justification"]
     assert result["architecture_feedback"].fallback_used is False
-    assert result["architecture_feedback"].docs_considered
+    assert result["architecture_feedback"].docs_considered == []
 
 
 @pytest.mark.asyncio

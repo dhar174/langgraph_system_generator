@@ -219,6 +219,103 @@ async def test_compose_notebook_sections_and_packages(
         prev_expected_pos = current_expected_pos
 
 
+@pytest.mark.asyncio
+async def test_compose_notebook_hybrid_sparse_nodes_keep_defaults_aligned(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """Sparse hybrid designs should emit matching fallback nodes and graph wiring."""
+
+    monkeypatch.setattr(composer_module, "ChatOpenAI", DummyLLM)
+    composer = composer_module.NotebookComposer()
+
+    plan = NotebookPlan(
+        title="Sparse Hybrid",
+        sections=["Setup", "Workflow", "Execution"],
+        patterns_used=["hybrid"],
+        architecture_type="hybrid",
+    )
+    workflow_design = {
+        "architecture_type": "hybrid",
+        "state_schema": {},
+        "nodes": [
+            {"name": "router", "purpose": "Route requests"},
+            {"name": "supervisor", "purpose": "Coordinate workers"},
+        ],
+    }
+
+    cells = await composer.compose_notebook(
+        notebook_plan=plan,
+        workflow_design=workflow_design,
+        tools=[],
+        architecture={"architecture_type": "hybrid", "justification": "Fallback hybrid."},
+    )
+
+    node_source = "\n\n".join(cell.content for cell in cells if cell.section == "nodes")
+    graph_code = next(
+        cell.content
+        for cell in cells
+        if cell.section == "graph" and cell.cell_type == "code"
+    )
+
+    assert "def specialist_1_node" in node_source
+    assert "def researcher_node" in node_source
+    assert "def reviewer_node" in node_source
+    assert 'workflow.add_node("specialist_1", specialist_1_node)' in graph_code
+    assert 'workflow.add_node("researcher", researcher_node)' in graph_code
+    assert 'workflow.add_node("reviewer", reviewer_node)' in graph_code
+    assert 'workflow.add_edge("specialist_1", "finish")' in graph_code
+
+
+@pytest.mark.asyncio
+async def test_compose_notebook_hybrid_sanitizes_worker_and_specialist_graph_ids(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """Hybrid graph wiring should use sanitized node ids for direct and worker paths."""
+
+    monkeypatch.setattr(composer_module, "ChatOpenAI", DummyLLM)
+    composer = composer_module.NotebookComposer()
+
+    plan = NotebookPlan(
+        title="Hybrid Sanitization",
+        sections=["Setup", "Workflow", "Execution"],
+        patterns_used=["hybrid"],
+        architecture_type="hybrid",
+    )
+    workflow_design = {
+        "architecture_type": "hybrid",
+        "state_schema": {},
+        "nodes": [
+            {"name": "router", "purpose": "Route requests"},
+            {"name": "supervisor", "purpose": "Coordinate workers"},
+            {"name": "fact checker", "purpose": "Handle direct fact checking"},
+            {"name": "review lead", "purpose": "Review worker output"},
+            {"name": "research analyst", "purpose": "Gather supporting facts"},
+        ],
+    }
+
+    cells = await composer.compose_notebook(
+        notebook_plan=plan,
+        workflow_design=workflow_design,
+        tools=[],
+        architecture={"architecture_type": "hybrid", "justification": "Hybrid sanitization."},
+    )
+
+    node_source = "\n\n".join(cell.content for cell in cells if cell.section == "nodes")
+    graph_code = next(
+        cell.content
+        for cell in cells
+        if cell.section == "graph" and cell.cell_type == "code"
+    )
+
+    assert "def fact_checker_node" in node_source
+    assert "def review_lead_node" in node_source
+    assert "def research_analyst_node" in node_source
+    assert 'workflow.add_node("fact_checker", fact_checker_node)' in graph_code
+    assert 'workflow.add_node("review_lead", review_lead_node)' in graph_code
+    assert 'workflow.add_node("research_analyst", research_analyst_node)' in graph_code
+    assert '"fact checker": "fact_checker"' in graph_code
+
+
 def test_generate_node_implementation_falls_back_to_meaningful_state_updates(
     monkeypatch: pytest.MonkeyPatch,
 ):

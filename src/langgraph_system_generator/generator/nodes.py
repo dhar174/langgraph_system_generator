@@ -218,7 +218,6 @@ async def architecture_selection_node(state: GeneratorState) -> Dict[str, Any]:
         primary, secondary = ARCHITECTURE_REGISTRY.normalize_patterns(
             requested_architecture
         )
-        docs_metadata = ARCHITECTURE_REGISTRY.docs_queries_for(primary)
         return {
             "selected_patterns": {"primary": primary, "secondary": secondary},
             "architecture_type": primary,
@@ -230,7 +229,7 @@ async def architecture_selection_node(state: GeneratorState) -> Dict[str, Any]:
                 tradeoffs=[
                     "Selection was forced by request-scoped agent_type override; automatic ranking was skipped."
                 ],
-                docs_considered=docs_metadata,
+                docs_considered=[],
             ),
         }
 

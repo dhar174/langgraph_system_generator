@@ -710,8 +710,11 @@ Generate the complete Python function implementation.""")
                 for token in {"research", "review", "worker", "planner", "critic"}
             )
         ]
-        if not direct_specialists and non_router_nodes:
-            direct_specialists = [str(non_router_nodes[0].get("name"))]
+        if not direct_specialists:
+            if non_router_nodes:
+                direct_specialists = [str(non_router_nodes[0].get("name"))]
+            else:
+                direct_specialists = ["specialist_1"]
 
         team_workers = [
             str(node.get("name"))
@@ -736,6 +739,16 @@ Generate the complete Python function implementation.""")
             for node in non_router_nodes
             if str(node.get("name")) in team_workers
         }
+        for specialist in direct_specialists:
+            direct_descriptions.setdefault(
+                specialist,
+                f"Handle {specialist} requests directly.",
+            )
+        for worker in team_workers:
+            worker_descriptions.setdefault(
+                worker,
+                f"{worker} specialist for the worker team.",
+            )
         return (
             direct_specialists,
             direct_descriptions,

@@ -7,10 +7,21 @@ from typing import Dict, List, Optional, Union
 from langgraph_system_generator.patterns.router import RouterPattern
 from langgraph_system_generator.patterns.subagents import SubagentsPattern
 from langgraph_system_generator.patterns.utils import (
+    double_quoted_literal,
     render_additional_fields,
     sanitize_identifier,
 )
 from langgraph_system_generator.utils.config import ModelConfig
+
+
+def _hybrid_specs(
+    values: List[str] | None,
+    default: List[str],
+) -> List[tuple[str, str]]:
+    """Return ``(label, node_name)`` pairs for hybrid direct or worker nodes."""
+
+    labels = list(values or default)
+    return [(label, sanitize_identifier(label)) for label in labels]
 
 
 class HybridPattern:
@@ -115,25 +126,39 @@ class WorkflowState(TypedDict, total=False):
     ) -> str:
         """Generate graph wiring for the hybrid workflow."""
 
-        direct_specialist_nodes = direct_specialists or ["specialist_1"]
-        team_worker_nodes = team_workers or ["researcher", "reviewer"]
+        direct_specialist_specs = _hybrid_specs(
+            direct_specialists,
+            ["specialist_1"],
+        )
+        team_worker_specs = _hybrid_specs(
+            team_workers,
+            ["researcher", "reviewer"],
+        )
         direct_node_additions = "\n".join(
-            f'workflow.add_node("{name}", {sanitize_identifier(name)}_node)'
-            for name in direct_specialist_nodes
+            f'workflow.add_node("{node_name}", {node_name}_node)'
+            for _, node_name in direct_specialist_specs
         )
         worker_node_additions = "\n".join(
-            f'workflow.add_node("{name}", {sanitize_identifier(name)}_node)'
-            for name in team_worker_nodes
+            f'workflow.add_node("{node_name}", {node_name}_node)'
+            for _, node_name in team_worker_specs
         )
         router_branch_map = ", ".join(
-            [f'"{name}": "{name}"' for name in direct_specialist_nodes]
+            [
+                f"{double_quoted_literal(label)}: {double_quoted_literal(node_name)}"
+                for label, node_name in direct_specialist_specs
+            ]
             + ['"team_path": "supervisor"', '"END": END']
         )
         direct_finish_edges = "\n".join(
-            f'workflow.add_edge("{name}", "finish")' for name in direct_specialist_nodes
+            f'workflow.add_edge("{node_name}", "finish")'
+            for _, node_name in direct_specialist_specs
         )
         worker_return_edges = "\n".join(
-            f'workflow.add_edge("{name}", "supervisor")' for name in team_worker_nodes
+            f'workflow.add_edge("{node_name}", "supervisor")'
+            for _, node_name in team_worker_specs
+        )
+        direct_route_labels = ", ".join(
+            double_quoted_literal(label) for label, _ in direct_specialist_specs
         )
 
         return f'''from langgraph.graph import END, START, StateGraph
@@ -145,7 +170,7 @@ def route_from_router(state: WorkflowState) -> str:
     route = state.get("route", "")
     if route == "team_path":
         return "team_path"
-    if route in {{{", ".join(repr(name) for name in direct_specialist_nodes)}}}:
+    if route in {{{direct_route_labels}}}:
         return route
     return "END"
 
