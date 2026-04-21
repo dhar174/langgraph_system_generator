@@ -15,6 +15,7 @@ from langgraph_system_generator.generator.state import CellSpec, NotebookPlan
 from langgraph_system_generator.patterns import (
     AutoAgentPattern,
     CritiqueLoopPattern,
+    HybridPattern,
     RouterPattern,
     SubagentsPattern,
 )
@@ -251,6 +252,8 @@ This notebook implements a LangGraph workflow using the **{plan.architecture_typ
             state_content = RouterPattern.generate_state_code(state_schema)
         elif architecture_type == "subagents":
             state_content = SubagentsPattern.generate_state_code(state_schema)
+        elif architecture_type == "hybrid":
+            state_content = HybridPattern.generate_state_code(state_schema)
         elif architecture_type == "autoagent":
             state_content = AutoAgentPattern.generate_state_code(state_schema)
         elif architecture_type == "critique_loop":
@@ -486,7 +489,13 @@ Generate the complete Python function implementation.""")
         architecture_type = workflow_design.get("architecture_type", "router")
 
         # Check if we should use pattern-based generation
-        if architecture_type in ["router", "subagents", "autoagent", "critique_loop"]:
+        if architecture_type in [
+            "router",
+            "subagents",
+            "hybrid",
+            "autoagent",
+            "critique_loop",
+        ]:
             # Use pattern library for architecture-specific nodes
             pattern_cells = self._generate_nodes_from_pattern(
                 nodes, architecture_type, workflow_design
@@ -684,6 +693,69 @@ Generate the complete Python function implementation.""")
     from langchain_core.messages import HumanMessage
 {chr(10).join(update_lines)}"""
 
+    @staticmethod
+    def _split_hybrid_nodes(
+        nodes: List[Dict[str, Any]],
+    ) -> tuple[List[str], Dict[str, str], List[str], Dict[str, str]]:
+        """Split hybrid nodes into direct-specialist and team-worker groups."""
+
+        non_router_nodes = [
+            node for node in nodes if node.get("name") not in {"router", "supervisor"}
+        ]
+        direct_specialists = [
+            str(node.get("name"))
+            for node in non_router_nodes
+            if not any(
+                token in str(node.get("name", "")).lower()
+                for token in {"research", "review", "worker", "planner", "critic"}
+            )
+        ]
+        if not direct_specialists:
+            if non_router_nodes:
+                direct_specialists = [str(non_router_nodes[0].get("name"))]
+            else:
+                direct_specialists = ["specialist_1"]
+
+        team_workers = [
+            str(node.get("name"))
+            for node in non_router_nodes
+            if str(node.get("name")) not in direct_specialists
+        ]
+        if len(team_workers) < 2:
+            fallback_workers = [
+                name
+                for name in ["researcher", "reviewer"]
+                if name not in direct_specialists and name not in team_workers
+            ]
+            team_workers.extend(fallback_workers[: 2 - len(team_workers)])
+
+        direct_descriptions = {
+            str(node.get("name")): str(node.get("purpose", ""))
+            for node in non_router_nodes
+            if str(node.get("name")) in direct_specialists
+        }
+        worker_descriptions = {
+            str(node.get("name")): str(node.get("purpose", ""))
+            for node in non_router_nodes
+            if str(node.get("name")) in team_workers
+        }
+        for specialist in direct_specialists:
+            direct_descriptions.setdefault(
+                specialist,
+                f"Handle {specialist} requests directly.",
+            )
+        for worker in team_workers:
+            worker_descriptions.setdefault(
+                worker,
+                f"{worker} specialist for the worker team.",
+            )
+        return (
+            direct_specialists,
+            direct_descriptions,
+            team_workers,
+            worker_descriptions,
+        )
+
     def _generate_nodes_from_pattern(
         self,
         nodes: List[Dict[str, Any]],
@@ -762,6 +834,56 @@ Generate the complete Python function implementation.""")
                             cell_type="code", content=subagent_code, section="nodes"
                         )
                     )
+        elif architecture_type == "hybrid":
+            (
+                direct_specialists,
+                direct_descriptions,
+                team_workers,
+                worker_descriptions,
+            ) = self._split_hybrid_nodes(nodes)
+
+            router_code = HybridPattern.generate_router_node_code(
+                direct_specialists,
+                model_config=model_config,
+            )
+            cells.append(
+                CellSpec(cell_type="code", content=router_code, section="nodes")
+            )
+
+            for specialist in direct_specialists:
+                specialist_code = HybridPattern.generate_direct_specialist_code(
+                    specialist,
+                    direct_descriptions.get(
+                        specialist,
+                        f"Handle {specialist} requests directly.",
+                    ),
+                    model_config=model_config,
+                )
+                cells.append(
+                    CellSpec(cell_type="code", content=specialist_code, section="nodes")
+                )
+
+            supervisor_code = HybridPattern.generate_supervisor_code(
+                team_workers,
+                worker_descriptions,
+                model_config=model_config,
+            )
+            cells.append(
+                CellSpec(cell_type="code", content=supervisor_code, section="nodes")
+            )
+
+            for worker in team_workers:
+                worker_code = HybridPattern.generate_worker_code(
+                    worker,
+                    worker_descriptions.get(
+                        worker,
+                        f"{worker} specialist for the worker team.",
+                    ),
+                    model_config=model_config,
+                )
+                cells.append(
+                    CellSpec(cell_type="code", content=worker_code, section="nodes")
+                )
         elif architecture_type == "autoagent":
             workers = [
                 node.get("name")
@@ -833,6 +955,12 @@ Generate the complete Python function implementation.""")
                 node.get("name") for node in nodes if node.get("name") != "supervisor"
             ]
             graph_code = SubagentsPattern.generate_graph_code(subagents)
+        elif architecture_type == "hybrid":
+            direct_specialists, _, team_workers, _ = self._split_hybrid_nodes(nodes)
+            graph_code = HybridPattern.generate_graph_code(
+                direct_specialists,
+                team_workers,
+            )
         elif architecture_type == "autoagent":
             workers = [
                 node.get("name")
@@ -970,6 +1098,18 @@ graph = workflow.compile(checkpointer=memory)"""
     "task_results": {},
     "dispatch_log": [],
     "iterations": 0,
+}"""
+        elif architecture_type == "hybrid":
+            initial_state_block = """initial_state: WorkflowState = {
+    "messages": [HumanMessage(content="Route simple work directly, or send deeper requests to the supervisor team.")],
+    "route": "",
+    "results": {},
+    "next_agent": "supervisor",
+    "instructions": "",
+    "task_results": {},
+    "dispatch_log": [],
+    "iterations": 0,
+    "final_output": "",
 }"""
         elif architecture_type == "critique_loop":
             initial_state_block = """initial_state: WorkflowState = {

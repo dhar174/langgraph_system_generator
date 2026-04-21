@@ -52,8 +52,10 @@ async def test_generate_artifacts_stub(tmp_path: Path, monkeypatch: pytest.Monke
     assert artifacts["manifest"]["cell_count"] > 0
     assert artifacts["manifest"]["requirements_feedback"]["fallback_used"] is False
     assert artifacts["manifest"]["architecture_feedback"]["fallback_used"] is False
+    assert artifacts["manifest"]["architecture_feedback"]["docs_considered"] == []
     assert artifacts["result"]["requirements_feedback"]["fallback_used"] is False
     assert artifacts["result"]["architecture_feedback"]["fallback_used"] is False
+    assert artifacts["result"]["architecture_feedback"]["docs_considered"] == []
     assert Path(artifacts["manifest_path"]).exists()
     assert artifacts["result"]["generation_complete"] is True
 
@@ -135,6 +137,42 @@ async def test_generate_artifacts_stub_autoagent_override(
     assert artifacts["manifest"]["agent_type"] == "autoagent"
     assert artifacts["result"]["architecture_type"] == "autoagent"
     assert artifacts["result"]["generation_complete"] is True
+
+
+@pytest.mark.asyncio
+async def test_generate_artifacts_stub_hybrid_override(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.setenv("LNF_OUTPUT_BASE", "test_generate_artifacts_stub_hybrid")
+
+    import importlib
+    import langgraph_system_generator.constants as constants_module
+    import langgraph_system_generator.notebook.exporters as exporters_module
+    import langgraph_system_generator.cli as cli_module
+
+    importlib.reload(constants_module)
+    importlib.reload(exporters_module)
+    importlib.reload(cli_module)
+
+    output_dir = constants_module._BASE_OUTPUT / "test_stub_hybrid"
+    artifacts: GenerationArtifacts = await cli_module.generate_artifacts(
+        "Build a workflow that mixes direct routing with a worker team",
+        output_dir=str(output_dir),
+        mode="stub",
+        agent_type="hybrid",
+    )
+
+    graph_cells = [
+        cell
+        for cell in artifacts["result"]["generated_cells"]
+        if cell["section"] == "graph"
+    ]
+    assert artifacts["manifest"]["architecture_type"] == "hybrid"
+    assert artifacts["manifest"]["agent_type"] == "hybrid"
+    assert artifacts["result"]["architecture_type"] == "hybrid"
+    assert graph_cells
+    assert 'workflow.add_node("router", router_node)' in graph_cells[0]["content"]
+    assert 'workflow.add_node("supervisor", supervisor_node)' in graph_cells[0]["content"]
 
 
 @pytest.mark.asyncio

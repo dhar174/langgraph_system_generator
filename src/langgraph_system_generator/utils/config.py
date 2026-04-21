@@ -136,6 +136,24 @@ class Settings(BaseSettings):
         default_factory=list,
         description="Optional extra requirement constraint types made available during intake.",
     )
+    architecture_pattern_doc_queries: Annotated[dict[str, list[str]], NoDecode] = Field(
+        default_factory=dict,
+        description=(
+            "Optional JSON object mapping architecture ids to query lists that override "
+            "the default selector docs queries."
+        ),
+    )
+    architecture_pattern_doc_weights: Annotated[dict[str, float], NoDecode] = Field(
+        default_factory=dict,
+        description=(
+            "Optional JSON object mapping architecture ids to docs weighting multipliers."
+        ),
+    )
+    architecture_prompt_doc_limit: int = Field(
+        default=8,
+        ge=1,
+        description="Maximum number of weighted docs snippets included in the architecture selector prompt.",
+    )
 
     @field_validator("requirements_constraint_types", mode="before")
     @classmethod
@@ -162,6 +180,83 @@ class Settings(BaseSettings):
             return [item.strip() for item in stripped.split(",") if item.strip()]
         return value
 
+    @field_validator("architecture_pattern_doc_queries", mode="before")
+    @classmethod
+    def _parse_architecture_pattern_doc_queries(cls, value):
+        """Accept JSON objects mapping architecture ids to query lists."""
+        if value in (None, ""):
+            return {}
+        if isinstance(value, dict):
+            parsed = value
+        elif isinstance(value, str):
+            stripped = value.strip()
+            if not stripped:
+                return {}
+            try:
+                parsed = json.loads(stripped)
+            except json.JSONDecodeError as exc:
+                raise ValueError(
+                    f"Invalid JSON in architecture_pattern_doc_queries: {exc}"
+                ) from exc
+        else:
+            return value
+
+        if not isinstance(parsed, dict):
+            raise ValueError("architecture_pattern_doc_queries must decode to an object")
+
+        normalized: dict[str, list[str]] = {}
+        for raw_key, raw_queries in parsed.items():
+            key = str(raw_key or "").strip().lower()
+            if not key:
+                continue
+            if isinstance(raw_queries, str):
+                queries = [raw_queries]
+            elif isinstance(raw_queries, list):
+                queries = raw_queries
+            else:
+                raise ValueError(
+                    "architecture_pattern_doc_queries values must be strings or lists"
+                )
+            normalized[key] = [str(query).strip() for query in queries if str(query).strip()]
+        return normalized
+
+    @field_validator("architecture_pattern_doc_weights", mode="before")
+    @classmethod
+    def _parse_architecture_pattern_doc_weights(cls, value):
+        """Accept JSON objects mapping architecture ids to weighting multipliers."""
+        if value in (None, ""):
+            return {}
+        if isinstance(value, dict):
+            parsed = value
+        elif isinstance(value, str):
+            stripped = value.strip()
+            if not stripped:
+                return {}
+            try:
+                parsed = json.loads(stripped)
+            except json.JSONDecodeError as exc:
+                raise ValueError(
+                    f"Invalid JSON in architecture_pattern_doc_weights: {exc}"
+                ) from exc
+        else:
+            return value
+
+        if not isinstance(parsed, dict):
+            raise ValueError("architecture_pattern_doc_weights must decode to an object")
+
+        normalized: dict[str, float] = {}
+        for raw_key, raw_weight in parsed.items():
+            key = str(raw_key or "").strip().lower()
+            if not key:
+                continue
+            try:
+                normalized[key] = float(raw_weight)
+            except (TypeError, ValueError) as exc:
+                raise ValueError(
+                    f"architecture_pattern_doc_weights[{raw_key!r}] must be numeric"
+                ) from exc
+        return normalized
+
 
 _DEFAULT_ENV_FILE = object()
 _TEST_SETTINGS_ENV_KEYS = (
@@ -175,6 +270,9 @@ _TEST_SETTINGS_ENV_KEYS = (
     "MAX_REPAIR_ATTEMPTS",
     "DEFAULT_BUDGET_TOKENS",
     "REQUIREMENTS_CONSTRAINT_TYPES",
+    "ARCHITECTURE_PATTERN_DOC_QUERIES",
+    "ARCHITECTURE_PATTERN_DOC_WEIGHTS",
+    "ARCHITECTURE_PROMPT_DOC_LIMIT",
 )
 
 

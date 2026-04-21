@@ -7,6 +7,7 @@ import ast
 from langgraph_system_generator.patterns import (
     AutoAgentPattern,
     CritiqueLoopPattern,
+    HybridPattern,
     RouterPattern,
     SubagentsPattern,
 )
@@ -254,6 +255,35 @@ class TestAutoAgentPattern:
         assert 'workflow.add_node("supervisor", supervisor_node)' in code
         assert 'workflow.add_node("planner", planner_node)' in code
         assert 'workflow.add_edge("planner", "supervisor")' in code
+
+
+class TestHybridPattern:
+    """Tests for HybridPattern code generation."""
+
+    def test_generate_graph_code_uses_sanitized_ids_for_direct_and_worker_nodes(self):
+        """Hybrid graph wiring should align sanitized node ids with routing targets."""
+
+        code = HybridPattern.generate_graph_code(
+            ["fact checker"],
+            ["review lead", "research analyst"],
+        )
+
+        assert 'workflow.add_node("fact_checker", fact_checker_node)' in code
+        assert 'workflow.add_node("review_lead", review_lead_node)' in code
+        assert 'workflow.add_node("research_analyst", research_analyst_node)' in code
+        assert 'workflow.add_edge("fact_checker", "finish")' in code
+        assert 'workflow.add_edge("review_lead", "supervisor")' in code
+        assert 'workflow.add_edge("research_analyst", "supervisor")' in code
+        assert '"fact checker": "fact_checker"' in code
+
+    def test_generate_graph_code_keeps_finish_node_when_defaults_are_used(self):
+        """Hybrid graph defaults should still include the finish node and route."""
+
+        code = HybridPattern.generate_graph_code([], [])
+
+        assert 'workflow.add_node("finish", finish_node)' in code
+        assert 'workflow.add_edge("finish", END)' in code
+        assert 'workflow.add_node("specialist_1", specialist_1_node)' in code
 
 
 class TestCritiqueLoopPattern:

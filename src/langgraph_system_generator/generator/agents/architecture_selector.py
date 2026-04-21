@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+import hashlib
 import logging
 from typing import Any, Dict, List
 
@@ -10,6 +12,10 @@ from langchain_openai import ChatOpenAI
 from pydantic import ValidationError
 
 from langgraph_system_generator.generator.agents._llm import build_chat_llm
+from langgraph_system_generator.generator.architecture_registry import (
+    ArchitectureRegistry,
+    get_default_architecture_registry,
+)
 from langgraph_system_generator.generator.state import (
     ArchitectureAlternative,
     ArchitectureFeedback,
@@ -20,7 +26,7 @@ from langgraph_system_generator.generator.state import (
 )
 from langgraph_system_generator.generator.utils import extract_json_from_llm_response
 from langgraph_system_generator.rag.retriever import DocsRetriever
-from langgraph_system_generator.utils.config import ModelConfig
+from langgraph_system_generator.utils.config import ModelConfig, settings
 from langgraph_system_generator.utils.generation_options import (
     SUPPORTED_AGENT_TYPES,
     normalize_agent_type,
@@ -37,6 +43,7 @@ class ArchitectureSelector:
         docs_retriever: DocsRetriever | None = None,
         model: str | None = None,
         model_config: ModelConfig | None = None,
+        architecture_registry: ArchitectureRegistry | None = None,
     ):
         self.llm = build_chat_llm(
             model=model,
@@ -44,28 +51,18 @@ class ArchitectureSelector:
             chat_openai_class=ChatOpenAI,
         )
         self.docs_retriever = docs_retriever
+        self.architecture_registry = (
+            architecture_registry.clone()
+            if architecture_registry is not None
+            else get_default_architecture_registry().clone()
+        )
 
     async def select_architecture(
         self, constraints: List[Constraint], docs_context: List[DocSnippet]
     ) -> ArchitectureSelectionResult:
         """Select router vs subagents vs hybrid vs autoagent pattern."""
 
-        pattern_docs = []
-        if self.docs_retriever:
-            pattern_docs.extend(self.docs_retriever.retrieve_for_pattern("router") or [])
-            pattern_docs.extend(
-                self.docs_retriever.retrieve_for_pattern("subagents") or []
-            )
-            pattern_docs.extend(
-                self.docs_retriever.retrieve_for_pattern("autoagent") or []
-            )
-            pattern_docs.extend(
-                self.docs_retriever.retrieve_for_pattern("supervisor") or []
-            )
-
-        docs_list = pattern_docs or docs_context
-        normalized_docs = [self._normalize_doc(doc) for doc in docs_list]
-        prompt_docs = normalized_docs[:5]
+        prompt_docs = await self._select_prompt_docs(docs_context)
         docs_considered = [self._doc_label(doc) for doc in prompt_docs]
 
         constraints_text = "\n".join(
@@ -79,12 +76,11 @@ class ArchitectureSelector:
         )
 
         selection_prompt = SystemMessage(
-            content="""You are an expert in LangGraph architectures.
-Based on the requirements and official documentation, recommend the best pattern:
-- **router**: Single router that classifies inputs and routes to specialist functions
-- **subagents**: Supervisor coordinating multiple subagent workers with their own contexts
-- **hybrid**: Combination of router and subagents for complex workflows
-- **autoagent**: Coordinator-driven planner/executor/critic team for iterative autonomous execution
+            content=f"""You are an expert in LangGraph architectures.
+Based on the requirements and official documentation, recommend the best pattern.
+
+Registered architecture catalog:
+{self.architecture_registry.render_selector_prompt_catalog()}
 
 Consider:
 - Complexity of task decomposition
@@ -94,26 +90,26 @@ Consider:
 - Scalability requirements
 
 Return a JSON object with this structure:
-{
+{{
   "architecture_type": "router" | "subagents" | "hybrid" | "autoagent",
-  "patterns": {
+  "patterns": {{
     "primary": "pattern_name",
     "secondary": ["additional_patterns"]
-  },
+  }},
   "justification": "detailed explanation of why this architecture was chosen",
-  "feedback": {
+  "feedback": {{
     "confidence": 0.0,
     "alternatives": [
-      {
+      {{
         "architecture_type": "router",
         "score": 0.0,
         "rationale": "why this alternative ranked lower"
-      }
+      }}
     ],
     "tradeoffs": ["short tradeoff statement"]
-  }
-}"""
-        )
+  }}
+}}"""
+            )
 
         user_message = HumanMessage(
             content=f"""Requirements:
@@ -156,6 +152,82 @@ Recommend the best architecture."""
             "relevance_score": 0.0,
         }
 
+    def _doc_key(self, doc: Dict[str, Any]) -> tuple[str, str, str]:
+        """Return the dedupe key for selector prompt docs."""
+
+        source = str(doc.get("source") or "").strip()
+        heading = str(doc.get("heading") or "").strip()
+        content_fallback = ""
+        if not source or not heading:
+            content = str(doc.get("content") or "").strip()
+            if content:
+                content_fallback = hashlib.sha1(
+                    content.encode("utf-8", "ignore")
+                ).hexdigest()[:12]
+        return source, heading, content_fallback
+
+    def _doc_score(self, doc: Dict[str, Any]) -> float:
+        """Return a sortable relevance score for a prompt doc."""
+
+        try:
+            return float(doc.get("weighted_relevance_score", doc.get("relevance_score", 0.0)))
+        except (TypeError, ValueError):
+            return 0.0
+
+    async def _select_prompt_docs(
+        self,
+        docs_context: List[DocSnippet],
+    ) -> List[Dict[str, Any]]:
+        """Collect, weight, dedupe, and cap selector prompt docs."""
+
+        prompt_limit = max(1, int(settings.architecture_prompt_doc_limit))
+        normalized_docs: list[Dict[str, Any]] = []
+        if self.docs_retriever:
+            query_overrides = settings.architecture_pattern_doc_queries
+            weight_overrides = settings.architecture_pattern_doc_weights
+            query_specs: list[tuple[str, float]] = []
+            for architecture_id in self.architecture_registry.supported_architecture_types():
+                queries = self.architecture_registry.docs_queries_for(
+                    architecture_id,
+                    query_overrides=query_overrides,
+                )
+                weight = self.architecture_registry.docs_weight_for(
+                    architecture_id,
+                    weight_overrides=weight_overrides,
+                )
+                for query in queries:
+                    query_specs.append((query, weight))
+
+            if query_specs:
+                retrieved_groups = await asyncio.gather(
+                    *[
+                        asyncio.to_thread(self.docs_retriever.retrieve, query, prompt_limit)
+                        for query, _weight in query_specs
+                    ]
+                )
+                for (_query, weight), docs in zip(query_specs, retrieved_groups):
+                    for doc in docs or []:
+                        normalized = self._normalize_doc(doc)
+                        normalized["weighted_relevance_score"] = self._doc_score(normalized) * weight
+                        normalized_docs.append(normalized)
+
+        if not normalized_docs:
+            normalized_docs = [self._normalize_doc(doc) for doc in docs_context]
+
+        deduped: dict[tuple[str, str, str], Dict[str, Any]] = {}
+        for doc in normalized_docs:
+            key = self._doc_key(doc)
+            existing = deduped.get(key)
+            if existing is None or self._doc_score(doc) > self._doc_score(existing):
+                deduped[key] = doc
+
+        ranked_docs = sorted(
+            deduped.values(),
+            key=lambda item: (self._doc_score(item), self._doc_label(item)),
+            reverse=True,
+        )
+        return ranked_docs[:prompt_limit]
+
     def _doc_label(self, doc: Dict[str, Any]) -> str:
         heading = str(doc.get("heading") or "").strip()
         source = str(doc.get("source") or "").strip()
@@ -170,10 +242,11 @@ Recommend the best architecture."""
 
     def _normalize_architecture_type(self, value: Any) -> str:
         normalized = normalize_agent_type(value if isinstance(value, str) else None)
-        if normalized not in SUPPORTED_AGENT_TYPES:
+        selectable = set(self.architecture_registry.selectable_architecture_types())
+        if normalized not in selectable:
             raise ValueError(
                 f"Unsupported architecture_type '{value}'. "
-                f"Expected one of: {', '.join(sorted(SUPPORTED_AGENT_TYPES))}."
+                f"Expected one of: {', '.join(sorted(selectable))}."
             )
         return normalized
 
@@ -184,8 +257,14 @@ Recommend the best architecture."""
     ) -> tuple[ArchitecturePatternSelection, List[str]]:
         validation_errors: List[str] = []
         if raw_patterns in (None, ""):
+            _, normalized_secondary = self.architecture_registry.normalize_patterns(
+                architecture_type
+            )
             return (
-                ArchitecturePatternSelection(primary=architecture_type, secondary=[]),
+                ArchitecturePatternSelection(
+                    primary=architecture_type,
+                    secondary=normalized_secondary,
+                ),
                 validation_errors,
             )
         if not isinstance(raw_patterns, dict):
@@ -214,7 +293,10 @@ Recommend the best architecture."""
         if not isinstance(secondary, list):
             raise ValueError("Architecture selection returned malformed patterns payload.")
 
-        normalized_secondary: List[str] = []
+        _, normalized_secondary = self.architecture_registry.normalize_patterns(
+            normalized_primary,
+            secondary_patterns=secondary,
+        )
         for item in secondary:
             normalized_item = normalize_agent_type(item if isinstance(item, str) else None)
             if normalized_item is None:
@@ -224,12 +306,6 @@ Recommend the best architecture."""
                     "Architecture selection returned malformed patterns payload: "
                     f"unsupported secondary '{item}'."
                 )
-            if (
-                normalized_item == normalized_primary
-                or normalized_item in normalized_secondary
-            ):
-                continue
-            normalized_secondary.append(normalized_item)
 
         return (
             ArchitecturePatternSelection(
@@ -369,7 +445,10 @@ Recommend the best architecture."""
     ) -> ArchitectureSelectionResult:
         return ArchitectureSelectionResult(
             architecture_type="router",
-            patterns=ArchitecturePatternSelection(primary="router", secondary=[]),
+            patterns=ArchitecturePatternSelection(
+                primary="router",
+                secondary=self.architecture_registry.normalize_patterns("router")[1],
+            ),
             justification=(
                 "Default router pattern selected as a safe fallback because "
                 "architecture selection could not be validated."
