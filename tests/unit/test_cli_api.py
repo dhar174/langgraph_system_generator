@@ -60,11 +60,15 @@ async def test_generate_artifacts_stub(tmp_path: Path, monkeypatch: pytest.Monke
     assert artifacts["manifest"]["architecture_feedback"]["docs_considered"] == []
     assert artifacts["manifest"]["graph_design_feedback"]["fallback_used"] is False
     assert "flowchart TD" in artifacts["manifest"]["graph_exports"]["mermaid"]
+    assert artifacts["manifest"]["notebook_composition_feedback"]["fallback_used"] is False
+    assert "langgraph" in artifacts["manifest"]["notebook_dependency_plan"]["packages"]
     assert artifacts["result"]["requirements_feedback"]["fallback_used"] is False
     assert artifacts["result"]["architecture_feedback"]["fallback_used"] is False
     assert artifacts["result"]["architecture_feedback"]["docs_considered"] == []
     assert artifacts["result"]["graph_design_feedback"]["fallback_used"] is False
     assert "flowchart TD" in artifacts["result"]["graph_exports"]["mermaid"]
+    assert artifacts["result"]["notebook_composition_feedback"]["fallback_used"] is False
+    assert "OPENAI_API_KEY" in artifacts["result"]["notebook_dependency_plan"]["provider_env_vars"]
     assert Path(artifacts["manifest_path"]).exists()
     assert artifacts["result"]["generation_complete"] is True
 
@@ -84,6 +88,8 @@ def test_default_state_includes_generation_mode_and_qa_history():
     assert state["architecture_feedback"].fallback_used is False
     assert state["graph_design_feedback"].fallback_used is False
     assert state["graph_exports"].schema == {}
+    assert state["notebook_composition_feedback"].fallback_used is False
+    assert state["notebook_dependency_plan"].packages == []
     assert "goal" in state["requirements_feedback"].available_constraint_types
 
 
@@ -119,6 +125,11 @@ def test_default_and_stub_results_normalize_constraint_type_registry(monkeypatch
 
     assert state["requirements_feedback"].available_constraint_types == expected_registry
     assert stub_result["requirements_feedback"].available_constraint_types == expected_registry
+    assert (
+        stub_result["notebook_composition_feedback"].resolved_model
+        == cli_module.settings.default_model
+    )
+    assert "langgraph" in stub_result["notebook_dependency_plan"].packages
 
 
 @pytest.mark.asyncio
@@ -249,6 +260,8 @@ async def test_api_generate_stub(tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     assert payload["output_dir"] == str(output_dir)
     assert payload["manifest"]["requirements_feedback"]["fallback_used"] is False
     assert payload["manifest"]["architecture_feedback"]["fallback_used"] is False
+    assert payload["manifest"]["notebook_composition_feedback"]["fallback_used"] is False
+    assert "langgraph" in payload["manifest"]["notebook_dependency_plan"]["packages"]
 
 
 @pytest.mark.asyncio
@@ -405,6 +418,84 @@ async def test_generate_artifacts_surfaces_graph_design_feedback_as_warnings(
     assert "graph_design_validation" in warning_codes
     assert artifacts["manifest"]["graph_design_feedback"]["fallback_used"] is True
     assert "flowchart TD" in artifacts["manifest"]["graph_exports"]["mermaid"]
+
+
+@pytest.mark.asyncio
+async def test_generate_artifacts_surfaces_notebook_composition_feedback_as_warnings(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.setenv("LNF_OUTPUT_BASE", "test_notebook_feedback_warning")
+
+    import langgraph_system_generator.constants as constants_module
+    import langgraph_system_generator.notebook.exporters as exporters_module
+    import langgraph_system_generator.cli as cli_module
+
+    importlib.reload(constants_module)
+    importlib.reload(exporters_module)
+    importlib.reload(cli_module)
+
+    original_build_stub_result = cli_module._build_stub_result
+
+    def build_stub_result_with_notebook_feedback(
+        prompt: str,
+        agent_type: str | None = None,
+    ):
+        result = original_build_stub_result(prompt, agent_type=agent_type)
+        result["notebook_composition_feedback"] = {
+            "fallback_used": True,
+            "warnings": ['Deterministic fallback used for tool "search".'],
+            "fallback_events": [
+                {
+                    "kind": "tool",
+                    "item_name": "search",
+                    "reason": "LLM tool generation returned placeholder or incomplete code.",
+                    "warning": 'Deterministic fallback used for tool "search".',
+                }
+            ],
+            "resolved_model": "gpt-5.2",
+            "resolved_api_base": None,
+            "resolved_max_iterations": 10,
+            "sections_built": [
+                "intro",
+                "install",
+                "config",
+                "state",
+                "tools",
+                "nodes",
+                "graph",
+                "execution",
+            ],
+        }
+        result["notebook_dependency_plan"] = {
+            "packages": ["langgraph", "langchain-openai", "requests"],
+            "install_commands": [
+                "python -m pip install -q langgraph langchain-openai requests"
+            ],
+            "runtime_notes": [
+                "The install cell checks for missing packages before invoking pip."
+            ],
+            "conflicts_resolved": [],
+            "provider_env_vars": ["OPENAI_API_KEY"],
+        }
+        return result
+
+    monkeypatch.setattr(
+        cli_module,
+        "_build_stub_result",
+        build_stub_result_with_notebook_feedback,
+    )
+
+    output_dir = constants_module._BASE_OUTPUT / "notebook_feedback_stub"
+    artifacts = await cli_module.generate_artifacts(
+        "Notebook feedback prompt",
+        output_dir=str(output_dir),
+        mode="stub",
+    )
+
+    warning_codes = {warning["code"] for warning in artifacts["manifest"]["warnings"]}
+    assert "notebook_composition_fallback" in warning_codes
+    assert artifacts["manifest"]["notebook_composition_feedback"]["fallback_used"] is True
+    assert "requests" in artifacts["manifest"]["notebook_dependency_plan"]["packages"]
 
 
 def test_build_stub_result_raises_for_invalid_stub_graph_design(monkeypatch):

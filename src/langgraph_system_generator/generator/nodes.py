@@ -25,6 +25,8 @@ from langgraph_system_generator.generator.state import (
     CellSpec,
     DocSnippet,
     GeneratorState,
+    NotebookCompositionFeedback,
+    NotebookDependencyPlan,
     GraphDesignFeedback,
     GraphExportBundle,
     NotebookPlan,
@@ -363,11 +365,15 @@ async def notebook_assembly_node(state: GeneratorState) -> Dict[str, Any]:
         "justification": state["architecture_justification"],
     }
 
-    cells = await composer.compose_notebook(
+    composition = await composer.compose_notebook(
         notebook_plan, workflow_design, tools_plan, architecture
     )
 
-    return {"generated_cells": cells}
+    return {
+        "generated_cells": composition.cells,
+        "notebook_composition_feedback": composition.feedback,
+        "notebook_dependency_plan": composition.dependency_plan,
+    }
 
 
 def _cells_from_notebook(path: Path) -> List[CellSpec]:
@@ -641,6 +647,8 @@ async def package_outputs_node(state: GeneratorState) -> Dict[str, Any]:
     architecture_feedback = state.get("architecture_feedback")
     graph_design_feedback = state.get("graph_design_feedback")
     graph_exports = state.get("graph_exports")
+    notebook_composition_feedback = state.get("notebook_composition_feedback")
+    notebook_dependency_plan = state.get("notebook_dependency_plan")
     manifest = {
         "notebook_plan": str(state.get("notebook_plan")),
         "cell_count": str(len(state.get("generated_cells", []))),
@@ -671,6 +679,21 @@ async def package_outputs_node(state: GeneratorState) -> Dict[str, Any]:
             graph_exports.model_dump(by_alias=True)
             if hasattr(graph_exports, "model_dump")
             else (graph_exports or GraphExportBundle().model_dump(by_alias=True))
+        ),
+        "notebook_composition_feedback": (
+            notebook_composition_feedback.model_dump()
+            if hasattr(notebook_composition_feedback, "model_dump")
+            else (
+                notebook_composition_feedback
+                or NotebookCompositionFeedback(fallback_used=False).model_dump()
+            )
+        ),
+        "notebook_dependency_plan": (
+            notebook_dependency_plan.model_dump()
+            if hasattr(notebook_dependency_plan, "model_dump")
+            else (
+                notebook_dependency_plan or NotebookDependencyPlan().model_dump()
+            )
         ),
     }
 

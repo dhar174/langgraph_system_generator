@@ -371,6 +371,79 @@ class NotebookPlan(BaseModel):
     )
 
 
+class NotebookDependencyPlan(BaseModel):
+    """Normalized dependency and install plan for a generated notebook."""
+
+    packages: List[str] = Field(
+        default_factory=list,
+        description="Ordered, de-duplicated packages required by the notebook.",
+    )
+    install_commands: List[str] = Field(
+        default_factory=list,
+        description="Install commands emitted or recommended for the notebook runtime.",
+    )
+    runtime_notes: List[str] = Field(
+        default_factory=list,
+        description="Environment assumptions or install notes shown to notebook users.",
+    )
+    conflicts_resolved: List[str] = Field(
+        default_factory=list,
+        description="Dependency family conflicts resolved during planning.",
+    )
+    provider_env_vars: List[str] = Field(
+        default_factory=list,
+        description="Credential environment variables referenced by notebook config.",
+    )
+
+
+class NotebookFallbackEvent(BaseModel):
+    """Structured record of a notebook-composition fallback."""
+
+    kind: str = Field(description="Notebook component that used a fallback path.")
+    item_name: Optional[str] = Field(
+        default=None,
+        description="Tool or node name associated with the fallback, when applicable.",
+    )
+    reason: str = Field(description="Reason the fallback path was used.")
+    warning: str = Field(
+        description="Visible notebook-facing warning emitted for this fallback."
+    )
+
+
+class NotebookCompositionFeedback(BaseModel):
+    """Advisory feedback captured during notebook composition."""
+
+    fallback_used: bool = Field(
+        default=False,
+        description="Whether notebook composition used one or more deterministic fallbacks.",
+    )
+    warnings: List[str] = Field(
+        default_factory=list,
+        description="Advisory composition warnings surfaced to manifests and callers.",
+    )
+    fallback_events: List[NotebookFallbackEvent] = Field(
+        default_factory=list,
+        description="Structured fallback events captured during notebook composition.",
+    )
+    resolved_model: Optional[str] = Field(
+        default=None,
+        description="Resolved model identifier embedded in notebook config cells.",
+    )
+    resolved_api_base: Optional[str] = Field(
+        default=None,
+        description="Resolved OpenAI-compatible base URL embedded in config cells.",
+    )
+    resolved_max_iterations: Optional[int] = Field(
+        default=None,
+        ge=1,
+        description="Resolved iteration limit embedded in notebook cells.",
+    )
+    sections_built: List[str] = Field(
+        default_factory=list,
+        description="Ordered internal section builders used to assemble the notebook.",
+    )
+
+
 class CellSpec(BaseModel):
     """Specification for a notebook cell."""
 
@@ -379,6 +452,23 @@ class CellSpec(BaseModel):
     metadata: Dict[str, Any] = Field(default_factory=dict, description="Cell metadata")
     section: Optional[str] = Field(
         default=None, description="Section this cell belongs to"
+    )
+
+
+class NotebookCompositionResult(BaseModel):
+    """Structured notebook composition output consumed by downstream stages."""
+
+    cells: List[CellSpec] = Field(
+        default_factory=list,
+        description="Generated notebook cells in final execution order.",
+    )
+    dependency_plan: NotebookDependencyPlan = Field(
+        default_factory=NotebookDependencyPlan,
+        description="Resolved dependency and install metadata for the notebook.",
+    )
+    feedback: NotebookCompositionFeedback = Field(
+        default_factory=NotebookCompositionFeedback,
+        description="Advisory notebook-composition metadata.",
     )
 
 
@@ -431,6 +521,8 @@ class GeneratorState(TypedDict):
     # Workflow design (added for graph designer)
     workflow_design: Optional[Dict[str, Any]]
     tools_plan: Optional[List[Dict[str, Any]]]
+    notebook_composition_feedback: NotebookCompositionFeedback
+    notebook_dependency_plan: NotebookDependencyPlan
 
     # Generation
     # NOTE: `generated_cells` is intentionally *not* annotated with `operator.add`.

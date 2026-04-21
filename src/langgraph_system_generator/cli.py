@@ -23,6 +23,8 @@ from langgraph_system_generator.generator.state import (
     Constraint,
     GraphDesignFeedback,
     GraphExportBundle,
+    NotebookCompositionFeedback,
+    NotebookDependencyPlan,
     NotebookPlan,
     RequirementsFeedback,
 )
@@ -90,6 +92,10 @@ def _default_state(
         "architecture_feedback": ArchitectureFeedback(fallback_used=False),
         "graph_design_feedback": GraphDesignFeedback(fallback_used=False),
         "graph_exports": GraphExportBundle(),
+        "notebook_composition_feedback": NotebookCompositionFeedback(
+            fallback_used=False
+        ),
+        "notebook_dependency_plan": NotebookDependencyPlan(),
         "selected_patterns": {},
         "docs_context": [],
         "notebook_plan": None,
@@ -294,6 +300,32 @@ def _graph_design_warning_entries(
         )
 
     return warnings
+
+
+def _notebook_composition_warning_entries(
+    feedback: Dict[str, Any] | None,
+) -> List[Dict[str, Any]]:
+    """Convert notebook-composition feedback into manifest warnings."""
+
+    if not isinstance(feedback, dict):
+        return []
+
+    if not feedback.get("fallback_used"):
+        return []
+
+    advisory_warnings = list(feedback.get("warnings") or [])
+    fallback_events = list(feedback.get("fallback_events") or [])
+    return [
+        {
+            "code": "notebook_composition_fallback",
+            "phase": "notebook_assembly",
+            "message": advisory_warnings[0]
+            if advisory_warnings
+            else "Notebook composition used deterministic fallback content.",
+            "warnings": advisory_warnings,
+            "fallback_events": fallback_events,
+        }
+    ]
 
 
 class _PhaseTracker:
@@ -830,6 +862,21 @@ def _build_stub_result(prompt: str, agent_type: str | None = None) -> Dict[str, 
         "architecture_feedback": architecture_feedback,
         "graph_design_feedback": graph_design_feedback,
         "graph_exports": graph_exports,
+        "notebook_composition_feedback": NotebookCompositionFeedback(
+            fallback_used=False,
+            resolved_model=settings.default_model,
+            resolved_api_base=None,
+            resolved_max_iterations=settings.notebook_composer_default_max_iterations,
+            sections_built=["intro", "install", "state", "nodes", "graph"],
+        ),
+        "notebook_dependency_plan": NotebookDependencyPlan(
+            packages=["langgraph", "langchain-openai"],
+            install_commands=["python -m pip install -q langgraph langchain-openai"],
+            runtime_notes=[
+                "Stub mode emits a deterministic dependency plan for the generated notebook."
+            ],
+            provider_env_vars=["OPENAI_API_KEY"],
+        ),
         "selected_patterns": {
             "primary": architecture_type,
             "secondary": secondary_patterns,
@@ -956,6 +1003,10 @@ async def generate_artifacts(
     architecture_feedback = serialized.get("architecture_feedback") or {}
     graph_design_feedback = serialized.get("graph_design_feedback") or {}
     graph_exports = serialized.get("graph_exports") or {}
+    notebook_composition_feedback = (
+        serialized.get("notebook_composition_feedback") or {}
+    )
+    notebook_dependency_plan = serialized.get("notebook_dependency_plan") or {}
 
     manifest: Dict[str, Any] = {
         "prompt": prompt,
@@ -967,10 +1018,13 @@ async def generate_artifacts(
         "architecture_feedback": architecture_feedback,
         "graph_design_feedback": graph_design_feedback,
         "graph_exports": graph_exports,
+        "notebook_composition_feedback": notebook_composition_feedback,
+        "notebook_dependency_plan": notebook_dependency_plan,
         "warnings": [
             *_requirements_warning_entries(requirements_feedback),
             *_architecture_warning_entries(architecture_feedback),
             *_graph_design_warning_entries(graph_design_feedback),
+            *_notebook_composition_warning_entries(notebook_composition_feedback),
         ],
         "export_results": {},
     }

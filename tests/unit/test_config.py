@@ -203,6 +203,62 @@ def test_settings_parse_graph_designer_plugin_modules_from_csv(tmp_path):
     ]
 
 
+def test_settings_parse_notebook_composer_plugin_modules_from_json(tmp_path):
+    env_path = Path(tmp_path) / ".env"
+    env_path.write_text(
+        'NOTEBOOK_COMPOSER_PLUGIN_MODULES=["pkg.plugins.alpha","pkg.plugins.beta"]\n',
+        encoding="utf-8",
+    )
+
+    class FileSettings(Settings):
+        model_config = SettingsConfigDict(
+            env_file=env_path, env_file_encoding="utf-8", extra="ignore"
+        )
+
+    loaded = FileSettings()
+
+    assert loaded.notebook_composer_plugin_modules == [
+        "pkg.plugins.alpha",
+        "pkg.plugins.beta",
+    ]
+
+
+def test_settings_parse_notebook_composer_plugin_modules_from_csv(tmp_path):
+    env_path = Path(tmp_path) / ".env"
+    env_path.write_text(
+        "NOTEBOOK_COMPOSER_PLUGIN_MODULES=pkg.plugins.alpha, pkg.plugins.beta , pkg.plugins.alpha\n",
+        encoding="utf-8",
+    )
+
+    class FileSettings(Settings):
+        model_config = SettingsConfigDict(
+            env_file=env_path, env_file_encoding="utf-8", extra="ignore"
+        )
+
+    loaded = FileSettings()
+
+    assert loaded.notebook_composer_plugin_modules == [
+        "pkg.plugins.alpha",
+        "pkg.plugins.beta",
+    ]
+
+
+def test_settings_validates_notebook_composer_parallelism_mode(tmp_path):
+    env_path = Path(tmp_path) / ".env"
+    env_path.write_text(
+        "NOTEBOOK_COMPOSER_PARALLELISM_MODE=sequential\n",
+        encoding="utf-8",
+    )
+
+    class FileSettings(Settings):
+        model_config = SettingsConfigDict(
+            env_file=env_path, env_file_encoding="utf-8", extra="ignore"
+        )
+
+    loaded = FileSettings()
+    assert loaded.notebook_composer_parallelism_mode == "sequential"
+
+
 def test_model_config_defaults():
     """Test ModelConfig uses correct defaults."""
     config = ModelConfig()
