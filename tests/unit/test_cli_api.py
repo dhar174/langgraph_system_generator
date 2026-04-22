@@ -60,6 +60,7 @@ async def test_generate_artifacts_stub(tmp_path: Path, monkeypatch: pytest.Monke
     assert artifacts["manifest"]["architecture_feedback"]["docs_considered"] == []
     assert artifacts["manifest"]["graph_design_feedback"]["fallback_used"] is False
     assert "flowchart TD" in artifacts["manifest"]["graph_exports"]["mermaid"]
+    assert artifacts["manifest"]["tool_planning_feedback"]["fallback_used"] is False
     assert artifacts["manifest"]["notebook_composition_feedback"]["fallback_used"] is False
     assert "langgraph" in artifacts["manifest"]["notebook_dependency_plan"]["packages"]
     assert artifacts["result"]["requirements_feedback"]["fallback_used"] is False
@@ -67,6 +68,7 @@ async def test_generate_artifacts_stub(tmp_path: Path, monkeypatch: pytest.Monke
     assert artifacts["result"]["architecture_feedback"]["docs_considered"] == []
     assert artifacts["result"]["graph_design_feedback"]["fallback_used"] is False
     assert "flowchart TD" in artifacts["result"]["graph_exports"]["mermaid"]
+    assert artifacts["result"]["tool_planning_feedback"]["fallback_used"] is False
     assert artifacts["result"]["notebook_composition_feedback"]["fallback_used"] is False
     assert "OPENAI_API_KEY" in artifacts["result"]["notebook_dependency_plan"]["provider_env_vars"]
     assert Path(artifacts["manifest_path"]).exists()
@@ -88,9 +90,11 @@ def test_default_state_includes_generation_mode_and_qa_history():
     assert state["architecture_feedback"].fallback_used is False
     assert state["graph_design_feedback"].fallback_used is False
     assert state["graph_exports"].schema == {}
+    assert state["tool_planning_feedback"].fallback_used is False
     assert state["notebook_composition_feedback"].fallback_used is False
     assert state["notebook_dependency_plan"].packages == []
     assert "goal" in state["requirements_feedback"].available_constraint_types
+    assert "web_search" in state["tool_planning_feedback"].available_tool_ids
 
 
 def test_default_and_stub_results_normalize_constraint_type_registry(monkeypatch):
@@ -129,6 +133,7 @@ def test_default_and_stub_results_normalize_constraint_type_registry(monkeypatch
         stub_result["notebook_composition_feedback"].resolved_model
         == cli_module.settings.default_model
     )
+    assert stub_result["tool_planning_feedback"].fallback_used is False
     assert "langgraph" in stub_result["notebook_dependency_plan"].packages
 
 
@@ -260,6 +265,7 @@ async def test_api_generate_stub(tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     assert payload["output_dir"] == str(output_dir)
     assert payload["manifest"]["requirements_feedback"]["fallback_used"] is False
     assert payload["manifest"]["architecture_feedback"]["fallback_used"] is False
+    assert payload["manifest"]["tool_planning_feedback"]["fallback_used"] is False
     assert payload["manifest"]["notebook_composition_feedback"]["fallback_used"] is False
     assert "langgraph" in payload["manifest"]["notebook_dependency_plan"]["packages"]
 
@@ -418,6 +424,57 @@ async def test_generate_artifacts_surfaces_graph_design_feedback_as_warnings(
     assert "graph_design_validation" in warning_codes
     assert artifacts["manifest"]["graph_design_feedback"]["fallback_used"] is True
     assert "flowchart TD" in artifacts["manifest"]["graph_exports"]["mermaid"]
+
+
+@pytest.mark.asyncio
+async def test_generate_artifacts_surfaces_tool_planning_feedback_as_warnings(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.setenv("LNF_OUTPUT_BASE", "test_tool_planning_feedback_warning")
+
+    import langgraph_system_generator.constants as constants_module
+    import langgraph_system_generator.notebook.exporters as exporters_module
+    import langgraph_system_generator.cli as cli_module
+
+    importlib.reload(constants_module)
+    importlib.reload(exporters_module)
+    importlib.reload(cli_module)
+
+    original_build_stub_result = cli_module._build_stub_result
+
+    def build_stub_result_with_tool_feedback(prompt: str, agent_type: str | None = None):
+        result = original_build_stub_result(prompt, agent_type=agent_type)
+        result["tool_planning_feedback"] = {
+            "fallback_used": True,
+            "fallback_reason": "Tool planning used heuristic fallback inference.",
+            "validation_errors": ["Unsupported tool suggestion 'swarm_tool'."],
+            "unresolved_tools": ["swarm_tool"],
+            "environment_notes": ["Network access may be unavailable in the target runtime."],
+            "dependency_conflicts": ["Both 'requests' and a custom HTTP client were suggested."],
+            "available_tool_ids": ["web_search", "http_client"],
+            "warnings": ["Tool planning used heuristic fallback inference."],
+        }
+        return result
+
+    monkeypatch.setattr(
+        cli_module,
+        "_build_stub_result",
+        build_stub_result_with_tool_feedback,
+    )
+
+    output_dir = constants_module._BASE_OUTPUT / "tool_planning_feedback_stub"
+    artifacts = await cli_module.generate_artifacts(
+        "Tool planning feedback prompt",
+        output_dir=str(output_dir),
+        mode="stub",
+    )
+
+    warning_codes = {warning["code"] for warning in artifacts["manifest"]["warnings"]}
+    assert "tool_planning_fallback" in warning_codes
+    assert "tool_planning_validation" in warning_codes
+    assert "tool_planning_environment" in warning_codes
+    assert "tool_planning_dependency" in warning_codes
+    assert artifacts["manifest"]["tool_planning_feedback"]["fallback_used"] is True
 
 
 @pytest.mark.asyncio

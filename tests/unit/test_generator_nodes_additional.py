@@ -31,6 +31,7 @@ from langgraph_system_generator.generator.state import (
     NotebookCompositionResult,
     NotebookDependencyPlan,
     QAReport,
+    ToolPlanningFeedback,
 )
 from langgraph_system_generator.utils.config import GenerationConfig
 
@@ -294,8 +295,22 @@ async def test_tooling_plan_node_returns_tools_plan(monkeypatch):
     )
 
     assert result["tools_plan"] == [
-        {"name": "tool", "category": "misc", "purpose": "x", "configuration": {}}
+        {
+            "tool_id": "tool",
+            "name": "tool",
+            "category": "misc",
+            "purpose": "x",
+            "configuration": {},
+            "packages": [],
+            "provider_env_vars": [],
+            "status": "unsupported",
+            "warnings": [
+                "Unsupported tool suggestion 'tool' could not be resolved to a canonical tool."
+            ],
+        }
     ]
+    assert result["tool_planning_feedback"].fallback_used is True
+    assert result["tool_planning_feedback"].unresolved_tools == ["tool"]
 
 
 @pytest.mark.asyncio
@@ -342,6 +357,13 @@ async def test_notebook_assembly_node_returns_generated_cells(monkeypatch):
             schema={"entry_point": "router"},
         ),
         "tools_plan": [],
+        "tool_planning_feedback": ToolPlanningFeedback(
+            fallback_used=True,
+            fallback_reason="Heuristic tool fallback used.",
+            unresolved_tools=["imaginary_tool"],
+            available_tool_ids=["web_search"],
+            warnings=["Heuristic tool fallback used."],
+        ),
         "selected_patterns": {"primary": "router"},
         "architecture_justification": "Reason",
     }
@@ -612,6 +634,14 @@ async def test_package_outputs_node_manifest_fields():
                 },
             },
         ),
+        "tool_planning_feedback": ToolPlanningFeedback(
+            fallback_used=True,
+            fallback_reason="Tool planning used heuristic fallback inference.",
+            validation_errors=["Unsupported tool suggestion 'swarm_tool'."],
+            unresolved_tools=["swarm_tool"],
+            available_tool_ids=["web_search", "http_client"],
+            warnings=["Tool planning used heuristic fallback inference."],
+        ),
         "notebook_composition_feedback": NotebookCompositionFeedback(
             fallback_used=True,
             warnings=["Deterministic fallback used for node \"enrich\"."],
@@ -631,6 +661,7 @@ async def test_package_outputs_node_manifest_fields():
     assert manifest["architecture_feedback"]["fallback_used"] is True
     assert manifest["graph_design_feedback"]["fallback_used"] is True
     assert "flowchart TD" in manifest["graph_exports"]["mermaid"]
+    assert manifest["tool_planning_feedback"]["fallback_used"] is True
     assert manifest["notebook_composition_feedback"]["fallback_used"] is True
     assert "requests" in manifest["notebook_dependency_plan"]["packages"]
     assert result["generation_complete"] is True

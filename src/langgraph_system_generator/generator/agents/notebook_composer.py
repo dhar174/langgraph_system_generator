@@ -26,6 +26,7 @@ from langgraph_system_generator.generator.state import (
     NotebookDependencyPlan,
     NotebookFallbackEvent,
     NotebookPlan,
+    ToolPlanningFeedback,
 )
 from langgraph_system_generator.patterns import (
     AutoAgentPattern,
@@ -42,6 +43,7 @@ _PACKAGE_IMPORT_PROBES = {
     "langchain-core": "langchain_core",
     "langchain-openai": "langchain_openai",
     "langchain-community": "langchain_community",
+    "pydantic": "pydantic",
     "pypdf": "pypdf",
     "requests": "requests",
 }
@@ -122,6 +124,44 @@ class NotebookComposer:
         lines = [line.rstrip() for line in text.split("\n")]
         normalized = "\n    ".join(lines).strip()
         return normalized or fallback
+
+    @staticmethod
+    def _merge_string_lists(*values: Any) -> List[str]:
+        """Merge list-or-scalar string inputs into an ordered unique list."""
+
+        merged: List[str] = []
+        for value in values:
+            if value in (None, ""):
+                continue
+            if isinstance(value, list):
+                raw_items = value
+            else:
+                raw_items = [value]
+            for raw_item in raw_items:
+                text = str(raw_item or "").strip()
+                if text and text not in merged:
+                    merged.append(text)
+        return merged
+
+    @classmethod
+    def _normalize_provider_env_var(cls, value: Any) -> str:
+        """Normalize arbitrary env-var suggestions into notebook-safe keys."""
+
+        text = str(value or "").strip()
+        if not text:
+            return ""
+
+        normalized = re.sub(r"[^a-zA-Z0-9_]", "_", text)
+        normalized = re.sub(r"_+", "_", normalized).strip("_").upper()
+        if not normalized:
+            return ""
+        if normalized[0].isdigit():
+            normalized = f"ENV_{normalized}"
+        if not normalized.isidentifier():
+            normalized = cls._safe_identifier(normalized, "ENV_VAR").upper()
+            if normalized[0].isdigit():
+                normalized = f"ENV_{normalized}"
+        return normalized
 
     @staticmethod
     def _package_import_probe(package_name: str) -> str:
@@ -254,10 +294,26 @@ class NotebookComposer:
             )
 
         for tool in tools:
+            tool_status = self._normalize_inline_text(tool.get("status", ""), "").lower()
+            if tool_status == "unsupported":
+                continue
             category = self._normalize_inline_text(tool.get("category", ""), "").lower()
             tool_configuration = tool.get("configuration")
             if not isinstance(tool_configuration, dict):
                 tool_configuration = {}
+            top_level_packages = tool.get("packages", [])
+            if isinstance(top_level_packages, str):
+                top_level_packages = [top_level_packages]
+            if not isinstance(top_level_packages, list):
+                top_level_packages = []
+            for package_name in top_level_packages:
+                self._add_dependency_candidate(
+                    plan,
+                    selected_packages,
+                    selected_families,
+                    str(package_name),
+                    requested_by=self._normalize_inline_text(tool.get("name", ""), "tool"),
+                )
             requested_packages = tool_configuration.get("packages", [])
             if isinstance(requested_packages, str):
                 requested_packages = [requested_packages]
@@ -289,6 +345,25 @@ class NotebookComposer:
                     family=family,
                     requested_by=self._normalize_inline_text(tool.get("name", ""), "tool"),
                 )
+
+            provider_env_vars = self._merge_string_lists(
+                tool.get("provider_env_vars"),
+                tool_configuration.get("provider_env_vars"),
+            )
+            for env_var in provider_env_vars:
+                normalized_env_var = self._normalize_provider_env_var(env_var)
+                if not normalized_env_var:
+                    continue
+                raw_env_var = str(env_var or "").strip()
+                if raw_env_var and normalized_env_var != raw_env_var:
+                    note = (
+                        f"Normalized provider env var '{raw_env_var}' to "
+                        f"'{normalized_env_var}' for notebook-safe configuration."
+                    )
+                    if note not in plan.runtime_notes:
+                        plan.runtime_notes.append(note)
+                if normalized_env_var not in plan.provider_env_vars:
+                    plan.provider_env_vars.append(normalized_env_var)
 
         if "langchain-openai" in selected_packages and "OPENAI_API_KEY" not in plan.provider_env_vars:
             plan.provider_env_vars.append("OPENAI_API_KEY")
@@ -357,6 +432,7 @@ class NotebookComposer:
         workflow_design: Dict[str, Any],
         tools: List[Dict[str, Any]],
         architecture: Dict[str, Any],
+        tool_planning_feedback: ToolPlanningFeedback | None = None,
     ) -> NotebookCompositionResult:
         """Generate complete notebook cells plus composition metadata.
 
@@ -389,6 +465,9 @@ class NotebookComposer:
             architecture=architecture,
             dependency_plan=dependency_plan,
             feedback=feedback,
+            tool_planning_feedback=(
+                tool_planning_feedback or ToolPlanningFeedback(available_tool_ids=[])
+            ),
         )
 
         architecture_type = str(
@@ -434,6 +513,90 @@ class NotebookComposer:
             dependency_plan=dependency_plan,
             feedback=feedback,
         )
+
+    def _create_tool_planning_warning_cells(
+        self,
+        tool_planning_feedback: ToolPlanningFeedback | None,
+    ) -> List[CellSpec]:
+        """Create notebook-visible warnings for degraded tool planning."""
+
+        feedback = tool_planning_feedback
+        if feedback is None:
+            return []
+
+        has_advisories = any(
+            [
+                feedback.fallback_used,
+                feedback.validation_errors,
+                feedback.unresolved_tools,
+                feedback.environment_notes,
+                feedback.dependency_conflicts,
+                feedback.warnings,
+            ]
+        )
+        if not has_advisories:
+            return []
+
+        lines = [
+            "## Tool Planning Notes",
+            "",
+            "Review these advisories before relying on the generated tool plan as-is.",
+        ]
+        if feedback.fallback_used:
+            lines.extend(
+                [
+                    "",
+                    f"- Fallback used: {feedback.fallback_reason or 'Heuristic inference was used for tool planning.'}",
+                ]
+            )
+        if feedback.unresolved_tools:
+            lines.extend(
+                [
+                    "",
+                    "- Unresolved tools:",
+                    *[f"  - {tool_name}" for tool_name in feedback.unresolved_tools],
+                ]
+            )
+        if feedback.validation_errors:
+            lines.extend(
+                [
+                    "",
+                    "- Validation issues:",
+                    *[f"  - {message}" for message in feedback.validation_errors],
+                ]
+            )
+        if feedback.environment_notes:
+            lines.extend(
+                [
+                    "",
+                    "- Environment notes:",
+                    *[f"  - {message}" for message in feedback.environment_notes],
+                ]
+            )
+        if feedback.dependency_conflicts:
+            lines.extend(
+                [
+                    "",
+                    "- Dependency conflicts:",
+                    *[f"  - {message}" for message in feedback.dependency_conflicts],
+                ]
+            )
+        if feedback.warnings:
+            lines.extend(
+                [
+                    "",
+                    "- Additional warnings:",
+                    *[f"  - {message}" for message in feedback.warnings],
+                ]
+            )
+
+        return [
+            CellSpec(
+                cell_type="markdown",
+                content="\n".join(lines),
+                section="tools",
+            )
+        ]
 
     def _create_intro_cells(
         self,
@@ -585,14 +748,17 @@ else:
             "# Prefer environment variables over hardcoded secrets in notebooks.",
         ]
         for env_var in dependency_plan.provider_env_vars:
+            safe_env_var = self._normalize_provider_env_var(env_var)
+            if not safe_env_var:
+                continue
             config_lines.extend(
                 [
-                    f'{env_var} = os.environ.get("{env_var}", "")',
-                    f'if not {env_var}:',
-                    f'    print("{env_var} is not set. Configure it in your environment before running live model cells.")',
+                    f'{safe_env_var} = os.environ.get("{safe_env_var}", "")',
+                    f'if not {safe_env_var}:',
+                    f'    print("{safe_env_var} is not set. Configure it in your environment before running live model cells.")',
                     "    # Optional interactive fallback for local notebook sessions:",
                     "    # from getpass import getpass",
-                    f'    # os.environ["{env_var}"] = getpass("Enter {env_var}: ")',
+                    f'    # os.environ["{safe_env_var}"] = getpass("Enter {safe_env_var}: ")',
                     "",
                 ]
             )

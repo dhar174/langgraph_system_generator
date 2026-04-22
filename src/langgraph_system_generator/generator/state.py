@@ -343,6 +343,93 @@ class GraphDesignResult(BaseModel):
         }
 
 
+ToolStatus = Literal["ready", "fallback", "unsupported"]
+
+
+class ToolSpec(BaseModel):
+    """Normalized tool specification for workflow planning."""
+
+    tool_id: str = Field(description="Canonical tool identifier.")
+    name: str = Field(description="Human-readable display name for the tool.")
+    category: str = Field(description="Normalized tool category.")
+    purpose: str = Field(description="Why the workflow needs this tool.")
+    configuration: Dict[str, Any] = Field(
+        default_factory=dict,
+        description="Normalized tool configuration payload.",
+    )
+    packages: List[str] = Field(
+        default_factory=list,
+        description="Packages required to support this tool in generated notebooks.",
+    )
+    provider_env_vars: List[str] = Field(
+        default_factory=list,
+        description="Provider credential environment variables needed by this tool.",
+    )
+    status: ToolStatus = Field(
+        default="ready",
+        description="Planning status: ready, fallback, or unsupported.",
+    )
+    warnings: List[str] = Field(
+        default_factory=list,
+        description="Tool-specific planning or validation warnings.",
+    )
+
+
+class ToolPlanningFeedback(BaseModel):
+    """Advisory feedback captured during tool planning."""
+
+    fallback_used: bool = Field(
+        default=False,
+        description="Whether the planner had to fall back to heuristic tool inference.",
+    )
+    fallback_reason: Optional[str] = Field(
+        default=None,
+        description="Reason fallback mode was used, when applicable.",
+    )
+    validation_errors: List[str] = Field(
+        default_factory=list,
+        description="Validation issues found in LLM-produced tool suggestions.",
+    )
+    unresolved_tools: List[str] = Field(
+        default_factory=list,
+        description="Suggested tools that could not be resolved to a canonical registry entry.",
+    )
+    environment_notes: List[str] = Field(
+        default_factory=list,
+        description="Environment-compatibility notes gathered during planning.",
+    )
+    dependency_conflicts: List[str] = Field(
+        default_factory=list,
+        description="Dependency conflicts or gaps discovered during planning.",
+    )
+    available_tool_ids: List[str] = Field(
+        default_factory=list,
+        description="Canonical tool identifiers available to the planner.",
+    )
+    warnings: List[str] = Field(
+        default_factory=list,
+        description="High-level planning warnings for manifests and notebook surfaces.",
+    )
+
+
+class ToolPlanningResult(BaseModel):
+    """Structured tool-planning output consumed by downstream stages."""
+
+    tools: List[ToolSpec] = Field(
+        default_factory=list,
+        description="Normalized planned tools for the workflow.",
+    )
+    feedback: ToolPlanningFeedback = Field(
+        default_factory=ToolPlanningFeedback,
+        description="Advisory tool-planning metadata.",
+    )
+
+    def to_tools_plan_payload(self) -> List[Dict[str, Any]]:
+        """Return the backward-compatible tools_plan payload."""
+
+        return [tool.model_dump() for tool in self.tools]
+
+
 class DocSnippet(BaseModel):
     """Retrieved documentation snippet."""
 
@@ -521,6 +608,7 @@ class GeneratorState(TypedDict):
     # Workflow design (added for graph designer)
     workflow_design: Optional[Dict[str, Any]]
     tools_plan: Optional[List[Dict[str, Any]]]
+    tool_planning_feedback: ToolPlanningFeedback
     notebook_composition_feedback: NotebookCompositionFeedback
     notebook_dependency_plan: NotebookDependencyPlan
 

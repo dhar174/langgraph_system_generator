@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import sys
+import types
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -26,6 +28,12 @@ from langgraph_system_generator.generator.graph_design_registry import (
     normalize_graph_design,
     validate_graph_design,
 )
+from langgraph_system_generator.generator import tool_registry as tool_registry_module
+from langgraph_system_generator.generator.tool_registry import (
+    ToolRegistration,
+    ToolRegistry,
+    get_tool_registry,
+)
 from langgraph_system_generator.generator.state import (
     ArchitectureSelectionResult,
     Constraint,
@@ -34,6 +42,7 @@ from langgraph_system_generator.generator.state import (
     GraphDesignResult,
     GraphEdgeSpec,
     GraphNodeSpec,
+    ToolSpec,
 )
 from langgraph_system_generator.utils.error_handling import GenerationError
 from langgraph_system_generator.utils.config import ModelConfig
@@ -1062,14 +1071,19 @@ def test_graph_design_exports_escape_mermaid_labels():
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    ("payload", "expected_count"),
+    ("payload", "expected_count", "expected_fallback"),
     [
-        ('[{"name":"tool","category":"misc","purpose":"x","configuration":{}}]', 1),
-        ("invalid", 0),
+        ('[{"name":"search","category":"search","purpose":"x","configuration":{}}]', 1, False),
+        ("invalid", 0, True),
     ],
 )
-async def test_toolchain_engineer_parsing(payload, expected_count, monkeypatch):
-    """ToolchainEngineer returns empty list on parse errors."""
+async def test_toolchain_engineer_parsing(
+    payload,
+    expected_count,
+    expected_fallback,
+    monkeypatch,
+):
+    """ToolchainEngineer normalizes valid payloads and surfaces parse fallback."""
     monkeypatch.setattr(
         toolchain_engineer,
         "ChatOpenAI",
@@ -1078,7 +1092,245 @@ async def test_toolchain_engineer_parsing(payload, expected_count, monkeypatch):
     engineer = toolchain_engineer.ToolchainEngineer()
     constraints = [Constraint(type="goal", value="x", priority=5)]
     result = await engineer.plan_tools({"nodes": []}, constraints)
-    assert len(result) == expected_count
+    assert len(result.tools) == expected_count
+    assert result.feedback.fallback_used is expected_fallback
+
+
+@pytest.mark.asyncio
+async def test_toolchain_engineer_parse_failure_uses_heuristic_fallback_for_tool_nodes(
+    monkeypatch,
+):
+    """Parse failures should infer conservative fallback tools from workflow nodes."""
+
+    monkeypatch.setattr(
+        toolchain_engineer,
+        "ChatOpenAI",
+        make_stub_llm("not-json"),
+    )
+    engineer = toolchain_engineer.ToolchainEngineer()
+    result = await engineer.plan_tools(
+        {
+            "nodes": [
+                {"name": "researcher", "purpose": "Search docs and gather references"},
+                {"name": "validator", "purpose": "Validate the final schema"},
+            ]
+        },
+        [Constraint(type="goal", value="Build agents", priority=5)],
+    )
+
+    assert result.feedback.fallback_used is True
+    assert [tool.tool_id for tool in result.tools] == ["web_search", "schema_validator"]
+    assert all(tool.status == "fallback" for tool in result.tools)
+
+
+@pytest.mark.asyncio
+async def test_toolchain_engineer_marks_imaginary_tools_unsupported(monkeypatch):
+    """Unsupported tool suggestions should surface as warnings, not valid tools."""
+
+    monkeypatch.setattr(
+        toolchain_engineer,
+        "ChatOpenAI",
+        make_stub_llm(
+            '[{"name":"quantum_api","category":"api","purpose":"Call an imaginary endpoint","configuration":{}}]'
+        ),
+    )
+    engineer = toolchain_engineer.ToolchainEngineer()
+    result = await engineer.plan_tools(
+        {"nodes": [{"name": "fetch_data", "purpose": "Fetch remote data"}]},
+        [Constraint(type="goal", value="Fetch data", priority=5)],
+    )
+
+    assert result.feedback.fallback_used is True
+    assert result.feedback.unresolved_tools == ["quantum_api"]
+    assert result.tools[0].tool_id == "http_client"
+    assert result.tools[0].status == "fallback"
+    unsupported = [tool for tool in result.tools if tool.status == "unsupported"]
+    assert len(unsupported) == 1
+    assert unsupported[0].name == "quantum_api"
+
+
+@pytest.mark.asyncio
+async def test_toolchain_engineer_normalizes_alias_to_canonical_tool_id(monkeypatch):
+    """Registry aliases should resolve to canonical tool ids."""
+
+    monkeypatch.setattr(
+        toolchain_engineer,
+        "ChatOpenAI",
+        make_stub_llm(
+            '[{"name":"search","category":"search","purpose":"Look up docs","configuration":{}}]'
+        ),
+    )
+    engineer = toolchain_engineer.ToolchainEngineer()
+    result = await engineer.plan_tools(
+        {"nodes": [{"name": "research", "purpose": "Search docs"}]},
+        [Constraint(type="goal", value="Research docs", priority=5)],
+    )
+
+    assert result.feedback.fallback_used is False
+    assert result.tools == [
+        ToolSpec(
+            tool_id="web_search",
+            name="search",
+            category="search",
+            purpose="Look up docs",
+            configuration={"backend": "duckduckgo"},
+            packages=["langchain-community"],
+            provider_env_vars=[],
+            status="ready",
+            warnings=[],
+        )
+    ]
+
+
+def test_tool_registry_replaces_stale_aliases_and_rejects_collisions():
+    """Overridden registrations should drop stale aliases and block alias collisions."""
+
+    registry = ToolRegistry(
+        [
+            ToolRegistration(
+                tool_id="web_search",
+                name="Web Search",
+                description="Search public docs.",
+                category="search",
+                aliases=["search", "docs_search"],
+            )
+        ]
+    )
+
+    registry.register(
+        ToolRegistration(
+            tool_id="web_search",
+            name="Web Search",
+            description="Search public docs.",
+            category="search",
+            aliases=["web_lookup"],
+        )
+    )
+
+    assert registry.resolve_tool_id("search") is None
+    assert registry.resolve_tool_id("docs_search") is None
+    assert registry.resolve_tool_id("web_lookup") == "web_search"
+
+    with pytest.raises(ValueError, match="Alias 'web_lookup' is already registered"):
+        registry.register(
+            ToolRegistration(
+                tool_id="file_reader",
+                name="File Reader",
+                description="Read local files.",
+                category="file_io",
+                aliases=["web_lookup"],
+            )
+        )
+
+
+def test_tool_registry_uses_current_plugin_settings_for_cache_keys(monkeypatch):
+    """Default registry loads should refresh when plugin-module settings change."""
+
+    module_a_name = "tests.fake_tool_registry_plugin_a"
+    module_b_name = "tests.fake_tool_registry_plugin_b"
+    plugin_a = types.ModuleType(module_a_name)
+    plugin_b = types.ModuleType(module_b_name)
+
+    def register_toolchain_tools_a(registry):
+        registry.register(
+            ToolRegistration(
+                tool_id="alpha_tool",
+                name="Alpha Tool",
+                description="Alpha plugin tool.",
+                category="search",
+                aliases=["alpha"],
+            )
+        )
+
+    def register_toolchain_tools_b(registry):
+        registry.register(
+            ToolRegistration(
+                tool_id="beta_tool",
+                name="Beta Tool",
+                description="Beta plugin tool.",
+                category="validation",
+                aliases=["beta"],
+            )
+        )
+
+    plugin_a.register_toolchain_tools = register_toolchain_tools_a
+    plugin_b.register_toolchain_tools = register_toolchain_tools_b
+    monkeypatch.setitem(sys.modules, module_a_name, plugin_a)
+    monkeypatch.setitem(sys.modules, module_b_name, plugin_b)
+
+    tool_registry_module._get_tool_registry_cached.cache_clear()
+    monkeypatch.setattr(
+        tool_registry_module.settings,
+        "toolchain_engineer_plugin_modules",
+        [module_a_name],
+    )
+    registry_a = get_tool_registry()
+    assert "alpha_tool" in registry_a.supported_tool_ids()
+    assert "beta_tool" not in registry_a.supported_tool_ids()
+
+    monkeypatch.setattr(
+        tool_registry_module.settings,
+        "toolchain_engineer_plugin_modules",
+        [module_b_name],
+    )
+    registry_b = get_tool_registry()
+    assert "beta_tool" in registry_b.supported_tool_ids()
+    assert "alpha_tool" not in registry_b.supported_tool_ids()
+
+    tool_registry_module._get_tool_registry_cached.cache_clear()
+
+
+@pytest.mark.asyncio
+async def test_toolchain_engineer_prompt_catalog_comes_from_registry(monkeypatch):
+    """Planner prompt should be generated from the current registry catalog."""
+
+    captured_messages: list = []
+    monkeypatch.setattr(
+        toolchain_engineer,
+        "ChatOpenAI",
+        make_recording_llm("[]", captured_messages),
+    )
+    registry = get_tool_registry().clone()
+    registry.register(
+        ToolRegistration(
+            tool_id="plugin_tool",
+            name="Plugin Tool",
+            description="Custom plugin-only capability for specialized workflows",
+            category="misc",
+            aliases=["plugin_alias"],
+        )
+    )
+
+    engineer = toolchain_engineer.ToolchainEngineer(registry=registry)
+    await engineer.plan_tools({"nodes": []}, [])
+
+    system_prompt = captured_messages[0][0].content
+    assert "- plugin_tool: Custom plugin-only capability for specialized workflows." in system_prompt
+    assert "- tool_id: Canonical tool identifier or supported alias" in system_prompt
+    assert "- name: Human-readable display name for the tool" in system_prompt
+
+
+@pytest.mark.asyncio
+async def test_toolchain_engineer_preserves_display_name_when_tool_id_present(
+    monkeypatch,
+):
+    """Display names should not be overwritten by canonical tool ids."""
+
+    monkeypatch.setattr(
+        toolchain_engineer,
+        "ChatOpenAI",
+        make_stub_llm(
+            '[{"tool_id":"web_search","name":"Web Search Tool","category":"search","purpose":"Look up docs","configuration":{}}]'
+        ),
+    )
+    engineer = toolchain_engineer.ToolchainEngineer()
+    result = await engineer.plan_tools(
+        {"nodes": [{"name": "research", "purpose": "Search docs"}]},
+        [Constraint(type="goal", value="Research docs", priority=5)],
+    )
+
+    assert result.tools[0].tool_id == "web_search"
+    assert result.tools[0].name == "Web Search Tool"
 
 
 def test_requirements_analyst_uses_request_scoped_model_config(monkeypatch):

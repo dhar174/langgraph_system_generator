@@ -16,7 +16,11 @@ from langgraph_system_generator.generator.notebook_composer_registry import (
     NotebookComposerArchitectureRegistration,
     get_notebook_composer_registry,
 )
-from langgraph_system_generator.generator.state import CellSpec, NotebookPlan
+from langgraph_system_generator.generator.state import (
+    CellSpec,
+    NotebookPlan,
+    ToolPlanningFeedback,
+)
 from langgraph_system_generator.utils.config import ModelConfig
 
 
@@ -230,6 +234,168 @@ async def test_notebook_composer_registry_plugins_can_inject_pre_section_cells(
     intro_cells = [cell.content for cell in composition.cells if cell.section == "intro"]
     assert any("Plugin intro banner" in cell for cell in intro_cells)
     registry_module.get_notebook_composer_registry.cache_clear()
+
+
+@pytest.mark.asyncio
+async def test_compose_notebook_emits_tool_planning_warning_cells(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    monkeypatch.setattr(composer_module, "ChatOpenAI", DummyLLM)
+    composer = composer_module.NotebookComposer()
+
+    composition = await composer.compose_notebook(
+        notebook_plan=NotebookPlan(
+            title="Tool Planning Notes",
+            sections=["Setup", "Workflow", "Execution"],
+            patterns_used=["router"],
+            architecture_type="router",
+        ),
+        workflow_design={
+            "architecture_type": "router",
+            "state_schema": {"messages": "Conversation state"},
+            "nodes": [
+                {"name": "router", "purpose": "Route requests"},
+                {"name": "search", "purpose": "Search documents"},
+            ],
+        },
+        tools=[],
+        architecture={"architecture_type": "router", "justification": "Warning test."},
+        tool_planning_feedback=ToolPlanningFeedback(
+            fallback_used=True,
+            fallback_reason="Tool planning used heuristic fallback inference.",
+            validation_errors=["Unsupported tool suggestion 'swarm_tool'."],
+            unresolved_tools=["swarm_tool"],
+            available_tool_ids=["web_search"],
+            warnings=["Tool planning used heuristic fallback inference."],
+        ),
+    )
+
+    tool_markdown = [
+        cell.content
+        for cell in composition.cells
+        if cell.section == "tools" and cell.cell_type == "markdown"
+    ]
+    assert any("Tool Planning Notes" in cell for cell in tool_markdown)
+    assert any("swarm_tool" in cell for cell in tool_markdown)
+
+
+@pytest.mark.asyncio
+async def test_compose_notebook_dependency_plan_uses_tool_packages_and_env_vars(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    monkeypatch.setattr(composer_module, "ChatOpenAI", DummyLLM)
+    composer = composer_module.NotebookComposer()
+
+    composition = await composer.compose_notebook(
+        notebook_plan=NotebookPlan(
+            title="Dependency Plan",
+            sections=["Setup", "Workflow", "Execution"],
+            patterns_used=["router"],
+            architecture_type="router",
+        ),
+        workflow_design={
+            "architecture_type": "router",
+            "state_schema": {"messages": "Conversation state"},
+            "nodes": [
+                {"name": "router", "purpose": "Route requests"},
+                {"name": "search", "purpose": "Search documents"},
+            ],
+        },
+        tools=[
+            {
+                "tool_id": "http_client",
+                "name": "HTTP Client",
+                "category": "api",
+                "purpose": "Fetch API data",
+                "configuration": {},
+                "packages": ["requests", "pydantic"],
+                "provider_env_vars": ["SERVICE_API_KEY"],
+                "status": "ready",
+                "warnings": [],
+            }
+        ],
+        architecture={"architecture_type": "router", "justification": "Dependency test."},
+    )
+
+    assert "requests" in composition.dependency_plan.packages
+    assert "pydantic" in composition.dependency_plan.packages
+    assert "SERVICE_API_KEY" in composition.dependency_plan.provider_env_vars
+
+
+@pytest.mark.asyncio
+async def test_compose_notebook_sanitizes_provider_env_vars_for_config_code(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    monkeypatch.setattr(composer_module, "ChatOpenAI", DummyLLM)
+    composer = composer_module.NotebookComposer()
+
+    composition = await composer.compose_notebook(
+        notebook_plan=NotebookPlan(
+            title="Sanitized Dependency Plan",
+            sections=["Setup", "Workflow", "Execution"],
+            patterns_used=["router"],
+            architecture_type="router",
+        ),
+        workflow_design={
+            "architecture_type": "router",
+            "state_schema": {"messages": "Conversation state"},
+            "nodes": [
+                {"name": "router", "purpose": "Route requests"},
+                {"name": "search", "purpose": "Search documents"},
+            ],
+        },
+        tools=[
+            {
+                "tool_id": "http_client",
+                "name": "HTTP Client",
+                "category": "api",
+                "purpose": "Fetch API data",
+                "configuration": {
+                    "provider_env_vars": ["openai-api-key", "Service API Key"],
+                },
+                "packages": ["requests"],
+                "provider_env_vars": ["123 service key"],
+                "status": "ready",
+                "warnings": [],
+            }
+        ],
+        architecture={
+            "architecture_type": "router",
+            "justification": "Dependency sanitization test.",
+        },
+    )
+
+    assert "OPENAI_API_KEY" in composition.dependency_plan.provider_env_vars
+    assert "SERVICE_API_KEY" in composition.dependency_plan.provider_env_vars
+    assert "ENV_123_SERVICE_KEY" in composition.dependency_plan.provider_env_vars
+    assert any(
+        "Normalized provider env var 'openai-api-key' to 'OPENAI_API_KEY'"
+        in note
+        for note in composition.dependency_plan.runtime_notes
+    )
+    assert any(
+        "Normalized provider env var '123 service key' to 'ENV_123_SERVICE_KEY'"
+        in note
+        for note in composition.dependency_plan.runtime_notes
+    )
+
+    config_cells = [
+        cell.content
+        for cell in composition.cells
+        if cell.section == "setup"
+        and cell.cell_type == "code"
+        and "MODEL =" in cell.content
+    ]
+    assert config_cells
+    assert (
+        'OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")'
+        in config_cells[0]
+    )
+    assert (
+        'ENV_123_SERVICE_KEY = os.environ.get("ENV_123_SERVICE_KEY", "")'
+        in config_cells[0]
+    )
+    ast.parse(config_cells[0])
 
 
 @pytest.mark.asyncio
