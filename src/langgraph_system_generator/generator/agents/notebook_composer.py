@@ -143,6 +143,26 @@ class NotebookComposer:
                     merged.append(text)
         return merged
 
+    @classmethod
+    def _normalize_provider_env_var(cls, value: Any) -> str:
+        """Normalize arbitrary env-var suggestions into notebook-safe keys."""
+
+        text = str(value or "").strip()
+        if not text:
+            return ""
+
+        normalized = re.sub(r"[^a-zA-Z0-9_]", "_", text)
+        normalized = re.sub(r"_+", "_", normalized).strip("_").upper()
+        if not normalized:
+            return ""
+        if normalized[0].isdigit():
+            normalized = f"ENV_{normalized}"
+        if not normalized.isidentifier():
+            normalized = cls._safe_identifier(normalized, "ENV_VAR").upper()
+            if normalized[0].isdigit():
+                normalized = f"ENV_{normalized}"
+        return normalized
+
     @staticmethod
     def _package_import_probe(package_name: str) -> str:
         """Return the import probe used to detect whether a package is installed."""
@@ -331,8 +351,19 @@ class NotebookComposer:
                 tool_configuration.get("provider_env_vars"),
             )
             for env_var in provider_env_vars:
-                if env_var not in plan.provider_env_vars:
-                    plan.provider_env_vars.append(env_var)
+                normalized_env_var = self._normalize_provider_env_var(env_var)
+                if not normalized_env_var:
+                    continue
+                raw_env_var = str(env_var or "").strip()
+                if raw_env_var and normalized_env_var != raw_env_var:
+                    note = (
+                        f"Normalized provider env var '{raw_env_var}' to "
+                        f"'{normalized_env_var}' for notebook-safe configuration."
+                    )
+                    if note not in plan.runtime_notes:
+                        plan.runtime_notes.append(note)
+                if normalized_env_var not in plan.provider_env_vars:
+                    plan.provider_env_vars.append(normalized_env_var)
 
         if "langchain-openai" in selected_packages and "OPENAI_API_KEY" not in plan.provider_env_vars:
             plan.provider_env_vars.append("OPENAI_API_KEY")
@@ -717,14 +748,17 @@ else:
             "# Prefer environment variables over hardcoded secrets in notebooks.",
         ]
         for env_var in dependency_plan.provider_env_vars:
+            safe_env_var = self._normalize_provider_env_var(env_var)
+            if not safe_env_var:
+                continue
             config_lines.extend(
                 [
-                    f'{env_var} = os.environ.get("{env_var}", "")',
-                    f'if not {env_var}:',
-                    f'    print("{env_var} is not set. Configure it in your environment before running live model cells.")',
+                    f'{safe_env_var} = os.environ.get("{safe_env_var}", "")',
+                    f'if not {safe_env_var}:',
+                    f'    print("{safe_env_var} is not set. Configure it in your environment before running live model cells.")',
                     "    # Optional interactive fallback for local notebook sessions:",
                     "    # from getpass import getpass",
-                    f'    # os.environ["{env_var}"] = getpass("Enter {env_var}: ")',
+                    f'    # os.environ["{safe_env_var}"] = getpass("Enter {safe_env_var}: ")',
                     "",
                 ]
             )
