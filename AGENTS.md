@@ -91,7 +91,7 @@ These node functions are the clearest map of the runtime lifecycle:
 | Architecture selection | `architecture_selection_node` | `ArchitectureSelector` | `selected_patterns`, `architecture_type`, `architecture_justification`, `architecture_feedback` |
 | Workflow design | `graph_design_node` | `GraphDesigner` | `workflow_design`, `graph_design_feedback`, `graph_exports`, `notebook_plan` |
 | Tool planning | `tooling_plan_node` | `ToolchainEngineer` | `tools_plan` |
-| Notebook assembly | `notebook_assembly_node` | `NotebookComposer` | `generated_cells` |
+| Notebook assembly | `notebook_assembly_node` | `NotebookComposer` | `generated_cells`, `notebook_composition_feedback`, `notebook_dependency_plan` |
 | Static QA | `static_qa_node` | validators under `src/langgraph_system_generator/qa/` | `qa_reports`, `qa_history` |
 | Runtime QA | `runtime_qa_node` | notebook runtime helpers | `qa_reports`, `qa_history` |
 | Repair | `repair_node` | `NotebookRepairAgent` from `langgraph_system_generator.qa.repair` and notebook repair helpers | `generated_cells`, `repair_attempts`, `qa_reports`, `qa_history` |
@@ -118,6 +118,10 @@ Important patterns:
 - `workflow_design` remains the backward-compatible downstream graph payload,
   while `graph_design_feedback` and `graph_exports` carry validation/fallback
   metadata plus Mermaid/schema exports for manifests and notebooks.
+- `generated_cells` remains the authoritative notebook payload, while
+  `notebook_composition_feedback` and `notebook_dependency_plan` carry
+  advisory fallback/config/dependency metadata for manifests and API/CLI
+  callers.
 
 When adding a new runtime agent or stage:
 
@@ -194,6 +198,25 @@ raw dict. Keep these conventions aligned when changing graph design behavior:
   `src/langgraph_system_generator/generator/graph_design_registry.py`
   and `GRAPH_DESIGNER_PLUGIN_MODULES` rather than hardcoding more branches into
   the agent
+
+### NotebookComposer-specific expectations
+
+`NotebookComposer.compose_notebook()` returns a typed
+`NotebookCompositionResult`, not just a list of cells. Keep these conventions
+aligned when changing notebook assembly behavior:
+
+- keep `generated_cells` backward-compatible even when you add new advisory
+  metadata
+- keep deterministic pattern builders ordered and synchronous; only the
+  LLM-backed tool and custom-node generation paths should use the internal
+  parallel async flow
+- register architecture-specific notebook assembly behavior through
+  `src/langgraph_system_generator/generator/notebook_composer_registry.py`
+  and `NOTEBOOK_COMPOSER_PLUGIN_MODULES` rather than adding more hardcoded
+  branches directly to the agent
+- preserve stable final cell ordering even when async generation is enabled
+- surface deterministic fallbacks through visible notebook comments plus
+  `notebook_composition_feedback` instead of silently dropping into placeholders
 
 ### Minimal runtime-agent skeleton
 
