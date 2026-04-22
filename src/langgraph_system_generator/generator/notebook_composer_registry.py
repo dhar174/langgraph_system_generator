@@ -12,6 +12,7 @@ from langgraph_system_generator.generator.state import (
     NotebookCompositionFeedback,
     NotebookDependencyPlan,
     NotebookPlan,
+    ToolPlanningFeedback,
 )
 from langgraph_system_generator.utils.config import settings
 
@@ -75,6 +76,7 @@ class NotebookComposerContext:
     architecture: dict[str, Any]
     dependency_plan: NotebookDependencyPlan
     feedback: NotebookCompositionFeedback
+    tool_planning_feedback: ToolPlanningFeedback
 
 
 @dataclass
@@ -294,9 +296,18 @@ async def _build_tools_section(
     composer: Any,
     context: NotebookComposerContext,
 ) -> list[CellSpec]:
-    if not context.tools:
-        return []
-    return await composer._create_tool_cells(context.tools, context.feedback)
+    warning_cells = composer._create_tool_planning_warning_cells(
+        context.tool_planning_feedback
+    )
+    runnable_tools = [
+        tool
+        for tool in context.tools
+        if str(tool.get("status", "ready")).strip().lower() != "unsupported"
+    ]
+    if not runnable_tools:
+        return warning_cells
+    tool_cells = await composer._create_tool_cells(runnable_tools, context.feedback)
+    return [*warning_cells, *tool_cells]
 
 
 async def _build_nodes_section(

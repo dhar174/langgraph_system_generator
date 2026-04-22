@@ -27,10 +27,12 @@ from langgraph_system_generator.generator.state import (
     NotebookDependencyPlan,
     NotebookPlan,
     RequirementsFeedback,
+    ToolPlanningFeedback,
 )
 from langgraph_system_generator.generator.architecture_registry import (
     get_default_architecture_registry,
 )
+from langgraph_system_generator.generator.tool_registry import get_tool_registry
 from langgraph_system_generator.generator.graph_design_registry import (
     build_graph_exports,
     graph_design_issue_messages,
@@ -74,6 +76,12 @@ def _available_constraint_types() -> List[str]:
     return build_constraint_type_registry(settings.requirements_constraint_types)
 
 
+def _available_tool_ids() -> List[str]:
+    """Return canonical tool ids exposed by the internal tool registry."""
+
+    return get_tool_registry().supported_tool_ids()
+
+
 def _default_state(
     prompt: str,
     generation_config: GenerationConfig | None = None,
@@ -92,6 +100,10 @@ def _default_state(
         "architecture_feedback": ArchitectureFeedback(fallback_used=False),
         "graph_design_feedback": GraphDesignFeedback(fallback_used=False),
         "graph_exports": GraphExportBundle(),
+        "tool_planning_feedback": ToolPlanningFeedback(
+            fallback_used=False,
+            available_tool_ids=_available_tool_ids(),
+        ),
         "notebook_composition_feedback": NotebookCompositionFeedback(
             fallback_used=False
         ),
@@ -326,6 +338,70 @@ def _notebook_composition_warning_entries(
             "fallback_events": fallback_events,
         }
     ]
+
+
+def _tool_planning_warning_entries(
+    feedback: Dict[str, Any] | None,
+) -> List[Dict[str, Any]]:
+    """Convert tool-planning feedback into manifest warnings."""
+
+    if not isinstance(feedback, dict):
+        return []
+
+    warnings: List[Dict[str, Any]] = []
+    advisory_warnings = list(feedback.get("warnings") or [])
+    unresolved_tools = list(feedback.get("unresolved_tools") or [])
+    validation_errors = list(feedback.get("validation_errors") or [])
+    environment_notes = list(feedback.get("environment_notes") or [])
+    dependency_conflicts = list(feedback.get("dependency_conflicts") or [])
+
+    if feedback.get("fallback_used"):
+        warnings.append(
+            {
+                "code": "tool_planning_fallback",
+                "phase": "tool_planning",
+                "message": feedback.get("fallback_reason")
+                or "Tool planning used heuristic fallback inference.",
+                "warnings": advisory_warnings,
+                "unresolved_tools": unresolved_tools,
+            }
+        )
+
+    if validation_errors or unresolved_tools:
+        warnings.append(
+            {
+                "code": "tool_planning_validation",
+                "phase": "tool_planning",
+                "message": "Tool planning reported validation issues.",
+                "validation_errors": validation_errors,
+                "unresolved_tools": unresolved_tools,
+                "warnings": advisory_warnings,
+            }
+        )
+
+    if environment_notes:
+        warnings.append(
+            {
+                "code": "tool_planning_environment",
+                "phase": "tool_planning",
+                "message": "Tool planning reported environment considerations.",
+                "environment_notes": environment_notes,
+                "warnings": advisory_warnings,
+            }
+        )
+
+    if dependency_conflicts:
+        warnings.append(
+            {
+                "code": "tool_planning_dependency",
+                "phase": "tool_planning",
+                "message": "Tool planning reported dependency conflicts or gaps.",
+                "dependency_conflicts": dependency_conflicts,
+                "warnings": advisory_warnings,
+            }
+        )
+
+    return warnings
 
 
 class _PhaseTracker:
@@ -862,6 +938,10 @@ def _build_stub_result(prompt: str, agent_type: str | None = None) -> Dict[str, 
         "architecture_feedback": architecture_feedback,
         "graph_design_feedback": graph_design_feedback,
         "graph_exports": graph_exports,
+        "tool_planning_feedback": ToolPlanningFeedback(
+            fallback_used=False,
+            available_tool_ids=_available_tool_ids(),
+        ),
         "notebook_composition_feedback": NotebookCompositionFeedback(
             fallback_used=False,
             resolved_model=settings.default_model,
@@ -1003,6 +1083,7 @@ async def generate_artifacts(
     architecture_feedback = serialized.get("architecture_feedback") or {}
     graph_design_feedback = serialized.get("graph_design_feedback") or {}
     graph_exports = serialized.get("graph_exports") or {}
+    tool_planning_feedback = serialized.get("tool_planning_feedback") or {}
     notebook_composition_feedback = (
         serialized.get("notebook_composition_feedback") or {}
     )
@@ -1018,12 +1099,14 @@ async def generate_artifacts(
         "architecture_feedback": architecture_feedback,
         "graph_design_feedback": graph_design_feedback,
         "graph_exports": graph_exports,
+        "tool_planning_feedback": tool_planning_feedback,
         "notebook_composition_feedback": notebook_composition_feedback,
         "notebook_dependency_plan": notebook_dependency_plan,
         "warnings": [
             *_requirements_warning_entries(requirements_feedback),
             *_architecture_warning_entries(architecture_feedback),
             *_graph_design_warning_entries(graph_design_feedback),
+            *_tool_planning_warning_entries(tool_planning_feedback),
             *_notebook_composition_warning_entries(notebook_composition_feedback),
         ],
         "export_results": {},

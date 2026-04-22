@@ -34,6 +34,7 @@ from langgraph_system_generator.generator.state import (
     GraphDesignResult,
     GraphEdgeSpec,
     GraphNodeSpec,
+    ToolSpec,
 )
 from langgraph_system_generator.utils.error_handling import GenerationError
 from langgraph_system_generator.utils.config import ModelConfig
@@ -1062,14 +1063,19 @@ def test_graph_design_exports_escape_mermaid_labels():
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    ("payload", "expected_count"),
+    ("payload", "expected_count", "expected_fallback"),
     [
-        ('[{"name":"tool","category":"misc","purpose":"x","configuration":{}}]', 1),
-        ("invalid", 0),
+        ('[{"name":"search","category":"search","purpose":"x","configuration":{}}]', 1, False),
+        ("invalid", 0, True),
     ],
 )
-async def test_toolchain_engineer_parsing(payload, expected_count, monkeypatch):
-    """ToolchainEngineer returns empty list on parse errors."""
+async def test_toolchain_engineer_parsing(
+    payload,
+    expected_count,
+    expected_fallback,
+    monkeypatch,
+):
+    """ToolchainEngineer normalizes valid payloads and surfaces parse fallback."""
     monkeypatch.setattr(
         toolchain_engineer,
         "ChatOpenAI",
@@ -1078,7 +1084,94 @@ async def test_toolchain_engineer_parsing(payload, expected_count, monkeypatch):
     engineer = toolchain_engineer.ToolchainEngineer()
     constraints = [Constraint(type="goal", value="x", priority=5)]
     result = await engineer.plan_tools({"nodes": []}, constraints)
-    assert len(result) == expected_count
+    assert len(result.tools) == expected_count
+    assert result.feedback.fallback_used is expected_fallback
+
+
+@pytest.mark.asyncio
+async def test_toolchain_engineer_parse_failure_uses_heuristic_fallback_for_tool_nodes(
+    monkeypatch,
+):
+    """Parse failures should infer conservative fallback tools from workflow nodes."""
+
+    monkeypatch.setattr(
+        toolchain_engineer,
+        "ChatOpenAI",
+        make_stub_llm("not-json"),
+    )
+    engineer = toolchain_engineer.ToolchainEngineer()
+    result = await engineer.plan_tools(
+        {
+            "nodes": [
+                {"name": "researcher", "purpose": "Search docs and gather references"},
+                {"name": "validator", "purpose": "Validate the final schema"},
+            ]
+        },
+        [Constraint(type="goal", value="Build agents", priority=5)],
+    )
+
+    assert result.feedback.fallback_used is True
+    assert [tool.tool_id for tool in result.tools] == ["web_search", "schema_validator"]
+    assert all(tool.status == "fallback" for tool in result.tools)
+
+
+@pytest.mark.asyncio
+async def test_toolchain_engineer_marks_imaginary_tools_unsupported(monkeypatch):
+    """Unsupported tool suggestions should surface as warnings, not valid tools."""
+
+    monkeypatch.setattr(
+        toolchain_engineer,
+        "ChatOpenAI",
+        make_stub_llm(
+            '[{"name":"quantum_api","category":"api","purpose":"Call an imaginary endpoint","configuration":{}}]'
+        ),
+    )
+    engineer = toolchain_engineer.ToolchainEngineer()
+    result = await engineer.plan_tools(
+        {"nodes": [{"name": "fetch_data", "purpose": "Fetch remote data"}]},
+        [Constraint(type="goal", value="Fetch data", priority=5)],
+    )
+
+    assert result.feedback.fallback_used is True
+    assert result.feedback.unresolved_tools == ["quantum_api"]
+    assert result.tools[0].tool_id == "http_client"
+    assert result.tools[0].status == "fallback"
+    unsupported = [tool for tool in result.tools if tool.status == "unsupported"]
+    assert len(unsupported) == 1
+    assert unsupported[0].name == "quantum_api"
+
+
+@pytest.mark.asyncio
+async def test_toolchain_engineer_normalizes_alias_to_canonical_tool_id(monkeypatch):
+    """Registry aliases should resolve to canonical tool ids."""
+
+    monkeypatch.setattr(
+        toolchain_engineer,
+        "ChatOpenAI",
+        make_stub_llm(
+            '[{"name":"search","category":"search","purpose":"Look up docs","configuration":{}}]'
+        ),
+    )
+    engineer = toolchain_engineer.ToolchainEngineer()
+    result = await engineer.plan_tools(
+        {"nodes": [{"name": "research", "purpose": "Search docs"}]},
+        [Constraint(type="goal", value="Research docs", priority=5)],
+    )
+
+    assert result.feedback.fallback_used is False
+    assert result.tools == [
+        ToolSpec(
+            tool_id="web_search",
+            name="search",
+            category="search",
+            purpose="Look up docs",
+            configuration={"backend": "duckduckgo"},
+            packages=["langchain-community"],
+            provider_env_vars=[],
+            status="ready",
+            warnings=[],
+        )
+    ]
 
 
 def test_requirements_analyst_uses_request_scoped_model_config(monkeypatch):

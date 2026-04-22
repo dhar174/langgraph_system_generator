@@ -25,12 +25,13 @@ from langgraph_system_generator.generator.state import (
     CellSpec,
     DocSnippet,
     GeneratorState,
-    NotebookCompositionFeedback,
-    NotebookDependencyPlan,
     GraphDesignFeedback,
     GraphExportBundle,
+    NotebookCompositionFeedback,
+    NotebookDependencyPlan,
     NotebookPlan,
     QAReport,
+    ToolPlanningFeedback,
 )
 from langgraph_system_generator.notebook.composer import (
     NotebookComposer as NotebookFileComposer,
@@ -329,10 +330,13 @@ async def tooling_plan_node(state: GeneratorState) -> Dict[str, Any]:
     """
     engineer = ToolchainEngineer(model_config=_resolve_model_config(state))
 
-    workflow_design = state.get("workflow_design", {})
-    tools = await engineer.plan_tools(workflow_design, state["constraints"])
+    workflow_design = state.get("workflow_design") or {}
+    planning = await engineer.plan_tools(workflow_design, state["constraints"])
 
-    return {"tools_plan": tools}
+    return {
+        "tools_plan": planning.to_tools_plan_payload(),
+        "tool_planning_feedback": planning.feedback,
+    }
 
 
 async def notebook_assembly_node(state: GeneratorState) -> Dict[str, Any]:
@@ -356,6 +360,7 @@ async def notebook_assembly_node(state: GeneratorState) -> Dict[str, Any]:
             else graph_exports
         )
     tools_plan = state.get("tools_plan", [])
+    tool_planning_feedback = state.get("tool_planning_feedback")
 
     architecture = {
         "architecture_type": resolve_architecture_type(
@@ -366,7 +371,11 @@ async def notebook_assembly_node(state: GeneratorState) -> Dict[str, Any]:
     }
 
     composition = await composer.compose_notebook(
-        notebook_plan, workflow_design, tools_plan, architecture
+        notebook_plan,
+        workflow_design,
+        tools_plan,
+        architecture,
+        tool_planning_feedback=tool_planning_feedback,
     )
 
     return {
@@ -647,6 +656,7 @@ async def package_outputs_node(state: GeneratorState) -> Dict[str, Any]:
     architecture_feedback = state.get("architecture_feedback")
     graph_design_feedback = state.get("graph_design_feedback")
     graph_exports = state.get("graph_exports")
+    tool_planning_feedback = state.get("tool_planning_feedback")
     notebook_composition_feedback = state.get("notebook_composition_feedback")
     notebook_dependency_plan = state.get("notebook_dependency_plan")
     manifest = {
@@ -679,6 +689,14 @@ async def package_outputs_node(state: GeneratorState) -> Dict[str, Any]:
             graph_exports.model_dump(by_alias=True)
             if hasattr(graph_exports, "model_dump")
             else (graph_exports or GraphExportBundle().model_dump(by_alias=True))
+        ),
+        "tool_planning_feedback": (
+            tool_planning_feedback.model_dump()
+            if hasattr(tool_planning_feedback, "model_dump")
+            else (
+                tool_planning_feedback
+                or ToolPlanningFeedback(available_tool_ids=[]).model_dump()
+            )
         ),
         "notebook_composition_feedback": (
             notebook_composition_feedback.model_dump()

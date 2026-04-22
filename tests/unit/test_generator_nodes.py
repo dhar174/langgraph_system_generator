@@ -23,6 +23,9 @@ from langgraph_system_generator.generator.state import (
     NotebookPlan,
     RequirementsAnalysis,
     RequirementsFeedback,
+    ToolPlanningFeedback,
+    ToolPlanningResult,
+    ToolSpec,
 )
 
 
@@ -62,7 +65,23 @@ async def test_intake_node_returns_constraints():
 async def test_tooling_plan_node_returns_tools_plan():
     constraints = [Constraint(type="goal", value="Build agents", priority=5)]
     workflow_design = {"nodes": [{"name": "agent", "purpose": "coordinate"}]}
-    expected_tools = [{"name": "search", "category": "search"}]
+    expected_tools = [
+        ToolSpec(
+            tool_id="web_search",
+            name="search",
+            category="search",
+            purpose="Look up docs",
+            configuration={"backend": "duckduckgo"},
+            packages=["langchain-community"],
+            provider_env_vars=[],
+            status="ready",
+            warnings=[],
+        )
+    ]
+    expected_feedback = ToolPlanningFeedback(
+        fallback_used=False,
+        available_tool_ids=["web_search"],
+    )
 
     # Patch ChatOpenAI used inside ToolchainEngineer.__init__ to avoid requiring OPENAI_API_KEY
     with patch(
@@ -71,13 +90,21 @@ async def test_tooling_plan_node_returns_tools_plan():
     ):
         with patch(
             "langgraph_system_generator.generator.nodes.ToolchainEngineer.plan_tools",
-            new=AsyncMock(return_value=expected_tools),
+            new=AsyncMock(
+                return_value=ToolPlanningResult(
+                    tools=expected_tools,
+                    feedback=expected_feedback,
+                )
+            ),
         ) as mock_plan:
             result = await tooling_plan_node(
                 {"workflow_design": workflow_design, "constraints": constraints}
             )
 
-    assert result == {"tools_plan": expected_tools}
+    assert result == {
+        "tools_plan": [tool.model_dump() for tool in expected_tools],
+        "tool_planning_feedback": expected_feedback,
+    }
     mock_plan.assert_awaited_once_with(workflow_design, constraints)
 
 
@@ -105,11 +132,26 @@ async def test_notebook_assembly_node_passes_architecture_and_plans():
         packages=["langgraph", "langchain-openai"]
     )
 
-    async def capture_compose(plan, design, tools, architecture):
+    tool_planning_feedback = ToolPlanningFeedback(
+        fallback_used=True,
+        fallback_reason="Heuristic tool fallback used.",
+        available_tool_ids=["web_search"],
+        warnings=["Heuristic tool fallback used."],
+    )
+
+    async def capture_compose(
+        plan,
+        design,
+        tools,
+        architecture,
+        *,
+        tool_planning_feedback=None,
+    ):
         captured_args["plan"] = plan
         captured_args["design"] = design
         captured_args["tools"] = tools
         captured_args["architecture"] = architecture
+        captured_args["tool_planning_feedback"] = tool_planning_feedback
         return NotebookCompositionResult(
             cells=expected_cells,
             feedback=expected_feedback,
@@ -129,6 +171,7 @@ async def test_notebook_assembly_node_passes_architecture_and_plans():
                     "notebook_plan": notebook_plan,
                     "workflow_design": workflow_design,
                     "tools_plan": tools_plan,
+                    "tool_planning_feedback": tool_planning_feedback,
                     "constraints": constraints,
                     "selected_patterns": {"primary": "router"},
                     "architecture_justification": "Fits the request.",
@@ -147,6 +190,7 @@ async def test_notebook_assembly_node_passes_architecture_and_plans():
         "architecture_type": "router",
         "justification": "Fits the request.",
     }
+    assert captured_args["tool_planning_feedback"] == tool_planning_feedback
 
 
 @pytest.mark.asyncio
@@ -169,8 +213,9 @@ async def test_notebook_assembly_node_fallback_when_primary_missing():
     expected_feedback = NotebookCompositionFeedback(fallback_used=False)
     expected_dependency_plan = NotebookDependencyPlan()
 
-    async def capture_compose(plan, design, tools, architecture):
+    async def capture_compose(plan, design, tools, architecture, **kwargs):
         captured_args["architecture"] = architecture
+        captured_args["tool_planning_feedback"] = kwargs.get("tool_planning_feedback")
         return NotebookCompositionResult(
             cells=expected_cells,
             feedback=expected_feedback,
@@ -205,6 +250,7 @@ async def test_notebook_assembly_node_fallback_when_primary_missing():
         "architecture_type": "router",  # Should default to "router"
         "justification": "Fits the request.",
     }
+    assert captured_args["tool_planning_feedback"] is None
 
 
 @pytest.mark.asyncio
@@ -227,8 +273,9 @@ async def test_notebook_assembly_node_fallback_when_selected_patterns_missing():
     expected_feedback = NotebookCompositionFeedback(fallback_used=False)
     expected_dependency_plan = NotebookDependencyPlan()
 
-    async def capture_compose(plan, design, tools, architecture):
+    async def capture_compose(plan, design, tools, architecture, **kwargs):
         captured_args["architecture"] = architecture
+        captured_args["tool_planning_feedback"] = kwargs.get("tool_planning_feedback")
         return NotebookCompositionResult(
             cells=expected_cells,
             feedback=expected_feedback,
@@ -263,6 +310,7 @@ async def test_notebook_assembly_node_fallback_when_selected_patterns_missing():
         "architecture_type": "router",  # Should default to "router"
         "justification": "Fits the request.",
     }
+    assert captured_args["tool_planning_feedback"] is None
 @pytest.mark.parametrize("failure_mode", ["vector_store", "retrieve"])
 async def test_rag_retrieval_node_returns_empty_on_failure(
     monkeypatch, failure_mode
