@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+from tempfile import TemporaryDirectory
 from typing import List
 
 from langchain_core.messages import HumanMessage, SystemMessage
@@ -9,6 +11,10 @@ from langchain_openai import ChatOpenAI
 
 from langgraph_system_generator.generator.agents._llm import build_chat_llm
 from langgraph_system_generator.generator.state import CellSpec, QAReport
+from langgraph_system_generator.notebook.composer import (
+    NotebookComposer as NotebookFileComposer,
+)
+from langgraph_system_generator.qa.validators import NotebookValidator
 from langgraph_system_generator.utils.config import ModelConfig
 
 
@@ -35,18 +41,14 @@ class QARepairAgent:
         Returns:
             List of QA reports for each check
         """
-        reports = []
+        notebook_builder = NotebookFileComposer()
+        validator = NotebookValidator()
 
-        # Check for placeholders
-        reports.append(self._check_no_placeholders(cells))
-
-        # Check for basic structure
-        reports.append(self._check_basic_structure(cells))
-
-        # Check for imports
-        reports.append(self._check_has_imports(cells))
-
-        return reports
+        with TemporaryDirectory() as temp_dir:
+            notebook = notebook_builder.build_notebook(cells)
+            notebook_path = Path(temp_dir) / "generated.ipynb"
+            notebook_builder.write(notebook, notebook_path)
+            return validator.validate_all(notebook_path)
 
     def _check_no_placeholders(self, cells: List[CellSpec]) -> QAReport:
         """Ensure no TODO or placeholder text in critical cells."""
