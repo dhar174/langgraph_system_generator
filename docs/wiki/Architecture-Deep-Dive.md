@@ -187,7 +187,7 @@ Designs the specific graph structure, nodes, and edges:
 
 #### 5. Tool Planning
 **Input**: Workflow design + Constraints  
-**Output**: Tool specifications
+**Output**: Tool specifications + advisory planning feedback
 
 Plans any tools/functions needed by the agents:
 
@@ -195,23 +195,23 @@ Plans any tools/functions needed by the agents:
 {
   "tools_plan": [
     {
-      "name": "search_knowledge_base",
-      "purpose": "Search internal documentation",
-      "parameters": ["query: str"],
-      "returns": "List[Document]"
-    },
-    {
-      "name": "create_ticket",
-      "purpose": "Create support ticket",
-      "parameters": ["title: str", "description: str", "priority: str"],
-      "returns": "Ticket"
+      "tool_id": "web_search",
+      "name": "Web Docs Search",
+      "purpose": "Search documentation relevant to the workflow",
+      "configuration": {"backend": "duckduckgo"},
+      "status": "ready"
     }
-  ]
+  ],
+  "tool_planning_feedback": {
+    "fallback_used": false,
+    "environment_notes": [],
+    "dependency_conflicts": []
+  }
 }
 ```
 
 **Agent**: `ToolchainEngineer`  
-**LLM-Powered**: Yes (live mode) / Basic stubs (stub mode)
+**LLM-Powered**: Yes (live mode) / Registry-backed deterministic fallbacks and validation (stub mode and recovery)
 
 #### 6. Notebook Composition
 **Input**: All previous context  

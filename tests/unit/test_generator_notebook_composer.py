@@ -265,6 +265,8 @@ async def test_compose_notebook_emits_tool_planning_warning_cells(
             fallback_reason="Tool planning used heuristic fallback inference.",
             validation_errors=["Unsupported tool suggestion 'swarm_tool'."],
             unresolved_tools=["swarm_tool"],
+            environment_notes=["Blocked tool 'web_search' for an offline runtime."],
+            dependency_conflicts=["Kept 'pypdf' instead of 'pdfminer.six' for PDF parsing."],
             available_tool_ids=["web_search"],
             warnings=["Tool planning used heuristic fallback inference."],
         ),
@@ -277,6 +279,8 @@ async def test_compose_notebook_emits_tool_planning_warning_cells(
     ]
     assert any("Tool Planning Notes" in cell for cell in tool_markdown)
     assert any("swarm_tool" in cell for cell in tool_markdown)
+    assert any("Environment notes" in cell for cell in tool_markdown)
+    assert any("Dependency conflicts" in cell for cell in tool_markdown)
 
 
 @pytest.mark.asyncio
@@ -351,7 +355,7 @@ async def test_compose_notebook_sanitizes_provider_env_vars_for_config_code(
                 "category": "api",
                 "purpose": "Fetch API data",
                 "configuration": {
-                    "provider_env_vars": ["openai-api-key", "Service API Key"],
+                    "provider_env_vars": ["openai-api-key", "Service API Key", "for"],
                 },
                 "packages": ["requests"],
                 "provider_env_vars": ["123 service key"],
@@ -368,6 +372,7 @@ async def test_compose_notebook_sanitizes_provider_env_vars_for_config_code(
     assert "OPENAI_API_KEY" in composition.dependency_plan.provider_env_vars
     assert "SERVICE_API_KEY" in composition.dependency_plan.provider_env_vars
     assert "ENV_123_SERVICE_KEY" in composition.dependency_plan.provider_env_vars
+    assert "ENV_FOR" in composition.dependency_plan.provider_env_vars
     assert any(
         "Normalized provider env var 'openai-api-key' to 'OPENAI_API_KEY'"
         in note
@@ -376,6 +381,10 @@ async def test_compose_notebook_sanitizes_provider_env_vars_for_config_code(
     assert any(
         "Normalized provider env var '123 service key' to 'ENV_123_SERVICE_KEY'"
         in note
+        for note in composition.dependency_plan.runtime_notes
+    )
+    assert any(
+        "Normalized provider env var 'for' to 'ENV_FOR'" in note
         for note in composition.dependency_plan.runtime_notes
     )
 

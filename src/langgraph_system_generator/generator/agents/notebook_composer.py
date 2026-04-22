@@ -19,6 +19,13 @@ from langgraph_system_generator.generator.notebook_composer_registry import (
     NotebookComposerRegistry,
     get_notebook_composer_registry,
 )
+from langgraph_system_generator.generator.tool_dependency_utils import (
+    DependencyAccumulator,
+    accumulate_tool_dependencies,
+    merge_string_lists,
+    normalize_provider_env_var,
+    package_import_probe,
+)
 from langgraph_system_generator.generator.state import (
     CellSpec,
     NotebookCompositionFeedback,
@@ -37,22 +44,6 @@ from langgraph_system_generator.patterns import (
 )
 from langgraph_system_generator.utils.config import ModelConfig, settings
 
-
-_PACKAGE_IMPORT_PROBES = {
-    "langgraph": "langgraph",
-    "langchain-core": "langchain_core",
-    "langchain-openai": "langchain_openai",
-    "langchain-community": "langchain_community",
-    "pydantic": "pydantic",
-    "pypdf": "pypdf",
-    "requests": "requests",
-}
-
-_PACKAGE_FAMILIES = {
-    "pypdf": "pdf_parser",
-    "pdfminer.six": "pdf_parser",
-    "pymupdf": "pdf_parser",
-}
 
 _T = TypeVar("_T")
 logger = logging.getLogger(__name__)
@@ -129,48 +120,19 @@ class NotebookComposer:
     def _merge_string_lists(*values: Any) -> List[str]:
         """Merge list-or-scalar string inputs into an ordered unique list."""
 
-        merged: List[str] = []
-        for value in values:
-            if value in (None, ""):
-                continue
-            if isinstance(value, list):
-                raw_items = value
-            else:
-                raw_items = [value]
-            for raw_item in raw_items:
-                text = str(raw_item or "").strip()
-                if text and text not in merged:
-                    merged.append(text)
-        return merged
+        return merge_string_lists(*values)
 
     @classmethod
     def _normalize_provider_env_var(cls, value: Any) -> str:
         """Normalize arbitrary env-var suggestions into notebook-safe keys."""
 
-        text = str(value or "").strip()
-        if not text:
-            return ""
-
-        normalized = re.sub(r"[^a-zA-Z0-9_]", "_", text)
-        normalized = re.sub(r"_+", "_", normalized).strip("_").upper()
-        if not normalized:
-            return ""
-        if normalized[0].isdigit():
-            normalized = f"ENV_{normalized}"
-        if not normalized.isidentifier():
-            normalized = cls._safe_identifier(normalized, "ENV_VAR").upper()
-            if normalized[0].isdigit():
-                normalized = f"ENV_{normalized}"
-        return normalized
+        return normalize_provider_env_var(value)
 
     @staticmethod
     def _package_import_probe(package_name: str) -> str:
         """Return the import probe used to detect whether a package is installed."""
 
-        return _PACKAGE_IMPORT_PROBES.get(
-            package_name,
-            package_name.replace("-", "_").replace(".", "_"),
-        )
+        return package_import_probe(package_name)
 
     def _resolve_max_iterations(self, workflow_design: Dict[str, Any]) -> int:
         """Resolve the iteration limit embedded into notebook cells."""
@@ -235,40 +197,6 @@ class NotebookComposer:
             f"# Reason: {safe_reason}\n\n"
         )
 
-    def _add_dependency_candidate(
-        self,
-        plan: NotebookDependencyPlan,
-        selected_packages: List[str],
-        selected_families: Dict[str, str],
-        package_name: str,
-        *,
-        family: str | None = None,
-        requested_by: str | None = None,
-    ) -> None:
-        """Add a dependency candidate while deduplicating and resolving conflicts."""
-
-        normalized_package = str(package_name or "").strip()
-        if not normalized_package:
-            return
-
-        dependency_family = family or _PACKAGE_FAMILIES.get(normalized_package)
-        if dependency_family:
-            chosen = selected_families.get(dependency_family)
-            if chosen and chosen != normalized_package:
-                detail = (
-                    f"Kept '{chosen}' instead of '{normalized_package}' "
-                    f"for dependency family '{dependency_family}'."
-                )
-                if requested_by:
-                    detail += f" Requested by {requested_by}."
-                if detail not in plan.conflicts_resolved:
-                    plan.conflicts_resolved.append(detail)
-                return
-            selected_families[dependency_family] = normalized_package
-
-        if normalized_package not in selected_packages:
-            selected_packages.append(normalized_package)
-
     def _plan_dependencies(
         self,
         tools: List[Dict[str, Any]],
@@ -282,96 +210,30 @@ class NotebookComposer:
                 "Generated notebooks assume a Jupyter or Colab-style environment with pip available.",
             ]
         )
-        selected_packages: List[str] = []
-        selected_families: Dict[str, str] = {}
+        accumulator = DependencyAccumulator(runtime_notes=list(plan.runtime_notes))
 
         for package_name in ["langgraph", "langchain-core", "langchain-openai"]:
-            self._add_dependency_candidate(
-                plan,
-                selected_packages,
-                selected_families,
-                package_name,
-            )
+            accumulator.packages.append(package_name)
 
         for tool in tools:
             tool_status = self._normalize_inline_text(tool.get("status", ""), "").lower()
             if tool_status == "unsupported":
                 continue
-            category = self._normalize_inline_text(tool.get("category", ""), "").lower()
-            tool_configuration = tool.get("configuration")
-            if not isinstance(tool_configuration, dict):
-                tool_configuration = {}
-            top_level_packages = tool.get("packages", [])
-            if isinstance(top_level_packages, str):
-                top_level_packages = [top_level_packages]
-            if not isinstance(top_level_packages, list):
-                top_level_packages = []
-            for package_name in top_level_packages:
-                self._add_dependency_candidate(
-                    plan,
-                    selected_packages,
-                    selected_families,
-                    str(package_name),
-                    requested_by=self._normalize_inline_text(tool.get("name", ""), "tool"),
-                )
-            requested_packages = tool_configuration.get("packages", [])
-            if isinstance(requested_packages, str):
-                requested_packages = [requested_packages]
-            if not isinstance(requested_packages, list):
-                requested_packages = []
-            for package_name in requested_packages:
-                self._add_dependency_candidate(
-                    plan,
-                    selected_packages,
-                    selected_families,
-                    str(package_name),
-                    requested_by=self._normalize_inline_text(tool.get("name", ""), "tool"),
-                )
+            accumulate_tool_dependencies(accumulator, tool)
 
-            inferred_packages: List[tuple[str, str | None]] = []
-            if "search" in category:
-                inferred_packages.append(("langchain-community", None))
-            if any(token in category for token in {"file", "document", "pdf"}):
-                inferred_packages.append(("pypdf", "pdf_parser"))
-            if "api" in category:
-                inferred_packages.append(("requests", None))
+        if (
+            "langchain-openai" in accumulator.packages
+            and "OPENAI_API_KEY" not in accumulator.provider_env_vars
+        ):
+            accumulator.provider_env_vars.append("OPENAI_API_KEY")
 
-            for package_name, family in inferred_packages:
-                self._add_dependency_candidate(
-                    plan,
-                    selected_packages,
-                    selected_families,
-                    package_name,
-                    family=family,
-                    requested_by=self._normalize_inline_text(tool.get("name", ""), "tool"),
-                )
-
-            provider_env_vars = self._merge_string_lists(
-                tool.get("provider_env_vars"),
-                tool_configuration.get("provider_env_vars"),
-            )
-            for env_var in provider_env_vars:
-                normalized_env_var = self._normalize_provider_env_var(env_var)
-                if not normalized_env_var:
-                    continue
-                raw_env_var = str(env_var or "").strip()
-                if raw_env_var and normalized_env_var != raw_env_var:
-                    note = (
-                        f"Normalized provider env var '{raw_env_var}' to "
-                        f"'{normalized_env_var}' for notebook-safe configuration."
-                    )
-                    if note not in plan.runtime_notes:
-                        plan.runtime_notes.append(note)
-                if normalized_env_var not in plan.provider_env_vars:
-                    plan.provider_env_vars.append(normalized_env_var)
-
-        if "langchain-openai" in selected_packages and "OPENAI_API_KEY" not in plan.provider_env_vars:
-            plan.provider_env_vars.append("OPENAI_API_KEY")
-
-        plan.packages = selected_packages
-        if selected_packages:
+        plan.packages = accumulator.packages
+        plan.runtime_notes = accumulator.runtime_notes
+        plan.conflicts_resolved = accumulator.conflicts_resolved
+        plan.provider_env_vars = accumulator.provider_env_vars
+        if accumulator.packages:
             plan.install_commands = [
-                "python -m pip install -q " + " ".join(selected_packages)
+                "python -m pip install -q " + " ".join(accumulator.packages)
             ]
         return plan
 
