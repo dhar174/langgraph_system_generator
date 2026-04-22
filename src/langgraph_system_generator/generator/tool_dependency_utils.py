@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import keyword
 import re
 from typing import Any, Mapping
 
@@ -14,6 +15,8 @@ _PACKAGE_IMPORT_PROBES = {
     "langchain-community": "langchain_community",
     "pydantic": "pydantic",
     "pypdf": "pypdf",
+    "pdfminer.six": "pdfminer",
+    "pymupdf": "fitz",
     "requests": "requests",
 }
 
@@ -62,6 +65,8 @@ def normalize_provider_env_var(value: Any) -> str:
     if not normalized:
         return ""
     if normalized[0].isdigit():
+        normalized = f"ENV_{normalized}"
+    if keyword.iskeyword(normalized.lower()) or not normalized.isidentifier():
         normalized = f"ENV_{normalized}"
     return normalized
 

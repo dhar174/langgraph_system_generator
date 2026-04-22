@@ -355,7 +355,7 @@ async def test_compose_notebook_sanitizes_provider_env_vars_for_config_code(
                 "category": "api",
                 "purpose": "Fetch API data",
                 "configuration": {
-                    "provider_env_vars": ["openai-api-key", "Service API Key"],
+                    "provider_env_vars": ["openai-api-key", "Service API Key", "for"],
                 },
                 "packages": ["requests"],
                 "provider_env_vars": ["123 service key"],
@@ -372,6 +372,7 @@ async def test_compose_notebook_sanitizes_provider_env_vars_for_config_code(
     assert "OPENAI_API_KEY" in composition.dependency_plan.provider_env_vars
     assert "SERVICE_API_KEY" in composition.dependency_plan.provider_env_vars
     assert "ENV_123_SERVICE_KEY" in composition.dependency_plan.provider_env_vars
+    assert "ENV_FOR" in composition.dependency_plan.provider_env_vars
     assert any(
         "Normalized provider env var 'openai-api-key' to 'OPENAI_API_KEY'"
         in note
@@ -380,6 +381,10 @@ async def test_compose_notebook_sanitizes_provider_env_vars_for_config_code(
     assert any(
         "Normalized provider env var '123 service key' to 'ENV_123_SERVICE_KEY'"
         in note
+        for note in composition.dependency_plan.runtime_notes
+    )
+    assert any(
+        "Normalized provider env var 'for' to 'ENV_FOR'" in note
         for note in composition.dependency_plan.runtime_notes
     )
 

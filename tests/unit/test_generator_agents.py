@@ -29,6 +29,7 @@ from langgraph_system_generator.generator.graph_design_registry import (
     validate_graph_design,
 )
 from langgraph_system_generator.generator import tool_registry as tool_registry_module
+from langgraph_system_generator.generator import tool_dependency_utils
 from langgraph_system_generator.generator.tool_registry import (
     ToolRegistration,
     ToolRegistry,
@@ -1366,6 +1367,31 @@ async def test_toolchain_engineer_blocks_network_tools_for_offline_constraints(
 
 
 @pytest.mark.asyncio
+async def test_toolchain_engineer_ignores_offline_tokens_in_non_runtime_constraints(
+    monkeypatch,
+):
+    """Only runtime/environment constraints should trigger environment filtering."""
+
+    monkeypatch.setattr(
+        toolchain_engineer,
+        "ChatOpenAI",
+        make_stub_llm(
+            '[{"tool_id":"web_search","name":"Web Docs Search","category":"search","purpose":"Look up docs","configuration":{}}]'
+        ),
+    )
+    engineer = toolchain_engineer.ToolchainEngineer()
+    result = await engineer.plan_tools(
+        {"nodes": [{"name": "research", "purpose": "Search docs"}]},
+        [Constraint(type="goal", value="Build an offline-first assistant", priority=5)],
+    )
+
+    assert result.tools[0].tool_id == "web_search"
+    assert result.tools[0].status == "ready"
+    assert result.feedback.environment_notes == []
+    assert result.feedback.unresolved_tools == []
+
+
+@pytest.mark.asyncio
 async def test_toolchain_engineer_honors_plugin_environment_metadata(
     monkeypatch,
 ):
@@ -1454,6 +1480,39 @@ async def test_toolchain_engineer_blocks_non_notebook_safe_tools_for_jupyter(
 
 
 @pytest.mark.asyncio
+async def test_toolchain_engineer_uses_heuristic_fallback_after_environment_filtering(
+    monkeypatch,
+):
+    """Heuristic fallback should re-run if validation/environment filtering removes all usable tools."""
+
+    monkeypatch.setattr(
+        toolchain_engineer,
+        "ChatOpenAI",
+        make_stub_llm(
+            """[
+                {"tool_id":"http_client","name":"HTTP Client","category":"api","purpose":"Call remote APIs","configuration":{}}
+            ]"""
+        ),
+    )
+    engineer = toolchain_engineer.ToolchainEngineer()
+    result = await engineer.plan_tools(
+        {
+            "nodes": [
+                {"name": "doc_reader", "purpose": "Read local PDF documents"},
+                {"name": "api_fetcher", "purpose": "Fetch remote APIs"},
+            ]
+        },
+        [Constraint(type="environment", value="Offline only", priority=5)],
+    )
+
+    statuses = {tool.tool_id: tool.status for tool in result.tools}
+    assert result.feedback.fallback_used is True
+    assert "file_reader" in statuses
+    assert statuses["file_reader"] == "fallback"
+    assert statuses["http_client"] == "unsupported"
+
+
+@pytest.mark.asyncio
 async def test_toolchain_engineer_deduplicates_identical_tool_suggestions(monkeypatch):
     """Repeated canonical-equivalent suggestions should collapse into one tool spec."""
 
@@ -1506,6 +1565,13 @@ async def test_toolchain_engineer_keeps_conflicting_tool_configs_separate(
         for message in result.feedback.dependency_conflicts
     )
     assert any("pdf_parser" in message for message in result.feedback.dependency_conflicts)
+
+
+def test_package_import_probe_maps_non_module_distribution_names():
+    """Shared dependency probes should use the actual import module names."""
+
+    assert tool_dependency_utils.package_import_probe("pdfminer.six") == "pdfminer"
+    assert tool_dependency_utils.package_import_probe("pymupdf") == "fitz"
 
 
 def test_requirements_analyst_uses_request_scoped_model_config(monkeypatch):

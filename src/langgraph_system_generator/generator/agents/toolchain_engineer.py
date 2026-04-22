@@ -15,6 +15,7 @@ from langgraph_system_generator.generator.state import (
     ToolPlanningFeedback,
     ToolPlanningResult,
     ToolSpec,
+    normalize_constraint_type,
 )
 from langgraph_system_generator.generator.tool_dependency_utils import (
     DependencyAccumulator,
@@ -375,6 +376,11 @@ class ToolchainEngineer:
         notebook_evidence: List[str] = []
 
         for constraint in constraints:
+            if normalize_constraint_type(str(constraint.type or "")) not in {
+                "runtime",
+                "environment",
+            }:
+                continue
             haystack = (
                 f"{str(constraint.type or '').strip()} "
                 f"{str(constraint.value or '').strip()}"
@@ -440,18 +446,23 @@ class ToolchainEngineer:
 
             compatibility = self.registry.get(tool.tool_id).environment_compatibility
             reasons: List[str] = []
-            label = tool.name.strip() or tool.tool_id
+            display_label = tool.name.strip() or tool.tool_id
+            tool_reference = (
+                display_label
+                if display_label == tool.tool_id
+                else f"{display_label} ({tool.tool_id})"
+            )
 
             if profile.offline and compatibility.get("requires_network") is True:
                 evidence = ", ".join(profile.offline_evidence)
                 reasons.append(
-                    f"Blocked tool '{label}' because offline/no-network constraints "
+                    f"Blocked tool '{tool_reference}' because offline/no-network constraints "
                     f"disallow network-dependent tools ({evidence})."
                 )
             if profile.firewalled and compatibility.get("public_web") is True:
                 evidence = ", ".join(profile.firewalled_evidence)
                 reasons.append(
-                    f"Blocked tool '{label}' because firewalled/internal-only constraints "
+                    f"Blocked tool '{tool_reference}' because firewalled/internal-only constraints "
                     f"disallow public-web tools ({evidence})."
                 )
             if (
@@ -460,14 +471,14 @@ class ToolchainEngineer:
             ):
                 evidence = ", ".join(profile.notebook_evidence)
                 reasons.append(
-                    f"Blocked tool '{label}' because the target notebook runtime requires "
+                    f"Blocked tool '{tool_reference}' because the target notebook runtime requires "
                     f"notebook-safe tools ({evidence})."
                 )
 
             if reasons:
                 for reason in reasons:
                     self._append_unique(feedback.environment_notes, reason)
-                self._append_unique(feedback.unresolved_tools, label)
+                self._append_unique(feedback.unresolved_tools, tool.tool_id)
                 filtered_tools.append(
                     tool.model_copy(
                         update={
@@ -670,21 +681,26 @@ Identify needed tools."""
             )
 
         normalized_tools = self._normalize_llm_tools(payload, feedback)
-        if self._has_usable_tools(normalized_tools):
+        finalized_normalized_tools = self._finalize_tools(
+            normalized_tools,
+            constraints,
+            feedback,
+        )
+        if self._has_usable_tools(finalized_normalized_tools):
             return ToolPlanningResult(
-                tools=self._finalize_tools(normalized_tools, constraints, feedback),
+                tools=finalized_normalized_tools,
                 feedback=feedback,
             )
 
         feedback.fallback_used = True
         feedback.fallback_reason = (
-            "Tool planning fell back to heuristic inference because the model returned no usable canonical tools."
+            "Tool planning fell back to heuristic inference because the model returned no usable canonical tools after validation and environment filtering."
         )
         self._append_unique(feedback.warnings, feedback.fallback_reason)
 
         combined_tools: List[ToolSpec] = list(heuristic_tools)
         combined_tools.extend(
-            tool for tool in normalized_tools if tool.status == "unsupported"
+            tool for tool in finalized_normalized_tools if tool.status == "unsupported"
         )
         return ToolPlanningResult(
             tools=self._finalize_tools(combined_tools, constraints, feedback),
