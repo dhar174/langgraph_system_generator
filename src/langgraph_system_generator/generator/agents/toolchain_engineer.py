@@ -154,13 +154,6 @@ class ToolchainEngineer:
         """Infer a conservative fallback tool plan from workflow nodes."""
 
         nodes = list(workflow_design.get("nodes") or [])
-        heuristic_matches: Dict[str, List[str]] = {
-            "web_search": [],
-            "file_reader": [],
-            "http_client": [],
-            "data_processor": [],
-            "schema_validator": [],
-        }
         heuristics = [
             ("web_search", ("research", "search", "docs", "documentation")),
             ("file_reader", ("file", "document", "pdf")),
@@ -168,6 +161,9 @@ class ToolchainEngineer:
             ("data_processor", ("parse", "transform", "data", "normalize")),
             ("schema_validator", ("validate", "schema", "check", "verify")),
         ]
+        heuristic_matches: Dict[str, List[str]] = {
+            tool_id: [] for tool_id, _tokens in heuristics
+        }
 
         for node in nodes:
             node_name = str(node.get("name", "")).strip()
@@ -179,13 +175,7 @@ class ToolchainEngineer:
                     self._append_unique(heuristic_matches[tool_id], label)
 
         fallback_tools: List[ToolSpec] = []
-        for tool_id in [
-            "web_search",
-            "file_reader",
-            "http_client",
-            "data_processor",
-            "schema_validator",
-        ]:
+        for tool_id, _tokens in heuristics:
             matched_nodes = heuristic_matches[tool_id]
             if not matched_nodes:
                 continue
@@ -228,7 +218,9 @@ class ToolchainEngineer:
                 )
                 continue
 
-            raw_name = str(item.get("tool_id") or item.get("name") or "").strip()
+            raw_tool_token = str(item.get("tool_id") or "").strip()
+            display_name = str(item.get("name") or "").strip()
+            resolution_token = raw_tool_token or display_name
             raw_category = str(item.get("category") or "").strip().lower()
             purpose = str(item.get("purpose") or "").strip()
             configuration = self._normalize_configuration(item.get("configuration"))
@@ -241,24 +233,24 @@ class ToolchainEngineer:
                 configuration.get("provider_env_vars"),
             )
 
-            if not raw_name:
+            if not resolution_token:
                 self._append_unique(
                     feedback.validation_errors,
-                    f"Tool suggestion at index {index} is missing a name.",
+                    f"Tool suggestion at index {index} is missing a tool_id or alias.",
                 )
                 continue
 
-            resolved_tool_id = self.registry.resolve_tool_id(raw_name)
+            resolved_tool_id = self.registry.resolve_tool_id(resolution_token)
             if resolved_tool_id is None:
                 warning = (
-                    f"Unsupported tool suggestion '{raw_name}' could not be resolved to a canonical tool."
+                    f"Unsupported tool suggestion '{resolution_token}' could not be resolved to a canonical tool."
                 )
                 self._append_unique(feedback.validation_errors, warning)
-                self._append_unique(feedback.unresolved_tools, raw_name)
+                self._append_unique(feedback.unresolved_tools, resolution_token)
                 self._append_unique(feedback.warnings, warning)
                 normalized_tools.append(
                     self._unsupported_tool_spec(
-                        raw_name=raw_name,
+                        raw_name=display_name or resolution_token,
                         raw_category=raw_category,
                         purpose=purpose,
                         configuration=configuration,
@@ -274,7 +266,7 @@ class ToolchainEngineer:
                     configuration=configuration,
                     status="ready",
                     warnings=self._string_list(item.get("warnings")),
-                    name=raw_name,
+                    name=display_name or None,
                     packages=extra_packages,
                     provider_env_vars=extra_provider_env_vars,
                 )
@@ -312,7 +304,7 @@ class ToolchainEngineer:
         heuristic_tools = self._infer_fallback_tools(workflow_design)
 
         tools_prompt = SystemMessage(
-            content="""You are a toolchain engineer for LangGraph workflows.
+            content=f"""You are a toolchain engineer for LangGraph workflows.
 Analyze the workflow nodes and determine what tools are needed.
 
 Common tool categories:
@@ -325,27 +317,24 @@ Common tool categories:
 - **Validation**: Schema validation, content moderation
 
 For each tool, specify:
-- name: Tool identifier
+- tool_id: Canonical tool identifier or supported alias
+- name: Human-readable display name for the tool
 - category: Tool category
 - purpose: Why this tool is needed
 - configuration: Any specific configuration
 
 Only recommend tools from this canonical registry:
-- web_search: web and docs search
-- file_reader: local files, documents, PDFs
-- http_client: HTTP/API calls
-- data_processor: parsing and data transformation
-- schema_validator: validation and schema checks
+{self.registry.render_planning_prompt_catalog()}
 
 Return a JSON array:
 [
-  {
+  {{
     "tool_id": "canonical_tool_id_or_alias",
     "name": "display_name",
     "category": "category",
     "purpose": "description",
-    "configuration": {}
-  },
+    "configuration": {{}}
+  }},
   ...
 ]"""
         )

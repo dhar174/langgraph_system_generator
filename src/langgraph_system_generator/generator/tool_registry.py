@@ -64,6 +64,7 @@ class ToolRegistration:
 
     tool_id: str
     name: str
+    description: str
     category: str
     aliases: list[str] = field(default_factory=list)
     default_packages: list[str] = field(default_factory=list)
@@ -76,10 +77,15 @@ class ToolRegistration:
 
         normalized_tool_id = _normalize_tool_id(self.tool_id)
         normalized_name = str(self.name or "").strip()
+        normalized_description = str(self.description or "").strip()
         normalized_category = str(self.category or "").strip().lower()
         if not normalized_name:
             raise ValueError(
                 f"Tool registration '{normalized_tool_id}' must include a default name."
+            )
+        if not normalized_description:
+            raise ValueError(
+                f"Tool registration '{normalized_tool_id}' must include a description."
             )
         if not normalized_category:
             raise ValueError(
@@ -93,6 +99,7 @@ class ToolRegistration:
         return ToolRegistration(
             tool_id=normalized_tool_id,
             name=normalized_name,
+            description=normalized_description,
             category=normalized_category,
             aliases=aliases,
             default_packages=_normalize_string_list(self.default_packages),
@@ -146,6 +153,21 @@ class ToolRegistry:
         """Register or replace a tool registration."""
 
         normalized = registration.normalized()
+        stale_aliases = [
+            alias
+            for alias, tool_id in self._aliases.items()
+            if tool_id == normalized.tool_id
+        ]
+        for alias in stale_aliases:
+            del self._aliases[alias]
+
+        for alias in normalized.aliases:
+            existing_tool_id = self._aliases.get(alias)
+            if existing_tool_id and existing_tool_id != normalized.tool_id:
+                raise ValueError(
+                    f"Alias '{alias}' is already registered to tool '{existing_tool_id}'."
+                )
+
         self._registrations[normalized.tool_id] = normalized
         for alias in normalized.aliases:
             self._aliases[alias] = normalized.tool_id
@@ -170,6 +192,20 @@ class ToolRegistry:
 
         return list(self._registrations.keys())
 
+    def render_planning_prompt_catalog(self) -> str:
+        """Render a human-readable tool catalog for the planner prompt."""
+
+        lines: list[str] = []
+        for registration in self._registrations.values():
+            aliases = [
+                alias for alias in registration.aliases if alias != registration.tool_id
+            ]
+            alias_text = f" Aliases: {', '.join(aliases)}." if aliases else ""
+            lines.append(
+                f"- {registration.tool_id}: {registration.description}.{alias_text}"
+            )
+        return "\n".join(lines)
+
 
 def _default_registrations() -> list[ToolRegistration]:
     """Return the built-in tool registry entries."""
@@ -178,6 +214,7 @@ def _default_registrations() -> list[ToolRegistration]:
         ToolRegistration(
             tool_id="web_search",
             name="Web Docs Search",
+            description="Search public web pages and documentation snippets",
             category="search",
             aliases=[
                 "search",
@@ -198,6 +235,7 @@ def _default_registrations() -> list[ToolRegistration]:
         ToolRegistration(
             tool_id="file_reader",
             name="File Reader",
+            description="Read local files, documents, and PDFs",
             category="file_io",
             aliases=[
                 "file",
@@ -217,6 +255,7 @@ def _default_registrations() -> list[ToolRegistration]:
         ToolRegistration(
             tool_id="http_client",
             name="HTTP Client",
+            description="Fetch remote HTTP and API resources",
             category="api",
             aliases=[
                 "http",
@@ -237,6 +276,7 @@ def _default_registrations() -> list[ToolRegistration]:
         ToolRegistration(
             tool_id="data_processor",
             name="Data Processor",
+            description="Parse and transform structured or semi-structured data",
             category="data_processing",
             aliases=[
                 "data",
@@ -257,6 +297,7 @@ def _default_registrations() -> list[ToolRegistration]:
         ToolRegistration(
             tool_id="schema_validator",
             name="Schema Validator",
+            description="Validate records, schemas, and structured outputs",
             category="validation",
             aliases=[
                 "validator",
@@ -318,7 +359,6 @@ def _load_plugin_modules(
     return registry
 
 
-@lru_cache(maxsize=16)
 def get_tool_registry(plugin_modules: tuple[str, ...] | None = None) -> ToolRegistry:
     """Return the built-in tool registry with optional plugin extensions."""
 
@@ -327,7 +367,14 @@ def get_tool_registry(plugin_modules: tuple[str, ...] | None = None) -> ToolRegi
         if plugin_modules is None
         else plugin_modules
     )
+    return _get_tool_registry_cached(normalized_modules)
+
+
+@lru_cache(maxsize=16)
+def _get_tool_registry_cached(plugin_modules: tuple[str, ...]) -> ToolRegistry:
+    """Return a cached registry keyed by explicit plugin module tuples."""
+
     registry = ToolRegistry(_default_registrations())
-    if normalized_modules:
-        registry = _load_plugin_modules(registry, normalized_modules)
+    if plugin_modules:
+        registry = _load_plugin_modules(registry, plugin_modules)
     return registry
