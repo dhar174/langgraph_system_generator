@@ -1333,6 +1333,181 @@ async def test_toolchain_engineer_preserves_display_name_when_tool_id_present(
     assert result.tools[0].name == "Web Search Tool"
 
 
+@pytest.mark.asyncio
+async def test_toolchain_engineer_blocks_network_tools_for_offline_constraints(
+    monkeypatch,
+):
+    """Offline constraints should downgrade network-dependent tools to unsupported."""
+
+    monkeypatch.setattr(
+        toolchain_engineer,
+        "ChatOpenAI",
+        make_stub_llm(
+            """[
+                {"tool_id":"web_search","name":"web_search","category":"search","purpose":"Look up docs","configuration":{}},
+                {"tool_id":"file_reader","name":"file_reader","category":"file_io","purpose":"Read local files","configuration":{}},
+                {"tool_id":"http_client","name":"http_client","category":"api","purpose":"Fetch remote APIs","configuration":{}}
+            ]"""
+        ),
+    )
+    engineer = toolchain_engineer.ToolchainEngineer()
+    result = await engineer.plan_tools(
+        {"nodes": [{"name": "research", "purpose": "Search docs and fetch APIs"}]},
+        [Constraint(type="environment", value="Offline only, no network access", priority=5)],
+    )
+
+    statuses = {tool.tool_id: tool.status for tool in result.tools}
+    assert statuses["web_search"] == "unsupported"
+    assert statuses["http_client"] == "unsupported"
+    assert statuses["file_reader"] == "ready"
+    assert any("web_search" in note for note in result.feedback.environment_notes)
+    assert any("http_client" in note for note in result.feedback.environment_notes)
+    assert result.feedback.unresolved_tools == ["web_search", "http_client"]
+
+
+@pytest.mark.asyncio
+async def test_toolchain_engineer_honors_plugin_environment_metadata(
+    monkeypatch,
+):
+    """Plugin-registered tools should honor the same environment rules as built-ins."""
+
+    monkeypatch.setattr(
+        toolchain_engineer,
+        "ChatOpenAI",
+        make_stub_llm(
+            """[
+                {"tool_id":"internal_api","name":"internal_api","category":"api","purpose":"Call internal APIs","configuration":{}},
+                {"tool_id":"web_search","name":"web_search","category":"search","purpose":"Search public docs","configuration":{}}
+            ]"""
+        ),
+    )
+    registry = get_tool_registry().clone()
+    registry.register(
+        ToolRegistration(
+            tool_id="internal_api",
+            name="Internal API Client",
+            description="Call internal-only APIs over the network.",
+            category="api",
+            aliases=["internal_http_client"],
+            default_packages=["requests"],
+            environment_compatibility={
+                "requires_network": True,
+                "public_web": False,
+                "notebook_safe": True,
+            },
+        )
+    )
+
+    engineer = toolchain_engineer.ToolchainEngineer(registry=registry)
+    result = await engineer.plan_tools(
+        {"nodes": [{"name": "fetch", "purpose": "Call internal APIs and search docs"}]},
+        [Constraint(type="environment", value="Firewalled internal only runtime", priority=5)],
+    )
+
+    statuses = {tool.tool_id: tool.status for tool in result.tools}
+    assert statuses["internal_api"] == "ready"
+    assert statuses["web_search"] == "unsupported"
+    assert any("web_search" in note for note in result.feedback.environment_notes)
+    assert "internal_api" not in result.feedback.unresolved_tools
+
+
+@pytest.mark.asyncio
+async def test_toolchain_engineer_blocks_non_notebook_safe_tools_for_jupyter(
+    monkeypatch,
+):
+    """Explicit notebook runtimes should downgrade non-notebook-safe tools."""
+
+    monkeypatch.setattr(
+        toolchain_engineer,
+        "ChatOpenAI",
+        make_stub_llm(
+            """[
+                {"tool_id":"shell_runner","name":"shell_runner","category":"code_execution","purpose":"Run shell commands","configuration":{}}
+            ]"""
+        ),
+    )
+    registry = get_tool_registry().clone()
+    registry.register(
+        ToolRegistration(
+            tool_id="shell_runner",
+            name="Shell Runner",
+            description="Execute local shell commands.",
+            category="code_execution",
+            aliases=["shell"],
+            environment_compatibility={
+                "requires_network": False,
+                "public_web": False,
+                "notebook_safe": False,
+            },
+        )
+    )
+
+    engineer = toolchain_engineer.ToolchainEngineer(registry=registry)
+    result = await engineer.plan_tools(
+        {"nodes": [{"name": "executor", "purpose": "Run shell commands"}]},
+        [Constraint(type="runtime", value="Run in Jupyter notebook", priority=5)],
+    )
+
+    assert result.tools[0].status == "unsupported"
+    assert any("notebook-safe tools" in note for note in result.feedback.environment_notes)
+    assert result.feedback.unresolved_tools == ["shell_runner"]
+
+
+@pytest.mark.asyncio
+async def test_toolchain_engineer_deduplicates_identical_tool_suggestions(monkeypatch):
+    """Repeated canonical-equivalent suggestions should collapse into one tool spec."""
+
+    monkeypatch.setattr(
+        toolchain_engineer,
+        "ChatOpenAI",
+        make_stub_llm(
+            """[
+                {"tool_id":"web_search","name":"Web Search","category":"search","purpose":"Look up docs","configuration":{}},
+                {"name":"search","category":"search","purpose":"Look up docs","configuration":{"backend":"duckduckgo"},"provider_env_vars":["SEARCH_API_KEY"]}
+            ]"""
+        ),
+    )
+    engineer = toolchain_engineer.ToolchainEngineer()
+    result = await engineer.plan_tools(
+        {"nodes": [{"name": "research", "purpose": "Search docs"}]},
+        [Constraint(type="goal", value="Research docs", priority=5)],
+    )
+
+    assert len(result.tools) == 1
+    assert result.tools[0].tool_id == "web_search"
+    assert result.tools[0].provider_env_vars == ["SEARCH_API_KEY"]
+
+
+@pytest.mark.asyncio
+async def test_toolchain_engineer_keeps_conflicting_tool_configs_separate(
+    monkeypatch,
+):
+    """Conflicting configurations should remain visible instead of being merged away."""
+
+    monkeypatch.setattr(
+        toolchain_engineer,
+        "ChatOpenAI",
+        make_stub_llm(
+            """[
+                {"tool_id":"file_reader","name":"File Reader","category":"file_io","purpose":"Read PDFs","configuration":{"mode":"text","packages":["pypdf"]}},
+                {"tool_id":"file_reader","name":"File Reader","category":"file_io","purpose":"Read PDFs quickly","configuration":{"mode":"binary","packages":["pdfminer.six"]}}
+            ]"""
+        ),
+    )
+    engineer = toolchain_engineer.ToolchainEngineer()
+    result = await engineer.plan_tools(
+        {"nodes": [{"name": "reader", "purpose": "Read PDF documents"}]},
+        [Constraint(type="goal", value="Read PDFs", priority=5)],
+    )
+
+    assert len(result.tools) == 2
+    assert any(
+        "multiple configurations" in message
+        for message in result.feedback.dependency_conflicts
+    )
+    assert any("pdf_parser" in message for message in result.feedback.dependency_conflicts)
+
+
 def test_requirements_analyst_uses_request_scoped_model_config(monkeypatch):
     """RequirementsAnalyst should pass request-scoped model settings to ChatOpenAI."""
     captured_kwargs = {}

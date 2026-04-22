@@ -90,7 +90,7 @@ These node functions are the clearest map of the runtime lifecycle:
 | Retrieval | `rag_retrieval_node` | `DocsRetriever` | `docs_context` |
 | Architecture selection | `architecture_selection_node` | `ArchitectureSelector` | `selected_patterns`, `architecture_type`, `architecture_justification`, `architecture_feedback` |
 | Workflow design | `graph_design_node` | `GraphDesigner` | `workflow_design`, `graph_design_feedback`, `graph_exports`, `notebook_plan` |
-| Tool planning | `tooling_plan_node` | `ToolchainEngineer` | `tools_plan` |
+| Tool planning | `tooling_plan_node` | `ToolchainEngineer` | `tools_plan`, `tool_planning_feedback` |
 | Notebook assembly | `notebook_assembly_node` | `NotebookComposer` | `generated_cells`, `notebook_composition_feedback`, `notebook_dependency_plan` |
 | Static QA | `static_qa_node` | validators under `src/langgraph_system_generator/qa/` | `qa_reports`, `qa_history` |
 | Runtime QA | `runtime_qa_node` | notebook runtime helpers | `qa_reports`, `qa_history` |
@@ -108,6 +108,7 @@ Important patterns:
 - `constraints` and `docs_context` are accumulated lists.
 - `requirements_feedback` is advisory metadata from intake. It should surface fallback/gap/conflict guidance without replacing `constraints` as the downstream source of truth.
 - `architecture_feedback` is advisory metadata from architecture selection. It should surface fallback, tradeoff, and validation guidance without replacing `architecture_type` or `selected_patterns` as the downstream contract.
+- `tools_plan` stays the backward-compatible downstream tool payload, while `tool_planning_feedback` carries fallback, environment, and dependency advisories for manifests and notebook warning surfaces.
 - `generated_cells` is authoritative for the current repair iteration and is
   replaced rather than concatenated.
 - `qa_reports` is the current QA snapshot for the active pass, while

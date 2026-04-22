@@ -229,6 +229,12 @@ Generate a multi-agent system from a prompt.
       "validation_errors": [],
       "warnings": []
     },
+    "tool_planning_feedback": {
+      "fallback_used": false,
+      "environment_notes": [],
+      "dependency_conflicts": [],
+      "warnings": []
+    },
     "graph_exports": {
       "mermaid": "flowchart TD ...",
       "schema": {
@@ -236,6 +242,10 @@ Generate a multi-agent system from a prompt.
         "terminal_nodes": ["finish"],
         "validation_summary": {"errors": [], "warnings": []}
       }
+    },
+    "notebook_dependency_plan": {
+      "packages": ["langgraph", "langchain-openai"],
+      "provider_env_vars": ["OPENAI_API_KEY"]
     },
     "warnings": [],
     "export_results": {

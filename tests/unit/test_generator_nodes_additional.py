@@ -314,6 +314,39 @@ async def test_tooling_plan_node_returns_tools_plan(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_tooling_plan_node_preserves_environment_feedback(monkeypatch):
+    payload = (
+        '[{"tool_id":"web_search","name":"web_search","category":"search",'
+        '"purpose":"Look up docs","configuration":{}}]'
+    )
+
+    monkeypatch.setattr(
+        toolchain_engineer,
+        "ChatOpenAI",
+        make_stub_llm(payload),
+    )
+
+    result = await tooling_plan_node(
+        {
+            "workflow_design": {
+                "nodes": [{"name": "research", "purpose": "Search docs"}]
+            },
+            "constraints": [
+                Constraint(
+                    type="environment",
+                    value="Offline only, no network access",
+                    priority=5,
+                )
+            ],
+        }
+    )
+
+    assert result["tools_plan"][0]["status"] == "unsupported"
+    assert result["tool_planning_feedback"].environment_notes
+    assert result["tool_planning_feedback"].unresolved_tools == ["web_search"]
+
+
+@pytest.mark.asyncio
 async def test_notebook_assembly_node_returns_generated_cells(monkeypatch):
     cells = [CellSpec(cell_type="markdown", content="Hi", metadata={})]
     feedback = NotebookCompositionFeedback(

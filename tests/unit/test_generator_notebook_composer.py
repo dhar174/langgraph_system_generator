@@ -265,6 +265,8 @@ async def test_compose_notebook_emits_tool_planning_warning_cells(
             fallback_reason="Tool planning used heuristic fallback inference.",
             validation_errors=["Unsupported tool suggestion 'swarm_tool'."],
             unresolved_tools=["swarm_tool"],
+            environment_notes=["Blocked tool 'web_search' for an offline runtime."],
+            dependency_conflicts=["Kept 'pypdf' instead of 'pdfminer.six' for PDF parsing."],
             available_tool_ids=["web_search"],
             warnings=["Tool planning used heuristic fallback inference."],
         ),
@@ -277,6 +279,8 @@ async def test_compose_notebook_emits_tool_planning_warning_cells(
     ]
     assert any("Tool Planning Notes" in cell for cell in tool_markdown)
     assert any("swarm_tool" in cell for cell in tool_markdown)
+    assert any("Environment notes" in cell for cell in tool_markdown)
+    assert any("Dependency conflicts" in cell for cell in tool_markdown)
 
 
 @pytest.mark.asyncio
