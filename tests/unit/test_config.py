@@ -243,6 +243,46 @@ def test_settings_parse_toolchain_engineer_plugin_modules_from_csv(tmp_path):
     ]
 
 
+def test_settings_parse_qa_repair_plugin_modules_from_json(tmp_path):
+    env_path = Path(tmp_path) / ".env"
+    env_path.write_text(
+        'QA_REPAIR_PLUGIN_MODULES=["pkg.plugins.alpha","pkg.plugins.beta"]\n',
+        encoding="utf-8",
+    )
+
+    class FileSettings(Settings):
+        model_config = SettingsConfigDict(
+            env_file=env_path, env_file_encoding="utf-8", extra="ignore"
+        )
+
+    loaded = FileSettings()
+
+    assert loaded.qa_repair_plugin_modules == [
+        "pkg.plugins.alpha",
+        "pkg.plugins.beta",
+    ]
+
+
+def test_settings_parse_qa_repair_plugin_modules_from_csv(tmp_path):
+    env_path = Path(tmp_path) / ".env"
+    env_path.write_text(
+        "QA_REPAIR_PLUGIN_MODULES=pkg.plugins.alpha, pkg.plugins.beta , pkg.plugins.alpha\n",
+        encoding="utf-8",
+    )
+
+    class FileSettings(Settings):
+        model_config = SettingsConfigDict(
+            env_file=env_path, env_file_encoding="utf-8", extra="ignore"
+        )
+
+    loaded = FileSettings()
+
+    assert loaded.qa_repair_plugin_modules == [
+        "pkg.plugins.alpha",
+        "pkg.plugins.beta",
+    ]
+
+
 def test_settings_parse_notebook_composer_plugin_modules_from_json(tmp_path):
     env_path = Path(tmp_path) / ".env"
     env_path.write_text(

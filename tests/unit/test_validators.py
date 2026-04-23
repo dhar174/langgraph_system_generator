@@ -8,354 +8,335 @@ import nbformat
 import pytest
 from nbformat.v4 import new_code_cell, new_markdown_cell, new_notebook
 
-from langgraph_system_generator.qa.validators import NotebookValidator
+from langgraph_system_generator.qa.validators import (
+    GraphStructureRule,
+    NotebookValidator,
+    PlaceholderRule,
+    PythonSyntaxRule,
+    RequiredImportsRule,
+    RequiredSectionsRule,
+    UndefinedNameRule,
+    ValidatorRegistry,
+)
 
 
 @pytest.fixture
 def tmp_notebook_path(tmp_path: Path) -> Path:
     """Create a temporary notebook path."""
+
     return tmp_path / "test_notebook.ipynb"
 
 
 @pytest.fixture
 def valid_notebook() -> nbformat.NotebookNode:
     """Create a valid notebook for testing."""
-    nb = new_notebook()
 
-    # Add setup section
-    nb.cells.append(new_markdown_cell(source="## Setup", metadata={"section": "setup"}))
-    nb.cells.append(
-        new_code_cell(
-            source="from langgraph.graph import StateGraph, END\nimport langgraph",
-            metadata={"section": "setup"},
-        )
-    )
+    notebook = new_notebook()
+    notebook.cells.extend(
+        [
+            new_markdown_cell("## Setup", metadata={"section": "setup"}),
+            new_code_cell(
+                "import langgraph\nfrom langgraph.graph import END, StateGraph",
+                metadata={"section": "setup"},
+            ),
+            new_markdown_cell("## Config", metadata={"section": "config"}),
+            new_code_cell('MODEL = "gpt-5-mini"', metadata={"section": "config"}),
+            new_markdown_cell("## Graph", metadata={"section": "graph"}),
+            new_code_cell(
+                """from typing import TypedDict
 
-    # Add config section
-    nb.cells.append(
-        new_markdown_cell(source="## Config", metadata={"section": "config"})
-    )
-    nb.cells.append(
-        new_code_cell(source='MODEL = "gpt-5-mini"', metadata={"section": "config"})
-    )
-
-    # Add graph section
-    nb.cells.append(new_markdown_cell(source="## Graph", metadata={"section": "graph"}))
-    nb.cells.append(
-        new_code_cell(
-            source="""from typing import TypedDict
 class State(TypedDict):
     messages: list
 
-graph = StateGraph(State)
-graph.add_node("start", lambda x: x)
-graph.set_entry_point("start")
-graph.add_edge("start", END)
-compiled_graph = graph.compile()""",
-            metadata={"section": "graph"},
-        )
+workflow = StateGraph(State)
+workflow.add_node("start", lambda state: state)
+workflow.set_entry_point("start")
+workflow.add_edge("start", END)
+graph = workflow.compile()""",
+                metadata={"section": "graph"},
+            ),
+            new_markdown_cell("## Execution", metadata={"section": "execution"}),
+            new_code_cell(
+                'result = graph.invoke({"messages": []})',
+                metadata={"section": "execution"},
+            ),
+        ]
     )
+    return notebook
 
-    # Add execution section
-    nb.cells.append(
-        new_markdown_cell(source="## Execution", metadata={"section": "execution"})
-    )
-    nb.cells.append(
-        new_code_cell(
-            source='result = compiled_graph.invoke({"messages": []})',
-            metadata={"section": "execution"},
-        )
-    )
 
-    return nb
+def _write_notebook(path: Path, notebook: nbformat.NotebookNode) -> None:
+    with path.open("w", encoding="utf-8") as handle:
+        nbformat.write(notebook, handle)
+
+
+def _report_by_name(reports, name: str):
+    return next(report for report in reports if report.check_name == name)
 
 
 def test_validate_json_structure_valid(tmp_notebook_path: Path, valid_notebook):
-    """Test JSON validation with a valid notebook."""
-    with tmp_notebook_path.open("w") as f:
-        nbformat.write(valid_notebook, f)
+    _write_notebook(tmp_notebook_path, valid_notebook)
 
-    validator = NotebookValidator()
-    report = validator.validate_json_structure(tmp_notebook_path)
+    report = NotebookValidator().validate_json_structure(tmp_notebook_path)
 
-    assert report.passed
-    assert report.check_name == "JSON Validity"
-    assert "valid" in report.message.lower()
+    assert report.passed is True
+    assert report.rule_id == "json_structure"
+    assert report.category == "serialization"
 
 
 def test_validate_json_structure_missing_file(tmp_path: Path):
-    """Test JSON validation with missing file."""
-    validator = NotebookValidator()
-    report = validator.validate_json_structure(tmp_path / "nonexistent.ipynb")
+    report = NotebookValidator().validate_json_structure(tmp_path / "missing.ipynb")
 
-    assert not report.passed
-    assert report.check_name == "JSON Validity"
+    assert report.passed is False
     assert "not found" in report.message.lower()
+    assert report.rule_id == "json_structure"
 
 
-def test_validate_json_structure_invalid_json(tmp_notebook_path: Path):
-    """Test JSON validation with invalid JSON."""
-    with tmp_notebook_path.open("w") as f:
-        f.write("{ invalid json }")
+def test_validate_json_structure_malformed_json(tmp_notebook_path: Path):
+    tmp_notebook_path.write_text('{"cells": [', encoding="utf-8")
 
-    validator = NotebookValidator()
-    report = validator.validate_json_structure(tmp_notebook_path)
+    report = NotebookValidator().validate_json_structure(tmp_notebook_path)
 
-    assert not report.passed
-    assert report.check_name == "JSON Validity"
-    assert "json" in report.message.lower()
-
-
-def test_check_no_placeholders_clean(tmp_notebook_path: Path, valid_notebook):
-    """Test placeholder check with clean notebook."""
-    with tmp_notebook_path.open("w") as f:
-        nbformat.write(valid_notebook, f)
-
-    validator = NotebookValidator()
-    report = validator.check_no_placeholders(tmp_notebook_path)
-
-    assert report.passed
-    assert report.check_name == "No Placeholders"
+    assert report.passed is False
+    assert report.rule_id == "json_structure"
+    assert report.category == "serialization"
+    assert report.evidence["error_type"] == "json"
+    assert report.evidence["message"]
 
 
-def test_check_no_placeholders_with_todo(tmp_notebook_path: Path):
-    """Test placeholder check with TODO."""
-    nb = new_notebook()
-    nb.cells.append(new_code_cell(source="# TODO: implement this\npass"))
+def test_check_no_placeholders_detects_placeholder_content(tmp_notebook_path: Path):
+    notebook = new_notebook()
+    notebook.cells.append(new_code_cell("# TODO: implement\npass"))
+    _write_notebook(tmp_notebook_path, notebook)
 
-    with tmp_notebook_path.open("w") as f:
-        nbformat.write(nb, f)
+    report = NotebookValidator().check_no_placeholders(tmp_notebook_path)
 
-    validator = NotebookValidator()
-    report = validator.check_no_placeholders(tmp_notebook_path)
-
-    assert not report.passed
-    assert "TODO" in report.message
-    assert len(report.suggestions) > 0
-
-
-def test_check_no_placeholders_with_multiple(tmp_notebook_path: Path):
-    """Test placeholder check with multiple placeholders."""
-    nb = new_notebook()
-    nb.cells.append(new_code_cell(source="# TODO: fix this\n# FIXME: broken\npass"))
-
-    with tmp_notebook_path.open("w") as f:
-        nbformat.write(nb, f)
-
-    validator = NotebookValidator()
-    report = validator.check_no_placeholders(tmp_notebook_path)
-
-    assert not report.passed
-    assert "TODO" in report.message
-    assert "FIXME" in report.message
-
-
-def test_check_required_sections_all_present(tmp_notebook_path: Path, valid_notebook):
-    """Test section check with all required sections."""
-    with tmp_notebook_path.open("w") as f:
-        nbformat.write(valid_notebook, f)
-
-    validator = NotebookValidator()
-    report = validator.check_required_sections(tmp_notebook_path)
-
-    assert report.passed
-    assert report.check_name == "Required Sections"
+    assert report.passed is False
+    assert report.rule_id == "placeholder_content"
+    assert report.repairable is True
 
 
 def test_check_required_sections_missing(tmp_notebook_path: Path):
-    """Test section check with missing sections."""
-    nb = new_notebook()
-    nb.cells.append(new_code_cell(source="x = 1", metadata={"section": "setup"}))
+    notebook = new_notebook()
+    notebook.cells.append(new_code_cell("x = 1", metadata={"section": "setup"}))
+    _write_notebook(tmp_notebook_path, notebook)
 
-    with tmp_notebook_path.open("w") as f:
-        nbformat.write(nb, f)
+    report = NotebookValidator().check_required_sections(tmp_notebook_path)
 
-    validator = NotebookValidator()
-    report = validator.check_required_sections(tmp_notebook_path)
-
-    assert not report.passed
-    assert "missing" in report.message.lower()
-    assert len(report.suggestions) > 0
+    assert report.passed is False
+    assert "missing required sections" in report.message.lower()
+    assert report.category == "structure"
 
 
-def test_check_required_sections_custom(tmp_notebook_path: Path):
-    """Test section check with custom required sections."""
-    nb = new_notebook()
-    nb.cells.append(new_code_cell(source="x = 1", metadata={"section": "custom"}))
+def test_check_imports_present_uses_parsed_imports_not_substring_matching(
+    tmp_notebook_path: Path,
+):
+    notebook = new_notebook()
+    notebook.cells.append(
+        new_code_cell(
+            '# StateGraph appears in a comment only\nprint("END appears in a string")'
+        )
+    )
+    _write_notebook(tmp_notebook_path, notebook)
 
-    with tmp_notebook_path.open("w") as f:
-        nbformat.write(nb, f)
+    report = NotebookValidator().check_imports_present(tmp_notebook_path)
 
-    validator = NotebookValidator()
-    report = validator.check_required_sections(tmp_notebook_path, ["custom"])
-
-    assert report.passed
-
-
-def test_check_imports_present_all_present(tmp_notebook_path: Path, valid_notebook):
-    """Test import check with all required imports."""
-    with tmp_notebook_path.open("w") as f:
-        nbformat.write(valid_notebook, f)
-
-    validator = NotebookValidator()
-    report = validator.check_imports_present(tmp_notebook_path)
-
-    assert report.passed
-    assert report.check_name == "Required Imports"
-
-
-def test_check_imports_present_missing(tmp_notebook_path: Path):
-    """Test import check with missing imports."""
-    nb = new_notebook()
-    nb.cells.append(new_code_cell(source="x = 1"))
-
-    with tmp_notebook_path.open("w") as f:
-        nbformat.write(nb, f)
-
-    validator = NotebookValidator()
-    report = validator.check_imports_present(tmp_notebook_path)
-
-    assert not report.passed
-    assert "missing" in report.message.lower()
-    assert len(report.suggestions) > 0
-
-
-def test_check_imports_present_custom(tmp_notebook_path: Path):
-    """Test import check with custom required imports."""
-    nb = new_notebook()
-    nb.cells.append(new_code_cell(source="import custom_module"))
-
-    with tmp_notebook_path.open("w") as f:
-        nbformat.write(nb, f)
-
-    validator = NotebookValidator()
-    report = validator.check_imports_present(tmp_notebook_path, ["custom_module"])
-
-    assert report.passed
-
-
-def test_check_graph_compiles_valid(tmp_notebook_path: Path, valid_notebook):
-    """Test graph compilation check with valid code."""
-    with tmp_notebook_path.open("w") as f:
-        nbformat.write(valid_notebook, f)
-
-    validator = NotebookValidator()
-    report = validator.check_graph_compiles(tmp_notebook_path)
-
-    assert report.passed
-    assert report.check_name == "Graph Compilation"
-
-
-def test_check_graph_compiles_syntax_error(tmp_notebook_path: Path):
-    """Test graph compilation check with syntax error."""
-    nb = new_notebook()
-    nb.cells.append(new_code_cell(source="def broken(\npass"))  # Invalid syntax
-
-    with tmp_notebook_path.open("w") as f:
-        nbformat.write(nb, f)
-
-    validator = NotebookValidator()
-    report = validator.check_graph_compiles(tmp_notebook_path)
-
-    assert not report.passed
-    assert "syntax" in report.message.lower()
-
-
-def test_check_graph_compiles_no_stategraph(tmp_notebook_path: Path):
-    """Test graph compilation check without StateGraph."""
-    nb = new_notebook()
-    nb.cells.append(new_code_cell(source="x = 1\nprint(x)"))
-
-    with tmp_notebook_path.open("w") as f:
-        nbformat.write(nb, f)
-
-    validator = NotebookValidator()
-    report = validator.check_graph_compiles(tmp_notebook_path)
-
-    assert not report.passed
+    assert report.passed is False
+    assert report.rule_id == "required_import_symbols"
     assert "StateGraph" in report.message
+    assert "END" in report.message
 
 
-def test_check_graph_compiles_no_compile_call(tmp_notebook_path: Path):
-    """Test graph compilation check without .compile() call."""
-    nb = new_notebook()
-    nb.cells.append(
+def test_python_syntax_report_includes_precise_line_evidence(tmp_notebook_path: Path):
+    notebook = new_notebook()
+    notebook.cells.append(
+        new_code_cell("def broken_graph(\n    pass", metadata={"section": "graph"})
+    )
+    _write_notebook(tmp_notebook_path, notebook)
+
+    reports = NotebookValidator().validate_all(tmp_notebook_path)
+    syntax_report = _report_by_name(reports, "Python Syntax")
+
+    assert syntax_report.passed is False
+    assert syntax_report.rule_id == "python_syntax"
+    assert syntax_report.evidence["syntax_error"]["line"] == 1
+    assert syntax_report.evidence["syntax_error"]["cell_index"] == 0
+    assert "broken_graph" in syntax_report.evidence["syntax_error"]["source_line"]
+
+
+def test_undefined_name_rule_detects_likely_typo_in_execution_path(
+    tmp_notebook_path: Path,
+):
+    notebook = new_notebook()
+    notebook.cells.append(
         new_code_cell(
-            source="from langgraph.graph import StateGraph\ngraph = StateGraph(dict)"
+            """from langgraph.graph import END, StateGraph
+
+workflow = StateGraph(dict)
+workflow.add_node("start", lambda state: state)
+workflow.set_entry_point("start")
+workflow.add_edge("start", END)
+compiled_graph = workflow.compile()
+result = compiled_grap.invoke({})""",
+            metadata={"section": "graph"},
         )
     )
+    _write_notebook(tmp_notebook_path, notebook)
 
-    with tmp_notebook_path.open("w") as f:
-        nbformat.write(nb, f)
+    reports = NotebookValidator().validate_all(tmp_notebook_path)
+    undefined_report = _report_by_name(reports, "Undefined Names")
 
-    validator = NotebookValidator()
-    report = validator.check_graph_compiles(tmp_notebook_path)
-
-    assert not report.passed
-    assert "compile" in report.message.lower()
-
-
-def test_check_graph_compiles_no_code_cells(tmp_notebook_path: Path):
-    """Test graph compilation check with no code cells."""
-    nb = new_notebook()
-    nb.cells.append(new_markdown_cell(source="# Just markdown"))
-
-    with tmp_notebook_path.open("w") as f:
-        nbformat.write(nb, f)
-
-    validator = NotebookValidator()
-    report = validator.check_graph_compiles(tmp_notebook_path)
-
-    assert not report.passed
-    assert "no code cells" in report.message.lower()
+    assert undefined_report.passed is False
+    assert undefined_report.rule_id == "undefined_names"
+    assert "compiled_grap" in undefined_report.message
+    assert "compiled_graph" in undefined_report.message
 
 
-def test_validate_all_valid_notebook(tmp_notebook_path: Path, valid_notebook):
-    """Test validate_all with a valid notebook."""
-    with tmp_notebook_path.open("w") as f:
-        nbformat.write(valid_notebook, f)
+def test_undefined_name_rule_flags_assignment_self_reference(tmp_notebook_path: Path):
+    notebook = new_notebook()
+    notebook.cells.append(new_code_cell("x = x + 1"))
+    _write_notebook(tmp_notebook_path, notebook)
 
-    validator = NotebookValidator()
-    reports = validator.validate_all(tmp_notebook_path)
+    reports = NotebookValidator().validate_all(tmp_notebook_path)
+    undefined_report = _report_by_name(reports, "Undefined Names")
 
-    assert len(reports) == 5  # All validation checks
-    assert all(r.passed for r in reports)
-
-
-def test_validate_all_invalid_json(tmp_notebook_path: Path):
-    """Test validate_all with invalid JSON (should stop after first check)."""
-    with tmp_notebook_path.open("w") as f:
-        f.write("invalid json")
-
-    validator = NotebookValidator()
-    reports = validator.validate_all(tmp_notebook_path)
-
-    # Only JSON validation should run if it fails
-    assert len(reports) == 1
-    assert reports[0].check_name == "JSON Validity"
-    assert not reports[0].passed
+    assert undefined_report.passed is False
+    assert "Likely undefined name 'x'" in undefined_report.message
 
 
-def test_validate_all_mixed_results(tmp_notebook_path: Path):
-    """Test validate_all with some passing and some failing checks."""
-    nb = new_notebook()
-    nb.cells.append(
+def test_undefined_name_rule_allows_loop_and_with_targets_in_body(
+    tmp_notebook_path: Path,
+):
+    notebook = new_notebook()
+    notebook.cells.append(
         new_code_cell(
-            source="from langgraph.graph import StateGraph, END\nimport langgraph\n# TODO: fix this",
-            metadata={"section": "setup"},
+            """workers = [1]
+
+for worker in workers:
+    print(worker)
+
+with open("README.md") as handle:
+    print(handle)"""
         )
     )
+    _write_notebook(tmp_notebook_path, notebook)
 
-    with tmp_notebook_path.open("w") as f:
-        nbformat.write(nb, f)
+    reports = NotebookValidator().validate_all(tmp_notebook_path)
+    undefined_report = _report_by_name(reports, "Undefined Names")
 
-    validator = NotebookValidator()
-    reports = validator.validate_all(tmp_notebook_path)
+    assert undefined_report.passed is True
 
-    # Some checks should pass, some should fail
-    assert len(reports) == 5
-    passed = [r for r in reports if r.passed]
-    failed = [r for r in reports if not r.passed]
 
-    assert len(passed) > 0  # JSON and imports should pass
-    assert len(failed) > 0  # Placeholders and missing sections should fail
+def test_graph_structure_rule_uses_ast_not_string_presence(tmp_notebook_path: Path):
+    notebook = new_notebook()
+    notebook.cells.append(
+        new_code_cell(
+            'graph_hint = "StateGraph"\ncompile_hint = ".compile()"\nprint(graph_hint, compile_hint)',
+            metadata={"section": "graph"},
+        )
+    )
+    _write_notebook(tmp_notebook_path, notebook)
+
+    report = NotebookValidator().check_graph_compiles(tmp_notebook_path)
+
+    assert report.passed is False
+    assert report.rule_id == "graph_structure"
+    assert "StateGraph construction" in report.message
+
+
+def test_graph_structure_rule_requires_terminal_path(tmp_notebook_path: Path):
+    notebook = new_notebook()
+    notebook.cells.append(
+        new_code_cell(
+            """from langgraph.graph import StateGraph
+
+workflow = StateGraph(dict)
+workflow.set_entry_point("start")
+graph = workflow.compile()""",
+            metadata={"section": "graph"},
+        )
+    )
+    _write_notebook(tmp_notebook_path, notebook)
+
+    report = NotebookValidator().check_graph_compiles(tmp_notebook_path)
+
+    assert report.passed is False
+    assert "terminal path to END" in report.message
+
+
+def test_validate_all_emits_structured_reports(tmp_notebook_path: Path, valid_notebook):
+    _write_notebook(tmp_notebook_path, valid_notebook)
+
+    reports = NotebookValidator().validate_all(tmp_notebook_path)
+
+    assert _report_by_name(reports, "JSON Validity").passed is True
+    assert _report_by_name(reports, "Required Imports").passed is True
+    assert _report_by_name(reports, "Python Syntax").passed is True
+    assert _report_by_name(reports, "Graph Compilation").passed is True
+    for report in reports:
+        assert report.rule_id
+        assert report.severity in {"info", "warning", "error"}
+        assert report.category
+        assert isinstance(report.repairable, bool)
+
+
+def test_validate_all_skips_deep_ast_rules_when_syntax_is_broken(
+    tmp_notebook_path: Path,
+):
+    notebook = new_notebook()
+    notebook.cells.append(new_code_cell("def broken(\npass"))
+    _write_notebook(tmp_notebook_path, notebook)
+
+    reports = NotebookValidator().validate_all(tmp_notebook_path)
+    report_names = {report.check_name for report in reports}
+
+    assert "Python Syntax" in report_names
+    assert "Undefined Names" not in report_names
+    assert "Graph Compilation" not in report_names
+
+
+def test_single_check_helpers_use_registry_backed_rules(
+    tmp_notebook_path: Path, valid_notebook
+):
+    class CustomRequiredSectionsRule(RequiredSectionsRule):
+        def validate(self, context):
+            return self.passed_report("custom required sections")
+
+    class CustomRequiredImportsRule(RequiredImportsRule):
+        def validate(self, context):
+            return self.passed_report("custom required imports")
+
+    class CustomPythonSyntaxRule(PythonSyntaxRule):
+        def validate(self, context):
+            return self.passed_report("custom syntax")
+
+    class CustomGraphStructureRule(GraphStructureRule):
+        def validate(self, context):
+            return self.passed_report("custom graph structure")
+
+    registry = ValidatorRegistry(
+        [
+            PlaceholderRule(NotebookValidator.PLACEHOLDER_PATTERNS),
+            CustomRequiredSectionsRule(NotebookValidator.REQUIRED_SECTIONS),
+            CustomRequiredImportsRule(NotebookValidator.REQUIRED_IMPORTS),
+            CustomPythonSyntaxRule(),
+            UndefinedNameRule(),
+            CustomGraphStructureRule(),
+        ]
+    )
+    _write_notebook(tmp_notebook_path, valid_notebook)
+
+    validator = NotebookValidator(registry=registry)
+
+    assert (
+        validator.check_required_sections(tmp_notebook_path).message
+        == "custom required sections"
+    )
+    assert (
+        validator.check_imports_present(tmp_notebook_path).message
+        == "custom required imports"
+    )
+    assert (
+        validator.check_graph_compiles(tmp_notebook_path).message
+        == "custom graph structure"
+    )

@@ -344,6 +344,7 @@ class GraphDesignResult(BaseModel):
 
 
 ToolStatus = Literal["ready", "fallback", "unsupported"]
+QASeverity = Literal["info", "warning", "error"]
 
 
 class ToolSpec(BaseModel):
@@ -565,6 +566,22 @@ class QAReport(BaseModel):
     check_name: str = Field(description="Name of the QA check")
     passed: bool = Field(description="Whether the check passed")
     message: str = Field(description="Report message or error details")
+    rule_id: str = Field(
+        default="qa_report",
+        description="Stable identifier for the QA rule that emitted this report.",
+    )
+    severity: QASeverity = Field(
+        default="info",
+        description="Severity for failed checks: info, warning, or error.",
+    )
+    category: str = Field(
+        default="general",
+        description="High-level QA category such as syntax, imports, or graph_structure.",
+    )
+    repairable: bool = Field(
+        default=False,
+        description="Whether the failure is expected to be safely repairable.",
+    )
     suggestions: List[str] = Field(default_factory=list, description="Suggested fixes")
     stage: Optional[str] = Field(
         default=None,
@@ -577,6 +594,32 @@ class QAReport(BaseModel):
     evidence: Dict[str, Any] = Field(
         default_factory=dict,
         description="Optional structured evidence captured during QA or repair.",
+    )
+
+
+class QARepairFeedback(BaseModel):
+    """Advisory QA/repair summary surfaced to manifests and callers."""
+
+    repair_attempts: int = Field(
+        default=0,
+        ge=0,
+        description="Number of repair attempts made so far for the current run.",
+    )
+    rollback_used: bool = Field(
+        default=False,
+        description="Whether a repair attempt had to roll back to the prior notebook snapshot.",
+    )
+    unrepaired_failures: List[str] = Field(
+        default_factory=list,
+        description="Blocking QA failures that remain unresolved after validation or repair.",
+    )
+    next_steps: List[str] = Field(
+        default_factory=list,
+        description="Actionable next steps for resolving unresolved QA failures.",
+    )
+    warnings: List[str] = Field(
+        default_factory=list,
+        description="High-level QA/repair warnings for manifests and notebook-facing surfaces.",
     )
 
 
@@ -624,6 +667,7 @@ class GeneratorState(TypedDict):
     qa_reports: List[QAReport]
     qa_history: List[QAReport]
     repair_attempts: int
+    qa_repair_feedback: QARepairFeedback
 
     # Output
     artifacts_manifest: Dict[str, Any]

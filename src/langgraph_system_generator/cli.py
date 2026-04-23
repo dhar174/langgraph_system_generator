@@ -26,6 +26,7 @@ from langgraph_system_generator.generator.state import (
     NotebookCompositionFeedback,
     NotebookDependencyPlan,
     NotebookPlan,
+    QARepairFeedback,
     RequirementsFeedback,
     ToolPlanningFeedback,
 )
@@ -108,6 +109,7 @@ def _default_state(
             fallback_used=False
         ),
         "notebook_dependency_plan": NotebookDependencyPlan(),
+        "qa_repair_feedback": QARepairFeedback(),
         "selected_patterns": {},
         "docs_context": [],
         "notebook_plan": None,
@@ -402,6 +404,61 @@ def _tool_planning_warning_entries(
         )
 
     return warnings
+
+
+def _qa_repair_warning_entries(
+    feedback: Dict[str, Any] | None,
+    reports: List[Dict[str, Any]] | None,
+) -> List[Dict[str, Any]]:
+    """Convert structured QA/repair feedback into manifest warnings."""
+
+    feedback = feedback if isinstance(feedback, dict) else {}
+    reports = reports if isinstance(reports, list) else []
+
+    severe_reports = [
+        report
+        for report in reports
+        if not report.get("passed", True) and report.get("severity") == "error"
+    ]
+    unresolved_failures = list(feedback.get("unrepaired_failures") or [])
+    if not unresolved_failures:
+        unresolved_failures = [
+            f"{report.get('check_name', 'QA Check')}: {report.get('message', '')}".strip()
+            for report in severe_reports
+        ]
+
+    next_steps = list(feedback.get("next_steps") or [])
+    warnings = list(feedback.get("warnings") or [])
+    warning_entries: List[Dict[str, Any]] = []
+
+    if unresolved_failures:
+        warning_entries.append(
+            {
+                "code": "qa_validation_failed",
+                "phase": "qa",
+                "message": (
+                    warnings[0]
+                    if warnings
+                    else "Blocking QA issues remain after validation or repair."
+                ),
+                "unrepaired_failures": unresolved_failures,
+                "next_steps": next_steps,
+                "repair_attempts": int(feedback.get("repair_attempts") or 0),
+            }
+        )
+
+    if feedback.get("rollback_used"):
+        warning_entries.append(
+            {
+                "code": "qa_repair_rollback",
+                "phase": "repair",
+                "message": "A repair rollback preserved the previous notebook snapshot.",
+                "next_steps": next_steps,
+                "repair_attempts": int(feedback.get("repair_attempts") or 0),
+            }
+        )
+
+    return warning_entries
 
 
 class _PhaseTracker:
@@ -957,6 +1014,7 @@ def _build_stub_result(prompt: str, agent_type: str | None = None) -> Dict[str, 
             ],
             provider_env_vars=["OPENAI_API_KEY"],
         ),
+        "qa_repair_feedback": QARepairFeedback(),
         "selected_patterns": {
             "primary": architecture_type,
             "secondary": secondary_patterns,
@@ -1088,6 +1146,8 @@ async def generate_artifacts(
         serialized.get("notebook_composition_feedback") or {}
     )
     notebook_dependency_plan = serialized.get("notebook_dependency_plan") or {}
+    qa_repair_feedback = serialized.get("qa_repair_feedback") or {}
+    qa_reports = serialized.get("qa_reports") or []
 
     manifest: Dict[str, Any] = {
         "prompt": prompt,
@@ -1102,12 +1162,14 @@ async def generate_artifacts(
         "tool_planning_feedback": tool_planning_feedback,
         "notebook_composition_feedback": notebook_composition_feedback,
         "notebook_dependency_plan": notebook_dependency_plan,
+        "qa_repair_feedback": qa_repair_feedback,
         "warnings": [
             *_requirements_warning_entries(requirements_feedback),
             *_architecture_warning_entries(architecture_feedback),
             *_graph_design_warning_entries(graph_design_feedback),
             *_tool_planning_warning_entries(tool_planning_feedback),
             *_notebook_composition_warning_entries(notebook_composition_feedback),
+            *_qa_repair_warning_entries(qa_repair_feedback, qa_reports),
         ],
         "export_results": {},
     }

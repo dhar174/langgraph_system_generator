@@ -31,6 +31,7 @@ from langgraph_system_generator.generator.state import (
     NotebookDependencyPlan,
     NotebookPlan,
     QAReport,
+    QARepairFeedback,
     ToolPlanningFeedback,
 )
 from langgraph_system_generator.notebook.composer import (
@@ -122,6 +123,19 @@ def _qa_history_from_state(state: GeneratorState) -> List[QAReport]:
     return list(state.get("qa_reports") or [])
 
 
+def _qa_repair_feedback_from_state(state: GeneratorState) -> QARepairFeedback:
+    """Return structured QA/repair feedback from state or a safe default."""
+
+    feedback = state.get("qa_repair_feedback")
+    if isinstance(feedback, QARepairFeedback):
+        return feedback
+    if isinstance(feedback, dict):
+        return QARepairFeedback.model_validate(feedback)
+    if hasattr(feedback, "model_dump"):
+        return QARepairFeedback.model_validate(feedback.model_dump())
+    return QARepairFeedback()
+
+
 def _stamp_report(
     report: QAReport,
     *,
@@ -153,6 +167,59 @@ def _stamp_reports(
     """Attach stage/attempt metadata to a batch of reports."""
 
     return [_stamp_report(report, stage=stage, attempt=attempt) for report in reports]
+
+
+def _qa_repair_feedback_from_reports(
+    reports: List[QAReport],
+    *,
+    repair_attempts: int,
+    existing_feedback: QARepairFeedback | None = None,
+    rollback_used: bool = False,
+    extra_warnings: List[str] | None = None,
+) -> QARepairFeedback:
+    """Build compact QA/repair feedback from the current report set."""
+
+    unresolved_failures: List[str] = []
+    next_steps: List[str] = []
+    warnings: List[str] = []
+    advisory_failures: List[str] = []
+
+    for report in reports:
+        if report.passed:
+            continue
+
+        descriptor = f"{report.check_name}: {report.message}"
+        if report.severity == "error":
+            if descriptor not in unresolved_failures:
+                unresolved_failures.append(descriptor)
+        else:
+            if descriptor not in advisory_failures:
+                advisory_failures.append(descriptor)
+
+        for suggestion in report.suggestions:
+            suggestion_text = str(suggestion or "").strip()
+            if suggestion_text and suggestion_text not in next_steps:
+                next_steps.append(suggestion_text)
+
+    if unresolved_failures:
+        warnings.append("Blocking QA issues remain after validation or repair.")
+    if advisory_failures:
+        warnings.append("Additional non-blocking QA advisories were recorded.")
+    if rollback_used:
+        warnings.append("A repair rollback preserved the previous notebook snapshot.")
+    for warning in extra_warnings or []:
+        warning_text = str(warning or "").strip()
+        if warning_text and warning_text not in warnings:
+            warnings.append(warning_text)
+
+    prior = existing_feedback or QARepairFeedback()
+    return QARepairFeedback(
+        repair_attempts=repair_attempts,
+        rollback_used=prior.rollback_used or rollback_used,
+        unrepaired_failures=unresolved_failures,
+        next_steps=next_steps,
+        warnings=warnings,
+    )
 
 
 async def intake_node(state: GeneratorState) -> Dict[str, Any]:
@@ -466,10 +533,16 @@ async def static_qa_node(state: GeneratorState) -> Dict[str, Any]:
         attempt=int(state.get("repair_attempts", 0)),
     )
     qa_history = [*_qa_history_from_state(state), *annotated_reports]
+    qa_repair_feedback = _qa_repair_feedback_from_reports(
+        annotated_reports,
+        repair_attempts=int(state.get("repair_attempts", 0)),
+        existing_feedback=_qa_repair_feedback_from_state(state),
+    )
 
     return {
         "qa_reports": annotated_reports,
         "qa_history": qa_history,
+        "qa_repair_feedback": qa_repair_feedback,
     }
 
 
@@ -492,6 +565,10 @@ async def runtime_qa_node(state: GeneratorState) -> Dict[str, Any]:
                 check_name="Runtime Check",
                 passed=True,
                 message="Runtime checks skipped: no generated cells to execute.",
+                rule_id="runtime_smoke_test",
+                severity="info",
+                category="runtime",
+                repairable=False,
             ),
             stage="runtime",
             attempt=attempt,
@@ -515,6 +592,10 @@ async def runtime_qa_node(state: GeneratorState) -> Dict[str, Any]:
                     check_name="Runtime Check",
                     passed=passed,
                     message=message,
+                    rule_id="runtime_smoke_test",
+                    severity="info" if passed else "error",
+                    category="runtime",
+                    repairable=False,
                     suggestions=suggestions,
                 ),
                 stage="runtime",
@@ -546,6 +627,10 @@ async def runtime_qa_node(state: GeneratorState) -> Dict[str, Any]:
                     check_name="Runtime Check",
                     passed=passed,
                     message=message,
+                    rule_id="runtime_smoke_test",
+                    severity="info" if passed else "error",
+                    category="runtime",
+                    repairable=False,
                     suggestions=[] if passed else _runtime_qa_suggestions(smoke_message),
                 ),
                 stage="runtime",
@@ -561,8 +646,18 @@ async def runtime_qa_node(state: GeneratorState) -> Dict[str, Any]:
                 },
             )
 
+    combined_reports = [*existing_reports, report]
     qa_history = [*_qa_history_from_state(state), report]
-    return {"qa_reports": [*existing_reports, report], "qa_history": qa_history}
+    qa_repair_feedback = _qa_repair_feedback_from_reports(
+        combined_reports,
+        repair_attempts=attempt,
+        existing_feedback=_qa_repair_feedback_from_state(state),
+    )
+    return {
+        "qa_reports": combined_reports,
+        "qa_history": qa_history,
+        "qa_repair_feedback": qa_repair_feedback,
+    }
 
 
 async def repair_node(state: GeneratorState) -> Dict[str, Any]:
@@ -622,6 +717,10 @@ async def repair_node(state: GeneratorState) -> Dict[str, Any]:
                 if repair_success
                 else "Notebook repair could not resolve the current QA failures."
             ),
+            rule_id="repair_attempt_summary",
+            severity="info" if repair_success else "warning",
+            category="repair",
+            repairable=False,
             suggestions=[] if repair_success else ["Inspect the latest QA reports before retrying."],
         ),
         stage="repair",
@@ -633,12 +732,24 @@ async def repair_node(state: GeneratorState) -> Dict[str, Any]:
             "regenerated_cell_count": len(regenerated_cells),
         },
     )
+    qa_repair_feedback = _qa_repair_feedback_from_reports(
+        normalized_reports,
+        repair_attempts=attempt + 1,
+        existing_feedback=_qa_repair_feedback_from_state(state),
+        rollback_used=False,
+        extra_warnings=(
+            []
+            if repair_success
+            else ["Repair attempt did not resolve the current blocking QA issues."]
+        ),
+    )
 
     return {
         "generated_cells": regenerated_cells,
         "qa_reports": normalized_reports,
         "qa_history": [*_qa_history_from_state(state), repair_summary],
         "repair_attempts": attempt + 1,
+        "qa_repair_feedback": qa_repair_feedback,
     }
 
 
@@ -659,6 +770,7 @@ async def package_outputs_node(state: GeneratorState) -> Dict[str, Any]:
     tool_planning_feedback = state.get("tool_planning_feedback")
     notebook_composition_feedback = state.get("notebook_composition_feedback")
     notebook_dependency_plan = state.get("notebook_dependency_plan")
+    qa_repair_feedback = state.get("qa_repair_feedback")
     manifest = {
         "notebook_plan": str(state.get("notebook_plan")),
         "cell_count": str(len(state.get("generated_cells", []))),
@@ -711,6 +823,13 @@ async def package_outputs_node(state: GeneratorState) -> Dict[str, Any]:
             if hasattr(notebook_dependency_plan, "model_dump")
             else (
                 notebook_dependency_plan or NotebookDependencyPlan().model_dump()
+            )
+        ),
+        "qa_repair_feedback": (
+            qa_repair_feedback.model_dump()
+            if hasattr(qa_repair_feedback, "model_dump")
+            else (
+                qa_repair_feedback or QARepairFeedback().model_dump()
             )
         ),
     }

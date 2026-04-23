@@ -37,6 +37,7 @@ from langgraph_system_generator.generator.tool_registry import (
 )
 from langgraph_system_generator.generator.state import (
     ArchitectureSelectionResult,
+    CellSpec,
     Constraint,
     DocSnippet,
     GraphConditionalEdgeSpec,
@@ -123,6 +124,32 @@ def test_architecture_registry_includes_builtin_architectures():
     hybrid = registry.get("hybrid")
     assert hybrid.default_secondary_patterns == ["router", "subagents"]
     assert hybrid.deterministic is True
+
+
+@pytest.mark.asyncio
+async def test_qa_repair_agent_validate_uses_shared_notebook_validator(monkeypatch):
+    monkeypatch.setattr(
+        qa_repair_agent,
+        "ChatOpenAI",
+        make_stub_llm("[]"),
+    )
+
+    agent = qa_repair_agent.QARepairAgent()
+    reports = await agent.validate(
+        [
+            CellSpec(cell_type="markdown", content="## Graph", metadata={"section": "graph"}),
+            CellSpec(
+                cell_type="code",
+                content="graph_hint = 'StateGraph'\nprint(graph_hint)",
+                metadata={"section": "graph"},
+            ),
+        ]
+    )
+
+    graph_report = next(report for report in reports if report.check_name == "Graph Compilation")
+
+    assert graph_report.rule_id == "graph_structure"
+    assert graph_report.passed is False
 
 
 def test_architecture_registry_preserves_zero_docs_weight_and_filters_unknown_patterns():

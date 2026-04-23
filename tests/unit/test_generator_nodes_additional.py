@@ -31,6 +31,7 @@ from langgraph_system_generator.generator.state import (
     NotebookCompositionResult,
     NotebookDependencyPlan,
     QAReport,
+    QARepairFeedback,
     ToolPlanningFeedback,
 )
 from langgraph_system_generator.utils.config import GenerationConfig
@@ -429,6 +430,39 @@ async def test_static_qa_node_appends_reports(monkeypatch):
     assert result["qa_history"][0] == existing[0]
     assert result["qa_history"][-1].check_name == "New"
     assert result["qa_history"][-1].stage == "static"
+    assert result["qa_repair_feedback"].unrepaired_failures == []
+
+
+@pytest.mark.asyncio
+async def test_static_qa_node_surfaces_blocking_feedback(monkeypatch):
+    blocking_report = QAReport(
+        check_name="Python Syntax",
+        passed=False,
+        message="Syntax error in notebook code: invalid syntax at line 3",
+        rule_id="python_syntax",
+        severity="error",
+        category="syntax",
+        repairable=True,
+        suggestions=["Fix the syntax error before execution."],
+    )
+
+    monkeypatch.setattr(
+        "langgraph_system_generator.generator.nodes.NotebookValidator.validate_all",
+        lambda *_args, **_kwargs: [blocking_report],
+    )
+
+    result = await static_qa_node(
+        {
+            "generated_cells": [CellSpec(cell_type="code", content="broken(", metadata={})],
+            "qa_reports": [],
+            "repair_attempts": 0,
+        }
+    )
+
+    assert result["qa_repair_feedback"].unrepaired_failures == [
+        "Python Syntax: Syntax error in notebook code: invalid syntax at line 3"
+    ]
+    assert "Fix the syntax error before execution." in result["qa_repair_feedback"].next_steps
 
 
 @pytest.mark.asyncio
@@ -446,6 +480,7 @@ async def test_runtime_qa_node_message_empty_cells():
     report = result["qa_reports"][-1]
     assert "no generated cells" in report.message
     assert report.stage == "runtime"
+    assert result["qa_repair_feedback"].unrepaired_failures == []
 
 
 @pytest.mark.asyncio
@@ -509,6 +544,9 @@ async def test_runtime_qa_node_reports_kernel_failure_in_live_mode(monkeypatch):
     assert "Runtime validation unavailable" in report.message
     assert report.passed is False
     assert report.evidence["failure_kind"] == "runtime_unavailable"
+    assert result["qa_repair_feedback"].unrepaired_failures == [
+        f"{report.check_name}: {report.message}"
+    ]
 
 
 @pytest.mark.asyncio
@@ -605,6 +643,8 @@ async def test_repair_node_success_refreshes_cells_and_appends_history(monkeypat
     assert len(result["qa_history"]) == len(existing_history) + 1
     assert result["qa_history"][-1].check_name == "Repair Attempt"
     assert result["repair_attempts"] == 2
+    assert result["qa_repair_feedback"].repair_attempts == 2
+    assert result["qa_repair_feedback"].unrepaired_failures == []
 
 
 @pytest.mark.asyncio
@@ -635,6 +675,8 @@ async def test_repair_node_failure_keeps_cells_and_appends_history(monkeypatch):
     assert len(result["qa_history"]) == len(existing_history) + 1
     assert result["qa_history"][-1].passed is False
     assert result["repair_attempts"] == 4
+    assert result["qa_repair_feedback"].repair_attempts == 4
+    assert "Repair attempt did not resolve" in result["qa_repair_feedback"].warnings[-1]
 
 
 @pytest.mark.asyncio
@@ -684,6 +726,12 @@ async def test_package_outputs_node_manifest_fields():
             packages=["langgraph", "langchain-openai", "requests"],
             provider_env_vars=["OPENAI_API_KEY"],
         ),
+        "qa_repair_feedback": QARepairFeedback(
+            repair_attempts=1,
+            unrepaired_failures=["Runtime Check: Runtime validation failed."],
+            next_steps=["Inspect the runtime environment before retrying."],
+            warnings=["Blocking QA issues remain after validation or repair."],
+        ),
     }
     result = await package_outputs_node(state)
 
@@ -697,4 +745,5 @@ async def test_package_outputs_node_manifest_fields():
     assert manifest["tool_planning_feedback"]["fallback_used"] is True
     assert manifest["notebook_composition_feedback"]["fallback_used"] is True
     assert "requests" in manifest["notebook_dependency_plan"]["packages"]
+    assert manifest["qa_repair_feedback"]["repair_attempts"] == 1
     assert result["generation_complete"] is True

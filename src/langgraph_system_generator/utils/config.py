@@ -186,6 +186,12 @@ class Settings(BaseSettings):
             "Optional graph designer plugin modules loaded to extend the graph design registry."
         ),
     )
+    qa_repair_plugin_modules: Annotated[list[str], NoDecode] = Field(
+        default_factory=list,
+        description=(
+            "Optional QA/repair plugin modules loaded to extend internal validator and repair registries."
+        ),
+    )
 
     @field_validator("requirements_constraint_types", mode="before")
     @classmethod
@@ -325,6 +331,40 @@ class Settings(BaseSettings):
                 normalized.append(module_name)
         return normalized
 
+    @field_validator("qa_repair_plugin_modules", mode="before")
+    @classmethod
+    def _parse_qa_repair_plugin_modules(cls, value):
+        """Accept JSON arrays or comma-separated plugin module strings."""
+        if value in (None, ""):
+            return []
+        if isinstance(value, list):
+            raw_items = value
+        elif isinstance(value, str):
+            stripped = value.strip()
+            if not stripped:
+                return []
+            if stripped.startswith("["):
+                try:
+                    parsed = json.loads(stripped)
+                except json.JSONDecodeError as exc:
+                    raise ValueError(
+                        f"Invalid JSON in qa_repair_plugin_modules: {exc}"
+                    ) from exc
+                if not isinstance(parsed, list):
+                    raise ValueError("qa_repair_plugin_modules must decode to a list")
+                raw_items = parsed
+            else:
+                raw_items = stripped.split(",")
+        else:
+            return value
+
+        normalized: list[str] = []
+        for raw_item in raw_items:
+            module_name = str(raw_item or "").strip()
+            if module_name and module_name not in normalized:
+                normalized.append(module_name)
+        return normalized
+
     @field_validator("toolchain_engineer_plugin_modules", mode="before")
     @classmethod
     def _parse_toolchain_engineer_plugin_modules(cls, value):
@@ -432,6 +472,7 @@ _TEST_SETTINGS_ENV_KEYS = (
     "NOTEBOOK_COMPOSER_PLUGIN_MODULES",
     "TOOLCHAIN_ENGINEER_PLUGIN_MODULES",
     "GRAPH_DESIGNER_PLUGIN_MODULES",
+    "QA_REPAIR_PLUGIN_MODULES",
 )
 
 

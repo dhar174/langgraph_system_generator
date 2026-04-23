@@ -63,6 +63,7 @@ async def test_generate_artifacts_stub(tmp_path: Path, monkeypatch: pytest.Monke
     assert artifacts["manifest"]["tool_planning_feedback"]["fallback_used"] is False
     assert artifacts["manifest"]["notebook_composition_feedback"]["fallback_used"] is False
     assert "langgraph" in artifacts["manifest"]["notebook_dependency_plan"]["packages"]
+    assert artifacts["manifest"]["qa_repair_feedback"]["repair_attempts"] == 0
     assert artifacts["result"]["requirements_feedback"]["fallback_used"] is False
     assert artifacts["result"]["architecture_feedback"]["fallback_used"] is False
     assert artifacts["result"]["architecture_feedback"]["docs_considered"] == []
@@ -71,6 +72,7 @@ async def test_generate_artifacts_stub(tmp_path: Path, monkeypatch: pytest.Monke
     assert artifacts["result"]["tool_planning_feedback"]["fallback_used"] is False
     assert artifacts["result"]["notebook_composition_feedback"]["fallback_used"] is False
     assert "OPENAI_API_KEY" in artifacts["result"]["notebook_dependency_plan"]["provider_env_vars"]
+    assert artifacts["result"]["qa_repair_feedback"]["repair_attempts"] == 0
     assert Path(artifacts["manifest_path"]).exists()
     assert artifacts["result"]["generation_complete"] is True
 
@@ -93,6 +95,7 @@ def test_default_state_includes_generation_mode_and_qa_history():
     assert state["tool_planning_feedback"].fallback_used is False
     assert state["notebook_composition_feedback"].fallback_used is False
     assert state["notebook_dependency_plan"].packages == []
+    assert state["qa_repair_feedback"].repair_attempts == 0
     assert "goal" in state["requirements_feedback"].available_constraint_types
     assert "web_search" in state["tool_planning_feedback"].available_tool_ids
 
@@ -135,6 +138,7 @@ def test_default_and_stub_results_normalize_constraint_type_registry(monkeypatch
     )
     assert stub_result["tool_planning_feedback"].fallback_used is False
     assert "langgraph" in stub_result["notebook_dependency_plan"].packages
+    assert stub_result["qa_repair_feedback"].repair_attempts == 0
 
 
 @pytest.mark.asyncio
@@ -268,6 +272,7 @@ async def test_api_generate_stub(tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     assert payload["manifest"]["tool_planning_feedback"]["fallback_used"] is False
     assert payload["manifest"]["notebook_composition_feedback"]["fallback_used"] is False
     assert "langgraph" in payload["manifest"]["notebook_dependency_plan"]["packages"]
+    assert payload["manifest"]["qa_repair_feedback"]["repair_attempts"] == 0
 
 
 @pytest.mark.asyncio
@@ -553,6 +558,68 @@ async def test_generate_artifacts_surfaces_notebook_composition_feedback_as_warn
     assert "notebook_composition_fallback" in warning_codes
     assert artifacts["manifest"]["notebook_composition_feedback"]["fallback_used"] is True
     assert "requests" in artifacts["manifest"]["notebook_dependency_plan"]["packages"]
+
+
+@pytest.mark.asyncio
+async def test_generate_artifacts_surfaces_qa_feedback_as_warnings(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.setenv("LNF_OUTPUT_BASE", "test_qa_feedback_warning")
+
+    import langgraph_system_generator.constants as constants_module
+    import langgraph_system_generator.notebook.exporters as exporters_module
+    import langgraph_system_generator.cli as cli_module
+
+    importlib.reload(constants_module)
+    importlib.reload(exporters_module)
+    importlib.reload(cli_module)
+
+    original_build_stub_result = cli_module._build_stub_result
+
+    def build_stub_result_with_qa_feedback(prompt: str, agent_type: str | None = None):
+        result = original_build_stub_result(prompt, agent_type=agent_type)
+        result["qa_reports"] = [
+            {
+                "check_name": "Python Syntax",
+                "passed": False,
+                "message": "Syntax error in notebook code: invalid syntax at line 7",
+                "rule_id": "python_syntax",
+                "severity": "error",
+                "category": "syntax",
+                "repairable": True,
+                "suggestions": ["Fix the syntax error before execution."],
+                "stage": "static",
+                "attempt": 0,
+                "evidence": {"syntax_error": {"line": 7}},
+            }
+        ]
+        result["qa_repair_feedback"] = {
+            "repair_attempts": 1,
+            "rollback_used": False,
+            "unrepaired_failures": [
+                "Python Syntax: Syntax error in notebook code: invalid syntax at line 7"
+            ],
+            "next_steps": ["Fix the syntax error before execution."],
+            "warnings": ["Blocking QA issues remain after validation or repair."],
+        }
+        return result
+
+    monkeypatch.setattr(
+        cli_module,
+        "_build_stub_result",
+        build_stub_result_with_qa_feedback,
+    )
+
+    output_dir = constants_module._BASE_OUTPUT / "qa_feedback_stub"
+    artifacts = await cli_module.generate_artifacts(
+        "QA feedback prompt",
+        output_dir=str(output_dir),
+        mode="stub",
+    )
+
+    warning_codes = {warning["code"] for warning in artifacts["manifest"]["warnings"]}
+    assert "qa_validation_failed" in warning_codes
+    assert artifacts["manifest"]["qa_repair_feedback"]["repair_attempts"] == 1
 
 
 def test_build_stub_result_raises_for_invalid_stub_graph_design(monkeypatch):
