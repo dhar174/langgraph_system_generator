@@ -139,6 +139,16 @@ def test_default_registry_contains_builtin_validators_and_repairs():
     ]
 
 
+def test_explicit_empty_repair_routines_are_preserved():
+    registry = QARepairRegistry(repair_routines=())
+    clone = registry.clone()
+    agent = NotebookRepairAgent(registry=registry)
+
+    assert registry.registered_repair_routine_ids() == []
+    assert clone.registered_repair_routine_ids() == []
+    assert agent.registry.registered_repair_routine_ids() == []
+
+
 def test_custom_validator_injection_works():
     registry = get_qa_repair_registry(plugin_modules=())
     registry.register_validator(CustomMarkerRule())
@@ -215,6 +225,33 @@ def test_plugin_module_loading_registers_custom_extensions(monkeypatch):
     assert "plugin_marker_repair" in registry.registered_repair_routine_ids()
 
 
+def test_plugin_module_loading_accepts_comma_separated_module_strings():
+    module_one = "test_qa_repair_plugin_one"
+    module_two = "test_qa_repair_plugin_two"
+
+    def register_one(registry: QARepairRegistry) -> None:
+        registry.register_validator(CustomMarkerRule())
+
+    def register_two(registry: QARepairRegistry) -> None:
+        registry.register_repair_routine(
+            RepairRoutineRegistration(
+                routine_id="plugin_marker_repair",
+                handled_rule_ids=("custom_marker",),
+                handler=_custom_repair_handler,
+            )
+        )
+
+    _install_plugin_module(module_one, register_one)
+    _install_plugin_module(module_two, register_two)
+
+    registry = get_qa_repair_registry(
+        plugin_modules=f"{module_one}, {module_two}"
+    )
+
+    assert "custom_marker" in registry.registered_validator_ids()
+    assert "plugin_marker_repair" in registry.registered_repair_routine_ids()
+
+
 def test_plugin_module_without_entrypoint_raises_actionable_value_error(monkeypatch):
     module_name = "test_qa_repair_plugin_without_entrypoint"
     sys.modules[module_name] = types.ModuleType(module_name)
@@ -262,4 +299,3 @@ def test_missing_plugin_module_raises_actionable_value_error():
 
     assert module_name in message
     assert "Failed to import QA/repair plugin module" in message
-

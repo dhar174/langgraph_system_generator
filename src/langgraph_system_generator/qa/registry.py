@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import importlib
 from dataclasses import dataclass
-from typing import Any, Callable, Iterable, List, Sequence
+from typing import Callable, Iterable, List, Protocol, Sequence
 
 from nbformat import NotebookNode
 
@@ -21,7 +21,47 @@ from langgraph_system_generator.qa.validators import (
 )
 from langgraph_system_generator.utils.config import settings
 
-RepairRoutineCallable = Callable[[Any, NotebookNode, QAReport], List[str]]
+
+class SupportsRepairRoutineHandler(Protocol):
+    """Structural typing contract for deterministic repair handlers."""
+
+    def _repair_placeholders(self, notebook: NotebookNode) -> List[str]: ...
+
+    def _repair_sections(
+        self,
+        notebook: NotebookNode,
+        report: QAReport,
+    ) -> List[str]: ...
+
+    def _repair_imports(
+        self,
+        notebook: NotebookNode,
+        report: QAReport,
+    ) -> List[str]: ...
+
+    def _repair_undefined_names(
+        self,
+        notebook: NotebookNode,
+        report: QAReport,
+    ) -> List[str]: ...
+
+    def _repair_syntax(
+        self,
+        notebook: NotebookNode,
+        report: QAReport,
+    ) -> List[str]: ...
+
+    def _repair_graph_scaffold(
+        self,
+        notebook: NotebookNode,
+        report: QAReport,
+    ) -> List[str]: ...
+
+
+RepairRoutineCallable = Callable[
+    [SupportsRepairRoutineHandler, NotebookNode, QAReport],
+    List[str],
+]
 
 
 @dataclass(frozen=True)
@@ -80,7 +120,12 @@ class QARepairRegistry:
             else build_default_validator_registry()
         )
         self._repair_routines: dict[str, RepairRoutineRegistration] = {}
-        for routine in repair_routines or build_default_repair_routines():
+        routines = (
+            build_default_repair_routines()
+            if repair_routines is None
+            else repair_routines
+        )
+        for routine in routines:
             self.register_repair_routine(routine)
 
     def clone(self) -> "QARepairRegistry":
@@ -217,7 +262,7 @@ def build_default_repair_routines() -> List[RepairRoutineRegistration]:
 
 
 def get_qa_repair_registry(
-    plugin_modules: Sequence[str] | None = None,
+    plugin_modules: Sequence[str] | str | None = None,
 ) -> QARepairRegistry:
     """Build the QA/repair registry and load configured internal plugins."""
 
@@ -231,7 +276,7 @@ def get_qa_repair_registry(
 
 def _load_plugin_modules(
     registry: QARepairRegistry,
-    plugin_modules: Sequence[str] | None,
+    plugin_modules: Sequence[str] | str | None,
 ) -> None:
     """Load QA/repair plugin modules into the registry."""
 
@@ -261,13 +306,17 @@ def _load_plugin_modules(
             ) from exc
 
 
-def _normalize_plugin_modules(plugin_modules: Sequence[str] | None) -> List[str]:
+def _normalize_plugin_modules(
+    plugin_modules: Sequence[str] | str | None,
+) -> List[str]:
     """Return de-duplicated plugin module names."""
 
+    if isinstance(plugin_modules, str):
+        plugin_modules = [plugin_modules]
     normalized: List[str] = []
-    for raw_module in plugin_modules or []:
-        module_name = str(raw_module).strip()
-        if module_name and module_name not in normalized:
-            normalized.append(module_name)
+    for raw_item in plugin_modules or []:
+        for raw_module in str(raw_item).split(","):
+            module_name = raw_module.strip()
+            if module_name and module_name not in normalized:
+                normalized.append(module_name)
     return normalized
-

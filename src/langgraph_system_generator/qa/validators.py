@@ -9,7 +9,7 @@ import json
 import re
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional, Sequence
+from typing import Dict, Iterable, List, Optional, Protocol, Sequence, runtime_checkable
 
 import nbformat
 from nbformat import NotebookNode
@@ -769,6 +769,13 @@ class ValidatorRegistry:
         return ValidatorRegistry(self.rules())
 
 
+@runtime_checkable
+class SupportsValidatorRegistry(Protocol):
+    """Structural typing contract for objects that can provide a validator registry."""
+
+    def validator_registry(self) -> ValidatorRegistry: ...
+
+
 class NotebookValidator:
     """Validates generated notebooks for quality and correctness."""
 
@@ -783,35 +790,23 @@ class NotebookValidator:
     REQUIRED_SECTIONS = ["setup", "config", "graph", "execution"]
     REQUIRED_IMPORTS = ["langgraph", "StateGraph", "END"]
 
-    def __init__(self, registry: ValidatorRegistry | Any | None = None):
+    def __init__(
+        self,
+        registry: ValidatorRegistry | SupportsValidatorRegistry | None = None,
+    ):
         if registry is None:
             from langgraph_system_generator.qa.registry import get_qa_repair_registry
 
             self.registry = get_qa_repair_registry().validator_registry()
-        elif hasattr(registry, "validator_registry") and callable(
-            registry.validator_registry
-        ):
-            self.registry = registry.validator_registry()
         elif isinstance(registry, ValidatorRegistry):
             self.registry = registry.clone()
+        elif isinstance(registry, SupportsValidatorRegistry):
+            self.registry = registry.validator_registry()
         else:
             raise TypeError(
-                "NotebookValidator registry must be a ValidatorRegistry or QARepairRegistry."
+                "NotebookValidator registry must be a ValidatorRegistry or implement "
+                "validator_registry()."
             )
-
-    def _build_default_registry(self) -> ValidatorRegistry:
-        """Create the default ordered validation registry."""
-
-        return ValidatorRegistry(
-            [
-                PlaceholderRule(self.PLACEHOLDER_PATTERNS),
-                RequiredSectionsRule(self.REQUIRED_SECTIONS),
-                RequiredImportsRule(self.REQUIRED_IMPORTS),
-                PythonSyntaxRule(),
-                UndefinedNameRule(),
-                GraphStructureRule(),
-            ]
-        )
 
     def _load_notebook(self, notebook_path: str | Path) -> NotebookNode:
         """Load a notebook from disk as v4."""
