@@ -8,7 +8,16 @@ import nbformat
 import pytest
 from nbformat.v4 import new_code_cell, new_markdown_cell, new_notebook
 
-from langgraph_system_generator.qa.validators import NotebookValidator
+from langgraph_system_generator.qa.validators import (
+    GraphStructureRule,
+    NotebookValidator,
+    PlaceholderRule,
+    PythonSyntaxRule,
+    RequiredImportsRule,
+    RequiredSectionsRule,
+    UndefinedNameRule,
+    ValidatorRegistry,
+)
 
 
 @pytest.fixture
@@ -81,6 +90,18 @@ def test_validate_json_structure_missing_file(tmp_path: Path):
     assert report.passed is False
     assert "not found" in report.message.lower()
     assert report.rule_id == "json_structure"
+
+
+def test_validate_json_structure_malformed_json(tmp_notebook_path: Path):
+    tmp_notebook_path.write_text('{"cells": [', encoding="utf-8")
+
+    report = NotebookValidator().validate_json_structure(tmp_notebook_path)
+
+    assert report.passed is False
+    assert report.rule_id == "json_structure"
+    assert report.category == "serialization"
+    assert report.evidence["error_type"] == "json"
+    assert report.evidence["message"]
 
 
 def test_check_no_placeholders_detects_placeholder_content(tmp_notebook_path: Path):
@@ -171,6 +192,41 @@ result = compiled_grap.invoke({})""",
     assert "compiled_graph" in undefined_report.message
 
 
+def test_undefined_name_rule_flags_assignment_self_reference(tmp_notebook_path: Path):
+    notebook = new_notebook()
+    notebook.cells.append(new_code_cell("x = x + 1"))
+    _write_notebook(tmp_notebook_path, notebook)
+
+    reports = NotebookValidator().validate_all(tmp_notebook_path)
+    undefined_report = _report_by_name(reports, "Undefined Names")
+
+    assert undefined_report.passed is False
+    assert "Likely undefined name 'x'" in undefined_report.message
+
+
+def test_undefined_name_rule_allows_loop_and_with_targets_in_body(
+    tmp_notebook_path: Path,
+):
+    notebook = new_notebook()
+    notebook.cells.append(
+        new_code_cell(
+            """workers = [1]
+
+for worker in workers:
+    print(worker)
+
+with open("README.md") as handle:
+    print(handle)"""
+        )
+    )
+    _write_notebook(tmp_notebook_path, notebook)
+
+    reports = NotebookValidator().validate_all(tmp_notebook_path)
+    undefined_report = _report_by_name(reports, "Undefined Names")
+
+    assert undefined_report.passed is True
+
+
 def test_graph_structure_rule_uses_ast_not_string_presence(tmp_notebook_path: Path):
     notebook = new_notebook()
     notebook.cells.append(
@@ -237,3 +293,50 @@ def test_validate_all_skips_deep_ast_rules_when_syntax_is_broken(
     assert "Python Syntax" in report_names
     assert "Undefined Names" not in report_names
     assert "Graph Compilation" not in report_names
+
+
+def test_single_check_helpers_use_registry_backed_rules(
+    tmp_notebook_path: Path, valid_notebook
+):
+    class CustomRequiredSectionsRule(RequiredSectionsRule):
+        def validate(self, context):
+            return self.passed_report("custom required sections")
+
+    class CustomRequiredImportsRule(RequiredImportsRule):
+        def validate(self, context):
+            return self.passed_report("custom required imports")
+
+    class CustomPythonSyntaxRule(PythonSyntaxRule):
+        def validate(self, context):
+            return self.passed_report("custom syntax")
+
+    class CustomGraphStructureRule(GraphStructureRule):
+        def validate(self, context):
+            return self.passed_report("custom graph structure")
+
+    registry = ValidatorRegistry(
+        [
+            PlaceholderRule(NotebookValidator.PLACEHOLDER_PATTERNS),
+            CustomRequiredSectionsRule(NotebookValidator.REQUIRED_SECTIONS),
+            CustomRequiredImportsRule(NotebookValidator.REQUIRED_IMPORTS),
+            CustomPythonSyntaxRule(),
+            UndefinedNameRule(),
+            CustomGraphStructureRule(),
+        ]
+    )
+    _write_notebook(tmp_notebook_path, valid_notebook)
+
+    validator = NotebookValidator(registry=registry)
+
+    assert (
+        validator.check_required_sections(tmp_notebook_path).message
+        == "custom required sections"
+    )
+    assert (
+        validator.check_imports_present(tmp_notebook_path).message
+        == "custom required imports"
+    )
+    assert (
+        validator.check_graph_compiles(tmp_notebook_path).message
+        == "custom graph structure"
+    )

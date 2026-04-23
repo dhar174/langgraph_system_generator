@@ -455,57 +455,141 @@ class UndefinedNameRule(QAValidationRule):
             ) -> None:
                 return
 
-        defined_names: set[str] = set()
         undefined_names: List[Dict[str, object]] = []
 
-        for statement in tree.body:
-            if isinstance(statement, ast.Import):
-                for alias in statement.names:
-                    defined_names.add(alias.asname or alias.name.split(".")[0])
-                continue
-
-            if isinstance(statement, ast.ImportFrom):
-                for alias in statement.names:
-                    defined_names.add(alias.asname or alias.name)
-                continue
-
-            if isinstance(statement, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
-                defined_names.add(statement.name)
-                continue
-
-            if isinstance(statement, ast.Assign):
-                for target in statement.targets:
-                    defined_names.update(_target_names(target))
-            elif isinstance(statement, ast.AnnAssign):
-                defined_names.update(_target_names(statement.target))
-            elif isinstance(statement, ast.AugAssign):
-                defined_names.update(_target_names(statement.target))
+        def _record_undefined_from(
+            node: ast.AST | None, currently_defined: set[str]
+        ) -> None:
+            if node is None:
+                return
 
             visitor = _TopLevelLoadNameVisitor()
-            visitor.visit(statement)
-            for node in visitor.load_names:
-                name = node.id
-                if name in defined_names or name in _BUILTIN_NAMES:
+            visitor.visit(node)
+            for load_name in visitor.load_names:
+                name = load_name.id
+                if name in currently_defined or name in _BUILTIN_NAMES:
                     continue
                 if name in {"True", "False", "None"}:
                     continue
                 suggestion = difflib.get_close_matches(
-                    name, sorted(defined_names), n=1, cutoff=0.75
+                    name, sorted(currently_defined), n=1, cutoff=0.75
                 )
                 undefined_names.append(
                     {
                         "name": name,
                         "suggestion": suggestion[0] if suggestion else None,
-                        **context.resolve_line(getattr(node, "lineno", None)),
+                        **context.resolve_line(getattr(load_name, "lineno", None)),
                     }
                 )
 
-            if isinstance(statement, ast.With):
+        def _scan_block(
+            statements: Sequence[ast.stmt], currently_defined: set[str]
+        ) -> set[str]:
+            scoped_names = set(currently_defined)
+            for statement in statements:
+                _scan_statement(statement, scoped_names)
+            return scoped_names
+
+        def _scan_statement(statement: ast.stmt, currently_defined: set[str]) -> None:
+            if isinstance(statement, ast.Import):
+                for alias in statement.names:
+                    currently_defined.add(alias.asname or alias.name.split(".")[0])
+                return
+
+            if isinstance(statement, ast.ImportFrom):
+                for alias in statement.names:
+                    currently_defined.add(alias.asname or alias.name)
+                return
+
+            if isinstance(statement, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+                currently_defined.add(statement.name)
+                return
+
+            if isinstance(statement, ast.Assign):
+                for target in statement.targets:
+                    _record_undefined_from(target, currently_defined)
+                _record_undefined_from(statement.value, currently_defined)
+                for target in statement.targets:
+                    currently_defined.update(_target_names(target))
+                return
+
+            if isinstance(statement, ast.AnnAssign):
+                _record_undefined_from(statement.target, currently_defined)
+                _record_undefined_from(statement.annotation, currently_defined)
+                _record_undefined_from(statement.value, currently_defined)
+                currently_defined.update(_target_names(statement.target))
+                return
+
+            if isinstance(statement, ast.AugAssign):
+                _record_undefined_from(statement.target, currently_defined)
+                _record_undefined_from(statement.value, currently_defined)
+                currently_defined.update(_target_names(statement.target))
+                return
+
+            if isinstance(statement, (ast.For, ast.AsyncFor)):
+                _record_undefined_from(statement.iter, currently_defined)
+                currently_defined.update(_target_names(statement.target))
+                currently_defined.update(
+                    _scan_block(statement.body, set(currently_defined))
+                )
+                currently_defined.update(
+                    _scan_block(statement.orelse, set(currently_defined))
+                )
+                return
+
+            if isinstance(statement, (ast.With, ast.AsyncWith)):
+                for item in statement.items:
+                    _record_undefined_from(item.context_expr, currently_defined)
+                    _record_undefined_from(item.optional_vars, currently_defined)
                 for item in statement.items:
                     if item.optional_vars is not None:
-                        defined_names.update(_target_names(item.optional_vars))
-            elif isinstance(statement, ast.For):
-                defined_names.update(_target_names(statement.target))
+                        currently_defined.update(_target_names(item.optional_vars))
+                currently_defined.update(
+                    _scan_block(statement.body, set(currently_defined))
+                )
+                return
+
+            if isinstance(statement, ast.If):
+                _record_undefined_from(statement.test, currently_defined)
+                currently_defined.update(
+                    _scan_block(statement.body, set(currently_defined))
+                )
+                currently_defined.update(
+                    _scan_block(statement.orelse, set(currently_defined))
+                )
+                return
+
+            if isinstance(statement, ast.While):
+                _record_undefined_from(statement.test, currently_defined)
+                currently_defined.update(
+                    _scan_block(statement.body, set(currently_defined))
+                )
+                currently_defined.update(
+                    _scan_block(statement.orelse, set(currently_defined))
+                )
+                return
+
+            if isinstance(statement, ast.Try):
+                currently_defined.update(
+                    _scan_block(statement.body, set(currently_defined))
+                )
+                for handler in statement.handlers:
+                    handler_scope = set(currently_defined)
+                    _record_undefined_from(handler.type, handler_scope)
+                    if handler.name:
+                        handler_scope.add(handler.name)
+                    currently_defined.update(_scan_block(handler.body, handler_scope))
+                currently_defined.update(
+                    _scan_block(statement.orelse, set(currently_defined))
+                )
+                currently_defined.update(
+                    _scan_block(statement.finalbody, set(currently_defined))
+                )
+                return
+
+            _record_undefined_from(statement, currently_defined)
+
+        defined_names = _scan_block(tree.body, set())
 
         if undefined_names:
             first_issue = undefined_names[0]
@@ -753,7 +837,7 @@ class NotebookValidator:
                 repairable=False,
                 evidence={"path": str(path)},
             )
-        except json.JSONDecodeError as exc:
+        except (json.JSONDecodeError, nbformat.reader.NotJSONError) as exc:
             return QAReport(
                 check_name="JSON Validity",
                 passed=False,
@@ -829,7 +913,11 @@ class NotebookValidator:
 
         try:
             context = self._context_from_path(notebook_path)
-            rule = RequiredSectionsRule(required_sections or self.REQUIRED_SECTIONS)
+            rule = (
+                self.registry.get("required_sections")
+                if required_sections is None
+                else RequiredSectionsRule(required_sections)
+            )
             return rule.validate(context) or rule.passed_report(
                 "All required sections present."
             )
@@ -853,7 +941,11 @@ class NotebookValidator:
 
         try:
             context = self._context_from_path(notebook_path)
-            rule = RequiredImportsRule(required_imports or self.REQUIRED_IMPORTS)
+            rule = (
+                self.registry.get("required_import_symbols")
+                if required_imports is None
+                else RequiredImportsRule(required_imports)
+            )
             return rule.validate(context) or rule.passed_report(
                 "All required imports are present."
             )
@@ -875,7 +967,8 @@ class NotebookValidator:
 
         try:
             context = self._context_from_path(notebook_path)
-            syntax_report = PythonSyntaxRule().validate(context)
+            syntax_rule = self.registry.get("python_syntax")
+            syntax_report = syntax_rule.validate(context)
             if syntax_report is not None and not syntax_report.passed:
                 return QAReport(
                     check_name="Graph Compilation",
@@ -889,7 +982,8 @@ class NotebookValidator:
                     evidence=syntax_report.evidence,
                 )
 
-            graph_report = GraphStructureRule().validate(context)
+            graph_rule = self.registry.get("graph_structure")
+            graph_report = graph_rule.validate(context)
             return graph_report or QAReport(
                 check_name="Graph Compilation",
                 passed=True,
