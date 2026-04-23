@@ -322,7 +322,9 @@ mode it is recorded as non-blocking runtime evidence.
 **Input**: Notebook + Failed QA reports  
 **Output**: Repaired notebook
 
-If QA fails, attempts to repair the notebook:
+If QA fails, the shared QA/repair engine applies registered deterministic repair
+routines in memory, revalidates the candidate notebook, and persists the repair
+only when validation is non-regressive:
 
 ```python
 {
@@ -333,19 +335,26 @@ If QA fails, attempts to repair the notebook:
   "qa_history": [
     # ... prior static/runtime reports ...,
     {"check_name": "Repair Attempt", "stage": "repair", "passed": false}
-  ]
+  ],
+  "qa_repair_feedback": {
+    "repair_attempts": 1,
+    "rollback_used": true,
+    "unrepaired_failures": ["Python Syntax: invalid syntax"],
+    "next_steps": ["Inspect the QA and Repair Summary cell before retrying."]
+  }
 }
 ```
 
 **Repair Strategy**:
 1. Identify specific failures
-2. Generate targeted fixes
-3. Apply fixes to notebook
-4. Re-run QA validation
-5. Repeat up to `MAX_REPAIR_ATTEMPTS` (default: 3)
+2. Select matching routines from `QARepairRegistry`
+3. Apply fixes to an in-memory notebook candidate
+4. Re-run QA validation and accept only non-regressive candidates
+5. Record rollback/no-op outcomes in `qa_history` and `qa_repair_feedback`
 
 **Component**: `NotebookRepairAgent`  
-**LLM-Powered**: Yes (live mode only)
+**LLM-Powered**: No; repair is deterministic and registry-backed in both stub
+and live-compatible paths
 
 #### 10. Package Outputs
 **Input**: Final notebook  
@@ -440,7 +449,7 @@ Each pipeline stage has a dedicated agent:
 | `GraphDesigner` | Design workflow structure | Live mode |
 | `ToolchainEngineer` | Plan required tools | Live mode |
 | `NotebookComposer` | Generate notebook cells | Live mode |
-| `QARepairAgent` | Fix validation failures | Live mode |
+| `QARepairAgent` | Orchestrate deterministic QA repairs | No |
 
 ### Support Components
 
@@ -450,6 +459,7 @@ Each pipeline stage has a dedicated agent:
 | `VectorStoreManager` | FAISS index management |
 | `DocumentCache` | Cached documentation storage |
 | `NotebookValidator` | Static & runtime validation |
+| `QARepairRegistry` | Internal validator and repair routine registry |
 | `NotebookExporter` | Multi-format export |
 | `PatternLibrary` | Reusable pattern templates |
 
@@ -573,19 +583,20 @@ All patterns are:
 |-------|------|-------------|
 | `json_structure` | Static | Valid notebook JSON |
 | `required_sections` | Static | All sections present |
-| `no_placeholders` | Static | No TODO/placeholder text |
-| `imports_present` | Static | Required imports included |
-| `graph_compiles` | Runtime | Code syntax validation |
+| `placeholder_content` | Static | No TODO/placeholder text |
+| `required_import_symbols` | Static | Required imports included |
+| `python_syntax` | Static | Code syntax validation |
+| `graph_structure` | Static | Parsed graph construction and terminal path validation |
 
 ### Repair Strategies
 
 When QA fails, the repair agent:
 
 1. **Analyzes failures**: Categorizes error types
-2. **Generates fixes**: Creates targeted repairs
-3. **Applies patches**: Updates specific cells
-4. **Validates**: Re-runs QA checks
-5. **Iterates**: Repeats if needed (max 3 attempts)
+2. **Selects routines**: Uses `QARepairRegistry` to find matching deterministic fixes
+3. **Applies candidates**: Updates in-memory notebook cells first
+4. **Validates**: Re-runs QA checks before accepting the candidate
+5. **Rolls back safely**: Keeps the original cells if the candidate regresses
 
 ### Best-Effort Fallback
 
@@ -656,6 +667,9 @@ class Settings(BaseSettings):
     max_repair_attempts: int = 3
     default_budget_tokens: int = 100000
     graph_designer_plugin_modules: list[str] = []
+    notebook_composer_plugin_modules: list[str] = []
+    toolchain_engineer_plugin_modules: list[str] = []
+    qa_repair_plugin_modules: list[str] = []
     
     # LangSmith
     langsmith_project: Optional[str] = None
@@ -703,21 +717,35 @@ workflow.add_edge("custom_analysis", "rag_retrieval")
 app = workflow.compile()
 ```
 
-### Custom Validators
+### Internal QA/Repair Plugins
 
-Add validation checks:
+Register internal validation rules or repair routines without editing the core
+QA modules by setting `QA_REPAIR_PLUGIN_MODULES` to one or more dotted module
+paths. Each module should expose `register_qa_repair_plugins(registry)`:
 
 ```python
-from langgraph_system_generator.qa.validators import NotebookValidator
+from langgraph_system_generator.qa.registry import RepairRoutineRegistration
+from langgraph_system_generator.qa.validators import QAValidationRule
 
-class CustomValidator(NotebookValidator):
-    def check_custom_requirement(self, notebook_path):
-        # Your validation logic
-        return QAReport(
-            check_name="custom_check",
-            passed=True,
-            message="Custom check passed"
+
+class CustomRule(QAValidationRule):
+    rule_id = "custom_rule"
+    check_name = "Custom Rule"
+    category = "custom"
+
+    def validate(self, context):
+        return self.passed_report("Custom rule passed.")
+
+
+def register_qa_repair_plugins(registry):
+    registry.register_validator(CustomRule())
+    registry.register_repair_routine(
+        RepairRoutineRegistration(
+            routine_id="custom_repair",
+            handled_rule_ids=("custom_rule",),
+            handler=lambda agent, notebook, report: [],
         )
+    )
 ```
 
 ## Performance Characteristics

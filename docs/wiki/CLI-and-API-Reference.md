@@ -124,6 +124,12 @@ The CLI respects these environment variables:
 | `DEFAULT_BUDGET_TOKENS` | Token budget | `100000` |
 | `LNF_OUTPUT_BASE` | Base output directory | `.` |
 | `GRAPH_DESIGNER_PLUGIN_MODULES` | Extra graph designer registry modules | None |
+| `QA_REPAIR_PLUGIN_MODULES` | Extra QA/repair registry modules | None |
+
+`QA_REPAIR_PLUGIN_MODULES` is an internal extension hook. Provide a JSON array
+or comma-separated list of dotted module paths; each module must expose
+`register_qa_repair_plugins(registry)` and may register validator rules or
+deterministic repair routines without adding new CLI/API request fields.
 
 ### Exit Codes
 
