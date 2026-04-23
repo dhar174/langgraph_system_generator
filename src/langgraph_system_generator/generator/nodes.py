@@ -176,6 +176,7 @@ def _qa_repair_feedback_from_reports(
     existing_feedback: QARepairFeedback | None = None,
     rollback_used: bool = False,
     extra_warnings: List[str] | None = None,
+    extra_next_steps: List[str] | None = None,
 ) -> QARepairFeedback:
     """Build compact QA/repair feedback from the current report set."""
 
@@ -211,6 +212,10 @@ def _qa_repair_feedback_from_reports(
         warning_text = str(warning or "").strip()
         if warning_text and warning_text not in warnings:
             warnings.append(warning_text)
+    for step in extra_next_steps or []:
+        step_text = str(step or "").strip()
+        if step_text and step_text not in next_steps:
+            next_steps.append(step_text)
 
     prior = existing_feedback or QARepairFeedback()
     return QARepairFeedback(
@@ -220,6 +225,81 @@ def _qa_repair_feedback_from_reports(
         next_steps=next_steps,
         warnings=warnings,
     )
+
+
+def _qa_repair_summary_markdown(
+    feedback: QARepairFeedback,
+    *,
+    status: str,
+) -> str:
+    """Render a notebook-visible QA and repair summary."""
+
+    if status == "applied":
+        status_line = "Applied a non-regressive deterministic repair."
+    elif status == "rolled_back":
+        status_line = "Rolled back the repair candidate to preserve the last safe notebook snapshot."
+    elif status == "skipped":
+        status_line = "Skipped repair because no safe deterministic fix matched the current QA failures."
+    else:
+        status_line = "No repair was needed for the current notebook snapshot."
+
+    lines = [
+        "## QA and Repair Summary",
+        "",
+        f"Status: {status_line}",
+        f"Repair attempts so far: {feedback.repair_attempts}",
+        f"Rollback used: {'Yes' if feedback.rollback_used else 'No'}",
+    ]
+
+    if feedback.unrepaired_failures:
+        lines.extend(
+            [
+                "",
+                "Blocking unresolved failures:",
+                *[f"- {failure}" for failure in feedback.unrepaired_failures],
+            ]
+        )
+    else:
+        lines.extend(["", "Blocking unresolved failures: none."])
+
+    if feedback.next_steps:
+        lines.extend(
+            [
+                "",
+                "Next steps:",
+                *[f"- {step}" for step in feedback.next_steps],
+            ]
+        )
+    elif status == "applied":
+        lines.extend(["", "Next steps: no manual follow-up is currently required."])
+
+    return "\n".join(lines)
+
+
+def _upsert_qa_repair_summary_cell(
+    cells: List[CellSpec],
+    feedback: QARepairFeedback,
+    *,
+    status: str,
+) -> List[CellSpec]:
+    """Replace any existing QA repair summary cell with the latest summary."""
+
+    retained_cells = [
+        cell.model_copy(deep=True)
+        for cell in cells
+        if cell.section != "qa_repair_summary"
+        and cell.metadata.get("kind") != "qa_repair_summary"
+        and cell.metadata.get("section") != "qa_repair_summary"
+    ]
+    retained_cells.append(
+        CellSpec(
+            cell_type="markdown",
+            content=_qa_repair_summary_markdown(feedback, status=status),
+            metadata={"section": "qa_repair_summary", "kind": "qa_repair_summary"},
+            section="qa_repair_summary",
+        )
+    )
+    return retained_cells
 
 
 async def intake_node(state: GeneratorState) -> Dict[str, Any]:
@@ -670,78 +750,62 @@ async def repair_node(state: GeneratorState) -> Dict[str, Any]:
         Updated state with incremented repair attempts and repaired notebook data.
     """
     repair_agent = NotebookRepairAgent()
-    notebook_builder = NotebookFileComposer()
 
     cells = state.get("generated_cells", [])
     qa_reports = list(state.get("qa_reports", []))
     attempt = int(state.get("repair_attempts", 0))
-
-    with TemporaryDirectory() as temp_dir:
-        notebook = notebook_builder.build_notebook(cells)
-        notebook_path = Path(temp_dir) / "generated.ipynb"
-        notebook_builder.write(notebook, notebook_path)
-
-        repair_success, updated_reports = repair_agent.repair_notebook(
-            notebook_path,
-            qa_reports,
-            attempt=attempt,
-        )
-
-        # Only reload cells if repair was successful
-        if repair_success:
-            try:
-                regenerated_cells = _cells_from_notebook(notebook_path)
-            except ValueError as e:
-                # If cell rehydration fails after successful repair, log and keep original cells
-                logger.warning(f"Failed to reload cells after repair: {e}")
-                regenerated_cells = cells
-        else:
-            # If repair failed (e.g., notebook not safely written), keep original cells
-            logger.info(
-                f"Repair attempt {attempt} failed. "
-                "Keeping original cells for potential retry."
-            )
-            regenerated_cells = cells
+    outcome = repair_agent.repair_cells(cells, qa_reports, attempt=attempt)
 
     normalized_reports = _stamp_reports(
-        updated_reports,
+        outcome.qa_reports,
         stage="static",
         attempt=attempt + 1,
     )
+    extra_warnings: List[str] = []
+    if outcome.status == "rolled_back":
+        extra_warnings.append(
+            "Repair candidate was rolled back after validation to preserve the last safe notebook snapshot."
+        )
+    elif outcome.status == "skipped":
+        extra_warnings.append(outcome.message)
+
     repair_summary = _stamp_report(
         QAReport(
             check_name="Repair Attempt",
-            passed=repair_success,
-            message=(
-                "Notebook repair produced an updated notebook snapshot."
-                if repair_success
-                else "Notebook repair could not resolve the current QA failures."
-            ),
-            rule_id="repair_attempt_summary",
-            severity="info" if repair_success else "warning",
+            passed=outcome.success,
+            message=outcome.message,
+            rule_id="repair_attempt",
+            severity="info" if outcome.success else "warning",
             category="repair",
             repairable=False,
-            suggestions=[] if repair_success else ["Inspect the latest QA reports before retrying."],
+            suggestions=outcome.next_steps,
         ),
         stage="repair",
         attempt=attempt,
         evidence={
-            "repair_success": repair_success,
+            "repair_success": outcome.success,
+            "repair_status": outcome.status,
+            "attempted_fixes": outcome.attempted_fixes,
+            "validation_after_repair": outcome.validation_summary,
+            "rollback_used": outcome.rollback_used,
+            "persisted_repaired_cells": outcome.persisted,
             "input_report_count": len(qa_reports),
             "output_report_count": len(normalized_reports),
-            "regenerated_cell_count": len(regenerated_cells),
+            "regenerated_cell_count": len(outcome.cells),
         },
     )
     qa_repair_feedback = _qa_repair_feedback_from_reports(
         normalized_reports,
         repair_attempts=attempt + 1,
         existing_feedback=_qa_repair_feedback_from_state(state),
-        rollback_used=False,
-        extra_warnings=(
-            []
-            if repair_success
-            else ["Repair attempt did not resolve the current blocking QA issues."]
-        ),
+        rollback_used=outcome.rollback_used,
+        extra_warnings=extra_warnings,
+        extra_next_steps=outcome.next_steps,
+    )
+    regenerated_cells = _upsert_qa_repair_summary_cell(
+        outcome.cells,
+        qa_repair_feedback,
+        status=outcome.status,
     )
 
     return {

@@ -34,6 +34,7 @@ from langgraph_system_generator.generator.state import (
     QARepairFeedback,
     ToolPlanningFeedback,
 )
+from langgraph_system_generator.qa.repair import RepairOutcome
 from langgraph_system_generator.utils.config import GenerationConfig
 
 
@@ -618,12 +619,16 @@ async def test_repair_node_success_refreshes_cells_and_appends_history(monkeypat
     existing_history = [QAReport(check_name="Runtime Check", passed=False, message="boom")]
 
     monkeypatch.setattr(
-        "langgraph_system_generator.generator.nodes.NotebookRepairAgent.repair_notebook",
-        lambda *_args, **_kwargs: (True, updated_reports),
-    )
-    monkeypatch.setattr(
-        "langgraph_system_generator.generator.nodes._cells_from_notebook",
-        lambda *_args, **_kwargs: updated_cells,
+        "langgraph_system_generator.generator.nodes.NotebookRepairAgent.repair_cells",
+        lambda *_args, **_kwargs: RepairOutcome(
+            status="applied",
+            cells=updated_cells,
+            qa_reports=updated_reports,
+            attempted_fixes=["Applied deterministic fix."],
+            persisted=True,
+            message="Repair candidate passed validation and was accepted.",
+            validation_summary={"accepted": True},
+        ),
     )
 
     state = {
@@ -636,12 +641,25 @@ async def test_repair_node_success_refreshes_cells_and_appends_history(monkeypat
     }
     result = await repair_node(state)
 
-    assert result["generated_cells"] == updated_cells
+    managed_cells = [
+        cell for cell in result["generated_cells"] if cell.section != "qa_repair_summary"
+    ]
+    summary_cell = next(
+        cell for cell in result["generated_cells"] if cell.section == "qa_repair_summary"
+    )
+
+    assert managed_cells == updated_cells
+    assert "QA and Repair Summary" in summary_cell.content
+    assert "Applied a non-regressive deterministic repair." in summary_cell.content
     assert result["qa_reports"][0].check_name == "Fix"
     assert result["qa_reports"][0].stage == "static"
     assert result["qa_reports"][0].attempt == 2
     assert len(result["qa_history"]) == len(existing_history) + 1
     assert result["qa_history"][-1].check_name == "Repair Attempt"
+    assert result["qa_history"][-1].rule_id == "repair_attempt"
+    assert result["qa_history"][-1].evidence["attempted_fixes"] == [
+        "Applied deterministic fix."
+    ]
     assert result["repair_attempts"] == 2
     assert result["qa_repair_feedback"].repair_attempts == 2
     assert result["qa_repair_feedback"].unrepaired_failures == []
@@ -654,8 +672,18 @@ async def test_repair_node_failure_keeps_cells_and_appends_history(monkeypatch):
     existing_history = [QAReport(check_name="Runtime Check", passed=False, message="boom")]
 
     monkeypatch.setattr(
-        "langgraph_system_generator.generator.nodes.NotebookRepairAgent.repair_notebook",
-        lambda *_args, **_kwargs: (False, updated_reports),
+        "langgraph_system_generator.generator.nodes.NotebookRepairAgent.repair_cells",
+        lambda *_args, **_kwargs: RepairOutcome(
+            status="rolled_back",
+            cells=initial_cells,
+            qa_reports=updated_reports,
+            attempted_fixes=["Tried deterministic fix."],
+            rollback_used=True,
+            persisted=False,
+            message="Repair candidate was rolled back because it regressed or did not improve validation.",
+            next_steps=["Inspect the QA and Repair Summary cell before retrying."],
+            validation_summary={"accepted": False},
+        ),
     )
 
     state = {
@@ -668,7 +696,15 @@ async def test_repair_node_failure_keeps_cells_and_appends_history(monkeypatch):
     }
     result = await repair_node(state)
 
-    assert result["generated_cells"] == initial_cells
+    managed_cells = [
+        cell for cell in result["generated_cells"] if cell.section != "qa_repair_summary"
+    ]
+    summary_cell = next(
+        cell for cell in result["generated_cells"] if cell.section == "qa_repair_summary"
+    )
+
+    assert managed_cells == initial_cells
+    assert "Rolled back the repair candidate" in summary_cell.content
     assert result["qa_reports"][0].check_name == "Fix"
     assert result["qa_reports"][0].stage == "static"
     assert result["qa_reports"][0].attempt == 4
@@ -676,7 +712,8 @@ async def test_repair_node_failure_keeps_cells_and_appends_history(monkeypatch):
     assert result["qa_history"][-1].passed is False
     assert result["repair_attempts"] == 4
     assert result["qa_repair_feedback"].repair_attempts == 4
-    assert "Repair attempt did not resolve" in result["qa_repair_feedback"].warnings[-1]
+    assert result["qa_repair_feedback"].rollback_used is True
+    assert "rolled back after validation" in result["qa_repair_feedback"].warnings[-1]
 
 
 @pytest.mark.asyncio

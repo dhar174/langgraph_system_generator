@@ -35,6 +35,7 @@ from langgraph_system_generator.generator.tool_registry import (
     ToolRegistry,
     get_tool_registry,
 )
+from langgraph_system_generator.qa.repair import RepairOutcome
 from langgraph_system_generator.generator.state import (
     ArchitectureSelectionResult,
     CellSpec,
@@ -44,6 +45,7 @@ from langgraph_system_generator.generator.state import (
     GraphDesignResult,
     GraphEdgeSpec,
     GraphNodeSpec,
+    QAReport,
     ToolSpec,
 )
 from langgraph_system_generator.utils.error_handling import GenerationError
@@ -150,6 +152,37 @@ async def test_qa_repair_agent_validate_uses_shared_notebook_validator(monkeypat
 
     assert graph_report.rule_id == "graph_structure"
     assert graph_report.passed is False
+
+
+@pytest.mark.asyncio
+async def test_qa_repair_agent_repair_delegates_to_shared_engine(monkeypatch):
+    monkeypatch.setattr(
+        qa_repair_agent,
+        "ChatOpenAI",
+        make_stub_llm("[]"),
+    )
+    repaired_cells = [CellSpec(cell_type="markdown", content="Updated", metadata={})]
+
+    monkeypatch.setattr(
+        "langgraph_system_generator.generator.agents.qa_repair_agent.NotebookRepairAgent.repair_cells",
+        lambda *_args, **_kwargs: RepairOutcome(
+            status="applied",
+            cells=repaired_cells,
+            qa_reports=[],
+            attempted_fixes=["Applied deterministic fix."],
+            persisted=True,
+            message="Repair candidate passed validation and was accepted.",
+            validation_summary={"accepted": True},
+        ),
+    )
+
+    agent = qa_repair_agent.QARepairAgent()
+    result = await agent.repair(
+        [CellSpec(cell_type="markdown", content="Original", metadata={})],
+        [QAReport(check_name="Undefined Names", passed=False, message="boom")],
+    )
+
+    assert result == repaired_cells
 
 
 def test_architecture_registry_preserves_zero_docs_weight_and_filters_unknown_patterns():

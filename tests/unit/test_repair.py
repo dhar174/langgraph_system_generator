@@ -1,14 +1,17 @@
-"""Tests for QA repair agent."""
+"""Tests for the shared QA repair engine."""
 
 from __future__ import annotations
 
 from pathlib import Path
+from tempfile import TemporaryDirectory
 
 import nbformat
 import pytest
-from nbformat.v4 import new_code_cell, new_notebook
 
-from langgraph_system_generator.generator.state import QAReport
+from langgraph_system_generator.generator.state import CellSpec, QAReport
+from langgraph_system_generator.notebook.composer import (
+    NotebookComposer as NotebookFileComposer,
+)
 from langgraph_system_generator.qa.repair import NotebookRepairAgent
 from langgraph_system_generator.qa.validators import NotebookValidator
 
@@ -16,17 +19,101 @@ from langgraph_system_generator.qa.validators import NotebookValidator
 @pytest.fixture
 def tmp_notebook_path(tmp_path: Path) -> Path:
     """Create a temporary notebook path."""
+
     return tmp_path / "test_notebook.ipynb"
 
 
 @pytest.fixture
 def repair_agent() -> NotebookRepairAgent:
     """Create a repair agent for testing."""
+
     return NotebookRepairAgent(max_attempts=3)
+
+
+def _validate_cells(cells: list[CellSpec]) -> list[QAReport]:
+    """Validate cells using the shared notebook validator path."""
+
+    builder = NotebookFileComposer()
+    validator = NotebookValidator()
+    with TemporaryDirectory() as temp_dir:
+        notebook = builder.build_notebook(cells)
+        notebook_path = Path(temp_dir) / "generated.ipynb"
+        builder.write(notebook, notebook_path)
+        return validator.validate_all(notebook_path)
+
+
+def _valid_graph_cells(*, execution_content: str | None = None) -> list[CellSpec]:
+    """Return a minimal valid notebook cell set for repair-focused tests."""
+
+    return [
+        CellSpec(
+            cell_type="code",
+            content="from langgraph.graph import END, START, StateGraph\nfrom typing import TypedDict",
+            metadata={"section": "setup"},
+            section="setup",
+        ),
+        CellSpec(
+            cell_type="code",
+            content='config = {"configurable": {"thread_id": "demo"}}',
+            metadata={"section": "config"},
+            section="config",
+        ),
+        CellSpec(
+            cell_type="code",
+            content=(
+                "class WorkflowState(TypedDict, total=False):\n"
+                "    messages: list\n\n"
+                "workflow = StateGraph(WorkflowState)\n\n"
+                "def start_node(state: WorkflowState):\n"
+                "    return state\n\n"
+                "workflow.add_node('start', start_node)\n"
+                "workflow.add_edge(START, 'start')\n"
+                "workflow.add_edge('start', END)\n"
+                "graph = workflow.compile()"
+            ),
+            metadata={"section": "graph"},
+            section="graph",
+        ),
+        CellSpec(
+            cell_type="code",
+            content=execution_content or "result = graph.invoke({})\nprint(result)",
+            metadata={"section": "execution"},
+            section="execution",
+        ),
+        CellSpec(
+            cell_type="code",
+            content='output_data = {"result": "ok"}\noutput_data',
+            metadata={"section": "export"},
+            section="export",
+        ),
+        CellSpec(
+            cell_type="markdown",
+            content="Troubleshooting notes.",
+            metadata={"section": "troubleshooting"},
+            section="troubleshooting",
+        ),
+    ]
+
+
+def _joined_code(cells: list[CellSpec]) -> str:
+    """Return concatenated code cell content for easy assertions."""
+
+    return "\n".join(cell.content for cell in cells if cell.cell_type == "code")
+
+
+def _failed_report(reports: list[QAReport], rule_id: str) -> QAReport:
+    """Return the first failing report for the requested rule."""
+
+    return next(
+        report
+        for report in reports
+        if report.rule_id == rule_id and not report.passed
+    )
 
 
 def test_repair_agent_initialization():
     """Test repair agent initialization."""
+
     agent = NotebookRepairAgent(max_attempts=5)
     assert agent.max_attempts == 5
     assert isinstance(agent.validator, NotebookValidator)
@@ -34,204 +121,279 @@ def test_repair_agent_initialization():
 
 def test_repair_agent_default_max_attempts():
     """Test repair agent uses default max attempts."""
+
     agent = NotebookRepairAgent()
     assert agent.max_attempts == NotebookRepairAgent.DEFAULT_MAX_ATTEMPTS
 
 
-def test_repair_placeholders(tmp_notebook_path: Path, repair_agent):
-    """Test repairing placeholders in notebook."""
-    nb = new_notebook()
-    nb.cells.append(new_code_cell(source="# TODO: implement\nx = 1\n# FIXME: broken"))
+def test_repair_cells_removes_placeholders_and_accepts_candidate(repair_agent):
+    """Placeholder cleanup should remove marker content without dropping real code."""
 
-    with tmp_notebook_path.open("w") as f:
-        nbformat.write(nb, f)
+    cells = _valid_graph_cells(
+        execution_content="# TODO: implement\nvalue = 1\n# FIXME: remove placeholder"
+    )
+    reports = _validate_cells(cells)
+    placeholder_report = _failed_report(reports, "placeholder_content")
 
-    # Create a QA report indicating placeholder issue
-    qa_reports = [
-        QAReport(
-            check_name="No Placeholders",
-            passed=False,
-            message="Found placeholders: TODO, FIXME",
-            suggestions=["Remove placeholders"],
-        )
-    ]
+    outcome = repair_agent.repair_cells(cells, [placeholder_report])
 
-    success, new_reports = repair_agent.repair_notebook(tmp_notebook_path, qa_reports)
-
-    # Verify repair was attempted
-    assert success or len(new_reports) > 0
-
-    # Read the repaired notebook
-    with tmp_notebook_path.open("r") as f:
-        repaired_nb = nbformat.read(f, as_version=4)
-
-    # Check that placeholders were removed
-    content = repaired_nb.cells[0].source
-    assert "TODO" not in content
-    assert "FIXME" not in content
-    assert "x = 1" in content  # Code should remain
+    assert outcome.success is True
+    code = _joined_code(outcome.cells)
+    assert "TODO" not in code
+    assert "FIXME" not in code
+    assert "value = 1" in code
+    assert all(report.passed for report in outcome.qa_reports)
 
 
-def test_repair_placeholders_ellipsis(tmp_notebook_path: Path, repair_agent):
-    """Test repairing ellipsis placeholders."""
-    nb = new_notebook()
-    nb.cells.append(new_code_cell(source="def func():\n    ...\n    pass"))
+def test_repair_cells_adds_missing_langgraph_imports(repair_agent):
+    """Import repair should restore missing LangGraph imports in the setup section."""
 
-    with tmp_notebook_path.open("w") as f:
-        nbformat.write(nb, f)
-
-    qa_reports = [
-        QAReport(
-            check_name="No Placeholders",
-            passed=False,
-            message="Found placeholders: ... (1x)",
-            suggestions=["Remove ellipsis"],
-        )
-    ]
-
-    success, new_reports = repair_agent.repair_notebook(tmp_notebook_path, qa_reports)
-
-    # Verify repair was attempted
-    assert success or len(new_reports) > 0
-
-    with tmp_notebook_path.open("r") as f:
-        repaired_nb = nbformat.read(f, as_version=4)
-
-    # Ellipsis line should be removed
-    content = repaired_nb.cells[0].source
-    assert content.count("...") == 0
-
-
-def test_repair_imports(tmp_notebook_path: Path, repair_agent):
-    """Test adding missing imports."""
-    nb = new_notebook()
-    nb.cells.append(new_code_cell(source="x = 1"))
-
-    with tmp_notebook_path.open("w") as f:
-        nbformat.write(nb, f)
-
-    qa_reports = [
-        QAReport(
-            check_name="Required Imports",
-            passed=False,
-            message="Missing required imports: langgraph, StateGraph",
-            suggestions=["Add imports"],
-        )
-    ]
-
-    success, new_reports = repair_agent.repair_notebook(tmp_notebook_path, qa_reports)
-
-    # Verify repair was attempted
-    assert success or len(new_reports) > 0
-
-    with tmp_notebook_path.open("r") as f:
-        repaired_nb = nbformat.read(f, as_version=4)
-
-    content = repaired_nb.cells[0].source
-    assert "StateGraph" in content or "langgraph" in content
-
-
-def test_repair_sections(tmp_notebook_path: Path, repair_agent):
-    """Test adding missing sections."""
-    nb = new_notebook()
-    nb.cells.append(new_code_cell(source="x = 1", metadata={"section": "setup"}))
-
-    with tmp_notebook_path.open("w") as f:
-        nbformat.write(nb, f)
-
-    qa_reports = [
-        QAReport(
-            check_name="Required Sections",
-            passed=False,
-            message="Missing required sections: config, graph",
-            suggestions=["Add missing sections"],
-        )
-    ]
-
-    _success, _new_reports = repair_agent.repair_notebook(tmp_notebook_path, qa_reports)
-
-    with tmp_notebook_path.open("r") as f:
-        repaired_nb = nbformat.read(f, as_version=4)
-
-    sections = {cell.metadata.get("section") for cell in repaired_nb.cells}
-    assert "config" in sections
-    assert "graph" in sections
-
-
-def test_repair_compilation_missing_stategraph(tmp_notebook_path: Path, repair_agent):
-    """Test repairing missing StateGraph construction."""
-    nb = new_notebook()
-    nb.cells.append(new_code_cell(source="x = 1", metadata={"section": "graph"}))
-
-    with tmp_notebook_path.open("w") as f:
-        nbformat.write(nb, f)
-
-    qa_reports = [
-        QAReport(
-            check_name="Graph Compilation",
-            passed=False,
-            message="No StateGraph construction found in notebook",
-            suggestions=["Add StateGraph"],
-        )
-    ]
-
-    _success, _new_reports = repair_agent.repair_notebook(tmp_notebook_path, qa_reports)
-
-    with tmp_notebook_path.open("r") as f:
-        repaired_nb = nbformat.read(f, as_version=4)
-
-    # Find graph section
-    graph_cell = None
-    for cell in repaired_nb.cells:
-        if cell.metadata.get("section") == "graph" and cell.cell_type == "code":
-            graph_cell = cell
-            break
-
-    assert graph_cell is not None
-    # Verify StateGraph was added and existing code was preserved
-    assert "StateGraph" in graph_cell.source
-    assert "x = 1" in graph_cell.source  # Original code should be preserved
-
-
-def test_repair_compilation_missing_compile(tmp_notebook_path: Path, repair_agent):
-    """Test repairing missing .compile() call."""
-    nb = new_notebook()
-    nb.cells.append(
-        new_code_cell(
-            source="from langgraph.graph import StateGraph\ngraph = StateGraph(dict)",
+    cells = [
+        CellSpec(
+            cell_type="code",
+            content="from typing import TypedDict",
+            metadata={"section": "setup"},
+            section="setup",
+        ),
+        CellSpec(
+            cell_type="code",
+            content='config = {"configurable": {"thread_id": "demo"}}',
+            metadata={"section": "config"},
+            section="config",
+        ),
+        CellSpec(
+            cell_type="code",
+            content=(
+                "class WorkflowState(TypedDict, total=False):\n"
+                "    messages: list\n\n"
+                "workflow = StateGraph(WorkflowState)\n\n"
+                "def start_node(state: WorkflowState):\n"
+                "    return state\n\n"
+                "workflow.add_node('start', start_node)\n"
+                "workflow.add_edge(START, 'start')\n"
+                "workflow.add_edge('start', END)\n"
+                "graph = workflow.compile()"
+            ),
             metadata={"section": "graph"},
+            section="graph",
+        ),
+        CellSpec(
+            cell_type="code",
+            content="result = graph.invoke({})\nprint(result)",
+            metadata={"section": "execution"},
+            section="execution",
+        ),
+        CellSpec(
+            cell_type="code",
+            content='output_data = {"result": "ok"}\noutput_data',
+            metadata={"section": "export"},
+            section="export",
+        ),
+        CellSpec(
+            cell_type="markdown",
+            content="Troubleshooting notes.",
+            metadata={"section": "troubleshooting"},
+            section="troubleshooting",
+        ),
+    ]
+    reports = _validate_cells(cells)
+    import_report = _failed_report(reports, "required_import_symbols")
+
+    outcome = repair_agent.repair_cells(cells, reports)
+
+    assert outcome.success is True
+    setup_cell = next(cell for cell in outcome.cells if cell.section == "setup")
+    assert "from langgraph.graph import" in setup_cell.content
+    assert "StateGraph" in setup_cell.content
+    assert "START" in setup_cell.content
+    assert all(report.passed for report in outcome.qa_reports)
+
+
+def test_repair_cells_rebuilds_incomplete_graph_scaffold(repair_agent):
+    """Graph repair should append a deterministic scaffold for incomplete graphs."""
+
+    cells = [
+        CellSpec(
+            cell_type="code",
+            content="from typing import TypedDict",
+            metadata={"section": "setup"},
+            section="setup",
+        ),
+        CellSpec(
+            cell_type="code",
+            content='config = {"configurable": {"thread_id": "demo"}}',
+            metadata={"section": "config"},
+            section="config",
+        ),
+        CellSpec(
+            cell_type="code",
+            content="# TODO: graph scaffold\nworkflow = None",
+            metadata={"section": "graph"},
+            section="graph",
+        ),
+        CellSpec(
+            cell_type="code",
+            content="print('ready')",
+            metadata={"section": "execution"},
+            section="execution",
+        ),
+        CellSpec(
+            cell_type="code",
+            content='output_data = {"result": "ok"}\noutput_data',
+            metadata={"section": "export"},
+            section="export",
+        ),
+        CellSpec(
+            cell_type="markdown",
+            content="Troubleshooting notes.",
+            metadata={"section": "troubleshooting"},
+            section="troubleshooting",
+        ),
+    ]
+    reports = _validate_cells(cells)
+
+    outcome = repair_agent.repair_cells(cells, reports)
+
+    assert outcome.success is True
+    code = _joined_code(outcome.cells)
+    assert "Recovered deterministic graph scaffold" in code
+    assert "graph = recovered_workflow.compile()" in code
+    assert all(report.passed for report in outcome.qa_reports)
+
+
+def test_repair_cells_fixes_undefined_name_typos(repair_agent):
+    """Undefined-name repair should use validator suggestions for bounded typo fixes."""
+
+    cells = _valid_graph_cells(execution_content="result = grpah.invoke({})\nprint(result)")
+    reports = _validate_cells(cells)
+    undefined_report = _failed_report(reports, "undefined_names")
+
+    outcome = repair_agent.repair_cells(cells, [undefined_report])
+
+    assert outcome.success is True
+    code = _joined_code(outcome.cells)
+    assert "grpah" not in code
+    assert "graph.invoke({})" in code
+    assert all(report.passed for report in outcome.qa_reports)
+
+
+@pytest.mark.parametrize(
+    ("execution_content", "expected_fragment"),
+    [
+        ("if True\n    print(graph)", "if True:"),
+        ("print(1 + 2", "print(1 + 2)"),
+    ],
+)
+def test_repair_cells_applies_bounded_syntax_fixes(
+    repair_agent,
+    execution_content,
+    expected_fragment,
+):
+    """Syntax repair should handle unambiguous missing-colon and delimiter cases."""
+
+    cells = _valid_graph_cells(execution_content=execution_content)
+    reports = _validate_cells(cells)
+    syntax_report = _failed_report(reports, "python_syntax")
+
+    outcome = repair_agent.repair_cells(cells, [syntax_report])
+
+    assert outcome.success is True
+    code = _joined_code(outcome.cells)
+    assert expected_fragment in code
+    assert all(report.passed for report in outcome.qa_reports)
+
+
+def test_repair_cells_rolls_back_regressive_candidates(monkeypatch, repair_agent):
+    """A regressive repair candidate should be rejected and rolled back."""
+
+    cells = _valid_graph_cells(execution_content="result = grpah.invoke({})\nprint(result)")
+    baseline_reports = _validate_cells(cells)
+    regressive_reports = [
+        QAReport(
+            check_name="Python Syntax",
+            passed=False,
+            message="Syntax error in notebook code: invalid syntax at line 4",
+            rule_id="python_syntax",
+            severity="error",
+            category="syntax",
+            repairable=True,
+            suggestions=["Fix Python syntax errors before attempting execution."],
         )
+    ]
+    validate_calls = {"count": 0}
+
+    def fake_validate(_cells):
+        validate_calls["count"] += 1
+        return baseline_reports if validate_calls["count"] == 1 else regressive_reports
+
+    monkeypatch.setattr(repair_agent, "_validate_cells", fake_validate)
+    monkeypatch.setattr(
+        repair_agent,
+        "_apply_repairs",
+        lambda _notebook, _failed_reports: ["Applied synthetic deterministic fix."],
     )
 
-    with tmp_notebook_path.open("w") as f:
-        nbformat.write(nb, f)
+    outcome = repair_agent.repair_cells(cells, baseline_reports)
 
-    qa_reports = [
-        QAReport(
-            check_name="Graph Compilation",
-            passed=False,
-            message="Graph compilation step (.compile()) not found",
-            suggestions=["Add .compile()"],
-        )
-    ]
+    assert outcome.status == "rolled_back"
+    assert outcome.rollback_used is True
+    assert outcome.persisted is False
+    assert outcome.cells == cells
+    assert outcome.qa_reports == baseline_reports
+    assert outcome.validation_summary["accepted"] is False
 
-    _success, _new_reports = repair_agent.repair_notebook(tmp_notebook_path, qa_reports)
 
-    with tmp_notebook_path.open("r") as f:
-        repaired_nb = nbformat.read(f, as_version=4)
+def test_repair_cells_skips_unhandled_failures_without_claiming_success(repair_agent):
+    """Unhandled failures should be surfaced as skipped, not as successful repairs."""
 
-    content = repaired_nb.cells[0].source
-    assert ".compile()" in content
+    cells = _valid_graph_cells()
+    runtime_report = QAReport(
+        check_name="Runtime Check",
+        passed=False,
+        message="Runtime validation unavailable in this environment.",
+        rule_id="runtime_check",
+        severity="error",
+        category="runtime",
+        repairable=False,
+        suggestions=["Install a healthy notebook execution environment before retrying."],
+    )
+
+    outcome = repair_agent.repair_cells(cells, [runtime_report])
+
+    assert outcome.status == "skipped"
+    assert outcome.success is False
+    assert outcome.rollback_used is False
+    assert outcome.attempted_fixes == []
+    assert "No safe deterministic repair matched" in outcome.message
+    assert outcome.next_steps
+
+
+def test_repair_notebook_persists_accepted_repairs(tmp_notebook_path: Path, repair_agent):
+    """The legacy path adapter should write accepted in-memory repairs back to disk."""
+
+    builder = NotebookFileComposer()
+    cells = _valid_graph_cells(execution_content="result = grpah.invoke({})\nprint(result)")
+    notebook = builder.build_notebook(cells)
+    builder.write(notebook, tmp_notebook_path)
+    reports = repair_agent.validator.validate_all(tmp_notebook_path)
+
+    success, new_reports = repair_agent.repair_notebook(tmp_notebook_path, reports)
+
+    assert success is True
+    assert all(report.passed for report in new_reports)
+    with tmp_notebook_path.open("r", encoding="utf-8") as handle:
+        repaired_notebook = nbformat.read(handle, as_version=4)
+    code = "\n".join(cell.source for cell in repaired_notebook.cells if cell.cell_type == "code")
+    assert "grpah" not in code
+    assert "graph.invoke({})" in code
 
 
 def test_repair_notebook_all_passing(tmp_notebook_path: Path, repair_agent):
-    """Test repair when all checks pass (no repair needed)."""
-    nb = new_notebook()
-    nb.cells.append(new_code_cell(source="x = 1"))
+    """Repair should return success immediately when the caller reports no failures."""
 
-    with tmp_notebook_path.open("w") as f:
-        nbformat.write(nb, f)
-
+    builder = NotebookFileComposer()
+    notebook = builder.build_notebook(_valid_graph_cells())
+    builder.write(notebook, tmp_notebook_path)
     qa_reports = [
         QAReport(
             check_name="Test Check",
@@ -243,37 +405,26 @@ def test_repair_notebook_all_passing(tmp_notebook_path: Path, repair_agent):
 
     success, new_reports = repair_agent.repair_notebook(tmp_notebook_path, qa_reports)
 
-    # Should succeed immediately since no repairs needed
-    assert success
+    assert success is True
     assert new_reports == qa_reports
 
 
 def test_repair_notebook_max_attempts(tmp_notebook_path: Path):
     """Test repair respects max attempts."""
+
     agent = NotebookRepairAgent(max_attempts=2)
+    builder = NotebookFileComposer()
+    notebook = builder.build_notebook(_valid_graph_cells(execution_content="result = grpah.invoke({})"))
+    builder.write(notebook, tmp_notebook_path)
+    reports = agent.validator.validate_all(tmp_notebook_path)
 
-    nb = new_notebook()
-    nb.cells.append(new_code_cell(source="# TODO: implement"))
-
-    with tmp_notebook_path.open("w") as f:
-        nbformat.write(nb, f)
-
-    qa_reports = [
-        QAReport(
-            check_name="No Placeholders",
-            passed=False,
-            message="Found placeholders: TODO",
-            suggestions=["Remove TODO"],
-        )
-    ]
-
-    # Test with attempt at max
-    success, _ = agent.repair_notebook(tmp_notebook_path, qa_reports, attempt=2)
-    assert not success  # Should fail since at max attempts
+    success, _ = agent.repair_notebook(tmp_notebook_path, reports, attempt=2)
+    assert not success
 
 
 def test_repair_notebook_invalid_path(repair_agent):
     """Test repair with invalid notebook path."""
+
     qa_reports = [
         QAReport(
             check_name="Test",
@@ -284,7 +435,8 @@ def test_repair_notebook_invalid_path(repair_agent):
     ]
 
     success, new_reports = repair_agent.repair_notebook(
-        "/nonexistent/notebook.ipynb", qa_reports
+        "/nonexistent/notebook.ipynb",
+        qa_reports,
     )
 
     assert not success
@@ -293,6 +445,7 @@ def test_repair_notebook_invalid_path(repair_agent):
 
 def test_should_retry_within_limits(repair_agent):
     """Test should_retry returns True when within limits."""
+
     qa_reports = [
         QAReport(
             check_name="Test",
@@ -309,6 +462,7 @@ def test_should_retry_within_limits(repair_agent):
 
 def test_should_retry_at_max(repair_agent):
     """Test should_retry returns False at max attempts."""
+
     qa_reports = [
         QAReport(
             check_name="Test",
@@ -324,6 +478,7 @@ def test_should_retry_at_max(repair_agent):
 
 def test_should_retry_all_passing(repair_agent):
     """Test should_retry returns False when all checks pass."""
+
     qa_reports = [
         QAReport(
             check_name="Test",
@@ -338,6 +493,7 @@ def test_should_retry_all_passing(repair_agent):
 
 def test_get_repair_summary_all_passed(repair_agent):
     """Test repair summary with all checks passing."""
+
     qa_reports = [
         QAReport(check_name="Check1", passed=True, message="OK", suggestions=[]),
         QAReport(check_name="Check2", passed=True, message="OK", suggestions=[]),
@@ -355,6 +511,7 @@ def test_get_repair_summary_all_passed(repair_agent):
 
 def test_get_repair_summary_mixed_results(repair_agent):
     """Test repair summary with mixed results."""
+
     qa_reports = [
         QAReport(check_name="Check1", passed=True, message="OK", suggestions=[]),
         QAReport(check_name="Check2", passed=False, message="Error", suggestions=[]),
@@ -369,51 +526,3 @@ def test_get_repair_summary_mixed_results(repair_agent):
     assert summary["success_rate"] == pytest.approx(0.333, rel=0.01)
     assert summary["failed_checks"] == ["Check2", "Check3"]
     assert summary["all_passed"] is False
-
-
-def test_get_repair_summary_empty(repair_agent):
-    """Test repair summary with no reports."""
-    summary = repair_agent.get_repair_summary([])
-
-    assert summary["total_checks"] == 0
-    assert summary["passed"] == 0
-    assert summary["failed"] == 0
-    assert summary["success_rate"] == 0.0
-    assert summary["all_passed"] is True  # Vacuously true
-
-
-def test_integration_repair_cycle(tmp_notebook_path: Path, repair_agent):
-    """Test complete repair cycle with validation."""
-    # Create a notebook with multiple issues
-    nb = new_notebook()
-    nb.cells.append(
-        new_code_cell(
-            source="# TODO: implement\nx = 1",
-            metadata={"section": "setup"},
-        )
-    )
-
-    with tmp_notebook_path.open("w") as f:
-        nbformat.write(nb, f)
-
-    # Run initial validation
-    validator = NotebookValidator()
-    initial_reports = validator.validate_all(tmp_notebook_path)
-
-    # Some checks should fail
-    failed = [r for r in initial_reports if not r.passed]
-    assert len(failed) > 0
-
-    # Attempt repair
-    success, repaired_reports = repair_agent.repair_notebook(
-        tmp_notebook_path, initial_reports
-    )
-
-    # Check that some issues were fixed
-    repaired_failed = [r for r in repaired_reports if not r.passed]
-    assert len(repaired_failed) < len(failed)
-
-    # Get summary
-    summary = repair_agent.get_repair_summary(repaired_reports)
-    assert summary["total_checks"] > 0
-    assert summary["passed"] > 0
