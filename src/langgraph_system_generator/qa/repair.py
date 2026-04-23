@@ -40,9 +40,6 @@ recovered_workflow.add_edge("recovered_start", END)
 graph = recovered_workflow.compile()
 """
 _PLACEHOLDER_REPLACEMENTS = {
-    "TODO": "",
-    "FIXME": "",
-    "PLACEHOLDER": "",
     "# Your code here": "pass",
     "pass  # implement": "pass",
 }
@@ -127,9 +124,12 @@ class NotebookRepairAgent:
             baseline_reports = self._validate_cells(original_cells)
         except Exception:  # pragma: no cover - defensive fallback
             baseline_reports = list(qa_reports)
+        preserved_baseline_reports = self._merge_preserved_failures(
+            baseline_reports, qa_reports
+        )
         baseline_summary = self._validation_summary(
-            baseline_reports,
-            baseline_reports,
+            preserved_baseline_reports,
+            preserved_baseline_reports,
             accepted=True,
         )
 
@@ -141,7 +141,7 @@ class NotebookRepairAgent:
             return RepairOutcome(
                 status="skipped",
                 cells=original_cells,
-                qa_reports=baseline_reports,
+                qa_reports=preserved_baseline_reports,
                 attempted_fixes=[],
                 message="No safe deterministic repair matched the current QA failures.",
                 next_steps=[
@@ -163,7 +163,7 @@ class NotebookRepairAgent:
             return RepairOutcome(
                 status="rolled_back",
                 cells=original_cells,
-                qa_reports=baseline_reports,
+                qa_reports=preserved_baseline_reports,
                 attempted_fixes=attempted_fixes,
                 rollback_used=True,
                 message="Repair candidate could not be validated safely and was rolled back.",
@@ -193,7 +193,7 @@ class NotebookRepairAgent:
         return RepairOutcome(
             status="rolled_back",
             cells=original_cells,
-            qa_reports=baseline_reports,
+            qa_reports=preserved_baseline_reports,
             attempted_fixes=attempted_fixes,
             rollback_used=True,
             message="Repair candidate was rolled back because it regressed or did not improve validation.",
@@ -267,16 +267,41 @@ class NotebookRepairAgent:
                 continue
 
             original = str(cell.source or "")
-            modified = original
-            for placeholder, replacement in _PLACEHOLDER_REPLACEMENTS.items():
-                modified = modified.replace(placeholder, replacement)
-
             filtered_lines: List[str] = []
-            for line in modified.splitlines():
+            for line in original.splitlines():
                 stripped = line.strip()
                 if stripped in {"...", "# ..."}:
                     continue
+
+                exact_replacement = _PLACEHOLDER_REPLACEMENTS.get(stripped)
+                if exact_replacement is not None:
+                    filtered_lines.append(exact_replacement)
+                    continue
+
+                if re.fullmatch(
+                    r"#\s*(TODO|FIXME|PLACEHOLDER)\b.*",
+                    stripped,
+                    flags=re.IGNORECASE,
+                ):
+                    continue
+                if re.fullmatch(
+                    r"(TODO|FIXME|PLACEHOLDER)\b.*",
+                    stripped,
+                    flags=re.IGNORECASE,
+                ):
+                    continue
+
+                inline_placeholder = re.match(
+                    r"^(?P<code>.+?)\s+#\s*(TODO|FIXME|PLACEHOLDER)\b.*$",
+                    line,
+                    flags=re.IGNORECASE,
+                )
+                if inline_placeholder:
+                    filtered_lines.append(inline_placeholder.group("code").rstrip())
+                    continue
+
                 filtered_lines.append(line)
+
             modified = "\n".join(filtered_lines)
 
             while "\n\n\n" in modified:
@@ -376,7 +401,10 @@ class NotebookRepairAgent:
             header_cell.metadata["section"] = section
             code_cell = nbformat.v4.new_code_cell(source=code_source)
             code_cell.metadata["section"] = section
-            notebook.cells.extend([header_cell, code_cell])
+            if section == "setup":
+                notebook.cells[0:0] = [header_cell, code_cell]
+            else:
+                notebook.cells.extend([header_cell, code_cell])
             fixes.append(f"Added missing '{section}' section with deterministic fallback content.")
 
         return fixes
@@ -396,11 +424,11 @@ class NotebookRepairAgent:
             cell_index = issue.get("cell_index")
             if not isinstance(suggestion, str) or not isinstance(name, str):
                 continue
-            if not isinstance(cell_index, int) or not (0 <= cell_index < len(notebook.cells)):
+            if not isinstance(cell_index, int):
                 continue
 
-            cell = notebook.cells[cell_index]
-            if cell.cell_type != "code":
+            notebook_index, cell = self._resolve_code_cell(notebook, cell_index)
+            if cell is None:
                 continue
 
             pattern = re.compile(rf"\b{re.escape(name)}\b")
@@ -408,7 +436,7 @@ class NotebookRepairAgent:
             if count > 0:
                 cell.source = updated_source
                 fixes.append(
-                    f"Replaced likely typo '{name}' with '{suggestion}' in code cell {cell_index}."
+                    f"Replaced likely typo '{name}' with '{suggestion}' in code cell {notebook_index}."
                 )
 
         return fixes
@@ -425,11 +453,9 @@ class NotebookRepairAgent:
         message = str(syntax_error.get("message") or "")
         if not isinstance(cell_index, int) or not isinstance(line_in_cell, int):
             return []
-        if not (0 <= cell_index < len(notebook.cells)):
-            return []
 
-        cell = notebook.cells[cell_index]
-        if cell.cell_type != "code":
+        notebook_index, cell = self._resolve_code_cell(notebook, cell_index)
+        if cell is None:
             return []
 
         lines = str(cell.source or "").splitlines()
@@ -448,7 +474,7 @@ class NotebookRepairAgent:
         lines[target_index] = updated_line
         cell.source = "\n".join(lines)
         return [
-            f"Applied bounded syntax repair in code cell {cell_index} at line {line_in_cell}."
+            f"Applied bounded syntax repair in code cell {notebook_index} at line {line_in_cell}."
         ]
 
     def _repair_graph_scaffold(
@@ -593,6 +619,20 @@ class NotebookRepairAgent:
 
         return [cell.model_copy(deep=True) for cell in cells]
 
+    def _resolve_code_cell(
+        self, notebook: NotebookNode, code_cell_index: int
+    ) -> tuple[int, NotebookNode | None]:
+        """Map a code-only cell index from validator evidence to notebook.cells."""
+
+        current_code_index = 0
+        for notebook_index, cell in enumerate(notebook.cells):
+            if cell.cell_type != "code":
+                continue
+            if current_code_index == code_cell_index:
+                return notebook_index, cell
+            current_code_index += 1
+        return -1, None
+
     def _cells_from_notebook(self, notebook: NotebookNode) -> List[CellSpec]:
         """Convert an in-memory notebook into CellSpec entries."""
 
@@ -600,7 +640,14 @@ class NotebookRepairAgent:
         for cell in notebook.cells:
             metadata = dict(cell.metadata or {})
             section = metadata.pop("section", None)
-            source = cell.source if isinstance(cell.source, str) else "".join(cell.source or [])
+            if isinstance(cell.source, str):
+                source = cell.source
+            else:
+                source_parts = list(cell.source or [])
+                if source_parts and all(part.endswith("\n") for part in source_parts):
+                    source = "".join(source_parts)
+                else:
+                    source = "\n".join(source_parts)
             regenerated_cells.append(
                 CellSpec(
                     cell_type=cell.cell_type,
@@ -611,15 +658,46 @@ class NotebookRepairAgent:
             )
         return regenerated_cells
 
-    def _report_key(self, report: QAReport) -> tuple[str, str, str, str]:
+    def _report_key(self, report: QAReport) -> tuple[str, str, str]:
         """Return a stable key for comparing report severity across attempts."""
 
         return (
             report.rule_id,
             report.check_name,
             report.severity,
+        )
+
+    def _preserved_report_key(
+        self, report: QAReport
+    ) -> tuple[str, str, str | None, str, str]:
+        """Return a key for preserving unresolved failures across repair outcomes."""
+
+        return (
+            report.rule_id,
+            report.check_name,
+            report.stage,
+            report.severity,
             report.message,
         )
+
+    def _merge_preserved_failures(
+        self,
+        refreshed_reports: Sequence[QAReport],
+        original_reports: Sequence[QAReport],
+    ) -> List[QAReport]:
+        """Keep unresolved incoming failures visible when repair keeps original cells."""
+
+        merged_reports = [report.model_copy(deep=True) for report in refreshed_reports]
+        seen = {self._preserved_report_key(report) for report in merged_reports}
+        for report in original_reports:
+            if report.passed:
+                continue
+            key = self._preserved_report_key(report)
+            if key in seen:
+                continue
+            merged_reports.append(report.model_copy(deep=True))
+            seen.add(key)
+        return merged_reports
 
     def _is_non_regressive(
         self,

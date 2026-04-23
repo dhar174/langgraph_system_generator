@@ -657,6 +657,7 @@ async def test_repair_node_success_refreshes_cells_and_appends_history(monkeypat
     assert len(result["qa_history"]) == len(existing_history) + 1
     assert result["qa_history"][-1].check_name == "Repair Attempt"
     assert result["qa_history"][-1].rule_id == "repair_attempt"
+    assert result["qa_history"][-1].attempt == 2
     assert result["qa_history"][-1].evidence["attempted_fixes"] == [
         "Applied deterministic fix."
     ]
@@ -710,6 +711,7 @@ async def test_repair_node_failure_keeps_cells_and_appends_history(monkeypatch):
     assert result["qa_reports"][0].attempt == 4
     assert len(result["qa_history"]) == len(existing_history) + 1
     assert result["qa_history"][-1].passed is False
+    assert result["qa_history"][-1].attempt == 4
     assert result["repair_attempts"] == 4
     assert result["qa_repair_feedback"].repair_attempts == 4
     assert result["qa_repair_feedback"].rollback_used is True

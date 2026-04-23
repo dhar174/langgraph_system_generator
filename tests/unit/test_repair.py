@@ -145,6 +145,33 @@ def test_repair_cells_removes_placeholders_and_accepts_candidate(repair_agent):
     assert all(report.passed for report in outcome.qa_reports)
 
 
+def test_repair_placeholders_preserves_identifiers_and_literals(repair_agent):
+    """Placeholder cleanup should not mutate identifiers or literals that only contain marker text."""
+
+    notebook = nbformat.v4.new_notebook(
+        cells=[
+            nbformat.v4.new_code_cell(
+                source=(
+                    'method_TODO = 1\n'
+                    'payload = {"TODO": "keep"}\n'
+                    "value = method_TODO  # TODO: refine after smoke test\n"
+                    "# FIXME: remove placeholder"
+                )
+            )
+        ]
+    )
+    notebook.cells[0].metadata["section"] = "execution"
+
+    fixes = repair_agent._repair_placeholders(notebook)
+
+    repaired_source = str(notebook.cells[0].source)
+    assert fixes
+    assert "method_TODO = 1" in repaired_source
+    assert 'payload = {"TODO": "keep"}' in repaired_source
+    assert "# TODO" not in repaired_source
+    assert "# FIXME" not in repaired_source
+
+
 def test_repair_cells_adds_missing_langgraph_imports(repair_agent):
     """Import repair should restore missing LangGraph imports in the setup section."""
 
@@ -261,6 +288,54 @@ def test_repair_cells_rebuilds_incomplete_graph_scaffold(repair_agent):
     assert all(report.passed for report in outcome.qa_reports)
 
 
+def test_repair_sections_inserts_setup_at_start(repair_agent):
+    """Recovered setup sections should be inserted before dependent notebook cells."""
+
+    notebook = NotebookFileComposer().build_notebook(
+        [
+            CellSpec(
+                cell_type="markdown",
+                content="## Graph",
+                metadata={"section": "graph"},
+                section="graph",
+            ),
+            CellSpec(
+                cell_type="code",
+                content="graph = None",
+                metadata={"section": "graph"},
+                section="graph",
+            ),
+        ]
+    )
+    report = QAReport(
+        check_name="Required Sections",
+        passed=False,
+        message="Missing required sections: setup",
+        rule_id="required_sections",
+        severity="error",
+        category="structure",
+        repairable=True,
+        evidence={"missing_sections": ["setup"]},
+    )
+
+    fixes = repair_agent._repair_sections(notebook, report)
+
+    assert fixes == ["Added missing 'setup' section with deterministic fallback content."]
+    setup_indexes = [
+        index
+        for index, cell in enumerate(notebook.cells)
+        if cell.metadata.get("section") == "setup"
+    ]
+    graph_indexes = [
+        index
+        for index, cell in enumerate(notebook.cells)
+        if cell.metadata.get("section") == "graph"
+    ]
+    assert len(setup_indexes) >= 2
+    assert graph_indexes
+    assert max(setup_indexes[:2]) < min(graph_indexes)
+
+
 def test_repair_cells_fixes_undefined_name_typos(repair_agent):
     """Undefined-name repair should use validator suggestions for bounded typo fixes."""
 
@@ -275,6 +350,30 @@ def test_repair_cells_fixes_undefined_name_typos(repair_agent):
     assert "grpah" not in code
     assert "graph.invoke({})" in code
     assert all(report.passed for report in outcome.qa_reports)
+
+
+def test_repair_cells_fixes_undefined_name_typos_with_interleaved_markdown(repair_agent):
+    """Undefined-name repair should map validator code-cell indexes back to notebook cells."""
+
+    cells = _valid_graph_cells(execution_content="result = grpah.invoke({})\nprint(result)")
+    cells.insert(
+        3,
+        CellSpec(
+            cell_type="markdown",
+            content="Execution follows below.",
+            metadata={"section": "notes"},
+            section="notes",
+        ),
+    )
+    reports = _validate_cells(cells)
+    undefined_report = _failed_report(reports, "undefined_names")
+
+    outcome = repair_agent.repair_cells(cells, [undefined_report])
+
+    assert outcome.success is True
+    execution_cell = next(cell for cell in outcome.cells if cell.section == "execution")
+    assert "grpah" not in execution_cell.content
+    assert "graph.invoke({})" in execution_cell.content
 
 
 @pytest.mark.parametrize(
@@ -356,6 +455,7 @@ def test_repair_cells_skips_unhandled_failures_without_claiming_success(repair_a
         category="runtime",
         repairable=False,
         suggestions=["Install a healthy notebook execution environment before retrying."],
+        stage="runtime",
     )
 
     outcome = repair_agent.repair_cells(cells, [runtime_report])
@@ -366,6 +466,26 @@ def test_repair_cells_skips_unhandled_failures_without_claiming_success(repair_a
     assert outcome.attempted_fixes == []
     assert "No safe deterministic repair matched" in outcome.message
     assert outcome.next_steps
+    assert any(report.check_name == "Runtime Check" for report in outcome.qa_reports)
+    assert any(report.stage == "runtime" for report in outcome.qa_reports if not report.passed)
+
+
+def test_cells_from_notebook_preserves_list_source_line_boundaries(repair_agent):
+    """List-backed notebook sources should round-trip with intact line boundaries."""
+
+    notebook = nbformat.v4.new_notebook(
+        cells=[
+            nbformat.v4.new_code_cell(source=["value = 1", "print(value)"]),
+            nbformat.v4.new_markdown_cell(source=["## Summary", "Line two"]),
+        ]
+    )
+    notebook.cells[0].metadata["section"] = "execution"
+    notebook.cells[1].metadata["section"] = "summary"
+
+    regenerated = repair_agent._cells_from_notebook(notebook)
+
+    assert regenerated[0].content == "value = 1\nprint(value)"
+    assert regenerated[1].content == "## Summary\nLine two"
 
 
 def test_repair_notebook_persists_accepted_repairs(tmp_notebook_path: Path, repair_agent):

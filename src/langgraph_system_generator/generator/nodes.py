@@ -781,7 +781,7 @@ async def repair_node(state: GeneratorState) -> Dict[str, Any]:
             suggestions=outcome.next_steps,
         ),
         stage="repair",
-        attempt=attempt,
+        attempt=attempt + 1,
         evidence={
             "repair_success": outcome.success,
             "repair_status": outcome.status,

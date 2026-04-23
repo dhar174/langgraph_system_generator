@@ -129,13 +129,7 @@ def test_architecture_registry_includes_builtin_architectures():
 
 
 @pytest.mark.asyncio
-async def test_qa_repair_agent_validate_uses_shared_notebook_validator(monkeypatch):
-    monkeypatch.setattr(
-        qa_repair_agent,
-        "ChatOpenAI",
-        make_stub_llm("[]"),
-    )
-
+async def test_qa_repair_agent_validate_uses_shared_notebook_validator():
     agent = qa_repair_agent.QARepairAgent()
     reports = await agent.validate(
         [
@@ -156,23 +150,22 @@ async def test_qa_repair_agent_validate_uses_shared_notebook_validator(monkeypat
 
 @pytest.mark.asyncio
 async def test_qa_repair_agent_repair_delegates_to_shared_engine(monkeypatch):
-    monkeypatch.setattr(
-        qa_repair_agent,
-        "ChatOpenAI",
-        make_stub_llm("[]"),
-    )
     repaired_cells = [CellSpec(cell_type="markdown", content="Updated", metadata={})]
+    captured_attempt: dict[str, int] = {"value": -1}
 
     monkeypatch.setattr(
         "langgraph_system_generator.generator.agents.qa_repair_agent.NotebookRepairAgent.repair_cells",
-        lambda *_args, **_kwargs: RepairOutcome(
-            status="applied",
-            cells=repaired_cells,
-            qa_reports=[],
-            attempted_fixes=["Applied deterministic fix."],
-            persisted=True,
-            message="Repair candidate passed validation and was accepted.",
-            validation_summary={"accepted": True},
+        lambda _self, _cells, _reports, attempt=0: (
+            captured_attempt.__setitem__("value", attempt)
+            or RepairOutcome(
+                status="applied",
+                cells=repaired_cells,
+                qa_reports=[],
+                attempted_fixes=["Applied deterministic fix."],
+                persisted=True,
+                message="Repair candidate passed validation and was accepted.",
+                validation_summary={"accepted": True},
+            )
         ),
     )
 
@@ -180,9 +173,11 @@ async def test_qa_repair_agent_repair_delegates_to_shared_engine(monkeypatch):
     result = await agent.repair(
         [CellSpec(cell_type="markdown", content="Original", metadata={})],
         [QAReport(check_name="Undefined Names", passed=False, message="boom")],
+        attempt=2,
     )
 
     assert result == repaired_cells
+    assert captured_attempt["value"] == 2
 
 
 def test_architecture_registry_preserves_zero_docs_weight_and_filters_unknown_patterns():
@@ -1687,7 +1682,6 @@ def test_architecture_selector_uses_request_scoped_model_config(monkeypatch):
     [
         (graph_designer, graph_designer.GraphDesigner),
         (toolchain_engineer, toolchain_engineer.ToolchainEngineer),
-        (qa_repair_agent, qa_repair_agent.QARepairAgent),
         (notebook_composer, notebook_composer.NotebookComposer),
     ],
 )
@@ -1720,3 +1714,28 @@ def test_other_agents_use_request_scoped_model_config(
         "base_url": "https://example.test/v1",
         "max_tokens": 512,
     }
+
+
+def test_qa_repair_agent_stays_lazy_about_llm_configuration(monkeypatch):
+    """QARepairAgent should preserve request-scoped config without eagerly constructing an LLM."""
+
+    captured_kwargs = {}
+
+    monkeypatch.setattr(
+        qa_repair_agent,
+        "ChatOpenAI",
+        make_capturing_llm(captured_kwargs),
+    )
+
+    agent = qa_repair_agent.QARepairAgent(
+        model_config=ModelConfig(
+            model="gpt-5.1",
+            temperature=0.3,
+            api_base="https://example.test/v1",
+            max_tokens=512,
+        )
+    )
+
+    assert captured_kwargs == {}
+    assert agent.model_config is not None
+    assert agent.model_config.api_base == "https://example.test/v1"

@@ -9,7 +9,6 @@ from typing import List
 
 from langchain_openai import ChatOpenAI
 
-from langgraph_system_generator.generator.agents._llm import build_chat_llm
 from langgraph_system_generator.generator.state import CellSpec, QAReport
 from langgraph_system_generator.notebook.composer import (
     NotebookComposer as NotebookFileComposer,
@@ -27,11 +26,9 @@ class QARepairAgent:
         model: str | None = None,
         model_config: ModelConfig | None = None,
     ):
-        self.llm = build_chat_llm(
-            model=model,
-            model_config=model_config,
-            chat_openai_class=ChatOpenAI,
-        )
+        self.model = model
+        self.model_config = model_config
+        self.chat_openai_class = ChatOpenAI
         self.repair_engine = NotebookRepairAgent()
 
     async def validate(self, cells: List[CellSpec]) -> List[QAReport]:
@@ -127,7 +124,10 @@ class QARepairAgent:
         )
 
     async def repair(
-        self, cells: List[CellSpec], qa_reports: List[QAReport]
+        self,
+        cells: List[CellSpec],
+        qa_reports: List[QAReport],
+        attempt: int = 0,
     ) -> List[CellSpec]:
         """Attempt to fix issues identified in QA through the shared repair engine.
 
@@ -145,6 +145,6 @@ class QARepairAgent:
             self.repair_engine.repair_cells,
             cells,
             qa_reports,
-            0,
+            attempt,
         )
         return outcome.cells if outcome.success else cells
