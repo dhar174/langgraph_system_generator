@@ -2,6 +2,9 @@
 
 Prompt -> Full Agentic System. Generates entire multiagent systems based on user constraints in a simple text prompt.
 
+![](docs/langgraph_meta.png "Yo dawg")
+
+
 ## Features
 
 - **Web Interface**: Modern, user-friendly web UI for generating systems without code
