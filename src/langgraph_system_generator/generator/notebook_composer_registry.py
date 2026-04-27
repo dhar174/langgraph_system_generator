@@ -314,7 +314,11 @@ async def _build_nodes_section(
     composer: Any,
     context: NotebookComposerContext,
 ) -> list[CellSpec]:
-    return await composer._create_node_cells(context.workflow_design, context.feedback)
+    return await composer._create_node_cells(
+        context.workflow_design,
+        context.feedback,
+        tools=context.tools,
+    )
 
 
 async def _build_router_nodes_section(
@@ -325,6 +329,7 @@ async def _build_router_nodes_section(
         context.workflow_design.get("nodes", []),
         "router",
         context.workflow_design,
+        tools=context.tools,
     )
 
 
@@ -336,6 +341,7 @@ async def _build_subagents_nodes_section(
         context.workflow_design.get("nodes", []),
         "subagents",
         context.workflow_design,
+        tools=context.tools,
     )
 
 
@@ -347,6 +353,7 @@ async def _build_hybrid_nodes_section(
         context.workflow_design.get("nodes", []),
         "hybrid",
         context.workflow_design,
+        tools=context.tools,
     )
 
 
@@ -358,6 +365,7 @@ async def _build_autoagent_nodes_section(
         context.workflow_design.get("nodes", []),
         "autoagent",
         context.workflow_design,
+        tools=context.tools,
     )
 
 
@@ -369,6 +377,7 @@ async def _build_deepagents_nodes_section(
         context.workflow_design.get("nodes", []),
         "deepagents",
         context.workflow_design,
+        tools=context.tools,
     )
 
 
@@ -380,6 +389,7 @@ async def _build_critique_loop_nodes_section(
         context.workflow_design.get("nodes", []),
         "critique_loop",
         context.workflow_design,
+        tools=context.tools,
     )
 
 

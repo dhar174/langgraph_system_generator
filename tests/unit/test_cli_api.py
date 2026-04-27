@@ -238,7 +238,14 @@ async def test_generate_artifacts_stub_deepagents_override(
     assert artifacts["manifest"]["agent_type"] == "deepagents"
     assert artifacts["result"]["architecture_type"] == "deepagents"
     assert artifacts["result"]["generation_complete"] is True
-    assert "deepagents" in artifacts["manifest"]["notebook_dependency_plan"]["packages"]
+    dependency_plan = artifacts["manifest"]["notebook_dependency_plan"]
+    assert "deepagents" not in dependency_plan["packages"]
+    assert all("deepagents" not in command for command in dependency_plan["install_commands"])
+    assert any(
+        "python -m pip install deepagents" in note
+        for note in dependency_plan["runtime_notes"]
+    )
+    assert "!pip install -q langgraph langchain-openai deepagents" not in generated_code
     assert "create_deep_agent" in generated_code
     assert "_deterministic_deepagents_fallback" in generated_code
     assert "deep_agent" in artifacts["manifest"]["graph_exports"]["mermaid"]
@@ -346,7 +353,12 @@ async def test_api_generate_stub_accepts_deepagents_agent_type(
     assert payload["success"] is True
     assert payload["manifest"]["architecture_type"] == "deepagents"
     assert payload["manifest"]["agent_type"] == "deepagents"
-    assert "deepagents" in payload["manifest"]["notebook_dependency_plan"]["packages"]
+    dependency_plan = payload["manifest"]["notebook_dependency_plan"]
+    assert "deepagents" not in dependency_plan["packages"]
+    assert any(
+        "python -m pip install deepagents" in note
+        for note in dependency_plan["runtime_notes"]
+    )
 
 
 @pytest.mark.asyncio

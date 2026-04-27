@@ -88,7 +88,18 @@ def run_live(task: str, model: str) -> Dict[str, Any]:
             "final_output": "Set OPENAI_API_KEY before running the live Deep Agents example.",
         }
 
-    agent = build_live_agent(model, tools=[lookup_topic, summarize_findings])
+    try:
+        agent = build_live_agent(model, tools=[lookup_topic, summarize_findings])
+    except ModuleNotFoundError as exc:
+        if exc.name == "deepagents":
+            return {
+                "mode": "live-skipped",
+                "final_output": (
+                    "Install the optional 'deepagents' package before running "
+                    "the live Deep Agents example."
+                ),
+            }
+        raise
     result = agent.invoke({"messages": [{"role": "user", "content": task}]})
     return {"mode": "live", "final_output": str(result)}
 

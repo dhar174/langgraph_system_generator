@@ -778,14 +778,25 @@ def _build_stub_result(prompt: str, agent_type: str | None = None) -> Dict[str, 
         ),
         CellSpec(
             cell_type="code",
-            content=(
-                "!pip install -q langgraph langchain-openai deepagents"
-                if architecture_type == "deepagents"
-                else "!pip install -q langgraph langchain-openai"
-            ),
+            content="!pip install -q langgraph langchain-openai",
             section="setup",
         ),
     ]
+    if architecture_type == "deepagents":
+        cells.append(
+            CellSpec(
+                cell_type="markdown",
+                content=(
+                    "### Optional Deep Agents SDK\n\n"
+                    "This stub notebook stays runnable without installing "
+                    "`deepagents`. To exercise the live Deep Agents harness, install "
+                    "the optional SDK manually with "
+                    "`python -m pip install deepagents` and configure provider "
+                    "credentials such as `OPENAI_API_KEY`."
+                ),
+                section="setup",
+            )
+        )
 
     if architecture_type == "router":
         routes = ["search", "analyze", "summarize"]
@@ -1061,23 +1072,18 @@ def _build_stub_result(prompt: str, agent_type: str | None = None) -> Dict[str, 
             sections_built=["intro", "install", "state", "nodes", "graph"],
         ),
         "notebook_dependency_plan": NotebookDependencyPlan(
-            packages=(
-                ["langgraph", "langchain-openai", "deepagents"]
-                if architecture_type == "deepagents"
-                else ["langgraph", "langchain-openai"]
-            ),
-            install_commands=[
-                (
-                    "python -m pip install -q langgraph langchain-openai deepagents"
-                    if architecture_type == "deepagents"
-                    else "python -m pip install -q langgraph langchain-openai"
-                )
-            ],
+            packages=["langgraph", "langchain-openai"],
+            install_commands=["python -m pip install -q langgraph langchain-openai"],
             runtime_notes=[
                 "Stub mode emits a deterministic dependency plan for the generated notebook.",
                 *(
                     [
-                        "Deep Agents cells use the optional deepagents SDK only when installed and credentials are configured."
+                        (
+                            "Deep Agents cells run in deterministic fallback mode when "
+                            "the optional deepagents SDK is unavailable; install it "
+                            "manually with `python -m pip install deepagents` only for "
+                            "live execution."
+                        )
                     ]
                     if architecture_type == "deepagents"
                     else []

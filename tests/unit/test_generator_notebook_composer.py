@@ -358,7 +358,22 @@ async def test_compose_notebook_emits_deepagents_sections_and_dependency(
                 },
             },
         },
-        tools=[],
+        tools=[
+            {
+                "tool_id": "web_search",
+                "name": "Lookup Topic",
+                "status": "ready",
+                "packages": [],
+                "provider_env_vars": [],
+            },
+            {
+                "tool_id": "unsupported_demo",
+                "name": "Unsupported Tool",
+                "status": "unsupported",
+                "packages": ["unsupported-package"],
+                "provider_env_vars": [],
+            },
+        ],
         architecture={
             "architecture_type": "deepagents",
             "justification": "Explicit opt-in Deep Agents request.",
@@ -370,15 +385,18 @@ async def test_compose_notebook_emits_deepagents_sections_and_dependency(
         cell.content for cell in composition.cells if cell.cell_type == "markdown"
     )
 
-    assert "deepagents" in composition.dependency_plan.packages
+    assert "deepagents" not in composition.dependency_plan.packages
     assert "create_deep_agent" in code
     assert "_deterministic_deepagents_fallback" in code
+    assert '"Lookup_Topic"' in code
+    assert "Unsupported_Tool" not in code
+    assert "tools=available_tools" in code
     assert 'workflow.add_node("deep_agent", deep_agent_node)' in code
     assert '"openai:gpt-5.2"' in code
     assert "Deep Agents Harness" in markdown
     assert "experimental" in markdown.lower()
     assert any(
-        "optional `deepagents` SDK" in note
+        "python -m pip install deepagents" in note
         for note in composition.dependency_plan.runtime_notes
     )
 

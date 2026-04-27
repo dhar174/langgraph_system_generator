@@ -18,7 +18,8 @@ the public request shape beyond the existing `agent_type` value set.
 - [x] Wire CLI/API validation and stub generation for
   `--agent-type deepagents`.
 - [x] Wire notebook composition/dependency planning so only Deep Agents
-  notebooks include the optional `deepagents` runtime package.
+  notebooks include optional `deepagents` runtime guidance, without treating the
+  SDK as an auto-installed required package.
 - [x] Add compact script/notebook examples using deterministic toy tools and
   optional subagent specs.
 - [x] Refresh docs that enumerate architecture values or pattern support.

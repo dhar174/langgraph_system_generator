@@ -8,7 +8,7 @@ import json
 import keyword
 import logging
 import re
-from typing import Any, Awaitable, Callable, Dict, List, TypeVar
+from typing import Any, Awaitable, Callable, Dict, List, Optional, TypeVar
 
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
@@ -221,11 +221,12 @@ class NotebookComposer:
             "",
         ).lower()
         if architecture_type == "deepagents":
-            if "deepagents" not in accumulator.packages:
-                accumulator.packages.append("deepagents")
             note = (
-                "Deep Agents cells are experimental and use the optional `deepagents` "
-                "SDK only when installed and provider credentials are configured."
+                "Deep Agents cells are experimental and run in deterministic fallback "
+                "mode when the optional `deepagents` SDK is unavailable. Install it "
+                "manually with `python -m pip install deepagents` only if your "
+                "environment allows package installation and provider credentials are "
+                "configured."
             )
             if note not in accumulator.runtime_notes:
                 accumulator.runtime_notes.append(note)
@@ -945,6 +946,7 @@ Generate the complete Python function implementation.""")
         self,
         workflow_design: Dict[str, Any],
         feedback: NotebookCompositionFeedback,
+        tools: Optional[List[Dict[str, Any]]] = None,
     ) -> List[CellSpec]:
         """Create node implementation cells with tracked fallback behavior."""
         cells = [
@@ -964,11 +966,12 @@ Generate the complete Python function implementation.""")
             "subagents",
             "hybrid",
             "autoagent",
+            "deepagents",
             "critique_loop",
         ]:
             # Use pattern library for architecture-specific nodes
             pattern_cells = self._create_pattern_node_cells(
-                nodes, architecture_type, workflow_design
+                nodes, architecture_type, workflow_design, tools=tools
             )
             cells.extend(pattern_cells)
         else:
@@ -1281,6 +1284,8 @@ def {safe_node_identifier}_node(state: WorkflowState) -> WorkflowState:
         nodes: List[Dict[str, Any]],
         architecture_type: str,
         workflow_design: Dict[str, Any],
+        *,
+        tools: Optional[List[Dict[str, Any]]] = None,
     ) -> List[CellSpec]:
         """Generate nodes using pattern library templates.
 
@@ -1440,6 +1445,20 @@ def {safe_node_identifier}_node(state: WorkflowState) -> WorkflowState:
                 for node in nodes
                 if node.get("name") not in {"deep_agent", "deepagents"}
             ]
+            tool_identifiers: List[str] = []
+            for tool in tools or []:
+                tool_status = self._normalize_inline_text(
+                    tool.get("status", ""),
+                    "ready",
+                ).lower()
+                if tool_status == "unsupported":
+                    continue
+                identifier = self._safe_identifier(
+                    tool.get("name") or tool.get("tool_id") or "",
+                    "tool",
+                )
+                if identifier not in tool_identifiers:
+                    tool_identifiers.append(identifier)
             cells.append(
                 CellSpec(
                     cell_type="markdown",
@@ -1452,6 +1471,7 @@ def {safe_node_identifier}_node(state: WorkflowState) -> WorkflowState:
                     cell_type="code",
                     content=DeepAgentsPattern.generate_agent_node_code(
                         subagents,
+                        tools=tool_identifiers,
                         model_config=model_config,
                     ),
                     section="nodes",
