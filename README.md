@@ -1,239 +1,200 @@
 # langgraph_system_generator
 
-Prompt -> Full Agentic System. Generates entire multiagent systems based on user constraints in a simple text prompt.
+Prompt -> full agentic system. LangGraph System Generator, also called LNF,
+turns a natural-language request into runnable LangGraph notebook artifacts,
+exports, and structured QA feedback.
+
+![LangGraph system generator workflow graphic](docs/langgraph_meta.png "LangGraph meta")
 
 ## Features
 
-- **Web Interface**: Modern, user-friendly web UI for generating systems without code
-- **RAG-Powered Documentation**: Includes precached LangGraph and LangChain documentation for offline use
-- **Pattern Library**: Built-in support for common multi-agent patterns
-- **Production-Ready**: Generates complete, runnable Jupyter notebooks
+- **CLI, API, and web UI**: Generate from `lnf`, FastAPI, or the browser UI.
+- **Offline-friendly stub mode**: Produce deterministic scaffold artifacts
+  without API keys.
+- **Live generation mode**: Use an OpenAI-compatible model for requirements,
+  architecture, graph, tool, and notebook generation.
+- **Registry-backed planning**: Architecture, graph design, tool planning,
+  notebook composition, and QA/repair stages expose structured feedback.
+- **Portable notebooks**: Generated notebooks target local Jupyter and Google
+  Colab.
+- **Multi-format export**: Write IPYNB, HTML, Markdown, DOCX, ZIP, and optional
+  PDF outputs.
 
 ## Quickstart
 
-1. Create a Python `3.10+` virtual environment, install dependencies, and
-   install the package so the `lnf` CLI is available:
+1. Create a Python `3.10+` virtual environment and install the package:
+
    ```bash
    python -m venv .venv
    source .venv/bin/activate  # Windows: .venv\Scripts\activate
    pip install -r requirements.txt
+   pip install -e ".[full]"
    ```
 
-   If you prefer extras-based installs instead of `requirements.txt`, use:
+   Install profiles:
 
-   - `pip install -e .` for the core Python package/config/types only
-   - `pip install -e ".[api]"` for the FastAPI/web server
-   - `pip install -e ".[full]"` for notebook generation, export, and live-mode dependencies
-   - `pip install -e ".[full,dev]"` for contributor/test tooling
+   - `pip install -e .` installs the core Python package/config/types only.
+   - `pip install -e ".[api]"` installs the FastAPI/web server.
+   - `pip install -e ".[full]"` installs notebook generation, export, and live-mode dependencies.
+   - `pip install -e ".[full,dev]"` installs contributor/test tooling.
 
-2. Copy `.env.example` to `.env` and add your API keys.
+2. Copy `.env.example` to `.env` and add credentials when you need live mode:
 
-3. (Optional) Build the vector index from precached docs:
    ```bash
-   python scripts/build_index.py
+   cp .env.example .env
    ```
-   
-   Note: The documentation has already been scraped and cached in `data/cached_docs/`. 
-   You only need to run this if you have an OpenAI API key and want to build the 
-   vector index for semantic search.
 
-4. Run the baseline test scaffold:
-    ```bash
-    python -m pytest --asyncio-mode=auto
-    ```
+   Stub mode does not need provider credentials. Live mode requires
+   `OPENAI_API_KEY` unless you provide an OpenAI-compatible `custom_endpoint`
+   and explicit `model` through the API.
 
-## Official Framework References
+3. Optionally build the vector index from cached docs:
 
-- **LangChain docs**: <https://docs.langchain.com>
-- **LangChain Python API reference**: <https://reference.langchain.com/python>
-- **LangGraph overview**: <https://docs.langchain.com/oss/python/langgraph/overview>
+   ```bash
+   lnf build-index --cache ./data/cached_docs --store ./data/vector_store
+   ```
+
+   The default index build uses local fake embeddings for offline testing. Add
+   `--use-openai` when `OPENAI_API_KEY` is configured and you want OpenAI-backed
+   semantic retrieval.
+
+4. Generate your first system:
+
+   ```bash
+   lnf generate "Create a router-based customer support chatbot" \
+     --output ./output/demo \
+     --mode stub
+   ```
+
+5. Run the test suite when developing:
+
+   ```bash
+   python -m pytest --asyncio-mode=auto
+   ```
 
 ## How It Works
 
-LNF uses a staged outer LangGraph workflow to turn a prompt into runnable
-notebook artifacts.
+LNF uses a staged outer LangGraph workflow to turn a prompt into notebook
+artifacts.
 
 ```mermaid
 graph LR
     Prompt[Prompt] --> Requirements[Requirements]
     Requirements --> RAG[RAG]
     RAG --> Architecture[Architecture Select]
-    Architecture --> Plan[Plan]
-    Plan --> Generate[Generate]
-    Generate --> QA[QA / Repair]
+    Architecture --> Graph[Graph Design]
+    Graph --> Tools[Tool Planning]
+    Tools --> Notebook[Notebook Composition]
+    Notebook --> QA[QA / Repair]
     QA --> Export[Export]
 ```
 
-### Pipeline Stages
+Pipeline stages:
 
-1. **Prompt**: the CLI, API, or web UI collects a natural-language request plus
-   optional output and mode settings.
-2. **Requirements**: `intake_node` calls `RequirementsAnalyst` to extract
-   constraints from the prompt.
-3. **RAG**: `rag_retrieval_node` queries the cached LangChain/LangGraph docs and
-   stores relevant snippets in `docs_context`.
-4. **Architecture Select**: `architecture_selection_node` picks the best-fit
-   pattern, such as router, subagents, or autoagent, and records the rationale.
-5. **Plan**: `graph_design_node` and `tooling_plan_node` define the workflow
-   shape, notebook outline, and any tool integrations.
-6. **Generate**: `notebook_assembly_node` turns the plan into notebook cells and
-   metadata.
-7. **QA / Repair**: `static_qa_node` and `runtime_qa_node` validate the notebook;
-   if checks fail, `repair_node` performs a bounded repair loop.
-8. **Export**: `package_outputs_node` builds an in-memory `artifacts_manifest`;
-   the CLI/export layer uses this manifest to write `notebook.ipynb`, manifest JSON,
-   exports, and the final bundle.
+1. **Prompt**: The CLI, API, or web UI collects request options.
+2. **Requirements**: `RequirementsAnalyst` extracts typed constraints plus
+   advisory feedback.
+3. **RAG**: `DocsRetriever` provides cached LangChain/LangGraph context.
+4. **Architecture**: `ArchitectureSelector` chooses `router`, `subagents`,
+   `hybrid`, or `autoagent`; explicit opt-in requests can select the
+   experimental `deepagents` architecture.
+5. **Graph Design**: `GraphDesigner` returns a typed graph design, Mermaid
+   export, schema export, and validation feedback.
+6. **Tool Planning**: `ToolchainEngineer` normalizes tools through a registry,
+   applies environment constraints, deduplicates tools, and surfaces warnings.
+7. **Notebook Composition**: `NotebookComposer` builds cells, a dependency
+   plan, fallback feedback, and a graph overview section.
+8. **QA / Repair**: Static/runtime QA validate the notebook; deterministic
+   registry-backed repair runs only when needed and records rollback/no-op
+   outcomes.
+9. **Export**: The CLI/API export layer writes files and a manifest with
+   structured feedback and warnings.
 
-For the code-level view, see
+For a code-level walkthrough, see
 [docs/wiki/Architecture-Deep-Dive.md](docs/wiki/Architecture-Deep-Dive.md).
-
 For a maintainer-focused stage/state map, see
 [docs/diagrams/README.md](docs/diagrams/README.md).
 
-## Developing Locally
-
-Use the editable install during local development so the CLI and package imports
-stay in sync.
-
-```bash
-python -m venv .venv
-source .venv/bin/activate  # Windows: .venv\Scripts\activate
-python -m pip install --upgrade pip
-pip install -r requirements.txt
-pip install -e ".[full]"
-pip install flake8
-python -m flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
-python -m pytest --asyncio-mode=auto
-```
-
-Useful local entry points:
-
-```bash
-# CLI
-lnf generate "Create a router-based chatbot" --output ./output/demo --mode stub
-
-# API / web UI
-uvicorn langgraph_system_generator.api.server:app --host 0.0.0.0 --port 8000
-```
-
-If you only need the core package without the heavier export and API extras, use
-`pip install -e .` instead.
-
-## Colab Usage
-
-Generated notebooks are intended to run in both local Jupyter environments and
-Google Colab.
-
-1. Generate or download `notebook.ipynb`.
-2. Upload it to Google Drive and open it in Colab.
-3. In the first setup cell, install the packages used by the notebook. For the
-   current repo defaults that usually means:
-
-   ```python
-   !pip install -qU langgraph langchain langchain-openai langchain-community
-   ```
-
-4. Configure secrets in Colab before running live cells:
-
-   ```python
-   import os
-   from google.colab import userdata
-
-   os.environ["OPENAI_API_KEY"] = userdata.get("OPENAI_API_KEY")
-   ```
-
-5. Run the notebook top-to-bottom. If you only want the offline scaffold, use a
-   notebook generated in `--mode stub`.
-
-If you prefer extras-based installs instead of `requirements.txt`, use:
-
-- `pip install -e .` for the core Python package/config/types only
-- `pip install -e ".[api]"` for the FastAPI/web server
-- `pip install -e ".[full]"` for notebook generation, export, and live-mode dependencies
-- `pip install -e ".[full,dev]"` for contributor/test tooling
-
-For the full workflow, troubleshooting, and Drive-specific tips, see
-[docs/wiki/Colab-Usage.md](docs/wiki/Colab-Usage.md).
-
 ## CLI
 
-Use the bundled CLI (stub mode by default) to generate scaffold artifacts or rebuild the vector index:
+Generate artifacts:
 
 ```bash
-# Generate offline-friendly artifacts from a prompt
+# Stub mode, no API key required
 lnf generate "Create a router-based chatbot" --output ./output/demo --mode stub
 
-# Force AutoAgent architecture in stub/live generation
-lnf generate "Create an autonomous planning-and-execution assistant" --mode stub --agent-type autoagent
+# Force an architecture
+lnf generate "Create an autonomous planning assistant" \
+  --mode stub \
+  --agent-type autoagent
 
-# Generate specific output formats (default: all formats except PDF)
-lnf generate "Create a chatbot" --output ./output/demo --formats ipynb html markdown docx
+# Opt into the experimental Deep Agents architecture
+lnf generate "Create a Deep Agents research assistant" \
+  --mode stub \
+  --agent-type deepagents
 
-# Build the FAISS index from cached docs with fake embeddings (no API key needed)
-lnf build-index --cache ./data/cached_docs --store ./data/vector_store
+# Select output formats. Default: ipynb html markdown docx zip
+lnf generate "Create a chatbot" \
+  --output ./output/demo \
+  --formats ipynb html markdown docx zip
 ```
 
-Pass `--mode live` to `lnf generate` when you have `OPENAI_API_KEY` configured and want to invoke the full generator graph.
-
-### Output Formats
-
-The generator produces the following artifacts:
-
-- **JSON artifacts**: `manifest.json`, `notebook_plan.json`, `generated_cells.json` for programmatic access
-- **Jupyter Notebook** (`.ipynb`): Fully functional notebook ready to run in Jupyter or Google Colab
-- **HTML** (`.html`): Web-ready notebook export for viewing and sharing
-- **Markdown** (`.md`): Plain-text notebook export for review, versioning, and reuse
-- **DOCX** (`.docx`): Microsoft Word document for documentation and editing
-- **PDF** (`.pdf`): Print-ready PDF document (requires additional dependencies)
-- **ZIP Bundle** (`.zip`): Complete package with notebook and all JSON artifacts
-
-Use the `--formats` option to select specific formats (default: generates all except PDF):
+Build the docs index:
 
 ```bash
-lnf generate "Create a chatbot" --formats ipynb html markdown docx zip
+# Offline test index
+lnf build-index
+
+# OpenAI-backed semantic index
+lnf build-index --use-openai
 ```
 
-## Web Interface
+CLI options intentionally stay narrow. Use the API for request-scoped `model`,
+`temperature`, `max_tokens`, or `custom_endpoint` overrides.
 
-A modern web interface is available for easy system generation:
+## Outputs
+
+Successful generations can include:
+
+- `manifest.json`: Generation metadata, structured feedback, warnings, and
+  per-format export status.
+- `notebook_plan.json`: Notebook planning metadata.
+- `generated_cells.json`: Raw cell specifications.
+- `notebook.ipynb`: Runnable Jupyter/Colab notebook.
+- `notebook.html`: HTML export.
+- `notebook.md`: Markdown export.
+- `notebook.docx`: Word document export.
+- `notebook.pdf`: Optional PDF export.
+- `notebook_bundle.zip`: Bundle with the notebook, requested exports, and JSON
+  artifacts.
+
+The manifest includes advisory fields such as `requirements_feedback`,
+`architecture_feedback`, `graph_design_feedback`, `graph_exports`,
+`tool_planning_feedback`, `notebook_composition_feedback`,
+`notebook_dependency_plan`, and `qa_repair_feedback`. These are response/output
+fields, not new request fields.
+
+## API And Web UI
+
+Start the FastAPI server:
 
 ```bash
 uvicorn langgraph_system_generator.api.server:app --host 0.0.0.0 --port 8000
 ```
 
-Then open your browser to `http://localhost:8000` to access the web UI.
+Open `http://localhost:8000` for the web UI.
 
-### Features
+REST endpoints:
 
-- **Interactive Form**: Enter your system requirements in natural language
-- **Mode Selection**: Choose between stub mode (fast, no API key) or live mode (full LLM generation)
-- **Advanced Options**: Customize the OpenAI-compatible model, temperature, max tokens, agent type, and custom endpoint used for live generation
-- **Theme Toggle**: Switch between dark and light themes
-- **Progress Tracking**: Real-time progress bar with detailed generation steps
-- **Generation History**: Track and reuse previous configurations
-- **Export Options**: Download notebooks in multiple formats (IPYNB, HTML, Markdown, DOCX, PDF, ZIP)
-- **Results Display**: View generated artifacts with browser-safe download links
-- **Responsive Design**: Works on desktop and mobile devices
-- **Accessibility**: Full keyboard navigation and screen reader support
+- `GET /`: Web interface.
+- `GET /health`: Health check.
+- `POST /generate`: Synchronous generation.
+- `POST /generate-async`: Start an async generation job.
+- `GET /stream/{job_id}`: Server-Sent Events progress stream. Supports
+  `Last-Event-ID` replay.
+- `GET /artifacts`: Download generated artifacts listed in the manifest.
 
-See [WEB_UI_ENHANCEMENTS.md](docs/WEB_UI_ENHANCEMENTS.md) for detailed documentation of all features.
-
-![Web Interface](https://github.com/user-attachments/assets/29cdc1ce-d458-4296-8f50-dde4c3ff1717)
-
-![Generation Results](https://github.com/user-attachments/assets/4b1fc082-5fa6-46ca-9b48-161c90e1987d)
-
-## API
-
-The FastAPI server also exposes REST endpoints:
-
-Endpoints:
-
-- `GET /` – web interface
-- `GET /health` – health check
-- `POST /generate` – generate artifacts (supports `stub`/`live` modes; defaults to `stub`)
-- `GET /artifacts` – download a generated artifact returned in the manifest
-
-Example API usage:
+Example:
 
 ```bash
 curl -X POST http://localhost:8000/generate \
@@ -246,397 +207,98 @@ curl -X POST http://localhost:8000/generate \
   }'
 ```
 
-The API response includes paths to all generated artifacts in the manifest:
+Request fields are `prompt`, `mode`, `output_dir`, `formats`, `model`,
+`custom_endpoint`, `temperature`, `max_tokens`, and `agent_type`.
 
-```json
-{
-  "success": true,
-  "mode": "stub",
-  "prompt": "Create a customer support chatbot with routing",
-  "manifest": {
-    "notebook_path": "./output/my_system/notebook.ipynb",
-    "html_path": "./output/my_system/notebook.html",
-    "markdown_path": "./output/my_system/notebook.md",
-    "docx_path": "./output/my_system/notebook.docx",
-    "zip_path": "./output/my_system/notebook_bundle.zip",
-    "plan_path": "./output/my_system/notebook_plan.json",
-    "cells_path": "./output/my_system/generated_cells.json"
+Current API request model snapshot:
+
+```mermaid
+classDiagram
+  class GenerationRequest {
+    prompt : Optional[str]
+    mode : Optional[GenerationMode]
+    output_dir : Optional[str]
+    formats : Optional[list[str]]
+    model : Optional[str]
+    custom_endpoint : Optional[str]
+    temperature : Optional[float]
+    max_tokens : Optional[int]
+    agent_type : Optional[str]
   }
-}
 ```
 
-You can also containerize the application:
+## Colab Usage
 
-```bash
-docker build -t lnf .
-docker run -p 8000:8000 \
-  -e OPENAI_API_KEY=sk-... \
-  -v $(pwd)/output:/app/output \
-  lnf
-```
+Generated notebooks are intended to run in local Jupyter and Google Colab.
+
+1. Generate or download `notebook.ipynb`.
+2. Upload it to Google Drive and open it in Colab.
+3. Run the generated setup/install cell. It is built from the notebook
+   dependency plan, so it only installs the packages the notebook needs.
+4. Configure only the provider credentials referenced by the generated
+   notebook, usually `OPENAI_API_KEY`.
+5. Run the notebook top-to-bottom. Use `--mode stub` when you want an
+   offline-friendly scaffold.
+
+For details, see [docs/wiki/Colab-Usage.md](docs/wiki/Colab-Usage.md).
 
 ## Pattern Library
 
-The system includes a generator-backed pattern library plus a broader runnable example library.
+The generator-backed core patterns are:
 
-### Generator-Backed Core Patterns
+- `RouterPattern`: Dynamic routing to specialized handlers.
+- `SubagentsPattern`: Supervisor-based coordination of specialist workers.
+- `HybridPattern`: Router plus worker/team composition.
+- `AutoAgentPattern`: Planner/executor/critic-style autonomous workflow.
+- `DeepAgentsPattern`: Experimental optional Deep Agents SDK harness using
+  lazy `create_deep_agent(...)` imports and deterministic offline fallback.
+- `CritiqueLoopPattern`: Iterative generation, critique, and revision.
 
-The public Python package continues to expose three code-generation helpers:
+See [docs/patterns.md](docs/patterns.md),
+[docs/wiki/Pattern-Library-Guide.md](docs/wiki/Pattern-Library-Guide.md), and
+the runnable examples under [examples/](examples/).
 
-### Router Pattern
-Dynamic routing to specialized agents based on input classification. Ideal for modular systems with domain-specific expertise.
+## Configuration
 
-```python
-from langgraph_system_generator.patterns import RouterPattern
+Common environment variables:
 
-# Generate a complete router-based system
-routes = ["search", "analyze", "summarize"]
-route_purposes = {
-    "search": "Search for information",
-    "analyze": "Analyze data and identify patterns",
-    "summarize": "Condense content into summaries",
-}
+- `OPENAI_API_KEY`: OpenAI-compatible live-mode credentials.
+- `ANTHROPIC_API_KEY`: Optional provider credential for generated notebooks that
+  use Anthropic-backed tools.
+- `LANGSMITH_API_KEY` and `LANGSMITH_PROJECT`: Optional tracing.
+- `VECTOR_STORE_TYPE` and `VECTOR_STORE_PATH`: Retrieval index configuration.
+- `DEFAULT_MODEL`: Default live model, currently `gpt-5-mini`.
+- `MAX_REPAIR_ATTEMPTS`: Bounded QA repair loop count.
+- `LNF_OUTPUT_BASE`: Constrains production-facing output paths.
+- `LNF_MAX_CONCURRENT_GENERATIONS`: Async API generation concurrency.
 
-code = RouterPattern.generate_complete_example(routes, route_purposes)
-# Returns fully functional LangGraph workflow code
-```
+Internal extension hooks accept JSON arrays or comma-separated module names:
 
-### Subagents Pattern
-Supervisor-based coordination of specialized agents for complex, multi-step workflows.
+- `GRAPH_DESIGNER_PLUGIN_MODULES`
+- `NOTEBOOK_COMPOSER_PLUGIN_MODULES`
+- `TOOLCHAIN_ENGINEER_PLUGIN_MODULES`
+- `QA_REPAIR_PLUGIN_MODULES`
 
-```python
-from langgraph_system_generator.patterns import SubagentsPattern
+These hooks are internal-first extension points; they do not add public CLI/API
+request fields.
 
-# Generate a research team with supervisor
-subagents = ["researcher", "analyst", "writer"]
-descriptions = {
-    "researcher": "Gathers information from multiple sources",
-    "analyst": "Analyzes data and identifies patterns",
-    "writer": "Creates comprehensive reports",
-}
+## Development
 
-code = SubagentsPattern.generate_complete_example(subagents, descriptions)
-# Returns supervisor-subagent coordination system
-```
+Useful local commands:
 
-### Critique-Revise Loop Pattern
-Iterative quality improvement through cycles of generation, critique, and revision.
-
-```python
-from langgraph_system_generator.patterns import CritiqueLoopPattern
-
-# Generate content refinement system
-task = "Write technical documentation"
-criteria = ["Technical accuracy", "Clarity", "Completeness", "Code examples"]
-
-code = CritiqueLoopPattern.generate_complete_example(
-    task_description=task,
-    criteria=criteria,
-    max_revisions=3,
-)
-# Returns iterative refinement workflow
-```
-
-### Runnable Pattern Examples
-
-`examples/` now acts as a canonical LangGraph pattern showcase with paired notebooks, stub/live execution modes, and advanced example-only patterns such as hierarchical teams, plan-and-execute, REWOO-style speculation, HITL approval, LLM-as-a-judge, and LLMCompiler-style dependency graphs.
-
-- **Pattern Index**: [examples/README.md](examples/README.md)
-- **Core Pattern Docs**: [docs/patterns.md](docs/patterns.md)
-- **Generator-Backed Examples**:
-  - `examples/router_pattern_example.py`
-  - `examples/subagents_pattern_example.py`
-  - `examples/critique_revise_pattern_example.py`
-- **Advanced Example-Only References**:
-  - `examples/hierarchical_teams_example.py`
-  - `examples/planning_and_execute_example.py`
-  - `examples/rewoo_example.py`
-  - `examples/human_approval_pattern.py`
-  - `examples/llm_judge_example.py`
-  - `examples/llm_compiler_example.py`
-
-Run an example:
 ```bash
-python examples/router_pattern_example.py --mode stub
-# For live mode:
-# export OPENAI_API_KEY='your-key-here'
-# python examples/router_pattern_example.py --mode live
-# Planner/executor-specific live overrides:
-# python examples/planning_and_execute_example.py --mode live \
-#   --planner-model gpt-4.1-mini --executor-model gpt-5-mini
+python -m pip install --upgrade pip
+pip install -r requirements.txt
+pip install -e ".[full,dev]"
+python -m flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
+python -m pytest --asyncio-mode=auto
 ```
 
-## Precached Documentation
+More docs:
 
-This repository includes precached LangGraph and LangChain documentation (19+ pages, ~300KB) 
-in `data/cached_docs/`. All redirect pages and minimal content are automatically filtered 
-to ensure high-quality documentation. This enables:
-
-- **Offline use** without needing to scrape documentation
-- **Faster startup** times
-- **Consistent** documentation across environments
-
-See `data/cached_docs/README.md` for more details.
-
-See `docs/dev.md` for additional setup details.
-
-```mermaid
-%%{init: {'theme':'base','themeVariables':{'fontSize':'18px','primaryColor':'#ffffff','primaryBorderColor':'#222222','primaryTextColor':'#111111','lineColor':'#333333','tertiaryColor':'#f6f6f6'}}}%%
-classDiagram
-direction TB
-  class ArchitectureSelector {
-    docs_retriever : DocsRetriever | None
-    llm : ChatOpenAI
-    select_architecture(constraints: List[Constraint], docs_context: List[DocSnippet]) Dict[str, Any]
-  }
-  class CellSpec {
-    cell_type : Optional[str]
-    content : Optional[str]
-    metadata : Optional[Dict[str, Any]]
-    section : Optional[str]
-  }
-  class Constraint {
-    priority : Optional[int]
-    type : Optional[str]
-    value : Optional[str]
-  }
-  class CritiqueLoopPattern {
-    generate_complete_example(task_description: str, criteria: Optional[List[str]], max_revisions: int) str
-    generate_conditional_edge_code(max_revisions: int, min_quality_score: float) str
-    generate_critique_node_code(criteria: Optional[List[str]], llm_model: str, use_structured_output: bool) str
-    generate_generation_node_code(task_description: str, llm_model: str) str
-    generate_graph_code(max_revisions: int, min_quality_score: float) str
-    generate_revise_node_code(llm_model: str) str
-    generate_state_code(additional_fields: Optional[Dict[str, str]]) str
-  }
-  class DocSnippet {
-    content : Optional[str]
-    heading : Optional[str]
-    relevance_score : Optional[float]
-    source : Optional[str]
-  }
-  class DocsIndexer {
-    DOCS_URLS
-    LANGCHAIN_AGENTS_URLS : list
-    LANGCHAIN_CHAINS_URLS : list
-    LANGCHAIN_CORE_URLS : list
-    LANGCHAIN_RAG_URLS : list
-    LANGGRAPH_ADVANCED_URLS : list
-    LANGGRAPH_CORE_URLS : list
-    LANGGRAPH_PATTERNS_URLS : list
-    LANGGRAPH_STATE_URLS : list
-    chunk_overlap : int
-    chunk_size : int
-    request_timeout : float
-    urls : list
-    chunk_documents(docs: List[Document]) List[Document]
-    scrape_docs() List[Document]
-  }
-  class DocsRetriever {
-    vector_store_manager : VectorStoreManager
-    retrieve(query: str, k: int) List[RetrievedSnippet]
-    retrieve_for_pattern(pattern_name: str) List[RetrievedSnippet]
-  }
-  class DocumentCache {
-    cache_file
-    cache_path : Path
-    exists() bool
-    load_documents() List[Document]
-    save_documents(documents: List[Document]) None
-  }
-  class GenerationArtifacts {
-    manifest : Dict[str, Any]
-    manifest_path : str
-    mode : Literal
-    output_dir : str
-    prompt : str
-    result : Dict[str, Any]
-  }
-  class GenerationRequest {
-    agent_type : Optional[str]
-    custom_endpoint : Optional[str]
-    formats : Optional[list[str]]
-    max_tokens : Optional[int]
-    mode : Optional[GenerationMode]
-    model : Optional[str]
-    output_dir : Optional[str]
-    prompt : Optional[str]
-    temperature : Optional[float]
-  }
-  class GenerationResponse {
-    error : Optional[str]
-    manifest : Optional[Dict[str, Any]]
-    manifest_path : Optional[str]
-    mode : Optional[str]
-    output_dir : Optional[str]
-    prompt : Optional[str]
-    success : bool
-  }
-  class GeneratorState {
-    architecture_justification : str
-    architecture_type : Optional[str]
-    artifacts_manifest : Dict[str, str]
-    constraints : Annotated[List[Constraint], operator.add]
-    docs_context : Annotated[List[DocSnippet], operator.add]
-    error_message : Optional[str]
-    generated_cells : List[CellSpec]
-    generation_complete : bool
-    notebook_plan : Optional[NotebookPlan]
-    qa_reports : List[QAReport]
-    repair_attempts : int
-    selected_patterns : Dict[str, Any]
-    tools_plan : Optional[List[Dict[str, Any]]]
-    uploaded_files : Optional[List[str]]
-    user_prompt : str
-    workflow_design : Optional[Dict[str, Any]]
-  }
-  class GraphDesigner {
-    llm : ChatOpenAI
-    design_workflow(architecture: Dict[str, Any], constraints: List[Constraint]) Dict[str, Any]
-  }
-  class ManuscriptDOCXGenerator {
-    font_name : str
-    font_size : int
-    line_spacing : float
-    create_manuscript(title: str, author: str | None, chapters: Sequence[Dict[str, Any]] | None, output_path: str | Path, include_title_page: bool) str
-    create_notebook_manuscript(notebook_cells: Sequence[Dict[str, Any]], output_path: str | Path, title: str | None, author: str | None) str
-  }
-  class ManuscriptPDFGenerator {
-    body_style : ParagraphStyle
-    chapter_style : ParagraphStyle
-    code_style : ParagraphStyle
-    font_name : str
-    font_size : int
-    page_size : tuple
-    section_style : ParagraphStyle
-    styles : StyleSheet1
-    subsection_style : ParagraphStyle
-    create_manuscript(title: str, chapters: Sequence[Dict[str, Any]], output_path: str | Path, author: str | None, include_title_page: bool) str
-    create_notebook_manuscript(notebook_cells: Sequence[Dict[str, Any]], output_path: str | Path, title: str | None, author: str | None) str
-  }
-  class NotebookComposer {
-    llm : ChatOpenAI
-    compose_notebook(notebook_plan: NotebookPlan, workflow_design: Dict[str, Any], tools: List[Dict[str, Any]], architecture: Dict[str, Any]) List[CellSpec]
-  }
-  class NotebookComposer {
-    colab_friendly : bool
-    build_notebook(cells: Sequence[CellSpec], ensure_minimum_sections: bool) NotebookNode
-    write(notebook: NotebookNode, path: str | Path) str
-  }
-  class NotebookExporter {
-    export_ipynb(notebook: nbformat.NotebookNode, path: str | Path) str
-    export_notebook_to_docx(notebook: nbformat.NotebookNode, output_path: str | Path, title: str | None) str
-    export_to_html(notebook: nbformat.NotebookNode, output_path: str | Path) str
-    export_to_pdf(notebook_path: str | Path, output_path: str | Path, method: str) str
-    export_zip(notebook: nbformat.NotebookNode, zip_path: str | Path, extra_files: Sequence[str | os.PathLike[str]] | None, notebook_name: str) str
-  }
-  class NotebookPlan {
-    architecture_type : Optional[str]
-    cell_count_estimate : Optional[int]
-    patterns_used : Optional[List[str]]
-    sections : Optional[List[str]]
-    title : Optional[str]
-  }
-  class NotebookRepairAgent {
-    DEFAULT_MAX_ATTEMPTS : int
-    max_attempts : int
-    validator : NotebookValidator
-    get_repair_summary(qa_reports: List[QAReport]) Dict[str, Any]
-    repair_notebook(notebook_path: str | Path, qa_reports: List[QAReport], attempt: int) tuple[bool, List[QAReport]]
-    should_retry(qa_reports: List[QAReport], attempt: int) bool
-  }
-  class NotebookValidator {
-    PLACEHOLDER_PATTERNS : list
-    REQUIRED_IMPORTS : list
-    REQUIRED_SECTIONS : list
-    check_graph_compiles(notebook_path: str | Path) QAReport
-    check_imports_present(notebook_path: str | Path, required_imports: Optional[List[str]]) QAReport
-    check_no_placeholders(notebook_path: str | Path) QAReport
-    check_required_sections(notebook_path: str | Path, required_sections: Optional[List[str]]) QAReport
-    validate_all(notebook_path: str | Path) List[QAReport]
-    validate_json_structure(notebook_path: str | Path) QAReport
-  }
-  class QARepairAgent {
-    llm : ChatOpenAI
-    repair(cells: List[CellSpec], qa_reports: List[QAReport]) List[CellSpec]
-    validate(cells: List[CellSpec]) List[QAReport]
-  }
-  class QAReport {
-    check_name : Optional[str]
-    message : Optional[str]
-    passed : Optional[bool]
-    suggestions : Optional[List[str]]
-  }
-  class RequirementsAnalyst {
-    llm : ChatOpenAI
-    analyze(prompt: str) List[Constraint]
-  }
-  class RetrievedSnippet {
-    content : str
-    heading : Optional[str]
-    relevance_score : float
-    source : str
-  }
-  class RouterPattern {
-    generate_complete_example(routes: List[str], route_purposes: Optional[Dict[str, str]]) str
-    generate_graph_code(routes: List[str], entry_point: str, use_conditional_edges: bool) str
-    generate_route_node_code(route_name: str, route_purpose: str, llm_model: str) str
-    generate_router_node_code(routes: List[str], llm_model: str, use_structured_output: bool) str
-    generate_state_code(additional_fields: Optional[Dict[str, str]]) str
-  }
-  class Settings {
-    anthropic_api_key : Optional[str]
-    default_budget_tokens : Optional[int]
-    default_model : Optional[str]
-    langsmith_api_key : Optional[str]
-    langsmith_project : Optional[str]
-    max_repair_attempts : Optional[int]
-    model_config : SettingsConfigDict
-    openai_api_key : Optional[str]
-    vector_store_path : Optional[str]
-    vector_store_type : Optional[str]
-  }
-  class SubagentsPattern {
-    generate_complete_example(subagents: List[str], subagent_descriptions: Optional[Dict[str, str]]) str
-    generate_graph_code(subagents: List[str], max_iterations: int) str
-    generate_state_code(additional_fields: Optional[Dict[str, str]]) str
-    generate_subagent_code(agent_name: str, agent_description: str, llm_model: str, include_tools: bool) str
-    generate_supervisor_code(subagents: List[str], subagent_descriptions: Optional[Dict[str, str]], llm_model: str, use_structured_output: bool) str
-  }
-  class ToolchainEngineer {
-    llm : ChatOpenAI
-    plan_tools(workflow_design: Dict[str, Any], constraints: List[Constraint]) List[Dict[str, Any]]
-  }
-  class VectorStoreManager {
-    embeddings : OpenAIEmbeddings
-    store_path : str
-    vector_store : Optional[FAISS]
-    create_index(documents: List[Document]) FAISS
-    index_exists() bool
-    load_index() FAISS
-    load_or_create(documents: List[Document]) FAISS
-  }
-
-  %% Auto-derived relationships from type references
-  ArchitectureSelector --> Constraint : uses
-  ArchitectureSelector --> DocSnippet : uses
-  ArchitectureSelector --> DocsRetriever : uses
-  DocsRetriever --> RetrievedSnippet : uses
-  DocsRetriever --> VectorStoreManager : uses
-  GeneratorState --> CellSpec : uses
-  GeneratorState --> Constraint : uses
-  GeneratorState --> DocSnippet : uses
-  GeneratorState --> NotebookPlan : uses
-  GeneratorState --> QAReport : uses
-  GraphDesigner --> Constraint : uses
-  NotebookComposer --> CellSpec : uses
-  NotebookRepairAgent --> NotebookValidator : uses
-  NotebookRepairAgent --> QAReport : uses
-  NotebookValidator --> QAReport : uses
-  QARepairAgent --> CellSpec : uses
-  QARepairAgent --> QAReport : uses
-  RequirementsAnalyst --> Constraint : uses
-  ToolchainEngineer --> Constraint : uses
-```
-
-![Visualization of the codebase](./diagram.svg)
+- [Getting Started](docs/wiki/Getting-Started.md)
+- [Architecture Deep Dive](docs/wiki/Architecture-Deep-Dive.md)
+- [CLI and API Reference](docs/wiki/CLI-and-API-Reference.md)
+- [Colab Usage](docs/wiki/Colab-Usage.md)
+- [Development Guide](docs/dev.md)
+- [Maintainer Diagrams](docs/diagrams/README.md)

@@ -21,17 +21,32 @@ from langgraph_system_generator.generator.state import (
     build_constraint_type_registry,
     CellSpec,
     Constraint,
+    GraphDesignFeedback,
+    GraphExportBundle,
+    NotebookCompositionFeedback,
+    NotebookDependencyPlan,
     NotebookPlan,
+    QARepairFeedback,
     RequirementsFeedback,
+    ToolPlanningFeedback,
 )
 from langgraph_system_generator.generator.architecture_registry import (
     get_default_architecture_registry,
+)
+from langgraph_system_generator.generator.tool_registry import get_tool_registry
+from langgraph_system_generator.generator.graph_design_registry import (
+    build_graph_exports,
+    graph_design_issue_messages,
+    get_graph_design_registry,
+    normalize_graph_design,
+    validate_graph_design,
 )
 from langgraph_system_generator.utils.error_handling import GenerationError
 from langgraph_system_generator.utils.config import GenerationConfig, settings
 from langgraph_system_generator.utils.generation_options import (
     SUPPORTED_AGENT_TYPES,
     normalize_agent_type,
+    resolve_architecture_type,
 )
 from langgraph_system_generator.utils.logging_utils import configure_logging
 from langgraph_system_generator.utils.optional_deps import (
@@ -63,6 +78,12 @@ def _available_constraint_types() -> List[str]:
     return build_constraint_type_registry(settings.requirements_constraint_types)
 
 
+def _available_tool_ids() -> List[str]:
+    """Return canonical tool ids exposed by the internal tool registry."""
+
+    return get_tool_registry().supported_tool_ids()
+
+
 def _default_state(
     prompt: str,
     generation_config: GenerationConfig | None = None,
@@ -79,6 +100,17 @@ def _default_state(
             available_constraint_types=_available_constraint_types(),
         ),
         "architecture_feedback": ArchitectureFeedback(fallback_used=False),
+        "graph_design_feedback": GraphDesignFeedback(fallback_used=False),
+        "graph_exports": GraphExportBundle(),
+        "tool_planning_feedback": ToolPlanningFeedback(
+            fallback_used=False,
+            available_tool_ids=_available_tool_ids(),
+        ),
+        "notebook_composition_feedback": NotebookCompositionFeedback(
+            fallback_used=False
+        ),
+        "notebook_dependency_plan": NotebookDependencyPlan(),
+        "qa_repair_feedback": QARepairFeedback(),
         "selected_patterns": {},
         "docs_context": [],
         "notebook_plan": None,
@@ -102,7 +134,7 @@ def _serialize(obj: Any) -> Any:
     """Recursively convert Pydantic models and objects into plain dicts/lists."""
 
     if hasattr(obj, "model_dump"):
-        return obj.model_dump()
+        return obj.model_dump(by_alias=True)
     if isinstance(obj, list):
         return [_serialize(item) for item in obj]
     if isinstance(obj, dict):
@@ -247,6 +279,189 @@ def _architecture_warning_entries(
     return warnings
 
 
+def _graph_design_warning_entries(
+    feedback: Dict[str, Any] | None,
+) -> List[Dict[str, Any]]:
+    """Convert structured graph-design feedback into manifest warnings."""
+
+    if not isinstance(feedback, dict):
+        return []
+
+    warnings: List[Dict[str, Any]] = []
+    validation_errors = list(feedback.get("validation_errors") or [])
+    advisory_warnings = list(feedback.get("warnings") or [])
+
+    if feedback.get("fallback_used"):
+        warnings.append(
+            {
+                "code": "graph_design_fallback",
+                "phase": "graph_design",
+                "message": feedback.get("fallback_reason")
+                or "Graph design used a deterministic fallback workflow.",
+                "validation_errors": validation_errors,
+                "warnings": advisory_warnings,
+            }
+        )
+
+    if validation_errors:
+        warnings.append(
+            {
+                "code": "graph_design_validation",
+                "phase": "graph_design",
+                "message": "Graph design reported validation issues.",
+                "validation_errors": validation_errors,
+                "warnings": advisory_warnings,
+            }
+        )
+
+    return warnings
+
+
+def _notebook_composition_warning_entries(
+    feedback: Dict[str, Any] | None,
+) -> List[Dict[str, Any]]:
+    """Convert notebook-composition feedback into manifest warnings."""
+
+    if not isinstance(feedback, dict):
+        return []
+
+    if not feedback.get("fallback_used"):
+        return []
+
+    advisory_warnings = list(feedback.get("warnings") or [])
+    fallback_events = list(feedback.get("fallback_events") or [])
+    return [
+        {
+            "code": "notebook_composition_fallback",
+            "phase": "notebook_assembly",
+            "message": advisory_warnings[0]
+            if advisory_warnings
+            else "Notebook composition used deterministic fallback content.",
+            "warnings": advisory_warnings,
+            "fallback_events": fallback_events,
+        }
+    ]
+
+
+def _tool_planning_warning_entries(
+    feedback: Dict[str, Any] | None,
+) -> List[Dict[str, Any]]:
+    """Convert tool-planning feedback into manifest warnings."""
+
+    if not isinstance(feedback, dict):
+        return []
+
+    warnings: List[Dict[str, Any]] = []
+    advisory_warnings = list(feedback.get("warnings") or [])
+    unresolved_tools = list(feedback.get("unresolved_tools") or [])
+    validation_errors = list(feedback.get("validation_errors") or [])
+    environment_notes = list(feedback.get("environment_notes") or [])
+    dependency_conflicts = list(feedback.get("dependency_conflicts") or [])
+
+    if feedback.get("fallback_used"):
+        warnings.append(
+            {
+                "code": "tool_planning_fallback",
+                "phase": "tool_planning",
+                "message": feedback.get("fallback_reason")
+                or "Tool planning used heuristic fallback inference.",
+                "warnings": advisory_warnings,
+                "unresolved_tools": unresolved_tools,
+            }
+        )
+
+    if validation_errors or unresolved_tools:
+        warnings.append(
+            {
+                "code": "tool_planning_validation",
+                "phase": "tool_planning",
+                "message": "Tool planning reported validation issues.",
+                "validation_errors": validation_errors,
+                "unresolved_tools": unresolved_tools,
+                "warnings": advisory_warnings,
+            }
+        )
+
+    if environment_notes:
+        warnings.append(
+            {
+                "code": "tool_planning_environment",
+                "phase": "tool_planning",
+                "message": "Tool planning reported environment considerations.",
+                "environment_notes": environment_notes,
+                "warnings": advisory_warnings,
+            }
+        )
+
+    if dependency_conflicts:
+        warnings.append(
+            {
+                "code": "tool_planning_dependency",
+                "phase": "tool_planning",
+                "message": "Tool planning reported dependency conflicts or gaps.",
+                "dependency_conflicts": dependency_conflicts,
+                "warnings": advisory_warnings,
+            }
+        )
+
+    return warnings
+
+
+def _qa_repair_warning_entries(
+    feedback: Dict[str, Any] | None,
+    reports: List[Dict[str, Any]] | None,
+) -> List[Dict[str, Any]]:
+    """Convert structured QA/repair feedback into manifest warnings."""
+
+    feedback = feedback if isinstance(feedback, dict) else {}
+    reports = reports if isinstance(reports, list) else []
+
+    severe_reports = [
+        report
+        for report in reports
+        if not report.get("passed", True) and report.get("severity") == "error"
+    ]
+    unresolved_failures = list(feedback.get("unrepaired_failures") or [])
+    if not unresolved_failures:
+        unresolved_failures = [
+            f"{report.get('check_name', 'QA Check')}: {report.get('message', '')}".strip()
+            for report in severe_reports
+        ]
+
+    next_steps = list(feedback.get("next_steps") or [])
+    warnings = list(feedback.get("warnings") or [])
+    warning_entries: List[Dict[str, Any]] = []
+
+    if unresolved_failures:
+        warning_entries.append(
+            {
+                "code": "qa_validation_failed",
+                "phase": "qa",
+                "message": (
+                    warnings[0]
+                    if warnings
+                    else "Blocking QA issues remain after validation or repair."
+                ),
+                "unrepaired_failures": unresolved_failures,
+                "next_steps": next_steps,
+                "repair_attempts": int(feedback.get("repair_attempts") or 0),
+            }
+        )
+
+    if feedback.get("rollback_used"):
+        warning_entries.append(
+            {
+                "code": "qa_repair_rollback",
+                "phase": "repair",
+                "message": "A repair rollback preserved the previous notebook snapshot.",
+                "next_steps": next_steps,
+                "repair_attempts": int(feedback.get("repair_attempts") or 0),
+            }
+        )
+
+    return warning_entries
+
+
 class _PhaseTracker:
     """Track structured phase telemetry across generation and export steps."""
 
@@ -379,6 +594,11 @@ def _infer_stub_architecture(prompt: str) -> tuple[str, str]:
     """Lightweight heuristic to pick an architecture in stub mode."""
 
     text = prompt.lower()
+    if any(keyword in text for keyword in ["deepagents", "deep agents", "deep agent"]):
+        return (
+            "deepagents",
+            "Deep Agents pattern selected based on explicit Deep Agents intent in the prompt.",
+        )
     if "autoagent" in text or "auto agent" in text:
         return (
             "autoagent",
@@ -410,7 +630,7 @@ def _infer_stub_architecture(prompt: str) -> tuple[str, str]:
     )
 
 
-def _load_patterns() -> tuple[Any, Any, Any, Any]:
+def _load_patterns() -> tuple[Any, Any, Any, Any, Any]:
     """Import pattern generators lazily to preserve minimal installs."""
     patterns_module = require_optional_module(
         "langgraph_system_generator.patterns",
@@ -422,6 +642,7 @@ def _load_patterns() -> tuple[Any, Any, Any, Any]:
         patterns_module.SubagentsPattern,
         patterns_module.HybridPattern,
         patterns_module.AutoAgentPattern,
+        patterns_module.DeepAgentsPattern,
     )
 
 
@@ -437,8 +658,15 @@ def _load_generator_graph() -> Any:
 
 def _build_stub_result(prompt: str, agent_type: str | None = None) -> Dict[str, Any]:
     """Create a deterministic, offline-friendly generation result."""
-    RouterPattern, SubagentsPattern, HybridPattern, AutoAgentPattern = _load_patterns()
+    (
+        RouterPattern,
+        SubagentsPattern,
+        HybridPattern,
+        AutoAgentPattern,
+        DeepAgentsPattern,
+    ) = _load_patterns()
     architecture_registry = get_default_architecture_registry()
+    graph_design_registry = get_graph_design_registry()
 
     normalized_agent_type = normalize_agent_type(agent_type)
     if normalized_agent_type in SUPPORTED_AGENT_TYPES:
@@ -490,6 +718,59 @@ def _build_stub_result(prompt: str, agent_type: str | None = None) -> Dict[str, 
         architecture_type=architecture_type,
     )
 
+    graph_registration = graph_design_registry.get(architecture_type)
+    graph_design = normalize_graph_design(
+        graph_registration.fallback_builder(
+            architecture={
+                "architecture_type": architecture_type,
+                "selected_patterns": {
+                    "primary": architecture_type,
+                    "secondary": secondary_patterns,
+                },
+            },
+            constraints=constraints,
+        ),
+        architecture_type,
+        graph_registration,
+    )
+    graph_design_issues = validate_graph_design(graph_design, graph_registration)
+    graph_design_errors = graph_design_issue_messages(
+        graph_design_issues, severity="error"
+    )
+    graph_design_warnings = graph_design_issue_messages(
+        graph_design_issues, severity="warning"
+    )
+    if graph_design_errors:
+        raise GenerationError(
+            "Stub graph design produced an invalid workflow and could not be exported safely.",
+            code="stub_graph_design_invalid",
+            phase="graph_design",
+            hint="Inspect the graph design fallback builder or registration for this architecture.",
+            details={
+                "architecture_type": architecture_type,
+                "validation_errors": graph_design_errors,
+            },
+            status_code=500,
+        )
+    graph_exports = build_graph_exports(
+        graph_design,
+        graph_registration,
+        graph_design_issues,
+        graph_design_warnings,
+    )
+    graph_design_feedback = GraphDesignFeedback(
+        fallback_used=False,
+        validation_errors=graph_design_errors,
+        warnings=graph_design_warnings,
+        validation_issues=graph_design_issues,
+        composition_strategy=graph_registration.composition_strategy,
+    )
+    workflow_design = graph_design.to_workflow_design_payload()
+    workflow_design["selected_patterns"] = {
+        "primary": architecture_type,
+        "secondary": secondary_patterns,
+    }
+
     cells: List[CellSpec] = [
         CellSpec(
             cell_type="markdown",
@@ -502,6 +783,21 @@ def _build_stub_result(prompt: str, agent_type: str | None = None) -> Dict[str, 
             section="setup",
         ),
     ]
+    if architecture_type == "deepagents":
+        cells.append(
+            CellSpec(
+                cell_type="markdown",
+                content=(
+                    "### Optional Deep Agents SDK\n\n"
+                    "This stub notebook stays runnable without installing "
+                    "`deepagents`. To exercise the live Deep Agents harness, install "
+                    "the optional SDK manually with "
+                    "`python -m pip install deepagents` and configure provider "
+                    "credentials such as `OPENAI_API_KEY`."
+                ),
+                section="setup",
+            )
+        )
 
     if architecture_type == "router":
         routes = ["search", "analyze", "summarize"]
@@ -709,6 +1005,44 @@ def _build_stub_result(prompt: str, agent_type: str | None = None) -> Dict[str, 
                 section="graph",
             )
         )
+    elif architecture_type == "deepagents":
+        cells.append(
+            CellSpec(
+                cell_type="markdown",
+                content=DeepAgentsPattern.generate_overview_markdown(),
+                section="nodes",
+            )
+        )
+        cells.append(
+            CellSpec(
+                cell_type="code",
+                content=DeepAgentsPattern.generate_state_code(),
+                section="state_definition",
+            )
+        )
+        cells.append(
+            CellSpec(
+                cell_type="code",
+                content=DeepAgentsPattern.generate_agent_node_code(
+                    ["researcher", "critic"]
+                ),
+                section="nodes",
+            )
+        )
+        cells.append(
+            CellSpec(
+                cell_type="code",
+                content=DeepAgentsPattern.generate_graph_code(),
+                section="graph",
+            )
+        )
+        cells.append(
+            CellSpec(
+                cell_type="code",
+                content=DeepAgentsPattern.generate_execution_code(),
+                section="execution",
+            )
+        )
     else:
         cells.append(
             CellSpec(
@@ -725,6 +1059,40 @@ def _build_stub_result(prompt: str, agent_type: str | None = None) -> Dict[str, 
             available_constraint_types=_available_constraint_types(),
         ),
         "architecture_feedback": architecture_feedback,
+        "graph_design_feedback": graph_design_feedback,
+        "graph_exports": graph_exports,
+        "tool_planning_feedback": ToolPlanningFeedback(
+            fallback_used=False,
+            available_tool_ids=_available_tool_ids(),
+        ),
+        "notebook_composition_feedback": NotebookCompositionFeedback(
+            fallback_used=False,
+            resolved_model=settings.default_model,
+            resolved_api_base=None,
+            resolved_max_iterations=settings.notebook_composer_default_max_iterations,
+            sections_built=["intro", "install", "state", "nodes", "graph"],
+        ),
+        "notebook_dependency_plan": NotebookDependencyPlan(
+            packages=["langgraph", "langchain-openai"],
+            install_commands=["python -m pip install -q langgraph langchain-openai"],
+            runtime_notes=[
+                "Stub mode emits a deterministic dependency plan for the generated notebook.",
+                *(
+                    [
+                        (
+                            "Deep Agents cells run in deterministic fallback mode when "
+                            "the optional deepagents SDK is unavailable; install it "
+                            "manually with `python -m pip install deepagents` only for "
+                            "live execution."
+                        )
+                    ]
+                    if architecture_type == "deepagents"
+                    else []
+                ),
+            ],
+            provider_env_vars=["OPENAI_API_KEY"],
+        ),
+        "qa_repair_feedback": QARepairFeedback(),
         "selected_patterns": {
             "primary": architecture_type,
             "secondary": secondary_patterns,
@@ -735,23 +1103,7 @@ def _build_stub_result(prompt: str, agent_type: str | None = None) -> Dict[str, 
         "architecture_justification": justification,
         "generation_config": None,
         "generation_mode": "stub",
-        "workflow_design": {
-            "entry_point": architecture_type,
-            "nodes": [
-                {
-                    "name": architecture_type,
-                    "purpose": (
-                        "Dispatch to specialists"
-                        if architecture_type == "router"
-                        else (
-                            "Coordinate AutoAgent workers"
-                            if architecture_type == "autoagent"
-                            else "Coordinate sub-agents"
-                        )
-                    ),
-                }
-            ],
-        },
+        "workflow_design": workflow_design,
         "tools_plan": [],
         "generated_cells": cells,
         "qa_reports": [],
@@ -855,17 +1207,25 @@ async def generate_artifacts(
     tracker.start("serialize", "Serializing generation results...", percentage=62)
     serialized = _serialize(result)
     tracker.finish("serialize", "Serialized generation results.", percentage=64)
-    if "architecture_type" in serialized and serialized.get("architecture_type"):
-        architecture_type = serialized.get("architecture_type")
-    else:
-        selected_patterns = serialized.get("selected_patterns") or {}
-        architecture_type = selected_patterns.get("primary") or "router"
+    architecture_type = resolve_architecture_type(
+        serialized.get("architecture_type"),
+        serialized.get("selected_patterns") or {},
+    )
 
     plan_title = (
         serialized.get("notebook_plan", {}).get("title") or "Generated Notebook"
     )
     requirements_feedback = serialized.get("requirements_feedback") or {}
     architecture_feedback = serialized.get("architecture_feedback") or {}
+    graph_design_feedback = serialized.get("graph_design_feedback") or {}
+    graph_exports = serialized.get("graph_exports") or {}
+    tool_planning_feedback = serialized.get("tool_planning_feedback") or {}
+    notebook_composition_feedback = (
+        serialized.get("notebook_composition_feedback") or {}
+    )
+    notebook_dependency_plan = serialized.get("notebook_dependency_plan") or {}
+    qa_repair_feedback = serialized.get("qa_repair_feedback") or {}
+    qa_reports = serialized.get("qa_reports") or []
 
     manifest: Dict[str, Any] = {
         "prompt": prompt,
@@ -875,9 +1235,19 @@ async def generate_artifacts(
         "plan_title": plan_title,
         "requirements_feedback": requirements_feedback,
         "architecture_feedback": architecture_feedback,
+        "graph_design_feedback": graph_design_feedback,
+        "graph_exports": graph_exports,
+        "tool_planning_feedback": tool_planning_feedback,
+        "notebook_composition_feedback": notebook_composition_feedback,
+        "notebook_dependency_plan": notebook_dependency_plan,
+        "qa_repair_feedback": qa_repair_feedback,
         "warnings": [
             *_requirements_warning_entries(requirements_feedback),
             *_architecture_warning_entries(architecture_feedback),
+            *_graph_design_warning_entries(graph_design_feedback),
+            *_tool_planning_warning_entries(tool_planning_feedback),
+            *_notebook_composition_warning_entries(notebook_composition_feedback),
+            *_qa_repair_warning_entries(qa_repair_feedback, qa_reports),
         ],
         "export_results": {},
     }
@@ -1271,7 +1641,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     gen.add_argument(
         "--agent-type",
-        choices=["router", "subagents", "hybrid", "autoagent"],
+        choices=["router", "subagents", "hybrid", "autoagent", "deepagents"],
         default=None,
         help="Override architecture selection for generation.",
     )

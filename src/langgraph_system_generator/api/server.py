@@ -285,7 +285,7 @@ class GenerationRequest(BaseModel):
     )
     agent_type: Optional[str] = Field(
         default=None,
-        description="Type of agent architecture (router, subagents, hybrid, autoagent, etc.) when overriding auto-detection.",
+        description="Type of agent architecture (router, subagents, hybrid, autoagent, deepagents, etc.) when overriding auto-detection.",
     )
 
 

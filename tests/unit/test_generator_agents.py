@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import sys
+import types
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -18,11 +20,35 @@ from langgraph_system_generator.generator.architecture_registry import (
     ArchitectureRegistration,
     get_default_architecture_registry,
 )
+from langgraph_system_generator.generator.graph_design_registry import (
+    build_graph_exports,
+    GraphDesignRegistration,
+    GraphDesignRegistry,
+    get_graph_design_registry,
+    normalize_graph_design,
+    validate_graph_design,
+)
+from langgraph_system_generator.generator import tool_registry as tool_registry_module
+from langgraph_system_generator.generator import tool_dependency_utils
+from langgraph_system_generator.generator.tool_registry import (
+    ToolRegistration,
+    ToolRegistry,
+    get_tool_registry,
+)
+from langgraph_system_generator.qa.repair import RepairOutcome
 from langgraph_system_generator.generator.state import (
     ArchitectureSelectionResult,
+    CellSpec,
     Constraint,
     DocSnippet,
+    GraphConditionalEdgeSpec,
+    GraphDesignResult,
+    GraphEdgeSpec,
+    GraphNodeSpec,
+    QAReport,
+    ToolSpec,
 )
+from langgraph_system_generator.utils.error_handling import GenerationError
 from langgraph_system_generator.utils.config import ModelConfig
 
 
@@ -95,11 +121,68 @@ def test_architecture_registry_includes_builtin_architectures():
         "subagents",
         "hybrid",
         "autoagent",
+        "deepagents",
     }
 
     hybrid = registry.get("hybrid")
     assert hybrid.default_secondary_patterns == ["router", "subagents"]
     assert hybrid.deterministic is True
+
+    deepagents = registry.get("deepagents")
+    assert deepagents.default_secondary_patterns == ["subagents"]
+    assert deepagents.deterministic is True
+
+
+@pytest.mark.asyncio
+async def test_qa_repair_agent_validate_uses_shared_notebook_validator():
+    agent = qa_repair_agent.QARepairAgent()
+    reports = await agent.validate(
+        [
+            CellSpec(cell_type="markdown", content="## Graph", metadata={"section": "graph"}),
+            CellSpec(
+                cell_type="code",
+                content="graph_hint = 'StateGraph'\nprint(graph_hint)",
+                metadata={"section": "graph"},
+            ),
+        ]
+    )
+
+    graph_report = next(report for report in reports if report.check_name == "Graph Compilation")
+
+    assert graph_report.rule_id == "graph_structure"
+    assert graph_report.passed is False
+
+
+@pytest.mark.asyncio
+async def test_qa_repair_agent_repair_delegates_to_shared_engine(monkeypatch):
+    repaired_cells = [CellSpec(cell_type="markdown", content="Updated", metadata={})]
+    captured_attempt: dict[str, int] = {"value": -1}
+
+    monkeypatch.setattr(
+        "langgraph_system_generator.generator.agents.qa_repair_agent.NotebookRepairAgent.repair_cells",
+        lambda _self, _cells, _reports, attempt=0: (
+            captured_attempt.__setitem__("value", attempt)
+            or RepairOutcome(
+                status="applied",
+                cells=repaired_cells,
+                qa_reports=[],
+                attempted_fixes=["Applied deterministic fix."],
+                persisted=True,
+                message="Repair candidate passed validation and was accepted.",
+                validation_summary={"accepted": True},
+            )
+        ),
+    )
+
+    agent = qa_repair_agent.QARepairAgent()
+    result = await agent.repair(
+        [CellSpec(cell_type="markdown", content="Original", metadata={})],
+        [QAReport(check_name="Undefined Names", passed=False, message="boom")],
+        attempt=2,
+    )
+
+    assert result == repaired_cells
+    assert captured_attempt["value"] == 2
 
 
 def test_architecture_registry_preserves_zero_docs_weight_and_filters_unknown_patterns():
@@ -431,6 +514,43 @@ async def test_architecture_selector_normalizes_pattern_primary(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_architecture_selector_accepts_explicit_deepagents(monkeypatch):
+    """Explicit Deep Agents selections should validate without changing fallback defaults."""
+
+    payload = """
+    {
+      "architecture_type": "deepagents",
+      "patterns": {"primary": "deepagents", "secondary": ["subagents"]},
+      "justification": "The prompt asks for Deep Agents planning, tools, and subagents.",
+      "feedback": {
+        "confidence": 0.79
+      }
+    }
+    """
+    monkeypatch.setattr(
+        architecture_selector,
+        "ChatOpenAI",
+        make_stub_llm(payload),
+    )
+    selector = architecture_selector.ArchitectureSelector()
+    result = await selector.select_architecture(
+        [
+            Constraint(
+                type="goal",
+                value="Build this as an explicit deepagents workflow",
+                priority=5,
+            )
+        ],
+        [],
+    )
+
+    assert result.architecture_type == "deepagents"
+    assert result.patterns.primary == "deepagents"
+    assert result.patterns.secondary == ["subagents"]
+    assert result.feedback.fallback_used is False
+
+
+@pytest.mark.asyncio
 async def test_architecture_selector_uses_registry_weighted_docs_and_limit(monkeypatch):
     """ArchitectureSelector should use registry-driven queries, weights, dedupe, and cap."""
     captured_messages = []
@@ -729,7 +849,7 @@ async def test_architecture_selector_normalizes_hybrid_secondary_patterns(monkey
 @pytest.mark.asyncio
 @pytest.mark.parametrize("arch_type", ["router", "subagents"])
 async def test_graph_designer_fallback(arch_type, monkeypatch):
-    """GraphDesigner falls back to the correct design when parsing fails."""
+    """GraphDesigner should return typed fallback output when parsing fails."""
     monkeypatch.setattr(
         graph_designer,
         "ChatOpenAI",
@@ -740,7 +860,254 @@ async def test_graph_designer_fallback(arch_type, monkeypatch):
     architecture = {"architecture_type": arch_type, "justification": "x"}
     expected = designer._fallback_design(arch_type)
     result = await designer.design_workflow(architecture, constraints)
-    assert result == expected
+    assert isinstance(result, GraphDesignResult)
+    assert result.feedback.fallback_used is True
+    assert result.to_workflow_design_payload()["entry_point"] == expected["entry_point"]
+    assert result.to_workflow_design_payload()["nodes"] == expected["nodes"]
+
+
+@pytest.mark.asyncio
+async def test_graph_designer_returns_typed_result_with_exports(monkeypatch):
+    """GraphDesigner should normalize a valid design into typed output plus exports."""
+
+    payload = """
+    {
+      "state_schema": {
+        "messages": "Conversation state",
+        "route": "Selected route"
+      },
+      "nodes": [
+        {"name": "router", "purpose": "Route requests"},
+        {"name": "search", "purpose": "Search documents"}
+      ],
+      "edges": [],
+      "conditional_edges": [
+        {
+          "from": "router",
+          "condition": "Dispatch by route",
+          "branches": {"search": "search", "END": "END"}
+        }
+      ],
+      "entry_point": "router",
+      "checkpointing": false
+    }
+    """
+    monkeypatch.setattr(graph_designer, "ChatOpenAI", make_stub_llm(payload))
+
+    designer = graph_designer.GraphDesigner()
+    result = await designer.design_workflow(
+        {
+            "architecture_type": "router",
+            "justification": "Routing is sufficient.",
+            "selected_patterns": {"primary": "router", "secondary": []},
+        },
+        [Constraint(type="goal", value="Build a router workflow", priority=5)],
+    )
+
+    assert isinstance(result, GraphDesignResult)
+    assert result.architecture_type == "router"
+    assert result.nodes[0].name == "router"
+    assert result.feedback.fallback_used is False
+    assert "flowchart TD" in result.exports.mermaid
+    assert result.exports.schema["entry_point"] == "router"
+    assert result.exports.schema["terminal_nodes"]
+
+
+@pytest.mark.asyncio
+async def test_graph_designer_falls_back_for_invalid_live_graph(monkeypatch):
+    """Invalid live graph payloads should trigger validated fallback feedback."""
+
+    payload = """
+    {
+      "state_schema": {"messages": "Conversation state"},
+      "nodes": [
+        {"name": "router", "purpose": "Route requests"},
+        {"name": "router", "purpose": "Duplicate node"},
+        {"name": "orphan", "purpose": "Never reached"}
+      ],
+      "edges": [
+        {"from": "router", "to": "missing_target"}
+      ],
+      "conditional_edges": [],
+      "entry_point": "router",
+      "checkpointing": false
+    }
+    """
+    monkeypatch.setattr(graph_designer, "ChatOpenAI", make_stub_llm(payload))
+
+    designer = graph_designer.GraphDesigner()
+    result = await designer.design_workflow(
+        {
+            "architecture_type": "router",
+            "justification": "Routing is sufficient.",
+            "selected_patterns": {"primary": "router", "secondary": []},
+        },
+        [Constraint(type="goal", value="Build a router workflow", priority=5)],
+    )
+
+    assert isinstance(result, GraphDesignResult)
+    assert result.feedback.fallback_used is True
+    assert result.feedback.fallback_reason
+    assert any("duplicate" in message.lower() for message in result.feedback.validation_errors)
+    assert any("missing_target" in message for message in result.feedback.validation_errors)
+    assert result.entry_point == "router"
+    assert "flowchart TD" in result.exports.mermaid
+
+
+@pytest.mark.asyncio
+async def test_graph_designer_raises_when_fallback_is_invalid(monkeypatch):
+    """If fallback normalization still fails, GraphDesigner should raise a structured error."""
+
+    monkeypatch.setattr(graph_designer, "ChatOpenAI", make_stub_llm("not-json"))
+
+    registry = GraphDesignRegistry()
+    registry.register(
+        GraphDesignRegistration(
+            architecture_id="broken",
+            supported_entry_shapes=["broken"],
+            supported_exit_shapes=["broken"],
+            cycles_allowed=False,
+            fallback_builder=lambda *_args, **_kwargs: {
+                "state_schema": {},
+                "nodes": [],
+                "edges": [],
+                "conditional_edges": [],
+                "entry_point": "",
+                "checkpointing": False,
+            },
+            normalization_hook=None,
+            validation_hook=None,
+            export_label_defaults={"title": "Broken"},
+            composition_strategy="broken",
+        )
+    )
+
+    designer = graph_designer.GraphDesigner(registry=registry)
+    with pytest.raises(GenerationError, match="fallback"):
+        await designer.design_workflow(
+            {
+                "architecture_type": "broken",
+                "justification": "Broken architecture for validation testing.",
+                "selected_patterns": {"primary": "broken", "secondary": []},
+            },
+            [Constraint(type="goal", value="Break the graph designer", priority=5)],
+        )
+
+
+def test_graph_design_validation_detects_cycles_and_unreachable_nodes():
+    """Graph validation should detect structural errors before export or use."""
+
+    result = GraphDesignResult(
+        architecture_type="router",
+        state_schema={"messages": "Conversation state"},
+        nodes=[
+            GraphNodeSpec(name="router", purpose="Route requests"),
+            GraphNodeSpec(name="search", purpose="Search documents"),
+            GraphNodeSpec(name="dead_end", purpose="Never reached"),
+        ],
+        edges=[
+            GraphEdgeSpec.model_validate({"from": "search", "to": "router"}),
+        ],
+        conditional_edges=[
+            GraphConditionalEdgeSpec.model_validate(
+                {
+                    "from": "router",
+                    "condition": "Dispatch by route",
+                    "branches": {"search": "search"},
+                }
+            )
+        ],
+        entry_point="router",
+        checkpointing=False,
+    )
+
+    issues = validate_graph_design(result, get_graph_design_registry().get("router"))
+    issue_codes = {issue.code for issue in issues}
+
+    assert "cycle_detected" in issue_codes
+    assert "unreachable_node" in issue_codes
+    assert "missing_terminal_path" in issue_codes
+
+
+def test_graph_design_registry_deepagents_fallback_validates_and_exports():
+    """Deep Agents fallback should produce a complete terminal workflow bundle."""
+
+    registration = get_graph_design_registry().get("deepagents")
+    result = normalize_graph_design(
+        registration.fallback_builder(),
+        "deepagents",
+        registration,
+    )
+    issues = validate_graph_design(result, registration)
+    errors = [issue for issue in issues if issue.severity == "error"]
+    exports = build_graph_exports(result, registration, issues)
+
+    assert errors == []
+    assert result.architecture_type == "deepagents"
+    assert result.entry_point == "deep_agent"
+    assert [node.name for node in result.nodes] == ["deep_agent"]
+    assert "deep_agent" in exports.mermaid
+    assert exports.schema["composition_strategy"] == "deepagents_harness"
+    assert exports.schema["terminal_nodes"] == ["deep_agent"]
+
+
+def test_graph_design_registry_loads_plugin_modules(monkeypatch):
+    """Graph design plugin modules should be able to register new architectures."""
+
+    class FakePluginModule:
+        @staticmethod
+        def register_graph_designers(registry):
+            registry.register(
+                GraphDesignRegistration(
+                    architecture_id="plugin_router",
+                    supported_entry_shapes=["router"],
+                    supported_exit_shapes=["terminal"],
+                    cycles_allowed=False,
+                    fallback_builder=lambda *_args, **_kwargs: {
+                        "state_schema": {"messages": "Conversation state"},
+                        "nodes": [
+                            {"name": "router", "purpose": "Route requests"},
+                            {"name": "finish", "purpose": "Finish requests"},
+                        ],
+                        "edges": [{"from": "router", "to": "finish"}],
+                        "conditional_edges": [],
+                        "entry_point": "router",
+                        "checkpointing": False,
+                    },
+                    normalization_hook=None,
+                    validation_hook=None,
+                    export_label_defaults={"title": "Plugin Router"},
+                    composition_strategy="plugin",
+                )
+            )
+
+    monkeypatch.setattr(
+        graph_designer.importlib,
+        "import_module",
+        lambda name: FakePluginModule if name == "fake_graph_plugin" else None,
+    )
+
+    registry = get_graph_design_registry(plugin_modules=("fake_graph_plugin",))
+
+    assert "plugin_router" in registry.supported_architecture_types()
+    assert registry.get("plugin_router").composition_strategy == "plugin"
+
+
+def test_graph_design_registry_surfaces_plugin_import_failures(monkeypatch):
+    """Plugin import failures should name the module and the original import error."""
+
+    def broken_import(name: str):
+        if name == "broken_graph_plugin":
+            raise ModuleNotFoundError("No module named 'missing_graph_extension'")
+        raise AssertionError(f"Unexpected import request: {name}")
+
+    monkeypatch.setattr(graph_designer.importlib, "import_module", broken_import)
+
+    with pytest.raises(
+        ValueError,
+        match="Failed to import graph design plugin module 'broken_graph_plugin'",
+    ):
+        get_graph_design_registry(plugin_modules=("broken_graph_plugin",))
 
 
 def test_graph_designer_hybrid_fallback_contains_router_supervisor_and_team(monkeypatch):
@@ -777,17 +1144,66 @@ def test_graph_designer_hybrid_fallback_contains_router_supervisor_and_team(monk
     assert supervisor_edges
     assert "FINISH" in supervisor_edges[0]["branches"]
 
+    registration = get_graph_design_registry().get("hybrid")
+    normalized = normalize_graph_design(result, "hybrid", registration)
+    issues = validate_graph_design(normalized, registration)
+    assert not [issue for issue in issues if issue.severity == "error"]
+
+
+def test_graph_design_exports_escape_mermaid_labels():
+    """Mermaid exports should escape labels that contain quotes, brackets, or newlines."""
+
+    result = GraphDesignResult(
+        architecture_type="router",
+        state_schema={"messages": "Conversation state"},
+        nodes=[
+            GraphNodeSpec(
+                name='router "alpha"',
+                purpose="Route [requests]\ncarefully",
+            ),
+            GraphNodeSpec(name="finish", purpose="Finish the workflow"),
+        ],
+        edges=[],
+        conditional_edges=[
+            GraphConditionalEdgeSpec.model_validate(
+                {
+                    "from": 'router "alpha"',
+                    "condition": "Dispatch by route",
+                    "branches": {
+                        'team "path"\n[1]': "finish",
+                        "END": "END",
+                    },
+                }
+            )
+        ],
+        entry_point='router "alpha"',
+        checkpointing=False,
+    )
+
+    exports = build_graph_exports(result, get_graph_design_registry().get("router"))
+
+    assert "&quot;" in exports.mermaid
+    assert "&#91;" in exports.mermaid
+    assert "&#93;" in exports.mermaid
+    assert "<br/>" in exports.mermaid
+
+
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    ("payload", "expected_count"),
+    ("payload", "expected_count", "expected_fallback"),
     [
-        ('[{"name":"tool","category":"misc","purpose":"x","configuration":{}}]', 1),
-        ("invalid", 0),
+        ('[{"name":"search","category":"search","purpose":"x","configuration":{}}]', 1, False),
+        ("invalid", 0, True),
     ],
 )
-async def test_toolchain_engineer_parsing(payload, expected_count, monkeypatch):
-    """ToolchainEngineer returns empty list on parse errors."""
+async def test_toolchain_engineer_parsing(
+    payload,
+    expected_count,
+    expected_fallback,
+    monkeypatch,
+):
+    """ToolchainEngineer normalizes valid payloads and surfaces parse fallback."""
     monkeypatch.setattr(
         toolchain_engineer,
         "ChatOpenAI",
@@ -796,7 +1212,485 @@ async def test_toolchain_engineer_parsing(payload, expected_count, monkeypatch):
     engineer = toolchain_engineer.ToolchainEngineer()
     constraints = [Constraint(type="goal", value="x", priority=5)]
     result = await engineer.plan_tools({"nodes": []}, constraints)
-    assert len(result) == expected_count
+    assert len(result.tools) == expected_count
+    assert result.feedback.fallback_used is expected_fallback
+
+
+@pytest.mark.asyncio
+async def test_toolchain_engineer_parse_failure_uses_heuristic_fallback_for_tool_nodes(
+    monkeypatch,
+):
+    """Parse failures should infer conservative fallback tools from workflow nodes."""
+
+    monkeypatch.setattr(
+        toolchain_engineer,
+        "ChatOpenAI",
+        make_stub_llm("not-json"),
+    )
+    engineer = toolchain_engineer.ToolchainEngineer()
+    result = await engineer.plan_tools(
+        {
+            "nodes": [
+                {"name": "researcher", "purpose": "Search docs and gather references"},
+                {"name": "validator", "purpose": "Validate the final schema"},
+            ]
+        },
+        [Constraint(type="goal", value="Build agents", priority=5)],
+    )
+
+    assert result.feedback.fallback_used is True
+    assert [tool.tool_id for tool in result.tools] == ["web_search", "schema_validator"]
+    assert all(tool.status == "fallback" for tool in result.tools)
+
+
+@pytest.mark.asyncio
+async def test_toolchain_engineer_marks_imaginary_tools_unsupported(monkeypatch):
+    """Unsupported tool suggestions should surface as warnings, not valid tools."""
+
+    monkeypatch.setattr(
+        toolchain_engineer,
+        "ChatOpenAI",
+        make_stub_llm(
+            '[{"name":"quantum_api","category":"api","purpose":"Call an imaginary endpoint","configuration":{}}]'
+        ),
+    )
+    engineer = toolchain_engineer.ToolchainEngineer()
+    result = await engineer.plan_tools(
+        {"nodes": [{"name": "fetch_data", "purpose": "Fetch remote data"}]},
+        [Constraint(type="goal", value="Fetch data", priority=5)],
+    )
+
+    assert result.feedback.fallback_used is True
+    assert result.feedback.unresolved_tools == ["quantum_api"]
+    assert result.tools[0].tool_id == "http_client"
+    assert result.tools[0].status == "fallback"
+    unsupported = [tool for tool in result.tools if tool.status == "unsupported"]
+    assert len(unsupported) == 1
+    assert unsupported[0].name == "quantum_api"
+
+
+@pytest.mark.asyncio
+async def test_toolchain_engineer_normalizes_alias_to_canonical_tool_id(monkeypatch):
+    """Registry aliases should resolve to canonical tool ids."""
+
+    monkeypatch.setattr(
+        toolchain_engineer,
+        "ChatOpenAI",
+        make_stub_llm(
+            '[{"name":"search","category":"search","purpose":"Look up docs","configuration":{}}]'
+        ),
+    )
+    engineer = toolchain_engineer.ToolchainEngineer()
+    result = await engineer.plan_tools(
+        {"nodes": [{"name": "research", "purpose": "Search docs"}]},
+        [Constraint(type="goal", value="Research docs", priority=5)],
+    )
+
+    assert result.feedback.fallback_used is False
+    assert result.tools == [
+        ToolSpec(
+            tool_id="web_search",
+            name="search",
+            category="search",
+            purpose="Look up docs",
+            configuration={"backend": "duckduckgo"},
+            packages=["langchain-community"],
+            provider_env_vars=[],
+            status="ready",
+            warnings=[],
+        )
+    ]
+
+
+def test_tool_registry_replaces_stale_aliases_and_rejects_collisions():
+    """Overridden registrations should drop stale aliases and block alias collisions."""
+
+    registry = ToolRegistry(
+        [
+            ToolRegistration(
+                tool_id="web_search",
+                name="Web Search",
+                description="Search public docs.",
+                category="search",
+                aliases=["search", "docs_search"],
+            )
+        ]
+    )
+
+    registry.register(
+        ToolRegistration(
+            tool_id="web_search",
+            name="Web Search",
+            description="Search public docs.",
+            category="search",
+            aliases=["web_lookup"],
+        )
+    )
+
+    assert registry.resolve_tool_id("search") is None
+    assert registry.resolve_tool_id("docs_search") is None
+    assert registry.resolve_tool_id("web_lookup") == "web_search"
+
+    with pytest.raises(ValueError, match="Alias 'web_lookup' is already registered"):
+        registry.register(
+            ToolRegistration(
+                tool_id="file_reader",
+                name="File Reader",
+                description="Read local files.",
+                category="file_io",
+                aliases=["web_lookup"],
+            )
+        )
+
+
+def test_tool_registry_uses_current_plugin_settings_for_cache_keys(monkeypatch):
+    """Default registry loads should refresh when plugin-module settings change."""
+
+    module_a_name = "tests.fake_tool_registry_plugin_a"
+    module_b_name = "tests.fake_tool_registry_plugin_b"
+    plugin_a = types.ModuleType(module_a_name)
+    plugin_b = types.ModuleType(module_b_name)
+
+    def register_toolchain_tools_a(registry):
+        registry.register(
+            ToolRegistration(
+                tool_id="alpha_tool",
+                name="Alpha Tool",
+                description="Alpha plugin tool.",
+                category="search",
+                aliases=["alpha"],
+            )
+        )
+
+    def register_toolchain_tools_b(registry):
+        registry.register(
+            ToolRegistration(
+                tool_id="beta_tool",
+                name="Beta Tool",
+                description="Beta plugin tool.",
+                category="validation",
+                aliases=["beta"],
+            )
+        )
+
+    plugin_a.register_toolchain_tools = register_toolchain_tools_a
+    plugin_b.register_toolchain_tools = register_toolchain_tools_b
+    monkeypatch.setitem(sys.modules, module_a_name, plugin_a)
+    monkeypatch.setitem(sys.modules, module_b_name, plugin_b)
+
+    tool_registry_module._get_tool_registry_cached.cache_clear()
+    monkeypatch.setattr(
+        tool_registry_module.settings,
+        "toolchain_engineer_plugin_modules",
+        [module_a_name],
+    )
+    registry_a = get_tool_registry()
+    assert "alpha_tool" in registry_a.supported_tool_ids()
+    assert "beta_tool" not in registry_a.supported_tool_ids()
+
+    monkeypatch.setattr(
+        tool_registry_module.settings,
+        "toolchain_engineer_plugin_modules",
+        [module_b_name],
+    )
+    registry_b = get_tool_registry()
+    assert "beta_tool" in registry_b.supported_tool_ids()
+    assert "alpha_tool" not in registry_b.supported_tool_ids()
+
+    tool_registry_module._get_tool_registry_cached.cache_clear()
+
+
+@pytest.mark.asyncio
+async def test_toolchain_engineer_prompt_catalog_comes_from_registry(monkeypatch):
+    """Planner prompt should be generated from the current registry catalog."""
+
+    captured_messages: list = []
+    monkeypatch.setattr(
+        toolchain_engineer,
+        "ChatOpenAI",
+        make_recording_llm("[]", captured_messages),
+    )
+    registry = get_tool_registry().clone()
+    registry.register(
+        ToolRegistration(
+            tool_id="plugin_tool",
+            name="Plugin Tool",
+            description="Custom plugin-only capability for specialized workflows",
+            category="misc",
+            aliases=["plugin_alias"],
+        )
+    )
+
+    engineer = toolchain_engineer.ToolchainEngineer(registry=registry)
+    await engineer.plan_tools({"nodes": []}, [])
+
+    system_prompt = captured_messages[0][0].content
+    assert "- plugin_tool: Custom plugin-only capability for specialized workflows." in system_prompt
+    assert "- tool_id: Canonical tool identifier or supported alias" in system_prompt
+    assert "- name: Human-readable display name for the tool" in system_prompt
+
+
+@pytest.mark.asyncio
+async def test_toolchain_engineer_preserves_display_name_when_tool_id_present(
+    monkeypatch,
+):
+    """Display names should not be overwritten by canonical tool ids."""
+
+    monkeypatch.setattr(
+        toolchain_engineer,
+        "ChatOpenAI",
+        make_stub_llm(
+            '[{"tool_id":"web_search","name":"Web Search Tool","category":"search","purpose":"Look up docs","configuration":{}}]'
+        ),
+    )
+    engineer = toolchain_engineer.ToolchainEngineer()
+    result = await engineer.plan_tools(
+        {"nodes": [{"name": "research", "purpose": "Search docs"}]},
+        [Constraint(type="goal", value="Research docs", priority=5)],
+    )
+
+    assert result.tools[0].tool_id == "web_search"
+    assert result.tools[0].name == "Web Search Tool"
+
+
+@pytest.mark.asyncio
+async def test_toolchain_engineer_blocks_network_tools_for_offline_constraints(
+    monkeypatch,
+):
+    """Offline constraints should downgrade network-dependent tools to unsupported."""
+
+    monkeypatch.setattr(
+        toolchain_engineer,
+        "ChatOpenAI",
+        make_stub_llm(
+            """[
+                {"tool_id":"web_search","name":"web_search","category":"search","purpose":"Look up docs","configuration":{}},
+                {"tool_id":"file_reader","name":"file_reader","category":"file_io","purpose":"Read local files","configuration":{}},
+                {"tool_id":"http_client","name":"http_client","category":"api","purpose":"Fetch remote APIs","configuration":{}}
+            ]"""
+        ),
+    )
+    engineer = toolchain_engineer.ToolchainEngineer()
+    result = await engineer.plan_tools(
+        {"nodes": [{"name": "research", "purpose": "Search docs and fetch APIs"}]},
+        [Constraint(type="environment", value="Offline only, no network access", priority=5)],
+    )
+
+    statuses = {tool.tool_id: tool.status for tool in result.tools}
+    assert statuses["web_search"] == "unsupported"
+    assert statuses["http_client"] == "unsupported"
+    assert statuses["file_reader"] == "ready"
+    assert any("web_search" in note for note in result.feedback.environment_notes)
+    assert any("http_client" in note for note in result.feedback.environment_notes)
+    assert result.feedback.unresolved_tools == ["web_search", "http_client"]
+
+
+@pytest.mark.asyncio
+async def test_toolchain_engineer_ignores_offline_tokens_in_non_runtime_constraints(
+    monkeypatch,
+):
+    """Only runtime/environment constraints should trigger environment filtering."""
+
+    monkeypatch.setattr(
+        toolchain_engineer,
+        "ChatOpenAI",
+        make_stub_llm(
+            '[{"tool_id":"web_search","name":"Web Docs Search","category":"search","purpose":"Look up docs","configuration":{}}]'
+        ),
+    )
+    engineer = toolchain_engineer.ToolchainEngineer()
+    result = await engineer.plan_tools(
+        {"nodes": [{"name": "research", "purpose": "Search docs"}]},
+        [Constraint(type="goal", value="Build an offline-first assistant", priority=5)],
+    )
+
+    assert result.tools[0].tool_id == "web_search"
+    assert result.tools[0].status == "ready"
+    assert result.feedback.environment_notes == []
+    assert result.feedback.unresolved_tools == []
+
+
+@pytest.mark.asyncio
+async def test_toolchain_engineer_honors_plugin_environment_metadata(
+    monkeypatch,
+):
+    """Plugin-registered tools should honor the same environment rules as built-ins."""
+
+    monkeypatch.setattr(
+        toolchain_engineer,
+        "ChatOpenAI",
+        make_stub_llm(
+            """[
+                {"tool_id":"internal_api","name":"internal_api","category":"api","purpose":"Call internal APIs","configuration":{}},
+                {"tool_id":"web_search","name":"web_search","category":"search","purpose":"Search public docs","configuration":{}}
+            ]"""
+        ),
+    )
+    registry = get_tool_registry().clone()
+    registry.register(
+        ToolRegistration(
+            tool_id="internal_api",
+            name="Internal API Client",
+            description="Call internal-only APIs over the network.",
+            category="api",
+            aliases=["internal_http_client"],
+            default_packages=["requests"],
+            environment_compatibility={
+                "requires_network": True,
+                "public_web": False,
+                "notebook_safe": True,
+            },
+        )
+    )
+
+    engineer = toolchain_engineer.ToolchainEngineer(registry=registry)
+    result = await engineer.plan_tools(
+        {"nodes": [{"name": "fetch", "purpose": "Call internal APIs and search docs"}]},
+        [Constraint(type="environment", value="Firewalled internal only runtime", priority=5)],
+    )
+
+    statuses = {tool.tool_id: tool.status for tool in result.tools}
+    assert statuses["internal_api"] == "ready"
+    assert statuses["web_search"] == "unsupported"
+    assert any("web_search" in note for note in result.feedback.environment_notes)
+    assert "internal_api" not in result.feedback.unresolved_tools
+
+
+@pytest.mark.asyncio
+async def test_toolchain_engineer_blocks_non_notebook_safe_tools_for_jupyter(
+    monkeypatch,
+):
+    """Explicit notebook runtimes should downgrade non-notebook-safe tools."""
+
+    monkeypatch.setattr(
+        toolchain_engineer,
+        "ChatOpenAI",
+        make_stub_llm(
+            """[
+                {"tool_id":"shell_runner","name":"shell_runner","category":"code_execution","purpose":"Run shell commands","configuration":{}}
+            ]"""
+        ),
+    )
+    registry = get_tool_registry().clone()
+    registry.register(
+        ToolRegistration(
+            tool_id="shell_runner",
+            name="Shell Runner",
+            description="Execute local shell commands.",
+            category="code_execution",
+            aliases=["shell"],
+            environment_compatibility={
+                "requires_network": False,
+                "public_web": False,
+                "notebook_safe": False,
+            },
+        )
+    )
+
+    engineer = toolchain_engineer.ToolchainEngineer(registry=registry)
+    result = await engineer.plan_tools(
+        {"nodes": [{"name": "executor", "purpose": "Run shell commands"}]},
+        [Constraint(type="runtime", value="Run in Jupyter notebook", priority=5)],
+    )
+
+    assert result.tools[0].status == "unsupported"
+    assert any("notebook-safe tools" in note for note in result.feedback.environment_notes)
+    assert result.feedback.unresolved_tools == ["shell_runner"]
+
+
+@pytest.mark.asyncio
+async def test_toolchain_engineer_uses_heuristic_fallback_after_environment_filtering(
+    monkeypatch,
+):
+    """Heuristic fallback should re-run if validation/environment filtering removes all usable tools."""
+
+    monkeypatch.setattr(
+        toolchain_engineer,
+        "ChatOpenAI",
+        make_stub_llm(
+            """[
+                {"tool_id":"http_client","name":"HTTP Client","category":"api","purpose":"Call remote APIs","configuration":{}}
+            ]"""
+        ),
+    )
+    engineer = toolchain_engineer.ToolchainEngineer()
+    result = await engineer.plan_tools(
+        {
+            "nodes": [
+                {"name": "doc_reader", "purpose": "Read local PDF documents"},
+                {"name": "api_fetcher", "purpose": "Fetch remote APIs"},
+            ]
+        },
+        [Constraint(type="environment", value="Offline only", priority=5)],
+    )
+
+    statuses = {tool.tool_id: tool.status for tool in result.tools}
+    assert result.feedback.fallback_used is True
+    assert "file_reader" in statuses
+    assert statuses["file_reader"] == "fallback"
+    assert statuses["http_client"] == "unsupported"
+
+
+@pytest.mark.asyncio
+async def test_toolchain_engineer_deduplicates_identical_tool_suggestions(monkeypatch):
+    """Repeated canonical-equivalent suggestions should collapse into one tool spec."""
+
+    monkeypatch.setattr(
+        toolchain_engineer,
+        "ChatOpenAI",
+        make_stub_llm(
+            """[
+                {"tool_id":"web_search","name":"Web Search","category":"search","purpose":"Look up docs","configuration":{}},
+                {"name":"search","category":"search","purpose":"Look up docs","configuration":{"backend":"duckduckgo"},"provider_env_vars":["SEARCH_API_KEY"]}
+            ]"""
+        ),
+    )
+    engineer = toolchain_engineer.ToolchainEngineer()
+    result = await engineer.plan_tools(
+        {"nodes": [{"name": "research", "purpose": "Search docs"}]},
+        [Constraint(type="goal", value="Research docs", priority=5)],
+    )
+
+    assert len(result.tools) == 1
+    assert result.tools[0].tool_id == "web_search"
+    assert result.tools[0].provider_env_vars == ["SEARCH_API_KEY"]
+
+
+@pytest.mark.asyncio
+async def test_toolchain_engineer_keeps_conflicting_tool_configs_separate(
+    monkeypatch,
+):
+    """Conflicting configurations should remain visible instead of being merged away."""
+
+    monkeypatch.setattr(
+        toolchain_engineer,
+        "ChatOpenAI",
+        make_stub_llm(
+            """[
+                {"tool_id":"file_reader","name":"File Reader","category":"file_io","purpose":"Read PDFs","configuration":{"mode":"text","packages":["pypdf"]}},
+                {"tool_id":"file_reader","name":"File Reader","category":"file_io","purpose":"Read PDFs quickly","configuration":{"mode":"binary","packages":["pdfminer.six"]}}
+            ]"""
+        ),
+    )
+    engineer = toolchain_engineer.ToolchainEngineer()
+    result = await engineer.plan_tools(
+        {"nodes": [{"name": "reader", "purpose": "Read PDF documents"}]},
+        [Constraint(type="goal", value="Read PDFs", priority=5)],
+    )
+
+    assert len(result.tools) == 2
+    assert any(
+        "multiple configurations" in message
+        for message in result.feedback.dependency_conflicts
+    )
+    assert any("pdf_parser" in message for message in result.feedback.dependency_conflicts)
+
+
+def test_package_import_probe_maps_non_module_distribution_names():
+    """Shared dependency probes should use the actual import module names."""
+
+    assert tool_dependency_utils.package_import_probe("pdfminer.six") == "pdfminer"
+    assert tool_dependency_utils.package_import_probe("pymupdf") == "fitz"
 
 
 def test_requirements_analyst_uses_request_scoped_model_config(monkeypatch):
@@ -852,7 +1746,6 @@ def test_architecture_selector_uses_request_scoped_model_config(monkeypatch):
     [
         (graph_designer, graph_designer.GraphDesigner),
         (toolchain_engineer, toolchain_engineer.ToolchainEngineer),
-        (qa_repair_agent, qa_repair_agent.QARepairAgent),
         (notebook_composer, notebook_composer.NotebookComposer),
     ],
 )
@@ -885,3 +1778,28 @@ def test_other_agents_use_request_scoped_model_config(
         "base_url": "https://example.test/v1",
         "max_tokens": 512,
     }
+
+
+def test_qa_repair_agent_stays_lazy_about_llm_configuration(monkeypatch):
+    """QARepairAgent should preserve request-scoped config without eagerly constructing an LLM."""
+
+    captured_kwargs = {}
+
+    monkeypatch.setattr(
+        qa_repair_agent,
+        "ChatOpenAI",
+        make_capturing_llm(captured_kwargs),
+    )
+
+    agent = qa_repair_agent.QARepairAgent(
+        model_config=ModelConfig(
+            model="gpt-5.1",
+            temperature=0.3,
+            api_base="https://example.test/v1",
+            max_tokens=512,
+        )
+    )
+
+    assert captured_kwargs == {}
+    assert agent.model_config is not None
+    assert agent.model_config.api_base == "https://example.test/v1"

@@ -154,6 +154,44 @@ class Settings(BaseSettings):
         ge=1,
         description="Maximum number of weighted docs snippets included in the architecture selector prompt.",
     )
+    notebook_composer_default_max_iterations: int = Field(
+        default=10,
+        ge=1,
+        description="Default iteration limit embedded in generated notebook cells.",
+    )
+    notebook_composer_parallelism_mode: str = Field(
+        default="parallel",
+        description="Internal notebook-composer parallelism mode: parallel or sequential.",
+    )
+    notebook_composer_max_concurrency: int = Field(
+        default=4,
+        ge=1,
+        description="Maximum concurrent notebook-composer generation tasks when parallel mode is enabled.",
+    )
+    notebook_composer_plugin_modules: Annotated[list[str], NoDecode] = Field(
+        default_factory=list,
+        description=(
+            "Optional notebook composer plugin modules loaded to extend internal section builders."
+        ),
+    )
+    toolchain_engineer_plugin_modules: Annotated[list[str], NoDecode] = Field(
+        default_factory=list,
+        description=(
+            "Optional ToolchainEngineer plugin modules loaded to extend the internal tool registry."
+        ),
+    )
+    graph_designer_plugin_modules: Annotated[list[str], NoDecode] = Field(
+        default_factory=list,
+        description=(
+            "Optional graph designer plugin modules loaded to extend the graph design registry."
+        ),
+    )
+    qa_repair_plugin_modules: Annotated[list[str], NoDecode] = Field(
+        default_factory=list,
+        description=(
+            "Optional QA/repair plugin modules loaded to extend internal validator and repair registries."
+        ),
+    )
 
     @field_validator("requirements_constraint_types", mode="before")
     @classmethod
@@ -257,6 +295,161 @@ class Settings(BaseSettings):
                 ) from exc
         return normalized
 
+    @field_validator("graph_designer_plugin_modules", mode="before")
+    @classmethod
+    def _parse_graph_designer_plugin_modules(cls, value):
+        """Accept JSON arrays or comma-separated plugin module strings."""
+        if value in (None, ""):
+            return []
+        if isinstance(value, list):
+            raw_items = value
+        elif isinstance(value, str):
+            stripped = value.strip()
+            if not stripped:
+                return []
+            if stripped.startswith("["):
+                try:
+                    parsed = json.loads(stripped)
+                except json.JSONDecodeError as exc:
+                    raise ValueError(
+                        f"Invalid JSON in graph_designer_plugin_modules: {exc}"
+                    ) from exc
+                if not isinstance(parsed, list):
+                    raise ValueError(
+                        "graph_designer_plugin_modules must decode to a list"
+                    )
+                raw_items = parsed
+            else:
+                raw_items = stripped.split(",")
+        else:
+            return value
+
+        normalized: list[str] = []
+        for raw_item in raw_items:
+            module_name = str(raw_item or "").strip()
+            if module_name and module_name not in normalized:
+                normalized.append(module_name)
+        return normalized
+
+    @field_validator("qa_repair_plugin_modules", mode="before")
+    @classmethod
+    def _parse_qa_repair_plugin_modules(cls, value):
+        """Accept JSON arrays or comma-separated plugin module strings."""
+        if value in (None, ""):
+            return []
+        if isinstance(value, list):
+            raw_items = value
+        elif isinstance(value, str):
+            stripped = value.strip()
+            if not stripped:
+                return []
+            if stripped.startswith("["):
+                try:
+                    parsed = json.loads(stripped)
+                except json.JSONDecodeError as exc:
+                    raise ValueError(
+                        f"Invalid JSON in qa_repair_plugin_modules: {exc}"
+                    ) from exc
+                if not isinstance(parsed, list):
+                    raise ValueError("qa_repair_plugin_modules must decode to a list")
+                raw_items = parsed
+            else:
+                raw_items = stripped.split(",")
+        else:
+            return value
+
+        normalized: list[str] = []
+        for raw_item in raw_items:
+            module_name = str(raw_item or "").strip()
+            if module_name and module_name not in normalized:
+                normalized.append(module_name)
+        return normalized
+
+    @field_validator("toolchain_engineer_plugin_modules", mode="before")
+    @classmethod
+    def _parse_toolchain_engineer_plugin_modules(cls, value):
+        """Accept JSON arrays or comma-separated plugin module strings."""
+        if value in (None, ""):
+            return []
+        if isinstance(value, list):
+            raw_items = value
+        elif isinstance(value, str):
+            stripped = value.strip()
+            if not stripped:
+                return []
+            if stripped.startswith("["):
+                try:
+                    parsed = json.loads(stripped)
+                except json.JSONDecodeError as exc:
+                    raise ValueError(
+                        f"Invalid JSON in toolchain_engineer_plugin_modules: {exc}"
+                    ) from exc
+                if not isinstance(parsed, list):
+                    raise ValueError(
+                        "toolchain_engineer_plugin_modules must decode to a list"
+                    )
+                raw_items = parsed
+            else:
+                raw_items = stripped.split(",")
+        else:
+            return value
+
+        normalized: list[str] = []
+        for raw_item in raw_items:
+            module_name = str(raw_item or "").strip()
+            if module_name and module_name not in normalized:
+                normalized.append(module_name)
+        return normalized
+
+    @field_validator("notebook_composer_plugin_modules", mode="before")
+    @classmethod
+    def _parse_notebook_composer_plugin_modules(cls, value):
+        """Accept JSON arrays or comma-separated plugin module strings."""
+        if value in (None, ""):
+            return []
+        if isinstance(value, list):
+            raw_items = value
+        elif isinstance(value, str):
+            stripped = value.strip()
+            if not stripped:
+                return []
+            if stripped.startswith("["):
+                try:
+                    parsed = json.loads(stripped)
+                except json.JSONDecodeError as exc:
+                    raise ValueError(
+                        f"Invalid JSON in notebook_composer_plugin_modules: {exc}"
+                    ) from exc
+                if not isinstance(parsed, list):
+                    raise ValueError(
+                        "notebook_composer_plugin_modules must decode to a list"
+                    )
+                raw_items = parsed
+            else:
+                raw_items = stripped.split(",")
+        else:
+            return value
+
+        normalized: list[str] = []
+        for raw_item in raw_items:
+            module_name = str(raw_item or "").strip()
+            if module_name and module_name not in normalized:
+                normalized.append(module_name)
+        return normalized
+
+    @field_validator("notebook_composer_parallelism_mode", mode="before")
+    @classmethod
+    def _validate_notebook_composer_parallelism_mode(cls, value):
+        """Normalize and validate notebook composer parallelism mode values."""
+        normalized = str(value or "").strip().lower()
+        if not normalized:
+            return "parallel"
+        if normalized not in {"parallel", "sequential"}:
+            raise ValueError(
+                "notebook_composer_parallelism_mode must be 'parallel' or 'sequential'"
+            )
+        return normalized
+
 
 _DEFAULT_ENV_FILE = object()
 _TEST_SETTINGS_ENV_KEYS = (
@@ -273,6 +466,13 @@ _TEST_SETTINGS_ENV_KEYS = (
     "ARCHITECTURE_PATTERN_DOC_QUERIES",
     "ARCHITECTURE_PATTERN_DOC_WEIGHTS",
     "ARCHITECTURE_PROMPT_DOC_LIMIT",
+    "NOTEBOOK_COMPOSER_DEFAULT_MAX_ITERATIONS",
+    "NOTEBOOK_COMPOSER_PARALLELISM_MODE",
+    "NOTEBOOK_COMPOSER_MAX_CONCURRENCY",
+    "NOTEBOOK_COMPOSER_PLUGIN_MODULES",
+    "TOOLCHAIN_ENGINEER_PLUGIN_MODULES",
+    "GRAPH_DESIGNER_PLUGIN_MODULES",
+    "QA_REPAIR_PLUGIN_MODULES",
 )
 
 

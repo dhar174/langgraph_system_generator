@@ -2,24 +2,52 @@
 
 from __future__ import annotations
 
+import asyncio
+import inspect
 import json
 import keyword
+import logging
 import re
-from typing import Any, Dict, List
+from typing import Any, Awaitable, Callable, Dict, List, Optional, TypeVar
 
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
 
 from langgraph_system_generator.generator.agents._llm import build_chat_llm
-from langgraph_system_generator.generator.state import CellSpec, NotebookPlan
+from langgraph_system_generator.generator.notebook_composer_registry import (
+    NotebookComposerContext,
+    NotebookComposerRegistry,
+    get_notebook_composer_registry,
+)
+from langgraph_system_generator.generator.tool_dependency_utils import (
+    DependencyAccumulator,
+    accumulate_tool_dependencies,
+    merge_string_lists,
+    normalize_provider_env_var,
+    package_import_probe,
+)
+from langgraph_system_generator.generator.state import (
+    CellSpec,
+    NotebookCompositionFeedback,
+    NotebookCompositionResult,
+    NotebookDependencyPlan,
+    NotebookFallbackEvent,
+    NotebookPlan,
+    ToolPlanningFeedback,
+)
 from langgraph_system_generator.patterns import (
     AutoAgentPattern,
     CritiqueLoopPattern,
+    DeepAgentsPattern,
     HybridPattern,
     RouterPattern,
     SubagentsPattern,
 )
 from langgraph_system_generator.utils.config import ModelConfig, settings
+
+
+_T = TypeVar("_T")
+logger = logging.getLogger(__name__)
 
 
 class NotebookComposer:
@@ -36,6 +64,7 @@ class NotebookComposer:
         self,
         model: str | None = None,
         model_config: ModelConfig | None = None,
+        registry: NotebookComposerRegistry | None = None,
     ):
         self.model_config = model_config or ModelConfig(
             model=model or settings.default_model,
@@ -45,6 +74,11 @@ class NotebookComposer:
             model=model,
             model_config=self.model_config,
             chat_openai_class=ChatOpenAI,
+        )
+        self.registry = (
+            registry.clone()
+            if registry is not None
+            else get_notebook_composer_registry().clone()
         )
 
     @staticmethod
@@ -83,14 +117,202 @@ class NotebookComposer:
         normalized = "\n    ".join(lines).strip()
         return normalized or fallback
 
+    @staticmethod
+    def _merge_string_lists(*values: Any) -> List[str]:
+        """Merge list-or-scalar string inputs into an ordered unique list."""
+
+        return merge_string_lists(*values)
+
+    @classmethod
+    def _normalize_provider_env_var(cls, value: Any) -> str:
+        """Normalize arbitrary env-var suggestions into notebook-safe keys."""
+
+        return normalize_provider_env_var(value)
+
+    @staticmethod
+    def _package_import_probe(package_name: str) -> str:
+        """Return the import probe used to detect whether a package is installed."""
+
+        return package_import_probe(package_name)
+
+    def _resolve_max_iterations(self, workflow_design: Dict[str, Any]) -> int:
+        """Resolve the iteration limit embedded into notebook cells."""
+
+        for key in ("max_iterations", "max_revisions"):
+            raw_value = workflow_design.get(key)
+            if isinstance(raw_value, int) and raw_value > 0:
+                return raw_value
+        return settings.notebook_composer_default_max_iterations
+
+    @staticmethod
+    def _record_fallback(
+        feedback: NotebookCompositionFeedback | None,
+        *,
+        kind: str,
+        item_name: str | None,
+        reason: str,
+        warning: str,
+    ) -> None:
+        """Record a structured fallback event when feedback tracking is enabled."""
+
+        if feedback is None:
+            return
+        feedback.fallback_used = True
+        if warning not in feedback.warnings:
+            feedback.warnings.append(warning)
+        feedback.fallback_events.append(
+            NotebookFallbackEvent(
+                kind=kind,
+                item_name=item_name,
+                reason=reason,
+                warning=warning,
+            )
+        )
+
+    @staticmethod
+    def _merge_feedback(
+        target: NotebookCompositionFeedback,
+        source: NotebookCompositionFeedback | None,
+    ) -> None:
+        """Merge per-task feedback into the main composition feedback in order."""
+
+        if source is None:
+            return
+        if source.fallback_used:
+            target.fallback_used = True
+        for warning in source.warnings:
+            if warning not in target.warnings:
+                target.warnings.append(warning)
+        target.fallback_events.extend(source.fallback_events)
+
+    def _fallback_banner(self, label: str, reason: str) -> str:
+        """Return a visible notebook-facing warning comment for fallback code."""
+
+        safe_label = self._normalize_inline_text(label, "generated component")
+        safe_reason = self._normalize_inline_text(
+            reason,
+            "Primary generation was unavailable or returned placeholder code.",
+        )
+        return (
+            f"# WARNING: Deterministic fallback generated for {safe_label}.\n"
+            f"# Reason: {safe_reason}\n\n"
+        )
+
+    def _plan_dependencies(
+        self,
+        tools: List[Dict[str, Any]],
+        workflow_design: Dict[str, Any],
+    ) -> NotebookDependencyPlan:
+        """Build a normalized dependency plan for the generated notebook."""
+
+        plan = NotebookDependencyPlan(
+            runtime_notes=[
+                "The install cell checks for missing packages before invoking pip.",
+                "Generated notebooks assume a Jupyter or Colab-style environment with pip available.",
+            ]
+        )
+        accumulator = DependencyAccumulator(runtime_notes=list(plan.runtime_notes))
+
+        for package_name in ["langgraph", "langchain-core", "langchain-openai"]:
+            accumulator.packages.append(package_name)
+
+        architecture_type = self._normalize_inline_text(
+            workflow_design.get("architecture_type", ""),
+            "",
+        ).lower()
+        if architecture_type == "deepagents":
+            note = (
+                "Deep Agents cells are experimental and run in deterministic fallback "
+                "mode when the optional `deepagents` SDK is unavailable. Install it "
+                "manually with `python -m pip install deepagents` only if your "
+                "environment allows package installation and provider credentials are "
+                "configured."
+            )
+            if note not in accumulator.runtime_notes:
+                accumulator.runtime_notes.append(note)
+
+        for tool in tools:
+            tool_status = self._normalize_inline_text(tool.get("status", ""), "").lower()
+            if tool_status == "unsupported":
+                continue
+            accumulate_tool_dependencies(accumulator, tool)
+
+        if (
+            "langchain-openai" in accumulator.packages
+            and "OPENAI_API_KEY" not in accumulator.provider_env_vars
+        ):
+            accumulator.provider_env_vars.append("OPENAI_API_KEY")
+
+        plan.packages = accumulator.packages
+        plan.runtime_notes = accumulator.runtime_notes
+        plan.conflicts_resolved = accumulator.conflicts_resolved
+        plan.provider_env_vars = accumulator.provider_env_vars
+        if accumulator.packages:
+            plan.install_commands = [
+                "python -m pip install -q " + " ".join(accumulator.packages)
+            ]
+        return plan
+
+    async def _resolve_builder_output(self, builder_output: Any) -> List[CellSpec]:
+        """Normalize sync or async section-builder output into a cell list."""
+
+        if inspect.isawaitable(builder_output):
+            builder_output = await builder_output
+        if builder_output is None:
+            return []
+        return list(builder_output)
+
+    async def _execute_llm_tasks_in_order(
+        self,
+        items: List[Any],
+        worker: Callable[[Any], Awaitable[_T]],
+    ) -> List[_T]:
+        """Execute async LLM-backed generation while preserving input order."""
+
+        if not items:
+            return []
+        if (
+            settings.notebook_composer_parallelism_mode == "sequential"
+            or len(items) == 1
+        ):
+            results: List[str] = []
+            for item in items:
+                results.append(await worker(item))
+            return results
+
+        max_concurrency = settings.notebook_composer_max_concurrency
+        if max_concurrency <= 0:
+            logger.warning(
+                "Invalid notebook_composer_max_concurrency=%s; using 1 instead.",
+                max_concurrency,
+            )
+        semaphore = asyncio.Semaphore(max(1, max_concurrency))
+
+        async def run(item: Any) -> _T:
+            async with semaphore:
+                return await worker(item)
+
+        return await asyncio.gather(*(run(item) for item in items))
+
+    async def _invoke_llm(self, messages: List[Any]) -> Any:
+        """Invoke the configured LLM using the async path when available."""
+
+        if hasattr(self.llm, "ainvoke"):
+            result = self.llm.ainvoke(messages)
+            if inspect.isawaitable(result):
+                return await result
+            return result
+        return await asyncio.to_thread(self.llm.invoke, messages)
+
     async def compose_notebook(
         self,
         notebook_plan: NotebookPlan,
         workflow_design: Dict[str, Any],
         tools: List[Dict[str, Any]],
         architecture: Dict[str, Any],
-    ) -> List[CellSpec]:
-        """Generate complete list of notebook cells.
+        tool_planning_feedback: ToolPlanningFeedback | None = None,
+    ) -> NotebookCompositionResult:
+        """Generate complete notebook cells plus composition metadata.
 
         Args:
             notebook_plan: Notebook structure plan
@@ -99,7 +321,7 @@ class NotebookComposer:
             architecture: Architecture selection
 
         Returns:
-            List of CellSpec objects defining all notebook cells
+            Structured notebook composition output
         """
         # Ensure architecture_type is in workflow_design for pattern selection
         if (
@@ -108,39 +330,157 @@ class NotebookComposer:
         ):
             workflow_design["architecture_type"] = architecture["architecture_type"]
 
-        cells = []
-
-        # Title and intro cells
-        cells.extend(
-            self._create_intro_cells(notebook_plan, architecture.get("justification"))
+        feedback = NotebookCompositionFeedback(
+            resolved_model=self.model_config.model,
+            resolved_api_base=self.model_config.api_base,
+            resolved_max_iterations=self._resolve_max_iterations(workflow_design),
+        )
+        dependency_plan = self._plan_dependencies(tools, workflow_design)
+        context = NotebookComposerContext(
+            notebook_plan=notebook_plan,
+            workflow_design=workflow_design,
+            tools=tools,
+            architecture=architecture,
+            dependency_plan=dependency_plan,
+            feedback=feedback,
+            tool_planning_feedback=(
+                tool_planning_feedback or ToolPlanningFeedback(available_tool_ids=[])
+            ),
         )
 
-        # Installation cells
-        cells.extend(self._create_install_cells(tools))
+        architecture_type = str(
+            workflow_design.get("architecture_type")
+            or architecture.get("architecture_type")
+            or notebook_plan.architecture_type
+            or "router"
+        ).strip().lower()
+        workflow_design["architecture_type"] = architecture_type
+        registration = self.registry.resolve(architecture_type)
+        cells: List[CellSpec] = []
+        for section_name in registration.section_order:
+            section_cells: List[CellSpec] = []
+            for hook in self.registry.resolve_hooks(
+                architecture_type,
+                section_name,
+                when="pre",
+            ):
+                section_cells.extend(
+                    await self._resolve_builder_output(hook(self, context))
+                )
 
-        # Configuration cells
-        cells.extend(self._create_config_cells())
+            builder = self.registry.resolve_builder(architecture_type, section_name)
+            section_cells.extend(
+                await self._resolve_builder_output(builder(self, context))
+            )
 
-        # State definition
-        cells.extend(self._create_state_cells(workflow_design))
+            for hook in self.registry.resolve_hooks(
+                architecture_type,
+                section_name,
+                when="post",
+            ):
+                section_cells.extend(
+                    await self._resolve_builder_output(hook(self, context))
+                )
 
-        # Tool implementations
-        if tools:
-            cells.extend(self._create_tool_cells(tools))
+            if section_cells:
+                feedback.sections_built.append(section_name)
+                cells.extend(section_cells)
 
-        # Node implementations
-        cells.extend(self._create_node_cells(workflow_design))
+        return NotebookCompositionResult(
+            cells=cells,
+            dependency_plan=dependency_plan,
+            feedback=feedback,
+        )
 
-        # Graph construction
-        cells.extend(self._create_graph_cells(workflow_design))
+    def _create_tool_planning_warning_cells(
+        self,
+        tool_planning_feedback: ToolPlanningFeedback | None,
+    ) -> List[CellSpec]:
+        """Create notebook-visible warnings for degraded tool planning."""
 
-        # Execution cells
-        cells.extend(self._create_execution_cells(workflow_design))
+        feedback = tool_planning_feedback
+        if feedback is None:
+            return []
 
-        return cells
+        has_advisories = any(
+            [
+                feedback.fallback_used,
+                feedback.validation_errors,
+                feedback.unresolved_tools,
+                feedback.environment_notes,
+                feedback.dependency_conflicts,
+                feedback.warnings,
+            ]
+        )
+        if not has_advisories:
+            return []
+
+        lines = [
+            "## Tool Planning Notes",
+            "",
+            "Review these advisories before relying on the generated tool plan as-is.",
+        ]
+        if feedback.fallback_used:
+            lines.extend(
+                [
+                    "",
+                    f"- Fallback used: {feedback.fallback_reason or 'Heuristic inference was used for tool planning.'}",
+                ]
+            )
+        if feedback.unresolved_tools:
+            lines.extend(
+                [
+                    "",
+                    "- Unresolved tools:",
+                    *[f"  - {tool_name}" for tool_name in feedback.unresolved_tools],
+                ]
+            )
+        if feedback.validation_errors:
+            lines.extend(
+                [
+                    "",
+                    "- Validation issues:",
+                    *[f"  - {message}" for message in feedback.validation_errors],
+                ]
+            )
+        if feedback.environment_notes:
+            lines.extend(
+                [
+                    "",
+                    "- Environment notes:",
+                    *[f"  - {message}" for message in feedback.environment_notes],
+                ]
+            )
+        if feedback.dependency_conflicts:
+            lines.extend(
+                [
+                    "",
+                    "- Dependency conflicts:",
+                    *[f"  - {message}" for message in feedback.dependency_conflicts],
+                ]
+            )
+        if feedback.warnings:
+            lines.extend(
+                [
+                    "",
+                    "- Additional warnings:",
+                    *[f"  - {message}" for message in feedback.warnings],
+                ]
+            )
+
+        return [
+            CellSpec(
+                cell_type="markdown",
+                content="\n".join(lines),
+                section="tools",
+            )
+        ]
 
     def _create_intro_cells(
-        self, plan: NotebookPlan, justification: str | None
+        self,
+        plan: NotebookPlan,
+        justification: str | None,
+        graph_exports: Dict[str, Any] | None = None,
     ) -> List[CellSpec]:
         """Create title and introduction cells."""
         title_cell = CellSpec(
@@ -172,47 +512,105 @@ This notebook implements a LangGraph workflow using the **{plan.architecture_typ
             section="intro",
         )
 
-        return [title_cell, overview_cell]
+        cells = [title_cell, overview_cell]
 
-    def _create_install_cells(self, tools: List[Dict[str, Any]]) -> List[CellSpec]:
-        """Create installation cells."""
-        packages = [
-            "langgraph",
-            "langchain-core",
-            "langchain-community",
-            "langchain-openai",
-        ]
+        if isinstance(graph_exports, dict):
+            mermaid = str(graph_exports.get("mermaid", "")).strip()
+            schema = graph_exports.get("schema", {})
+            if mermaid or schema:
+                graph_overview_lines = ["## Graph Overview", ""]
+                if mermaid:
+                    graph_overview_lines.extend(
+                        [
+                            "```mermaid",
+                            mermaid,
+                            "```",
+                            "",
+                        ]
+                    )
+                if schema:
+                    graph_overview_lines.extend(
+                        [
+                            "### Workflow Schema",
+                            "",
+                            "```json",
+                            json.dumps(schema, indent=2),
+                            "```",
+                        ]
+                    )
+                cells.append(
+                    CellSpec(
+                        cell_type="markdown",
+                        content="\n".join(graph_overview_lines),
+                        section="intro",
+                    )
+                )
 
-        # Add tool-specific packages
-        for tool in tools:
-            category = tool.get("category", "")
-            if "search" in category.lower():
-                packages.append("langchain-community")
-            elif "file" in category.lower() or "document" in category.lower():
-                packages.append("pypdf")
+        return cells
 
-        install_content = f"""# Install required packages
-!pip install -q {' '.join(packages)}"""
+    def _create_install_cells(
+        self,
+        dependency_plan: NotebookDependencyPlan,
+    ) -> List[CellSpec]:
+        """Create normalized installation cells from the dependency plan."""
+
+        package_imports = {
+            package: self._package_import_probe(package)
+            for package in dependency_plan.packages
+        }
+        install_content = f"""# Install missing notebook dependencies
+from importlib.util import find_spec
+import subprocess
+import sys
+
+PACKAGE_IMPORTS = {json.dumps(package_imports, indent=4)}
+REQUIRED_PACKAGES = {json.dumps(dependency_plan.packages, indent=4)}
+
+missing_packages = [
+    package
+    for package in REQUIRED_PACKAGES
+    if find_spec(PACKAGE_IMPORTS[package]) is None
+]
+
+if missing_packages:
+    print("Installing missing packages:", ", ".join(missing_packages))
+    subprocess.check_call([sys.executable, "-m", "pip", "install", "-q", *missing_packages])
+else:
+    print("All required packages are already available.")"""
+
+        markdown_lines = ["## Installation", "", "Install any missing packages needed by this notebook."]
+        if dependency_plan.runtime_notes:
+            markdown_lines.extend(["", "### Environment Notes", ""])
+            markdown_lines.extend(f"- {note}" for note in dependency_plan.runtime_notes)
+        if dependency_plan.conflicts_resolved:
+            markdown_lines.extend(["", "### Dependency Conflict Resolution", ""])
+            markdown_lines.extend(
+                f"- {detail}" for detail in dependency_plan.conflicts_resolved
+            )
 
         return [
             CellSpec(
                 cell_type="markdown",
-                content="## Installation\n\nInstall the required packages:",
+                content="\n".join(markdown_lines),
                 section="setup",
             ),
             CellSpec(cell_type="code", content=install_content, section="setup"),
         ]
 
-    def _create_config_cells(self) -> List[CellSpec]:
-        """Create configuration cells."""
+    def _create_config_cells(
+        self,
+        dependency_plan: NotebookDependencyPlan,
+        feedback: NotebookCompositionFeedback,
+    ) -> List[CellSpec]:
+        """Create configuration cells using resolved request-scoped settings."""
+
         config_lines = [
             "import os",
-            "from getpass import getpass",
             "",
             "# Configuration",
             f"MODEL = {json.dumps(self.model_config.model)}",
             f"TEMPERATURE = {self.model_config.temperature}",
-            "MAX_ITERATIONS = 10",
+            f"MAX_ITERATIONS = {feedback.resolved_max_iterations}",
             (
                 f"MAX_TOKENS = {self.model_config.max_tokens}"
                 if self.model_config.max_tokens is not None
@@ -224,13 +622,28 @@ This notebook implements a LangGraph workflow using the **{plan.architecture_typ
                 else "API_BASE = None"
             ),
             "",
-            "# API Keys",
-            'if not os.environ.get("OPENAI_API_KEY"):',
-            '    os.environ["OPENAI_API_KEY"] = getpass("Enter OpenAI API Key: ")',
-            "",
-            'if not os.environ.get("ANTHROPIC_API_KEY"):',
-            '    os.environ["ANTHROPIC_API_KEY"] = getpass("Enter Anthropic API Key (optional): ")',
+            "# Credentials",
+            "# Prefer environment variables over hardcoded secrets in notebooks.",
         ]
+        for env_var in dependency_plan.provider_env_vars:
+            safe_env_var = self._normalize_provider_env_var(env_var)
+            if not safe_env_var:
+                continue
+            config_lines.extend(
+                [
+                    f'{safe_env_var} = os.environ.get("{safe_env_var}", "")',
+                    f'if not {safe_env_var}:',
+                    f'    print("{safe_env_var} is not set. Configure it in your environment before running live model cells.")',
+                    "    # Optional interactive fallback for local notebook sessions:",
+                    "    # from getpass import getpass",
+                    f'    # os.environ["{safe_env_var}"] = getpass("Enter {safe_env_var}: ")',
+                    "",
+                ]
+            )
+        if not dependency_plan.provider_env_vars:
+            config_lines.append(
+                "# No provider-specific credential environment variables were required for this notebook."
+            )
         config_content = "\n".join(config_lines)
 
         return [
@@ -256,6 +669,8 @@ This notebook implements a LangGraph workflow using the **{plan.architecture_typ
             state_content = HybridPattern.generate_state_code(state_schema)
         elif architecture_type == "autoagent":
             state_content = AutoAgentPattern.generate_state_code(state_schema)
+        elif architecture_type == "deepagents":
+            state_content = DeepAgentsPattern.generate_state_code(state_schema)
         elif architecture_type == "critique_loop":
             state_content = CritiqueLoopPattern.generate_state_code(state_schema)
         else:
@@ -282,8 +697,12 @@ class WorkflowState(MessagesState):
             CellSpec(cell_type="code", content=state_content, section="state"),
         ]
 
-    def _create_tool_cells(self, tools: List[Dict[str, Any]]) -> List[CellSpec]:
-        """Create tool implementation cells with LLM-generated code."""
+    async def _create_tool_cells(
+        self,
+        tools: List[Dict[str, Any]],
+        feedback: NotebookCompositionFeedback,
+    ) -> List[CellSpec]:
+        """Create tool implementation cells with tracked fallback behavior."""
         cells = [
             CellSpec(
                 cell_type="markdown",
@@ -292,15 +711,32 @@ class WorkflowState(MessagesState):
             )
         ]
 
-        for tool in tools:
-            # Try to generate real implementation with LLM
-            tool_code = self._generate_tool_implementation(tool)
+        async def build_tool_code(
+            tool: Dict[str, Any],
+        ) -> tuple[str, NotebookCompositionFeedback]:
+            tool_feedback = NotebookCompositionFeedback()
+            tool_code = await self._generate_tool_implementation(
+                tool,
+                feedback=tool_feedback,
+            )
+            return tool_code, tool_feedback
 
+        tool_results = await self._execute_llm_tasks_in_order(
+            tools,
+            build_tool_code,
+        )
+        for tool_code, tool_feedback in tool_results:
+            self._merge_feedback(feedback, tool_feedback)
             cells.append(CellSpec(cell_type="code", content=tool_code, section="tools"))
 
         return cells
 
-    def _generate_tool_implementation(self, tool: Dict[str, Any]) -> str:
+    async def _generate_tool_implementation(
+        self,
+        tool: Dict[str, Any],
+        *,
+        feedback: NotebookCompositionFeedback | None = None,
+    ) -> str:
         """Generate tool implementation using LLM.
 
         Args:
@@ -346,11 +782,17 @@ Configuration: {tool_config}
 
 Generate the complete Python function implementation.""")
 
-            # Get LLM response (synchronous)
-            response = self.llm.invoke([system_prompt, user_prompt])
+            # Use the async LLM path so multiple tool implementations can run concurrently.
+            response = await self._invoke_llm([system_prompt, user_prompt])
             generated_code = self._strip_code_fences(response.content)
             if not self._is_meaningful_tool_code(generated_code):
-                return self._generate_tool_fallback(tool)
+                return self._generate_tool_fallback(
+                    tool,
+                    reason=(
+                        "LLM tool generation returned placeholder or incomplete code."
+                    ),
+                    feedback=feedback,
+                )
 
             # Add header comment
             header = f"""# Tool: {tool_name}
@@ -360,14 +802,28 @@ Generate the complete Python function implementation.""")
 """
             return header + generated_code
 
-        except (ValueError, KeyError, AttributeError):
+        except (ValueError, KeyError, AttributeError) as exc:
             # Fallback to template with better implementation hints
-            return self._generate_tool_fallback(tool)
-        except Exception:
+            return self._generate_tool_fallback(
+                tool,
+                reason=f"Tool generation could not parse the tool specification: {exc}",
+                feedback=feedback,
+            )
+        except Exception as exc:
             # Unexpected error - still fallback but this is unusual
-            return self._generate_tool_fallback(tool)
+            return self._generate_tool_fallback(
+                tool,
+                reason=f"Tool generation failed unexpectedly: {type(exc).__name__}: {exc}",
+                feedback=feedback,
+            )
 
-    def _generate_tool_fallback(self, tool: Dict[str, Any]) -> str:
+    def _generate_tool_fallback(
+        self,
+        tool: Dict[str, Any],
+        *,
+        reason: str | None = None,
+        feedback: NotebookCompositionFeedback | None = None,
+    ) -> str:
         """Generate a deterministic fallback tool implementation.
 
         Args:
@@ -388,8 +844,19 @@ Generate the complete Python function implementation.""")
         )
         safe_tool_category = self._normalize_inline_text(tool_category, "general")
         func_name = self._safe_identifier(tool_name, "unknown_tool")
+        warning = (
+            f'Deterministic fallback used for tool "{safe_tool_name}".'
+        )
+        self._record_fallback(
+            feedback,
+            kind="tool",
+            item_name=safe_tool_name,
+            reason=reason or "Primary tool generation was unavailable.",
+            warning=warning,
+        )
 
-        header = f"""# Tool: {safe_tool_name}
+        header = f"""{self._fallback_banner(f'tool "{safe_tool_name}"', reason or "Primary tool generation was unavailable.")}
+# Tool: {safe_tool_name}
 # Purpose: {safe_tool_purpose_comment}
 # Category: {safe_tool_category}
 
@@ -475,8 +942,13 @@ Generate the complete Python function implementation.""")
 
         return header + implementation
 
-    def _create_node_cells(self, workflow_design: Dict[str, Any]) -> List[CellSpec]:
-        """Create node implementation cells with LLM-generated or pattern-based code."""
+    async def _create_node_cells(
+        self,
+        workflow_design: Dict[str, Any],
+        feedback: NotebookCompositionFeedback,
+        tools: Optional[List[Dict[str, Any]]] = None,
+    ) -> List[CellSpec]:
+        """Create node implementation cells with tracked fallback behavior."""
         cells = [
             CellSpec(
                 cell_type="markdown",
@@ -494,25 +966,45 @@ Generate the complete Python function implementation.""")
             "subagents",
             "hybrid",
             "autoagent",
+            "deepagents",
             "critique_loop",
         ]:
             # Use pattern library for architecture-specific nodes
-            pattern_cells = self._generate_nodes_from_pattern(
-                nodes, architecture_type, workflow_design
+            pattern_cells = self._create_pattern_node_cells(
+                nodes, architecture_type, workflow_design, tools=tools
             )
             cells.extend(pattern_cells)
         else:
             # Use LLM for custom node generation
-            for node in nodes:
-                node_code = self._generate_node_implementation(node, workflow_design)
+            async def build_node_code(
+                node: Dict[str, Any],
+            ) -> tuple[str, NotebookCompositionFeedback]:
+                node_feedback = NotebookCompositionFeedback()
+                node_code = await self._generate_node_implementation(
+                    node,
+                    workflow_design,
+                    feedback=node_feedback,
+                )
+                return node_code, node_feedback
+
+            node_results = await self._execute_llm_tasks_in_order(
+                nodes,
+                build_node_code,
+            )
+            for node_code, node_feedback in node_results:
+                self._merge_feedback(feedback, node_feedback)
                 cells.append(
                     CellSpec(cell_type="code", content=node_code, section="nodes")
                 )
 
         return cells
 
-    def _generate_node_implementation(
-        self, node: Dict[str, Any], workflow_design: Dict[str, Any]
+    async def _generate_node_implementation(
+        self,
+        node: Dict[str, Any],
+        workflow_design: Dict[str, Any],
+        *,
+        feedback: NotebookCompositionFeedback | None = None,
     ) -> str:
         """Generate node implementation using LLM.
 
@@ -563,23 +1055,45 @@ State Schema:
 
 Generate the complete Python function implementation.""")
 
-            # Get LLM response
-            response = self.llm.invoke([system_prompt, user_prompt])
+            # Use the async LLM path so custom nodes can run concurrently.
+            response = await self._invoke_llm([system_prompt, user_prompt])
             generated_code = self._strip_code_fences(response.content)
             if not self._is_meaningful_node_code(generated_code):
-                return self._generate_node_fallback(node, workflow_design)
+                return self._generate_node_fallback(
+                    node,
+                    workflow_design,
+                    reason=(
+                        "LLM node generation returned placeholder or incomplete code."
+                    ),
+                    feedback=feedback,
+                )
 
             return generated_code
 
-        except (ValueError, KeyError, AttributeError):
+        except (ValueError, KeyError, AttributeError) as exc:
             # Fallback to improved template
-            return self._generate_node_fallback(node, workflow_design)
-        except Exception:
+            return self._generate_node_fallback(
+                node,
+                workflow_design,
+                reason=f"Node generation could not parse the node specification: {exc}",
+                feedback=feedback,
+            )
+        except Exception as exc:
             # Unexpected error - still fallback
-            return self._generate_node_fallback(node, workflow_design)
+            return self._generate_node_fallback(
+                node,
+                workflow_design,
+                reason=f"Node generation failed unexpectedly: {type(exc).__name__}: {exc}",
+                feedback=feedback,
+            )
 
     def _generate_node_fallback(
-        self, node: Dict[str, Any], workflow_design: Dict[str, Any]
+        self,
+        node: Dict[str, Any],
+        workflow_design: Dict[str, Any],
+        *,
+        reason: str | None = None,
+        feedback: NotebookCompositionFeedback | None = None,
     ) -> str:
         """Generate deterministic fallback node implementation.
 
@@ -598,6 +1112,14 @@ Generate the complete Python function implementation.""")
         safe_node_purpose = self._normalize_docstring_text(
             node_purpose,
             f"Process workflow state in the {safe_node_name} node.",
+        )
+        warning = f'Deterministic fallback used for node "{safe_node_name}".'
+        self._record_fallback(
+            feedback,
+            kind="node",
+            item_name=safe_node_name,
+            reason=reason or "Primary node generation was unavailable.",
+            warning=warning,
         )
         routes = [
             candidate.get("name")
@@ -686,7 +1208,8 @@ Generate the complete Python function implementation.""")
 
         update_lines.append("    return updates")
 
-        return f"""def {safe_node_identifier}_node(state: WorkflowState) -> WorkflowState:
+        return f"""{self._fallback_banner(f'node "{safe_node_name}"', reason or "Primary node generation was unavailable.")}
+def {safe_node_identifier}_node(state: WorkflowState) -> WorkflowState:
     \"\"\"
     {safe_node_purpose}
     \"\"\"
@@ -756,11 +1279,13 @@ Generate the complete Python function implementation.""")
             worker_descriptions,
         )
 
-    def _generate_nodes_from_pattern(
+    def _create_pattern_node_cells(
         self,
         nodes: List[Dict[str, Any]],
         architecture_type: str,
         workflow_design: Dict[str, Any],
+        *,
+        tools: Optional[List[Dict[str, Any]]] = None,
     ) -> List[CellSpec]:
         """Generate nodes using pattern library templates.
 
@@ -914,6 +1439,45 @@ Generate the complete Python function implementation.""")
                         CellSpec(cell_type="code", content=worker_code, section="nodes")
                     )
 
+        elif architecture_type == "deepagents":
+            subagents = [
+                node.get("name")
+                for node in nodes
+                if node.get("name") not in {"deep_agent", "deepagents"}
+            ]
+            tool_identifiers: List[str] = []
+            for tool in tools or []:
+                tool_status = self._normalize_inline_text(
+                    tool.get("status", ""),
+                    "ready",
+                ).lower()
+                if tool_status == "unsupported":
+                    continue
+                identifier = self._safe_identifier(
+                    tool.get("name") or tool.get("tool_id") or "",
+                    "tool",
+                )
+                if identifier not in tool_identifiers:
+                    tool_identifiers.append(identifier)
+            cells.append(
+                CellSpec(
+                    cell_type="markdown",
+                    content=DeepAgentsPattern.generate_overview_markdown(),
+                    section="nodes",
+                )
+            )
+            cells.append(
+                CellSpec(
+                    cell_type="code",
+                    content=DeepAgentsPattern.generate_agent_node_code(
+                        subagents,
+                        tools=tool_identifiers,
+                        model_config=model_config,
+                    ),
+                    section="nodes",
+                )
+            )
+
         elif architecture_type == "critique_loop":
             # Generate critique loop nodes
             generate_code = CritiqueLoopPattern.generate_generation_node_code(
@@ -939,12 +1503,38 @@ Generate the complete Python function implementation.""")
 
         return cells
 
-    def _create_graph_cells(self, workflow_design: Dict[str, Any]) -> List[CellSpec]:
+    def _create_graph_cells(
+        self,
+        workflow_design: Dict[str, Any],
+        max_iterations: int,
+    ) -> List[CellSpec]:
         """Create graph construction cells using pattern library or custom generation."""
         architecture_type = workflow_design.get("architecture_type", "router")
-        nodes = workflow_design.get("nodes", [])
+        if architecture_type in {
+            "router",
+            "subagents",
+            "hybrid",
+            "autoagent",
+            "deepagents",
+            "critique_loop",
+        }:
+            return self._create_pattern_graph_cells(
+                workflow_design,
+                architecture_type,
+                max_iterations,
+            )
 
-        # Use pattern library for known architectures
+        return self._wrap_graph_cells(self._generate_graph_fallback(workflow_design))
+
+    def _create_pattern_graph_cells(
+        self,
+        workflow_design: Dict[str, Any],
+        architecture_type: str,
+        max_iterations: int,
+    ) -> List[CellSpec]:
+        """Create graph construction cells for a known architecture pattern."""
+
+        nodes = workflow_design.get("nodes", [])
         if architecture_type == "router":
             routes = [
                 node.get("name") for node in nodes if node.get("name") != "router"
@@ -954,12 +1544,16 @@ Generate the complete Python function implementation.""")
             subagents = [
                 node.get("name") for node in nodes if node.get("name") != "supervisor"
             ]
-            graph_code = SubagentsPattern.generate_graph_code(subagents)
+            graph_code = SubagentsPattern.generate_graph_code(
+                subagents,
+                max_iterations=max_iterations,
+            )
         elif architecture_type == "hybrid":
             direct_specialists, _, team_workers, _ = self._split_hybrid_nodes(nodes)
             graph_code = HybridPattern.generate_graph_code(
                 direct_specialists,
                 team_workers,
+                max_iterations=max_iterations,
             )
         elif architecture_type == "autoagent":
             workers = [
@@ -967,14 +1561,23 @@ Generate the complete Python function implementation.""")
                 for node in nodes
                 if node.get("name") not in {"coordinator", "supervisor"}
             ]
-            graph_code = AutoAgentPattern.generate_graph_code(workers)
-        elif architecture_type == "critique_loop":
-            graph_code = CritiqueLoopPattern.generate_graph_code(
-                max_revisions=3, min_quality_score=0.8
+            graph_code = AutoAgentPattern.generate_graph_code(
+                workers,
+                max_iterations=max_iterations,
             )
+        elif architecture_type == "deepagents":
+            graph_code = DeepAgentsPattern.generate_graph_code()
         else:
-            # Fallback to enhanced template-based generation
-            graph_code = self._generate_graph_fallback(workflow_design)
+            graph_code = CritiqueLoopPattern.generate_graph_code(
+                max_revisions=max_iterations,
+                min_quality_score=0.8,
+            )
+
+        return self._wrap_graph_cells(graph_code)
+
+    @staticmethod
+    def _wrap_graph_cells(graph_code: str) -> List[CellSpec]:
+        """Wrap graph code with the standard notebook graph section cells."""
 
         return [
             CellSpec(
@@ -1110,6 +1713,15 @@ graph = workflow.compile(checkpointer=memory)"""
     "dispatch_log": [],
     "iterations": 0,
     "final_output": "",
+}"""
+        elif architecture_type == "deepagents":
+            initial_state_block = """initial_state: WorkflowState = {
+    "messages": [HumanMessage(content="Plan and summarize a small research task.")],
+    "task_plan": [],
+    "artifacts": {},
+    "subagent_results": {},
+    "final_output": "",
+    "deepagents_available": False,
 }"""
         elif architecture_type == "critique_loop":
             initial_state_block = """initial_state: WorkflowState = {

@@ -78,6 +78,12 @@ The runtime pipeline also relies on adjacent supporting systems:
 - notebook composition/export code under `src/langgraph_system_generator/notebook/`
 - validators and repair helpers under `src/langgraph_system_generator/qa/`
 
+Architecture support is registry-backed. The public IDs are `router`,
+`subagents`, `hybrid`, `autoagent`, and the explicit experimental opt-in
+`deepagents`. Deep Agents notebooks must keep `deepagents` as an optional
+runtime dependency with lazy `create_deep_agent(...)` imports so stub mode and
+core package imports stay offline-friendly.
+
 ### How they interact with the architecture
 
 The outer workflow is implemented in
@@ -89,9 +95,9 @@ These node functions are the clearest map of the runtime lifecycle:
 | Intake | `intake_node` | `RequirementsAnalyst` | `constraints`, `requirements_feedback` |
 | Retrieval | `rag_retrieval_node` | `DocsRetriever` | `docs_context` |
 | Architecture selection | `architecture_selection_node` | `ArchitectureSelector` | `selected_patterns`, `architecture_type`, `architecture_justification`, `architecture_feedback` |
-| Workflow design | `graph_design_node` | `GraphDesigner` | `workflow_design`, `notebook_plan` |
-| Tool planning | `tooling_plan_node` | `ToolchainEngineer` | `tools_plan` |
-| Notebook assembly | `notebook_assembly_node` | `NotebookComposer` | `generated_cells` |
+| Workflow design | `graph_design_node` | `GraphDesigner` | `workflow_design`, `graph_design_feedback`, `graph_exports`, `notebook_plan` |
+| Tool planning | `tooling_plan_node` | `ToolchainEngineer` | `tools_plan`, `tool_planning_feedback` |
+| Notebook assembly | `notebook_assembly_node` | `NotebookComposer` | `generated_cells`, `notebook_composition_feedback`, `notebook_dependency_plan` |
 | Static QA | `static_qa_node` | validators under `src/langgraph_system_generator/qa/` | `qa_reports`, `qa_history` |
 | Runtime QA | `runtime_qa_node` | notebook runtime helpers | `qa_reports`, `qa_history` |
 | Repair | `repair_node` | `NotebookRepairAgent` from `langgraph_system_generator.qa.repair` and notebook repair helpers | `generated_cells`, `repair_attempts`, `qa_reports`, `qa_history` |
@@ -108,6 +114,7 @@ Important patterns:
 - `constraints` and `docs_context` are accumulated lists.
 - `requirements_feedback` is advisory metadata from intake. It should surface fallback/gap/conflict guidance without replacing `constraints` as the downstream source of truth.
 - `architecture_feedback` is advisory metadata from architecture selection. It should surface fallback, tradeoff, and validation guidance without replacing `architecture_type` or `selected_patterns` as the downstream contract.
+- `tools_plan` stays the backward-compatible downstream tool payload, while `tool_planning_feedback` carries fallback, environment, and dependency advisories for manifests and notebook warning surfaces.
 - `generated_cells` is authoritative for the current repair iteration and is
   replaced rather than concatenated.
 - `qa_reports` is the current QA snapshot for the active pass, while
@@ -115,6 +122,13 @@ Important patterns:
 - `repair_attempts` bounds retry behavior.
 - `artifacts_manifest` and `generation_complete` are the final packaging
   outputs expected by the CLI and API.
+- `workflow_design` remains the backward-compatible downstream graph payload,
+  while `graph_design_feedback` and `graph_exports` carry validation/fallback
+  metadata plus Mermaid/schema exports for manifests and notebooks.
+- `generated_cells` remains the authoritative notebook payload, while
+  `notebook_composition_feedback` and `notebook_dependency_plan` carry
+  advisory fallback/config/dependency metadata for manifests and API/CLI
+  callers.
 
 When adding a new runtime agent or stage:
 
@@ -173,6 +187,60 @@ Use this checklist before writing code:
 5. Add or update focused tests under `tests/unit/` or `tests/patterns/`.
 6. Update documentation if the public workflow, outputs, or contributor
    expectations changed.
+
+### GraphDesigner-specific expectations
+
+`GraphDesigner.design_workflow()` now returns a typed `GraphDesignResult`, not a
+raw dict. Keep these conventions aligned when changing graph design behavior:
+
+- normalize and validate every live-model graph before it reaches downstream
+  notebook/tooling stages
+- prefer deterministic registry-backed fallbacks over partial graph output when
+  validation fails
+- keep `workflow_design` backward-compatible for `ToolchainEngineer` and
+  `NotebookComposer`
+- surface recoverable graph issues through `graph_design_feedback` and
+  `graph_exports` instead of silently discarding them
+- register new architecture-specific graph behavior through
+  `src/langgraph_system_generator/generator/graph_design_registry.py`
+  and `GRAPH_DESIGNER_PLUGIN_MODULES` rather than hardcoding more branches into
+  the agent
+
+### NotebookComposer-specific expectations
+
+`NotebookComposer.compose_notebook()` returns a typed
+`NotebookCompositionResult`, not just a list of cells. Keep these conventions
+aligned when changing notebook assembly behavior:
+
+- keep `generated_cells` backward-compatible even when you add new advisory
+  metadata
+- keep deterministic pattern builders ordered and synchronous; only the
+  LLM-backed tool and custom-node generation paths should use the internal
+  parallel async flow
+- register architecture-specific notebook assembly behavior through
+  `src/langgraph_system_generator/generator/notebook_composer_registry.py`
+  and `NOTEBOOK_COMPOSER_PLUGIN_MODULES` rather than adding more hardcoded
+  branches directly to the agent
+- preserve stable final cell ordering even when async generation is enabled
+- surface deterministic fallbacks through visible notebook comments plus
+  `notebook_composition_feedback` instead of silently dropping into placeholders
+
+### QARepairAgent-specific expectations
+
+The canonical QA/repair engine lives under `src/langgraph_system_generator/qa/`.
+`generator/agents/qa_repair_agent.py` should stay a runtime-facing facade over
+that shared engine, not a second repair implementation.
+
+- register validation rules and deterministic repair routines through
+  `src/langgraph_system_generator/qa/registry.py`
+- load internal QA/repair extensions with `QA_REPAIR_PLUGIN_MODULES`; plugin
+  modules must expose `register_qa_repair_plugins(registry)`
+- keep `qa_reports`, `qa_history`, `repair_attempts`, and
+  `qa_repair_feedback` stable for CLI/API/manifest consumers
+- validate repair candidates in memory first, persist only non-regressive
+  results, and keep rollback/no-op outcomes visible in `qa_history`
+- prefer bounded deterministic repairs over free-form rewrites, especially in
+  stub mode and CI-facing tests
 
 ### Minimal runtime-agent skeleton
 

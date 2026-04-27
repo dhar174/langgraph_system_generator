@@ -1,5 +1,8 @@
 """Additional tests for generator graph nodes with synthetic state inputs."""
 
+import sys
+import types
+
 import pytest
 
 from langgraph_system_generator.generator.agents import (
@@ -25,8 +28,21 @@ from langgraph_system_generator.generator.state import (
     ArchitectureFeedback,
     CellSpec,
     Constraint,
+    GraphDesignFeedback,
+    GraphExportBundle,
+    NotebookCompositionFeedback,
+    NotebookCompositionResult,
+    NotebookDependencyPlan,
     QAReport,
+    QARepairFeedback,
+    ToolPlanningFeedback,
 )
+from langgraph_system_generator.qa.registry import RepairRoutineRegistration
+from langgraph_system_generator.qa.validators import (
+    NotebookValidationContext,
+    QAValidationRule,
+)
+from langgraph_system_generator.qa.repair import RepairOutcome
 from langgraph_system_generator.utils.config import GenerationConfig
 
 
@@ -48,6 +64,71 @@ def make_stub_llm(content: str):
             return DummyResponse(self._content)
 
     return StubLLM
+
+
+class NodePluginMarkerRule(QAValidationRule):
+    """Synthetic plugin validator used by node integration tests."""
+
+    rule_id = "node_plugin_marker"
+    check_name = "Node Plugin Marker"
+    category = "custom"
+    failure_severity = "error"
+    repairable = True
+
+    def validate(self, context: NotebookValidationContext) -> QAReport:
+        content = "\n".join(str(cell.source or "") for cell in context.notebook.cells)
+        if "NODE_PLUGIN_BROKEN" in content:
+            return self.failed_report("Node plugin marker needs repair.")
+        return self.passed_report("Node plugin marker is absent.")
+
+
+def _valid_generated_cells(*, execution_content: str | None = None):
+    """Return a minimal valid generated cell set for node integration tests."""
+
+    return [
+        CellSpec(
+            cell_type="code",
+            content="from langgraph.graph import END, START, StateGraph\nfrom typing import TypedDict",
+            metadata={"section": "setup"},
+            section="setup",
+        ),
+        CellSpec(
+            cell_type="code",
+            content='config = {"configurable": {"thread_id": "demo"}}',
+            metadata={"section": "config"},
+            section="config",
+        ),
+        CellSpec(
+            cell_type="code",
+            content=(
+                "class WorkflowState(TypedDict, total=False):\n"
+                "    messages: list\n\n"
+                "workflow = StateGraph(WorkflowState)\n\n"
+                "def start_node(state: WorkflowState):\n"
+                "    return state\n\n"
+                "workflow.add_node('start', start_node)\n"
+                "workflow.add_edge(START, 'start')\n"
+                "workflow.add_edge('start', END)\n"
+                "graph = workflow.compile()"
+            ),
+            metadata={"section": "graph"},
+            section="graph",
+        ),
+        CellSpec(
+            cell_type="code",
+            content=execution_content or "result = graph.invoke({})\nprint(result)",
+            metadata={"section": "execution"},
+            section="execution",
+        ),
+    ]
+
+
+def _install_qa_plugin(module_name: str, register_func) -> None:
+    """Install an in-memory QA/repair plugin module."""
+
+    module = types.ModuleType(module_name)
+    module.register_qa_repair_plugins = register_func
+    sys.modules[module_name] = module
 
 
 @pytest.mark.asyncio
@@ -213,7 +294,33 @@ async def test_architecture_selection_node_honors_hybrid_override():
 
 @pytest.mark.asyncio
 async def test_graph_design_node_defaults_architecture_type(monkeypatch):
-    payload = '{"nodes":["a","b"]}'
+    payload = """
+    {
+      "state_schema": {
+        "messages": "Conversation state",
+        "next_agent": "Selected worker"
+      },
+      "nodes": [
+        {"name": "supervisor", "purpose": "Coordinate workers"},
+        {"name": "researcher", "purpose": "Research documents"},
+        {"name": "critic", "purpose": "Critique results"}
+      ],
+      "edges": [],
+      "conditional_edges": [
+        {
+          "from": "supervisor",
+          "condition": "Dispatch to next worker",
+          "branches": {
+            "researcher": "researcher",
+            "critic": "critic",
+            "FINISH": "END"
+          }
+        }
+      ],
+      "entry_point": "supervisor",
+      "checkpointing": true
+    }
+    """
 
     monkeypatch.setattr(
         graph_designer,
@@ -241,7 +348,11 @@ async def test_graph_design_node_defaults_architecture_type(monkeypatch):
     ]
     assert notebook_plan.patterns_used == ["subagents"]
     assert notebook_plan.architecture_type == "subagents"
-    assert result["workflow_design"] == {"nodes": ["a", "b"]}
+    assert result["workflow_design"]["architecture_type"] == "subagents"
+    assert result["workflow_design"]["entry_point"] == "supervisor"
+    assert result["graph_design_feedback"].fallback_used is False
+    assert "flowchart TD" in result["graph_exports"].mermaid
+    assert result["graph_exports"].schema["entry_point"] == "supervisor"
 
 
 @pytest.mark.asyncio
@@ -259,13 +370,67 @@ async def test_tooling_plan_node_returns_tools_plan(monkeypatch):
     )
 
     assert result["tools_plan"] == [
-        {"name": "tool", "category": "misc", "purpose": "x", "configuration": {}}
+        {
+            "tool_id": "tool",
+            "name": "tool",
+            "category": "misc",
+            "purpose": "x",
+            "configuration": {},
+            "packages": [],
+            "provider_env_vars": [],
+            "status": "unsupported",
+            "warnings": [
+                "Unsupported tool suggestion 'tool' could not be resolved to a canonical tool."
+            ],
+        }
     ]
+    assert result["tool_planning_feedback"].fallback_used is True
+    assert result["tool_planning_feedback"].unresolved_tools == ["tool"]
+
+
+@pytest.mark.asyncio
+async def test_tooling_plan_node_preserves_environment_feedback(monkeypatch):
+    payload = (
+        '[{"tool_id":"web_search","name":"web_search","category":"search",'
+        '"purpose":"Look up docs","configuration":{}}]'
+    )
+
+    monkeypatch.setattr(
+        toolchain_engineer,
+        "ChatOpenAI",
+        make_stub_llm(payload),
+    )
+
+    result = await tooling_plan_node(
+        {
+            "workflow_design": {
+                "nodes": [{"name": "research", "purpose": "Search docs"}]
+            },
+            "constraints": [
+                Constraint(
+                    type="environment",
+                    value="Offline only, no network access",
+                    priority=5,
+                )
+            ],
+        }
+    )
+
+    assert result["tools_plan"][0]["status"] == "unsupported"
+    assert result["tool_planning_feedback"].environment_notes
+    assert result["tool_planning_feedback"].unresolved_tools == ["web_search"]
 
 
 @pytest.mark.asyncio
 async def test_notebook_assembly_node_returns_generated_cells(monkeypatch):
     cells = [CellSpec(cell_type="markdown", content="Hi", metadata={})]
+    feedback = NotebookCompositionFeedback(
+        fallback_used=True,
+        warnings=["Notebook composition used deterministic fallback content."],
+    )
+    dependency_plan = NotebookDependencyPlan(
+        packages=["langgraph", "langchain-openai"]
+    )
     # Mock NotebookComposer to return cells without needing LLM
     payload = "[]"  # Dummy payload since we'll mock the compose method
 
@@ -276,7 +441,11 @@ async def test_notebook_assembly_node_returns_generated_cells(monkeypatch):
     )
 
     async def fake_compose_notebook(*_args, **_kwargs):
-        return cells
+        return NotebookCompositionResult(
+            cells=cells,
+            feedback=feedback,
+            dependency_plan=dependency_plan,
+        )
 
     monkeypatch.setattr(
         "langgraph_system_generator.generator.nodes.NotebookComposer.compose_notebook",
@@ -285,14 +454,32 @@ async def test_notebook_assembly_node_returns_generated_cells(monkeypatch):
 
     state = {
         "notebook_plan": None,
-        "workflow_design": {},
+        "workflow_design": {
+            "graph_exports": {
+                "mermaid": "flowchart TD\n    A-->B",
+                "schema": {"entry_point": "router"},
+            }
+        },
+        "graph_exports": GraphExportBundle(
+            mermaid="flowchart TD\n    A-->B",
+            schema={"entry_point": "router"},
+        ),
         "tools_plan": [],
+        "tool_planning_feedback": ToolPlanningFeedback(
+            fallback_used=True,
+            fallback_reason="Heuristic tool fallback used.",
+            unresolved_tools=["imaginary_tool"],
+            available_tool_ids=["web_search"],
+            warnings=["Heuristic tool fallback used."],
+        ),
         "selected_patterns": {"primary": "router"},
         "architecture_justification": "Reason",
     }
     result = await notebook_assembly_node(state)
 
     assert result["generated_cells"] == cells
+    assert result["notebook_composition_feedback"] == feedback
+    assert result["notebook_dependency_plan"] == dependency_plan
 
 
 @pytest.mark.asyncio
@@ -317,6 +504,68 @@ async def test_static_qa_node_appends_reports(monkeypatch):
     assert result["qa_history"][0] == existing[0]
     assert result["qa_history"][-1].check_name == "New"
     assert result["qa_history"][-1].stage == "static"
+    assert result["qa_repair_feedback"].unrepaired_failures == []
+
+
+@pytest.mark.asyncio
+async def test_static_qa_node_surfaces_blocking_feedback(monkeypatch):
+    blocking_report = QAReport(
+        check_name="Python Syntax",
+        passed=False,
+        message="Syntax error in notebook code: invalid syntax at line 3",
+        rule_id="python_syntax",
+        severity="error",
+        category="syntax",
+        repairable=True,
+        suggestions=["Fix the syntax error before execution."],
+    )
+
+    monkeypatch.setattr(
+        "langgraph_system_generator.generator.nodes.NotebookValidator.validate_all",
+        lambda *_args, **_kwargs: [blocking_report],
+    )
+
+    result = await static_qa_node(
+        {
+            "generated_cells": [CellSpec(cell_type="code", content="broken(", metadata={})],
+            "qa_reports": [],
+            "repair_attempts": 0,
+        }
+    )
+
+    assert result["qa_repair_feedback"].unrepaired_failures == [
+        "Python Syntax: Syntax error in notebook code: invalid syntax at line 3"
+    ]
+    assert "Fix the syntax error before execution." in result["qa_repair_feedback"].next_steps
+
+
+@pytest.mark.asyncio
+async def test_static_qa_node_uses_plugin_validators(monkeypatch):
+    module_name = "test_nodes_qa_plugin_validator"
+
+    def register(registry):
+        registry.register_validator(NodePluginMarkerRule())
+
+    _install_qa_plugin(module_name, register)
+    monkeypatch.setattr(
+        "langgraph_system_generator.qa.registry.settings.qa_repair_plugin_modules",
+        [module_name],
+    )
+
+    result = await static_qa_node(
+        {
+            "generated_cells": _valid_generated_cells(
+                execution_content='marker = "NODE_PLUGIN_BROKEN"\nprint(marker)'
+            ),
+            "qa_reports": [],
+            "repair_attempts": 0,
+        }
+    )
+
+    assert any(
+        report.rule_id == "node_plugin_marker" and not report.passed
+        for report in result["qa_reports"]
+    )
 
 
 @pytest.mark.asyncio
@@ -334,6 +583,7 @@ async def test_runtime_qa_node_message_empty_cells():
     report = result["qa_reports"][-1]
     assert "no generated cells" in report.message
     assert report.stage == "runtime"
+    assert result["qa_repair_feedback"].unrepaired_failures == []
 
 
 @pytest.mark.asyncio
@@ -397,6 +647,9 @@ async def test_runtime_qa_node_reports_kernel_failure_in_live_mode(monkeypatch):
     assert "Runtime validation unavailable" in report.message
     assert report.passed is False
     assert report.evidence["failure_kind"] == "runtime_unavailable"
+    assert result["qa_repair_feedback"].unrepaired_failures == [
+        f"{report.check_name}: {report.message}"
+    ]
 
 
 @pytest.mark.asyncio
@@ -468,12 +721,16 @@ async def test_repair_node_success_refreshes_cells_and_appends_history(monkeypat
     existing_history = [QAReport(check_name="Runtime Check", passed=False, message="boom")]
 
     monkeypatch.setattr(
-        "langgraph_system_generator.generator.nodes.NotebookRepairAgent.repair_notebook",
-        lambda *_args, **_kwargs: (True, updated_reports),
-    )
-    monkeypatch.setattr(
-        "langgraph_system_generator.generator.nodes._cells_from_notebook",
-        lambda *_args, **_kwargs: updated_cells,
+        "langgraph_system_generator.generator.nodes.NotebookRepairAgent.repair_cells",
+        lambda *_args, **_kwargs: RepairOutcome(
+            status="applied",
+            cells=updated_cells,
+            qa_reports=updated_reports,
+            attempted_fixes=["Applied deterministic fix."],
+            persisted=True,
+            message="Repair candidate passed validation and was accepted.",
+            validation_summary={"accepted": True},
+        ),
     )
 
     state = {
@@ -486,13 +743,29 @@ async def test_repair_node_success_refreshes_cells_and_appends_history(monkeypat
     }
     result = await repair_node(state)
 
-    assert result["generated_cells"] == updated_cells
+    managed_cells = [
+        cell for cell in result["generated_cells"] if cell.section != "qa_repair_summary"
+    ]
+    summary_cell = next(
+        cell for cell in result["generated_cells"] if cell.section == "qa_repair_summary"
+    )
+
+    assert managed_cells == updated_cells
+    assert "QA and Repair Summary" in summary_cell.content
+    assert "Applied a non-regressive deterministic repair." in summary_cell.content
     assert result["qa_reports"][0].check_name == "Fix"
     assert result["qa_reports"][0].stage == "static"
     assert result["qa_reports"][0].attempt == 2
     assert len(result["qa_history"]) == len(existing_history) + 1
     assert result["qa_history"][-1].check_name == "Repair Attempt"
+    assert result["qa_history"][-1].rule_id == "repair_attempt"
+    assert result["qa_history"][-1].attempt == 2
+    assert result["qa_history"][-1].evidence["attempted_fixes"] == [
+        "Applied deterministic fix."
+    ]
     assert result["repair_attempts"] == 2
+    assert result["qa_repair_feedback"].repair_attempts == 2
+    assert result["qa_repair_feedback"].unrepaired_failures == []
 
 
 @pytest.mark.asyncio
@@ -502,8 +775,18 @@ async def test_repair_node_failure_keeps_cells_and_appends_history(monkeypatch):
     existing_history = [QAReport(check_name="Runtime Check", passed=False, message="boom")]
 
     monkeypatch.setattr(
-        "langgraph_system_generator.generator.nodes.NotebookRepairAgent.repair_notebook",
-        lambda *_args, **_kwargs: (False, updated_reports),
+        "langgraph_system_generator.generator.nodes.NotebookRepairAgent.repair_cells",
+        lambda *_args, **_kwargs: RepairOutcome(
+            status="rolled_back",
+            cells=initial_cells,
+            qa_reports=updated_reports,
+            attempted_fixes=["Tried deterministic fix."],
+            rollback_used=True,
+            persisted=False,
+            message="Repair candidate was rolled back because it regressed or did not improve validation.",
+            next_steps=["Inspect the QA and Repair Summary cell before retrying."],
+            validation_summary={"accepted": False},
+        ),
     )
 
     state = {
@@ -516,13 +799,91 @@ async def test_repair_node_failure_keeps_cells_and_appends_history(monkeypatch):
     }
     result = await repair_node(state)
 
-    assert result["generated_cells"] == initial_cells
+    managed_cells = [
+        cell for cell in result["generated_cells"] if cell.section != "qa_repair_summary"
+    ]
+    summary_cell = next(
+        cell for cell in result["generated_cells"] if cell.section == "qa_repair_summary"
+    )
+
+    assert managed_cells == initial_cells
+    assert "Rolled back the repair candidate" in summary_cell.content
     assert result["qa_reports"][0].check_name == "Fix"
     assert result["qa_reports"][0].stage == "static"
     assert result["qa_reports"][0].attempt == 4
     assert len(result["qa_history"]) == len(existing_history) + 1
     assert result["qa_history"][-1].passed is False
+    assert result["qa_history"][-1].attempt == 4
     assert result["repair_attempts"] == 4
+    assert result["qa_repair_feedback"].repair_attempts == 4
+    assert result["qa_repair_feedback"].rollback_used is True
+    assert "rolled back after validation" in result["qa_repair_feedback"].warnings[-1]
+
+
+@pytest.mark.asyncio
+async def test_repair_node_uses_plugin_repair_routines(monkeypatch):
+    module_name = "test_nodes_qa_plugin_repair"
+
+    def repair_marker(_agent, notebook, _report):
+        fixes = []
+        for cell in notebook.cells:
+            if cell.cell_type != "code":
+                continue
+            source = str(cell.source or "")
+            updated = source.replace("NODE_PLUGIN_BROKEN", "NODE_PLUGIN_REPAIRED")
+            if updated != source:
+                cell.source = updated
+                fixes.append("Repaired node plugin marker.")
+        return fixes
+
+    def register(registry):
+        registry.register_validator(NodePluginMarkerRule())
+        registry.register_repair_routine(
+            RepairRoutineRegistration(
+                routine_id="node_plugin_marker_repair",
+                handled_rule_ids=("node_plugin_marker",),
+                handler=repair_marker,
+            )
+        )
+
+    _install_qa_plugin(module_name, register)
+    monkeypatch.setattr(
+        "langgraph_system_generator.qa.registry.settings.qa_repair_plugin_modules",
+        [module_name],
+    )
+    cells = _valid_generated_cells(
+        execution_content='marker = "NODE_PLUGIN_BROKEN"\nprint(marker)'
+    )
+    report = QAReport(
+        check_name="Node Plugin Marker",
+        passed=False,
+        message="Node plugin marker needs repair.",
+        rule_id="node_plugin_marker",
+        severity="error",
+        category="custom",
+        repairable=True,
+    )
+
+    result = await repair_node(
+        {
+            "generated_cells": cells,
+            "qa_reports": [report],
+            "qa_history": [],
+            "repair_attempts": 0,
+        }
+    )
+
+    code = "\n".join(
+        cell.content
+        for cell in result["generated_cells"]
+        if cell.cell_type == "code"
+    )
+    assert "NODE_PLUGIN_BROKEN" not in code
+    assert "NODE_PLUGIN_REPAIRED" in code
+    assert result["qa_history"][-1].evidence["attempted_fixes"] == [
+        "Repaired node plugin marker."
+    ]
+    assert result["qa_repair_feedback"].unrepaired_failures == []
 
 
 @pytest.mark.asyncio
@@ -538,6 +899,46 @@ async def test_package_outputs_node_manifest_fields():
             fallback_reason="Validation failed.",
             validation_errors=["Unsupported architecture_type 'swarm'."],
         ),
+        "graph_design_feedback": GraphDesignFeedback(
+            fallback_used=True,
+            fallback_reason="Live graph design validation failed.",
+            validation_errors=["Duplicate node id 'router'."],
+            warnings=["Recovered using deterministic hybrid fallback."],
+        ),
+        "graph_exports": GraphExportBundle(
+            mermaid="flowchart TD\n    router --> finish",
+            schema={
+                "entry_point": "router",
+                "terminal_nodes": ["finish"],
+                "validation_summary": {
+                    "errors": ["Duplicate node id 'router'."],
+                    "warnings": ["Recovered using deterministic hybrid fallback."],
+                },
+            },
+        ),
+        "tool_planning_feedback": ToolPlanningFeedback(
+            fallback_used=True,
+            fallback_reason="Tool planning used heuristic fallback inference.",
+            validation_errors=["Unsupported tool suggestion 'swarm_tool'."],
+            unresolved_tools=["swarm_tool"],
+            available_tool_ids=["web_search", "http_client"],
+            warnings=["Tool planning used heuristic fallback inference."],
+        ),
+        "notebook_composition_feedback": NotebookCompositionFeedback(
+            fallback_used=True,
+            warnings=["Deterministic fallback used for node \"enrich\"."],
+            sections_built=["intro", "install", "config", "state", "nodes", "graph"],
+        ),
+        "notebook_dependency_plan": NotebookDependencyPlan(
+            packages=["langgraph", "langchain-openai", "requests"],
+            provider_env_vars=["OPENAI_API_KEY"],
+        ),
+        "qa_repair_feedback": QARepairFeedback(
+            repair_attempts=1,
+            unrepaired_failures=["Runtime Check: Runtime validation failed."],
+            next_steps=["Inspect the runtime environment before retrying."],
+            warnings=["Blocking QA issues remain after validation or repair."],
+        ),
     }
     result = await package_outputs_node(state)
 
@@ -546,4 +947,10 @@ async def test_package_outputs_node_manifest_fields():
     assert manifest["constraints_count"] == "1"
     assert manifest["architecture_type"] == "hybrid"
     assert manifest["architecture_feedback"]["fallback_used"] is True
+    assert manifest["graph_design_feedback"]["fallback_used"] is True
+    assert "flowchart TD" in manifest["graph_exports"]["mermaid"]
+    assert manifest["tool_planning_feedback"]["fallback_used"] is True
+    assert manifest["notebook_composition_feedback"]["fallback_used"] is True
+    assert "requests" in manifest["notebook_dependency_plan"]["packages"]
+    assert manifest["qa_repair_feedback"]["repair_attempts"] == 1
     assert result["generation_complete"] is True

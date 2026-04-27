@@ -34,7 +34,7 @@ Comprehensive documentation for the LangGraph System Generator project.
 
 ### For Cloud Users
 - See [Colab Usage](Colab-Usage.md) for running notebooks in Google Colab
-- Check [Getting Started](Getting-Started.md) for Docker deployment
+- Check [CLI & API Reference](CLI-and-API-Reference.md) for Docker deployment
 - Use stub-mode notebooks when you want Colab execution without live provider
   calls
 
@@ -93,10 +93,10 @@ This wiki provides comprehensive coverage of:
 
 ✅ Installation and setup  
 ✅ CLI and API usage  
-✅ Pattern library (Router, Subagents, Critique-Revise)  
+✅ Pattern library and architecture targets (Router, Subagents, Hybrid, AutoAgent, Critique-Revise)
 ✅ Architecture and internals  
 ✅ Multi-format export system  
-✅ QA and repair system  
+✅ Structured QA, repair, rollback, and warning surfaces
 ✅ Google Colab integration  
 ✅ Troubleshooting and best practices  
 
