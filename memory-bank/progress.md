@@ -4,27 +4,29 @@
   generator-graph execution.
 - The FastAPI server exposes synchronous generation, async generation startup,
   health checks, static web UI serving, and SSE progress streaming.
-- Pattern generators for router, subagents, and critique-revise workflows are
-  implemented and covered by dedicated tests.
-- Notebook composition, validation, repair, and export helpers are present.
+- Architecture selection, graph design, tool planning, notebook composition,
+  and QA/repair now expose typed feedback and warning surfaces in manifests and
+  API results.
+- Pattern generators and examples cover router, subagents, hybrid, autoagent,
+  critique-revise, and advanced example-only workflows.
+- Notebook composition, dependency planning, runtime validation, deterministic
+  repair, rollback reporting, and export helpers are present.
 
 ## What Is Still Incomplete
 
-- Runtime notebook execution checks are explicitly skipped for now; the current
-  `runtime_qa_node` reports a placeholder success message rather than executing
-  generated notebooks.
-- Several advanced API request fields are tracked in the output manifest but are
-  not yet fully integrated into live generation behavior.
-- The Memory Bank task index exists, but no project-specific task files have
-  been added yet.
+- Public docs and onboarding copy have historically lagged behind the runtime
+  contract and should be kept synchronized with CLI/API behavior.
+- Optional Deep Agents support remains outside the core release-blocking
+  runtime-agent epics.
 
 ## Current Status
 
 - The package metadata in `setup.py` marks the project as alpha.
 - The repository already contains substantial scaffolding for CLI, API, RAG,
-  notebook export, QA, and pattern generation workflows.
-- Memory Bank documentation is being brought from template placeholders to
-  verified project-specific context.
+  notebook export, QA/repair, registry-backed planning, and pattern generation
+  workflows.
+- Memory Bank documentation is now project-specific context and should be
+  maintained alongside public onboarding docs.
 
 ## Known Issues and Limitations
 

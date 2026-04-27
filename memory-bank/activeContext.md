@@ -12,19 +12,26 @@
 - The API layer includes guarded output-path resolution and bounded async job
   concurrency.
 - Progress streaming exists through SSE with in-memory job queues.
+- The runtime-agent epics for ArchitectureSelector, GraphDesigner,
+  NotebookComposer, ToolchainEngineer, and QARepairAgent have added typed
+  feedback models, registry-backed internals, warning surfaces, and public
+  manifest/API fields.
 
 ## Immediate Next Steps
 
-- Keep the remaining Memory Bank files aligned with verified repository state.
-- Continue improving generation quality and validation without breaking the
-  deterministic stub path.
-- Preserve parity between CLI-driven and API-driven artifact generation flows.
+- Keep public docs, examples, and onboarding copy aligned with the current
+  CLI/API contract.
+- Preserve parity between CLI-driven, API-driven, and web-driven artifact
+  generation flows.
+- Keep deterministic stub mode offline-friendly while live mode uses
+  request-scoped model configuration.
 
 ## Active Considerations
 
-- Some advanced API parameters are currently recorded in the manifest but are
-  not yet wired into the live generation pipeline.
-- Runtime QA is intentionally minimal right now; static validation and repair
-  are the primary safeguards before packaging outputs.
+- Advanced API parameters such as `model`, `temperature`, `max_tokens`,
+  `custom_endpoint`, and `agent_type` are request-scoped generation controls.
+- Runtime QA performs environment preflight and smoke-test validation; in stub
+  mode unavailable notebook runtimes are recorded as non-blocking evidence, but
+  live mode treats runtime support gaps as real failures.
 - The SSE implementation is appropriate for single-server development, but not a
   distributed production event bus.

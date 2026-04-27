@@ -9,18 +9,33 @@
 
 - The generator uses an outer orchestration graph plus inner code-generation helpers, rather than generating an entire system in one step.
 - Shared workflow data is modeled with Pydantic models plus a `TypedDict` generator state so agents, nodes, QA, and packaging use consistent structures.
-- RAG retrieval is optional and failure-tolerant: if the FAISS/OpenAI-backed vector store cannot load, the graph continues with empty documentation context instead of aborting generation.
-- QA is split into static validation and a bounded repair loop. Repair attempts are capped by `settings.max_repair_attempts`.
+- RAG retrieval is optional and failure-tolerant: if the FAISS vector store
+  cannot load, the graph continues with empty documentation context instead of
+  aborting generation.
+- Architecture selection, graph design, tool planning, notebook composition, and
+  QA/repair use internal registries and typed advisory feedback models so
+  recoverable failures surface in manifests instead of disappearing silently.
+- QA is split into static validation, runtime smoke testing, and a bounded
+  deterministic repair loop. Repair attempts are capped by
+  `settings.max_repair_attempts`, and rollback/no-op outcomes are recorded in
+  `qa_repair_feedback`.
 - The API layer constrains untrusted output paths to a trusted base directory and limits concurrent async jobs with a semaphore.
 
 ## Design Patterns in Use
 
 - **Outer generator graph:** `create_generator_graph()` composes named LangGraph nodes with conditional edges for repair/retry behavior.
-- **Agent-per-step decomposition:** generator nodes delegate LLM work to focused agent classes such as `RequirementsAnalyst`, `ArchitectureSelector`, `GraphDesigner`, `ToolchainEngineer`, and `NotebookComposer`.
-- **Pattern code generation library:** `patterns/router.py`,
-  `patterns/subagents.py`, and `patterns/critique_loops.py` generate reusable LangGraph workflow code as strings for notebook/content assembly.
+- **Agent-per-step decomposition:** generator nodes delegate LLM work to focused
+  agent classes such as `RequirementsAnalyst`, `ArchitectureSelector`,
+  `GraphDesigner`, `ToolchainEngineer`, and `NotebookComposer`; `QARepairAgent`
+  is a runtime-facing facade over the shared deterministic QA/repair engine.
+- **Pattern code generation library:** router, subagents, hybrid, autoagent, and
+  critique-loop helpers generate reusable LangGraph workflow code as strings for
+  notebook/content assembly.
 - **Notebook-as-artifact assembly:** generated `CellSpec` objects are converted into validated `nbformat` notebooks by `notebook/composer.py`, then exported into multiple formats by `notebook/exporters.py` and related format helpers.
-- **Validation/repair loop:** `qa/validators.py` reports notebook issues and `qa/repair.py` applies localized repairs before re-running validation.
+- **Validation/repair loop:** `qa/validators.py` reports structured notebook
+  issues, `qa/registry.py` owns validator/repair registrations, and
+  `qa/repair.py` applies localized in-memory repairs before re-running
+  validation.
 - **SSE progress streaming:** `api/progress_streaming.py` uses in-memory queues keyed by job ID to stream progress, logs, completion, and error events.
 
 ## Component Relationships

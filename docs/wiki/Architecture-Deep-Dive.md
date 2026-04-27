@@ -90,7 +90,8 @@ Retrieves relevant LangGraph/LangChain documentation based on the requirements:
 ```
 
 **Components**: `DocsRetriever`, `VectorStoreManager`  
-**Vector Store**: FAISS with OpenAI embeddings
+**Vector Store**: FAISS; local fake embeddings are used for offline index
+builds, and OpenAI embeddings are available when requested.
 
 #### 3. Architecture Selection
 **Input**: Constraints + Documentation context  
@@ -409,10 +410,14 @@ class GeneratorState(TypedDict):
     architecture_justification: str
     architecture_type: Optional[str]
     generation_config: Optional[GenerationConfig]
+    generation_mode: Literal["stub", "live"]
 
     # Workflow design
     workflow_design: Optional[Dict[str, Any]]
     tools_plan: Optional[List[Dict[str, Any]]]
+    tool_planning_feedback: ToolPlanningFeedback
+    notebook_composition_feedback: NotebookCompositionFeedback
+    notebook_dependency_plan: NotebookDependencyPlan
     
     # Generation
     # No reducer: last-write-wins across repair iterations
@@ -420,7 +425,9 @@ class GeneratorState(TypedDict):
     
     # QA & Repair
     qa_reports: List[QAReport]
+    qa_history: List[QAReport]
     repair_attempts: int
+    qa_repair_feedback: QARepairFeedback
     
     # Output
     artifacts_manifest: Dict[str, str]
@@ -432,6 +439,9 @@ class GeneratorState(TypedDict):
 - **Annotated Lists**: Fields like `constraints` and `docs_context` use `operator.add` to append values across nodes
 - **Advisory Intake Feedback**: `requirements_feedback` captures fallback, conflict, and missing-input guidance without replacing `constraints` as the downstream planning contract
 - **Advisory Graph Feedback**: `graph_design_feedback` captures validation and fallback details while `graph_exports` stores Mermaid/schema bundles for manifests and notebook overview cells
+- **Advisory Tool Feedback**: `tool_planning_feedback` records fallback, validation, environment, and dependency warnings while `tools_plan` remains the downstream list
+- **Notebook Composition Feedback**: `notebook_composition_feedback` and `notebook_dependency_plan` explain fallback and dependency decisions without replacing `generated_cells`
+- **QA History**: `qa_reports` is the current snapshot; `qa_history` preserves attempt-by-attempt evidence across static QA, runtime QA, and repair
 - **Last-write-wins cells**: `generated_cells` intentionally has no reducer, so each repair pass replaces prior cells
 - **Immutability**: State updates create new state versions (LangGraph managed)
 - **Type Safety**: TypedDict provides IDE autocomplete and validation
@@ -520,7 +530,9 @@ Precached documentation includes:
 
 ### Vector Store
 
-**Implementation**: FAISS with OpenAI embeddings
+**Implementation**: FAISS. `lnf build-index` uses local fake embeddings by
+default for offline/testing flows; `lnf build-index --use-openai` uses OpenAI
+embeddings when credentials are configured.
 
 **Index Structure**:
 ```
@@ -530,7 +542,7 @@ data/vector_store/
 ```
 
 **Retrieval Process**:
-1. Query embedding via OpenAI
+1. Query embedding via the configured embedding implementation
 2. Similarity search in FAISS (k=5 default)
 3. Return top documents with relevance scores
 4. Filter by minimum relevance threshold
@@ -569,11 +581,10 @@ The Pattern Library provides code generation templates:
 5. Conditional edges (quality threshold)
 ```
 
-All patterns are:
-- ✅ Production-tested (≥90% coverage)
-- ✅ Fully documented
-- ✅ Customizable
-- ✅ Composable
+Generator-backed patterns are covered by focused unit tests and runnable
+examples. The architecture selector and graph designer can currently target
+`router`, `subagents`, `hybrid`, and `autoagent`; the pattern library also keeps
+the critique-revise loop available for direct use and examples.
 
 ## Quality Assurance System
 
@@ -679,7 +690,7 @@ Access via:
 ```python
 from langgraph_system_generator.utils.config import settings
 
-print(settings.default_model)  # "gpt-4-turbo-preview"
+print(settings.default_model)  # "gpt-5-mini"
 ```
 
 ## Extension Points
@@ -776,7 +787,7 @@ def register_qa_repair_plugins(registry):
 **Solution**: Increase timeout in settings or use stub mode
 
 **Issue**: Vector store not found  
-**Solution**: Run `python scripts/build_index.py` or use stub mode
+**Solution**: Run `lnf build-index` or use stub mode
 
 **Issue**: QA validation fails  
 **Solution**: Check QA reports in output directory, repair attempts logged
