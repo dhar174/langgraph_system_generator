@@ -19,7 +19,8 @@ def _parse_level(level: str | int) -> int:
 
     if isinstance(level, str):
         normalized = level.strip().upper()
-        return logging._nameToLevel.get(normalized, logging.INFO)  # type: ignore[attr-defined]
+        resolved_level = getattr(logging, normalized, logging.INFO)
+        return resolved_level if isinstance(resolved_level, int) else logging.INFO
 
     return logging.INFO
 
