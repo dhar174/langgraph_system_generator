@@ -38,7 +38,19 @@ from langgraph_system_generator.utils.generation_options import (
 from langgraph_system_generator.utils.logging_utils import configure_logging_from_env
 from langgraph_system_generator.utils.optional_deps import OptionalDependencyError
 
-app = FastAPI(title="LangGraph Notebook Foundry API", version="0.1.1")
+
+@asynccontextmanager
+async def _lifespan(app_: FastAPI):  # noqa: ARG001
+    """FastAPI lifespan: configure logging at startup, tear down at shutdown."""
+    configure_logging_from_env()
+    yield
+
+
+app = FastAPI(
+    title="LangGraph Notebook Foundry API",
+    version="0.1.1",
+    lifespan=_lifespan,
+)
 
 # Mount static files
 _STATIC_DIR = Path(__file__).parent / "static"
@@ -51,9 +63,6 @@ _DEFAULT_API_OUTPUT = (_BASE_OUTPUT / "api").resolve()
 _MAX_CONCURRENT_GENERATIONS = int(os.getenv("LNF_MAX_CONCURRENT_GENERATIONS", "5"))
 _generation_lock = asyncio.Lock()
 _active_generation_count = 0
-
-# Configure default logging for API surface
-configure_logging_from_env()
 
 
 def _generation_error_payload(exc: Exception) -> dict[str, Any]:

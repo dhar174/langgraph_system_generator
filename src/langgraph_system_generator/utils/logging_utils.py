@@ -5,7 +5,6 @@ from __future__ import annotations
 import logging
 import os
 import time
-from typing import Any
 
 DEFAULT_LOG_FORMAT = "%(asctime)sZ %(levelname)s [%(name)s] %(message)s"
 DEFAULT_DATE_FORMAT = "%Y-%m-%dT%H:%M:%S"
@@ -54,9 +53,11 @@ def configure_logging(level: str | int = "INFO", *, fmt: str = DEFAULT_LOG_FORMA
                 formatter.converter = time.gmtime  # type: ignore[assignment]
                 handler.setFormatter(formatter)
             else:
-                handler.formatter.datefmt = DEFAULT_DATE_FORMAT
-                handler.formatter._style._fmt = fmt  # type: ignore[attr-defined]
-                handler.formatter.converter = time.gmtime  # type: ignore[assignment]
+                # Replace the existing formatter entirely to avoid touching
+                # private logging internals (_style._fmt etc.).
+                replacement = logging.Formatter(fmt=fmt, datefmt=DEFAULT_DATE_FORMAT)
+                replacement.converter = time.gmtime  # type: ignore[assignment]
+                handler.setFormatter(replacement)
 
     non_capture_handlers = [
         handler
