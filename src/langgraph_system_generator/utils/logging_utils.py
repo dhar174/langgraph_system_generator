@@ -47,9 +47,11 @@ def configure_logging(level: str | int = "INFO", *, fmt: str = DEFAULT_LOG_FORMA
         for handler in root_logger.handlers:
             handler.setLevel(numeric_level)
             if handler.formatter is None:
-                handler.setFormatter(
-                    logging.Formatter(fmt=fmt, datefmt=DEFAULT_DATE_FORMAT)
+                formatter = logging.Formatter(
+                    fmt=fmt, datefmt=DEFAULT_DATE_FORMAT
                 )
+                formatter.converter = time.gmtime  # type: ignore[assignment]
+                handler.setFormatter(formatter)
             else:
                 handler.formatter.datefmt = DEFAULT_DATE_FORMAT
                 handler.formatter._style._fmt = fmt  # type: ignore[attr-defined]
