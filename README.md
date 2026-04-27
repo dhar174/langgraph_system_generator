@@ -4,7 +4,7 @@ Prompt -> full agentic system. LangGraph System Generator, also called LNF,
 turns a natural-language request into runnable LangGraph notebook artifacts,
 exports, and structured QA feedback.
 
-![](docs/langgraph_meta.png "LangGraph meta")
+![LangGraph system generator workflow graphic](docs/langgraph_meta.png "LangGraph meta")
 
 ## Features
 
@@ -203,6 +203,23 @@ curl -X POST http://localhost:8000/generate \
 
 Request fields are `prompt`, `mode`, `output_dir`, `formats`, `model`,
 `custom_endpoint`, `temperature`, `max_tokens`, and `agent_type`.
+
+Current API request model snapshot:
+
+```mermaid
+classDiagram
+  class GenerationRequest {
+    prompt : Optional[str]
+    mode : Optional[GenerationMode]
+    output_dir : Optional[str]
+    formats : Optional[list[str]]
+    model : Optional[str]
+    custom_endpoint : Optional[str]
+    temperature : Optional[float]
+    max_tokens : Optional[int]
+    agent_type : Optional[str]
+  }
+```
 
 ## Colab Usage
 

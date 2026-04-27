@@ -127,8 +127,8 @@ The CLI respects these environment variables:
 | `REQUIREMENTS_CONSTRAINT_TYPES` | Extra intake constraint types as JSON/comma list | `[]` |
 | `ARCHITECTURE_PATTERN_DOC_QUERIES` | Architecture retrieval query overrides as JSON object | `{}` |
 | `ARCHITECTURE_PATTERN_DOC_WEIGHTS` | Architecture retrieval weights as JSON object | `{}` |
-| `ARCHITECTURE_PROMPT_DOC_LIMIT` | Max retrieved docs per architecture query | `10` |
-| `NOTEBOOK_COMPOSER_DEFAULT_MAX_ITERATIONS` | Default generated notebook iteration cap | `5` |
+| `ARCHITECTURE_PROMPT_DOC_LIMIT` | Max retrieved docs per architecture query | `8` |
+| `NOTEBOOK_COMPOSER_DEFAULT_MAX_ITERATIONS` | Default generated notebook iteration cap | `10` |
 | `NOTEBOOK_COMPOSER_PARALLELISM_MODE` | Notebook LLM generation mode: `parallel` or `sequential` | `parallel` |
 | `NOTEBOOK_COMPOSER_MAX_CONCURRENCY` | Notebook composer async fan-out limit | `4` |
 | `NOTEBOOK_COMPOSER_PLUGIN_MODULES` | Extra notebook composer registry modules | None |
@@ -267,8 +267,18 @@ Generate a multi-agent system from a prompt.
     },
     "tool_planning_feedback": {
       "fallback_used": false,
+      "fallback_reason": null,
+      "validation_errors": [],
+      "unresolved_tools": [],
       "environment_notes": [],
       "dependency_conflicts": [],
+      "available_tool_ids": [
+        "web_search",
+        "file_reader",
+        "http_client",
+        "data_processor",
+        "schema_validator"
+      ],
       "warnings": []
     },
     "graph_exports": {
@@ -281,11 +291,30 @@ Generate a multi-agent system from a prompt.
     },
     "notebook_dependency_plan": {
       "packages": ["langgraph", "langchain-openai"],
+      "install_commands": [
+        "pip install -qU langgraph langchain-openai"
+      ],
+      "runtime_notes": [],
+      "conflicts_resolved": [],
       "provider_env_vars": ["OPENAI_API_KEY"]
     },
     "notebook_composition_feedback": {
       "fallback_used": false,
-      "warnings": []
+      "warnings": [],
+      "fallback_events": [],
+      "resolved_model": "gpt-5-mini",
+      "resolved_api_base": null,
+      "resolved_max_iterations": 10,
+      "sections_built": [
+        "intro",
+        "install",
+        "config",
+        "state",
+        "tools",
+        "nodes",
+        "graph",
+        "execution"
+      ]
     },
     "qa_repair_feedback": {
       "repair_attempts": 0,
@@ -589,21 +618,53 @@ phase timing, per-format export status, graph-design exports, and non-fatal warn
   },
   "tool_planning_feedback": {
     "fallback_used": false,
+    "fallback_reason": null,
+    "validation_errors": [],
+    "unresolved_tools": [],
     "environment_notes": [],
-    "dependency_conflicts": []
+    "dependency_conflicts": [],
+    "available_tool_ids": [
+      "web_search",
+      "file_reader",
+      "http_client",
+      "data_processor",
+      "schema_validator"
+    ],
+    "warnings": []
   },
   "notebook_composition_feedback": {
     "fallback_used": false,
-    "warnings": []
+    "warnings": [],
+    "fallback_events": [],
+    "resolved_model": "gpt-5-mini",
+    "resolved_api_base": null,
+    "resolved_max_iterations": 10,
+    "sections_built": [
+      "intro",
+      "install",
+      "config",
+      "state",
+      "tools",
+      "nodes",
+      "graph",
+      "execution"
+    ]
   },
   "notebook_dependency_plan": {
     "packages": ["langgraph", "langchain-openai"],
+    "install_commands": [
+      "pip install -qU langgraph langchain-openai"
+    ],
+    "runtime_notes": [],
+    "conflicts_resolved": [],
     "provider_env_vars": ["OPENAI_API_KEY"]
   },
   "qa_repair_feedback": {
     "repair_attempts": 0,
     "rollback_used": false,
-    "unrepaired_failures": []
+    "unrepaired_failures": [],
+    "next_steps": [],
+    "warnings": []
   },
   "notebook_path": "./output/api/notebook.ipynb",
   "html_path": "./output/api/notebook.html",
