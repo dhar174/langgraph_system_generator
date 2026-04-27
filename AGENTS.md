@@ -219,6 +219,23 @@ aligned when changing notebook assembly behavior:
 - surface deterministic fallbacks through visible notebook comments plus
   `notebook_composition_feedback` instead of silently dropping into placeholders
 
+### QARepairAgent-specific expectations
+
+The canonical QA/repair engine lives under `src/langgraph_system_generator/qa/`.
+`generator/agents/qa_repair_agent.py` should stay a runtime-facing facade over
+that shared engine, not a second repair implementation.
+
+- register validation rules and deterministic repair routines through
+  `src/langgraph_system_generator/qa/registry.py`
+- load internal QA/repair extensions with `QA_REPAIR_PLUGIN_MODULES`; plugin
+  modules must expose `register_qa_repair_plugins(registry)`
+- keep `qa_reports`, `qa_history`, `repair_attempts`, and
+  `qa_repair_feedback` stable for CLI/API/manifest consumers
+- validate repair candidates in memory first, persist only non-regressive
+  results, and keep rollback/no-op outcomes visible in `qa_history`
+- prefer bounded deterministic repairs over free-form rewrites, especially in
+  stub mode and CI-facing tests
+
 ### Minimal runtime-agent skeleton
 
 Use the existing agents as the style reference.

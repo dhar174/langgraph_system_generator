@@ -1,5 +1,8 @@
 """Additional tests for generator graph nodes with synthetic state inputs."""
 
+import sys
+import types
+
 import pytest
 
 from langgraph_system_generator.generator.agents import (
@@ -34,6 +37,11 @@ from langgraph_system_generator.generator.state import (
     QARepairFeedback,
     ToolPlanningFeedback,
 )
+from langgraph_system_generator.qa.registry import RepairRoutineRegistration
+from langgraph_system_generator.qa.validators import (
+    NotebookValidationContext,
+    QAValidationRule,
+)
 from langgraph_system_generator.qa.repair import RepairOutcome
 from langgraph_system_generator.utils.config import GenerationConfig
 
@@ -56,6 +64,71 @@ def make_stub_llm(content: str):
             return DummyResponse(self._content)
 
     return StubLLM
+
+
+class NodePluginMarkerRule(QAValidationRule):
+    """Synthetic plugin validator used by node integration tests."""
+
+    rule_id = "node_plugin_marker"
+    check_name = "Node Plugin Marker"
+    category = "custom"
+    failure_severity = "error"
+    repairable = True
+
+    def validate(self, context: NotebookValidationContext) -> QAReport:
+        content = "\n".join(str(cell.source or "") for cell in context.notebook.cells)
+        if "NODE_PLUGIN_BROKEN" in content:
+            return self.failed_report("Node plugin marker needs repair.")
+        return self.passed_report("Node plugin marker is absent.")
+
+
+def _valid_generated_cells(*, execution_content: str | None = None):
+    """Return a minimal valid generated cell set for node integration tests."""
+
+    return [
+        CellSpec(
+            cell_type="code",
+            content="from langgraph.graph import END, START, StateGraph\nfrom typing import TypedDict",
+            metadata={"section": "setup"},
+            section="setup",
+        ),
+        CellSpec(
+            cell_type="code",
+            content='config = {"configurable": {"thread_id": "demo"}}',
+            metadata={"section": "config"},
+            section="config",
+        ),
+        CellSpec(
+            cell_type="code",
+            content=(
+                "class WorkflowState(TypedDict, total=False):\n"
+                "    messages: list\n\n"
+                "workflow = StateGraph(WorkflowState)\n\n"
+                "def start_node(state: WorkflowState):\n"
+                "    return state\n\n"
+                "workflow.add_node('start', start_node)\n"
+                "workflow.add_edge(START, 'start')\n"
+                "workflow.add_edge('start', END)\n"
+                "graph = workflow.compile()"
+            ),
+            metadata={"section": "graph"},
+            section="graph",
+        ),
+        CellSpec(
+            cell_type="code",
+            content=execution_content or "result = graph.invoke({})\nprint(result)",
+            metadata={"section": "execution"},
+            section="execution",
+        ),
+    ]
+
+
+def _install_qa_plugin(module_name: str, register_func) -> None:
+    """Install an in-memory QA/repair plugin module."""
+
+    module = types.ModuleType(module_name)
+    module.register_qa_repair_plugins = register_func
+    sys.modules[module_name] = module
 
 
 @pytest.mark.asyncio
@@ -467,6 +540,35 @@ async def test_static_qa_node_surfaces_blocking_feedback(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_static_qa_node_uses_plugin_validators(monkeypatch):
+    module_name = "test_nodes_qa_plugin_validator"
+
+    def register(registry):
+        registry.register_validator(NodePluginMarkerRule())
+
+    _install_qa_plugin(module_name, register)
+    monkeypatch.setattr(
+        "langgraph_system_generator.qa.registry.settings.qa_repair_plugin_modules",
+        [module_name],
+    )
+
+    result = await static_qa_node(
+        {
+            "generated_cells": _valid_generated_cells(
+                execution_content='marker = "NODE_PLUGIN_BROKEN"\nprint(marker)'
+            ),
+            "qa_reports": [],
+            "repair_attempts": 0,
+        }
+    )
+
+    assert any(
+        report.rule_id == "node_plugin_marker" and not report.passed
+        for report in result["qa_reports"]
+    )
+
+
+@pytest.mark.asyncio
 async def test_runtime_qa_node_message_empty_cells():
     result = await runtime_qa_node(
         {
@@ -716,6 +818,72 @@ async def test_repair_node_failure_keeps_cells_and_appends_history(monkeypatch):
     assert result["qa_repair_feedback"].repair_attempts == 4
     assert result["qa_repair_feedback"].rollback_used is True
     assert "rolled back after validation" in result["qa_repair_feedback"].warnings[-1]
+
+
+@pytest.mark.asyncio
+async def test_repair_node_uses_plugin_repair_routines(monkeypatch):
+    module_name = "test_nodes_qa_plugin_repair"
+
+    def repair_marker(_agent, notebook, _report):
+        fixes = []
+        for cell in notebook.cells:
+            if cell.cell_type != "code":
+                continue
+            source = str(cell.source or "")
+            updated = source.replace("NODE_PLUGIN_BROKEN", "NODE_PLUGIN_REPAIRED")
+            if updated != source:
+                cell.source = updated
+                fixes.append("Repaired node plugin marker.")
+        return fixes
+
+    def register(registry):
+        registry.register_validator(NodePluginMarkerRule())
+        registry.register_repair_routine(
+            RepairRoutineRegistration(
+                routine_id="node_plugin_marker_repair",
+                handled_rule_ids=("node_plugin_marker",),
+                handler=repair_marker,
+            )
+        )
+
+    _install_qa_plugin(module_name, register)
+    monkeypatch.setattr(
+        "langgraph_system_generator.qa.registry.settings.qa_repair_plugin_modules",
+        [module_name],
+    )
+    cells = _valid_generated_cells(
+        execution_content='marker = "NODE_PLUGIN_BROKEN"\nprint(marker)'
+    )
+    report = QAReport(
+        check_name="Node Plugin Marker",
+        passed=False,
+        message="Node plugin marker needs repair.",
+        rule_id="node_plugin_marker",
+        severity="error",
+        category="custom",
+        repairable=True,
+    )
+
+    result = await repair_node(
+        {
+            "generated_cells": cells,
+            "qa_reports": [report],
+            "qa_history": [],
+            "repair_attempts": 0,
+        }
+    )
+
+    code = "\n".join(
+        cell.content
+        for cell in result["generated_cells"]
+        if cell.cell_type == "code"
+    )
+    assert "NODE_PLUGIN_BROKEN" not in code
+    assert "NODE_PLUGIN_REPAIRED" in code
+    assert result["qa_history"][-1].evidence["attempted_fixes"] == [
+        "Repaired node plugin marker."
+    ]
+    assert result["qa_repair_feedback"].unrepaired_failures == []
 
 
 @pytest.mark.asyncio

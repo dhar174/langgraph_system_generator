@@ -15,6 +15,10 @@ from langgraph_system_generator.generator.state import CellSpec, QAReport
 from langgraph_system_generator.notebook.composer import (
     NotebookComposer as NotebookFileComposer,
 )
+from langgraph_system_generator.qa.registry import (
+    QARepairRegistry,
+    get_qa_repair_registry,
+)
 from langgraph_system_generator.qa.validators import NotebookValidator
 
 _GRAPH_SCAFFOLD_MARKER = "# Recovered deterministic graph scaffold"
@@ -76,14 +80,19 @@ class NotebookRepairAgent:
 
     DEFAULT_MAX_ATTEMPTS = 3
 
-    def __init__(self, max_attempts: int = DEFAULT_MAX_ATTEMPTS):
+    def __init__(
+        self,
+        max_attempts: int = DEFAULT_MAX_ATTEMPTS,
+        registry: QARepairRegistry | None = None,
+    ):
         """Initialize repair agent.
 
         Args:
             max_attempts: Maximum number of repair attempts before giving up
         """
         self.max_attempts = max_attempts
-        self.validator = NotebookValidator()
+        self.registry = registry.clone() if registry is not None else get_qa_repair_registry()
+        self.validator = NotebookValidator(registry=self.registry)
         self.notebook_builder = NotebookFileComposer()
 
     def repair_cells(
@@ -243,18 +252,8 @@ class NotebookRepairAgent:
 
         attempted_fixes: List[str] = []
         for report in failed_reports:
-            if report.rule_id == "placeholder_content" or report.check_name == "No Placeholders":
-                attempted_fixes.extend(self._repair_placeholders(notebook))
-            elif report.rule_id == "required_sections" or report.check_name == "Required Sections":
-                attempted_fixes.extend(self._repair_sections(notebook, report))
-            elif report.rule_id == "required_import_symbols" or report.check_name == "Required Imports":
-                attempted_fixes.extend(self._repair_imports(notebook, report))
-            elif report.rule_id == "undefined_names":
-                attempted_fixes.extend(self._repair_undefined_names(notebook, report))
-            elif report.rule_id == "python_syntax":
-                attempted_fixes.extend(self._repair_syntax(notebook, report))
-            elif report.rule_id == "graph_structure" or report.check_name == "Graph Compilation":
-                attempted_fixes.extend(self._repair_graph_scaffold(notebook, report))
+            for routine in self.registry.repair_routines_for(report):
+                attempted_fixes.extend(routine.handler(self, notebook, report))
 
         return list(dict.fromkeys(fix for fix in attempted_fixes if fix.strip()))
 
