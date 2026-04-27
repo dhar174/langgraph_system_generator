@@ -53,6 +53,7 @@ class DocsIndexer:
         "https://docs.langchain.com/oss/python/langchain/human-in-the-loop",
         "https://docs.langchain.com/oss/python/langchain/retrieval",
         "https://docs.langchain.com/oss/python/langchain/long-term-memory",
+        "https://docs.langchain.com/oss/python/deepagents/overview",
         "https://docs.langchain.com/oss/python/deepagents/quickstart",
         "https://docs.langchain.com/oss/python/deepagents/customization",
         "https://docs.langchain.com/oss/python/deepagents/harness",

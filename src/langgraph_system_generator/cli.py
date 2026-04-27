@@ -593,6 +593,11 @@ def _infer_stub_architecture(prompt: str) -> tuple[str, str]:
     """Lightweight heuristic to pick an architecture in stub mode."""
 
     text = prompt.lower()
+    if any(keyword in text for keyword in ["deepagents", "deep agents", "deep agent"]):
+        return (
+            "deepagents",
+            "Deep Agents pattern selected based on explicit Deep Agents intent in the prompt.",
+        )
     if "autoagent" in text or "auto agent" in text:
         return (
             "autoagent",
@@ -624,7 +629,7 @@ def _infer_stub_architecture(prompt: str) -> tuple[str, str]:
     )
 
 
-def _load_patterns() -> tuple[Any, Any, Any, Any]:
+def _load_patterns() -> tuple[Any, Any, Any, Any, Any]:
     """Import pattern generators lazily to preserve minimal installs."""
     patterns_module = require_optional_module(
         "langgraph_system_generator.patterns",
@@ -636,6 +641,7 @@ def _load_patterns() -> tuple[Any, Any, Any, Any]:
         patterns_module.SubagentsPattern,
         patterns_module.HybridPattern,
         patterns_module.AutoAgentPattern,
+        patterns_module.DeepAgentsPattern,
     )
 
 
@@ -651,7 +657,13 @@ def _load_generator_graph() -> Any:
 
 def _build_stub_result(prompt: str, agent_type: str | None = None) -> Dict[str, Any]:
     """Create a deterministic, offline-friendly generation result."""
-    RouterPattern, SubagentsPattern, HybridPattern, AutoAgentPattern = _load_patterns()
+    (
+        RouterPattern,
+        SubagentsPattern,
+        HybridPattern,
+        AutoAgentPattern,
+        DeepAgentsPattern,
+    ) = _load_patterns()
     architecture_registry = get_default_architecture_registry()
     graph_design_registry = get_graph_design_registry()
 
@@ -766,7 +778,11 @@ def _build_stub_result(prompt: str, agent_type: str | None = None) -> Dict[str, 
         ),
         CellSpec(
             cell_type="code",
-            content="!pip install -q langgraph langchain-openai",
+            content=(
+                "!pip install -q langgraph langchain-openai deepagents"
+                if architecture_type == "deepagents"
+                else "!pip install -q langgraph langchain-openai"
+            ),
             section="setup",
         ),
     ]
@@ -977,6 +993,44 @@ def _build_stub_result(prompt: str, agent_type: str | None = None) -> Dict[str, 
                 section="graph",
             )
         )
+    elif architecture_type == "deepagents":
+        cells.append(
+            CellSpec(
+                cell_type="markdown",
+                content=DeepAgentsPattern.generate_overview_markdown(),
+                section="nodes",
+            )
+        )
+        cells.append(
+            CellSpec(
+                cell_type="code",
+                content=DeepAgentsPattern.generate_state_code(),
+                section="state_definition",
+            )
+        )
+        cells.append(
+            CellSpec(
+                cell_type="code",
+                content=DeepAgentsPattern.generate_agent_node_code(
+                    ["researcher", "critic"]
+                ),
+                section="nodes",
+            )
+        )
+        cells.append(
+            CellSpec(
+                cell_type="code",
+                content=DeepAgentsPattern.generate_graph_code(),
+                section="graph",
+            )
+        )
+        cells.append(
+            CellSpec(
+                cell_type="code",
+                content=DeepAgentsPattern.generate_execution_code(),
+                section="execution",
+            )
+        )
     else:
         cells.append(
             CellSpec(
@@ -1007,10 +1061,27 @@ def _build_stub_result(prompt: str, agent_type: str | None = None) -> Dict[str, 
             sections_built=["intro", "install", "state", "nodes", "graph"],
         ),
         "notebook_dependency_plan": NotebookDependencyPlan(
-            packages=["langgraph", "langchain-openai"],
-            install_commands=["python -m pip install -q langgraph langchain-openai"],
+            packages=(
+                ["langgraph", "langchain-openai", "deepagents"]
+                if architecture_type == "deepagents"
+                else ["langgraph", "langchain-openai"]
+            ),
+            install_commands=[
+                (
+                    "python -m pip install -q langgraph langchain-openai deepagents"
+                    if architecture_type == "deepagents"
+                    else "python -m pip install -q langgraph langchain-openai"
+                )
+            ],
             runtime_notes=[
-                "Stub mode emits a deterministic dependency plan for the generated notebook."
+                "Stub mode emits a deterministic dependency plan for the generated notebook.",
+                *(
+                    [
+                        "Deep Agents cells use the optional deepagents SDK only when installed and credentials are configured."
+                    ]
+                    if architecture_type == "deepagents"
+                    else []
+                ),
             ],
             provider_env_vars=["OPENAI_API_KEY"],
         ),
@@ -1558,7 +1629,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     gen.add_argument(
         "--agent-type",
-        choices=["router", "subagents", "hybrid", "autoagent"],
+        choices=["router", "subagents", "hybrid", "autoagent", "deepagents"],
         default=None,
         help="Override architecture selection for generation.",
     )

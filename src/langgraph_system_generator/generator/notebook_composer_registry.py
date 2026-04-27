@@ -361,6 +361,17 @@ async def _build_autoagent_nodes_section(
     )
 
 
+async def _build_deepagents_nodes_section(
+    composer: Any,
+    context: NotebookComposerContext,
+) -> list[CellSpec]:
+    return composer._create_pattern_node_cells(
+        context.workflow_design.get("nodes", []),
+        "deepagents",
+        context.workflow_design,
+    )
+
+
 async def _build_critique_loop_nodes_section(
     composer: Any,
     context: NotebookComposerContext,
@@ -423,6 +434,17 @@ def _build_autoagent_graph_section(
     )
 
 
+def _build_deepagents_graph_section(
+    composer: Any,
+    context: NotebookComposerContext,
+) -> list[CellSpec]:
+    return composer._create_pattern_graph_cells(
+        context.workflow_design,
+        "deepagents",
+        context.feedback.resolved_max_iterations or 1,
+    )
+
+
 def _build_critique_loop_graph_section(
     composer: Any,
     context: NotebookComposerContext,
@@ -479,12 +501,14 @@ def get_notebook_composer_registry() -> NotebookComposerRegistry:
     registry.register_builder("subagents_nodes", _build_subagents_nodes_section)
     registry.register_builder("hybrid_nodes", _build_hybrid_nodes_section)
     registry.register_builder("autoagent_nodes", _build_autoagent_nodes_section)
+    registry.register_builder("deepagents_nodes", _build_deepagents_nodes_section)
     registry.register_builder("critique_loop_nodes", _build_critique_loop_nodes_section)
 
     registry.register_builder("router_graph", _build_router_graph_section)
     registry.register_builder("subagents_graph", _build_subagents_graph_section)
     registry.register_builder("hybrid_graph", _build_hybrid_graph_section)
     registry.register_builder("autoagent_graph", _build_autoagent_graph_section)
+    registry.register_builder("deepagents_graph", _build_deepagents_graph_section)
     registry.register_builder(
         "critique_loop_graph",
         _build_critique_loop_graph_section,
@@ -495,6 +519,7 @@ def get_notebook_composer_registry() -> NotebookComposerRegistry:
         ("subagents", "subagents_nodes", "subagents_graph"),
         ("hybrid", "hybrid_nodes", "hybrid_graph"),
         ("autoagent", "autoagent_nodes", "autoagent_graph"),
+        ("deepagents", "deepagents_nodes", "deepagents_graph"),
         ("critique_loop", "critique_loop_nodes", "critique_loop_graph"),
     ]:
         registry.register(

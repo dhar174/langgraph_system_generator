@@ -30,6 +30,9 @@
 
 - Advanced API parameters such as `model`, `temperature`, `max_tokens`,
   `custom_endpoint`, and `agent_type` are request-scoped generation controls.
+- `agent_type="deepagents"` is experimental and explicit opt-in; generated
+  notebooks import the optional Deep Agents SDK lazily so stub mode remains
+  offline-friendly.
 - Runtime QA performs environment preflight and smoke-test validation; in stub
   mode unavailable notebook runtimes are recorded as non-blocking evidence, but
   live mode treats runtime support gaps as real failures.

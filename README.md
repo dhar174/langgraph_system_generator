@@ -96,7 +96,8 @@ Pipeline stages:
    advisory feedback.
 3. **RAG**: `DocsRetriever` provides cached LangChain/LangGraph context.
 4. **Architecture**: `ArchitectureSelector` chooses `router`, `subagents`,
-   `hybrid`, or `autoagent`.
+   `hybrid`, or `autoagent`; explicit opt-in requests can select the
+   experimental `deepagents` architecture.
 5. **Graph Design**: `GraphDesigner` returns a typed graph design, Mermaid
    export, schema export, and validation feedback.
 6. **Tool Planning**: `ToolchainEngineer` normalizes tools through a registry,
@@ -126,6 +127,11 @@ lnf generate "Create a router-based chatbot" --output ./output/demo --mode stub
 lnf generate "Create an autonomous planning assistant" \
   --mode stub \
   --agent-type autoagent
+
+# Opt into the experimental Deep Agents architecture
+lnf generate "Create a Deep Agents research assistant" \
+  --mode stub \
+  --agent-type deepagents
 
 # Select output formats. Default: ipynb html markdown docx zip
 lnf generate "Create a chatbot" \
@@ -244,6 +250,8 @@ The generator-backed core patterns are:
 - `SubagentsPattern`: Supervisor-based coordination of specialist workers.
 - `HybridPattern`: Router plus worker/team composition.
 - `AutoAgentPattern`: Planner/executor/critic-style autonomous workflow.
+- `DeepAgentsPattern`: Experimental optional Deep Agents SDK harness using
+  lazy `create_deep_agent(...)` imports and deterministic offline fallback.
 - `CritiqueLoopPattern`: Iterative generation, critique, and revision.
 
 See [docs/patterns.md](docs/patterns.md),

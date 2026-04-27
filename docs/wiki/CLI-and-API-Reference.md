@@ -40,7 +40,7 @@ lnf generate PROMPT [OPTIONS]
 | `--output DIR` | path | `./output` | Output directory for artifacts |
 | `--mode MODE` | choice | `stub` | Generation mode: `stub` or `live` |
 | `--formats FORMAT [FORMAT ...]` | list | `ipynb html markdown docx zip` | Output formats: `ipynb`, `html`, `markdown`, `pdf`, `docx`, `zip` |
-| `--agent-type TYPE` | string | auto | Architecture override: `router`, `subagents`, `hybrid`, `autoagent` |
+| `--agent-type TYPE` | string | auto | Architecture override: `router`, `subagents`, `hybrid`, `autoagent`, `deepagents` |
 
 **Examples:**
 
@@ -55,6 +55,14 @@ lnf generate "Build a research assistant with multiple agents" \
   --output ./research_assistant \
   --mode live \
   --agent-type subagents
+```
+
+Experimental Deep Agents stub generation:
+```bash
+lnf generate "Build a Deep Agents research assistant" \
+  --output ./deepagents_assistant \
+  --mode stub \
+  --agent-type deepagents
 ```
 
 Specific formats only:
@@ -466,7 +474,7 @@ All requests are validated using Pydantic models:
 - `temperature`: Must be 0.0-2.0
 - `max_tokens`: Must be 1-32768
 - `formats`: Must be valid format names
-- `agent_type`: Must be one of `router`, `subagents`, `hybrid`, `autoagent`
+- `agent_type`: Must be one of `router`, `subagents`, `hybrid`, `autoagent`, `deepagents`
 - `custom_endpoint`: Must be a valid `http` or `https` URL when provided, and requires an explicit model
 
 **Validation Error Response:**
@@ -596,7 +604,7 @@ phase timing, per-format export status, graph-design exports, and non-fatal warn
 {
   "prompt": "User's original prompt",
   "mode": "stub | live",
-  "architecture_type": "router | subagents | hybrid | autoagent",
+  "architecture_type": "router | subagents | hybrid | autoagent | deepagents",
   "plan_title": "LangGraph Workflow: Example",
   "requirements_feedback": {"fallback_used": false},
   "architecture_feedback": {"fallback_used": false},
