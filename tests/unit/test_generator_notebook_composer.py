@@ -148,6 +148,7 @@ def test_notebook_composer_registry_includes_builtin_architectures():
         "hybrid",
         "autoagent",
         "critique_loop",
+        "deepagents",
     ]:
         registration = registry.get(architecture_type)
         assert registration.section_overrides["nodes"].endswith("_nodes")
@@ -324,6 +325,80 @@ async def test_compose_notebook_dependency_plan_uses_tool_packages_and_env_vars(
     assert "requests" in composition.dependency_plan.packages
     assert "pydantic" in composition.dependency_plan.packages
     assert "SERVICE_API_KEY" in composition.dependency_plan.provider_env_vars
+
+
+@pytest.mark.asyncio
+async def test_compose_notebook_emits_deepagents_sections_and_dependency(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    monkeypatch.setattr(composer_module, "ChatOpenAI", DummyLLM)
+    composer = composer_module.NotebookComposer(
+        model_config=ModelConfig(model="gpt-5.2")
+    )
+
+    composition = await composer.compose_notebook(
+        notebook_plan=NotebookPlan(
+            title="Deep Agents Notebook",
+            sections=["Setup", "Workflow", "Execution"],
+            patterns_used=["deepagents"],
+            architecture_type="deepagents",
+        ),
+        workflow_design={
+            "architecture_type": "deepagents",
+            "state_schema": {"messages": "Conversation state"},
+            "nodes": [
+                {"name": "deep_agent", "purpose": "Plan and delegate work"},
+                {"name": "researcher", "purpose": "Research detailed context"},
+            ],
+            "graph_exports": {
+                "mermaid": "flowchart TD\n    deep_agent[Deep Agent]",
+                "schema": {
+                    "entry_point": "deep_agent",
+                    "terminal_nodes": ["deep_agent"],
+                },
+            },
+        },
+        tools=[
+            {
+                "tool_id": "web_search",
+                "name": "Lookup Topic",
+                "status": "ready",
+                "packages": [],
+                "provider_env_vars": [],
+            },
+            {
+                "tool_id": "unsupported_demo",
+                "name": "Unsupported Tool",
+                "status": "unsupported",
+                "packages": ["unsupported-package"],
+                "provider_env_vars": [],
+            },
+        ],
+        architecture={
+            "architecture_type": "deepagents",
+            "justification": "Explicit opt-in Deep Agents request.",
+        },
+    )
+
+    code = "\n\n".join(cell.content for cell in composition.cells if cell.cell_type == "code")
+    markdown = "\n\n".join(
+        cell.content for cell in composition.cells if cell.cell_type == "markdown"
+    )
+
+    assert "deepagents" not in composition.dependency_plan.packages
+    assert "create_deep_agent" in code
+    assert "_deterministic_deepagents_fallback" in code
+    assert '"Lookup_Topic"' in code
+    assert "Unsupported_Tool" not in code
+    assert "tools=available_tools" in code
+    assert 'workflow.add_node("deep_agent", deep_agent_node)' in code
+    assert '"openai:gpt-5.2"' in code
+    assert "Deep Agents Harness" in markdown
+    assert "experimental" in markdown.lower()
+    assert any(
+        "python -m pip install deepagents" in note
+        for note in composition.dependency_plan.runtime_notes
+    )
 
 
 @pytest.mark.asyncio
@@ -666,6 +741,7 @@ async def test_compose_notebook_sections_and_packages(
     ]
     assert "langgraph" in composition.dependency_plan.packages
     assert "langchain-openai" in composition.dependency_plan.packages
+    assert "deepagents" not in composition.dependency_plan.packages
     assert "OPENAI_API_KEY" in composition.dependency_plan.provider_env_vars
 
     sections = {cell.section for cell in cells}

@@ -13,6 +13,7 @@ _PACKAGE_IMPORT_PROBES = {
     "langchain-core": "langchain_core",
     "langchain-openai": "langchain_openai",
     "langchain-community": "langchain_community",
+    "deepagents": "deepagents",
     "pydantic": "pydantic",
     "pypdf": "pypdf",
     "pdfminer.six": "pdfminer",

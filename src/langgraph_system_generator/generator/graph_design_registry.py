@@ -218,6 +218,34 @@ def _build_autoagent_fallback(*_args, **_kwargs) -> dict[str, Any]:
     )
 
 
+def _build_deepagents_fallback(*_args, **_kwargs) -> dict[str, Any]:
+    """Return the deterministic fallback Deep Agents design."""
+
+    return {
+        "state_schema": {
+            "messages": "List of messages",
+            "task_plan": "Planning steps tracked by the Deep Agents harness",
+            "artifacts": "Named artifacts or notes produced during execution",
+            "subagent_results": "Outputs returned by optional Deep Agents subagents",
+            "final_output": "Final synthesized response",
+            "deepagents_available": "Whether the optional deepagents SDK was invoked",
+        },
+        "nodes": [
+            {
+                "name": "deep_agent",
+                "purpose": (
+                    "Run the optional Deep Agents harness or a deterministic "
+                    "fallback when dependencies or credentials are unavailable"
+                ),
+            },
+        ],
+        "edges": [],
+        "conditional_edges": [],
+        "entry_point": "deep_agent",
+        "checkpointing": True,
+    }
+
+
 def _build_hybrid_fallback(*_args, **_kwargs) -> dict[str, Any]:
     """Return the deterministic fallback hybrid design."""
 
@@ -723,6 +751,15 @@ def _default_registrations() -> list[GraphDesignRegistration]:
             fallback_builder=_build_autoagent_fallback,
             export_label_defaults={"title": "AutoAgent Workflow"},
             composition_strategy="coordinator_team",
+        ),
+        GraphDesignRegistration(
+            architecture_id="deepagents",
+            supported_entry_shapes=["deep_agent"],
+            supported_exit_shapes=["terminal"],
+            cycles_allowed=False,
+            fallback_builder=_build_deepagents_fallback,
+            export_label_defaults={"title": "Experimental Deep Agents Workflow"},
+            composition_strategy="deepagents_harness",
         ),
     ]
 

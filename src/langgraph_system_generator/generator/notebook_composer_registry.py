@@ -314,7 +314,11 @@ async def _build_nodes_section(
     composer: Any,
     context: NotebookComposerContext,
 ) -> list[CellSpec]:
-    return await composer._create_node_cells(context.workflow_design, context.feedback)
+    return await composer._create_node_cells(
+        context.workflow_design,
+        context.feedback,
+        tools=context.tools,
+    )
 
 
 async def _build_router_nodes_section(
@@ -325,6 +329,7 @@ async def _build_router_nodes_section(
         context.workflow_design.get("nodes", []),
         "router",
         context.workflow_design,
+        tools=context.tools,
     )
 
 
@@ -336,6 +341,7 @@ async def _build_subagents_nodes_section(
         context.workflow_design.get("nodes", []),
         "subagents",
         context.workflow_design,
+        tools=context.tools,
     )
 
 
@@ -347,6 +353,7 @@ async def _build_hybrid_nodes_section(
         context.workflow_design.get("nodes", []),
         "hybrid",
         context.workflow_design,
+        tools=context.tools,
     )
 
 
@@ -358,6 +365,19 @@ async def _build_autoagent_nodes_section(
         context.workflow_design.get("nodes", []),
         "autoagent",
         context.workflow_design,
+        tools=context.tools,
+    )
+
+
+async def _build_deepagents_nodes_section(
+    composer: Any,
+    context: NotebookComposerContext,
+) -> list[CellSpec]:
+    return composer._create_pattern_node_cells(
+        context.workflow_design.get("nodes", []),
+        "deepagents",
+        context.workflow_design,
+        tools=context.tools,
     )
 
 
@@ -369,6 +389,7 @@ async def _build_critique_loop_nodes_section(
         context.workflow_design.get("nodes", []),
         "critique_loop",
         context.workflow_design,
+        tools=context.tools,
     )
 
 
@@ -419,6 +440,17 @@ def _build_autoagent_graph_section(
     return composer._create_pattern_graph_cells(
         context.workflow_design,
         "autoagent",
+        context.feedback.resolved_max_iterations or 1,
+    )
+
+
+def _build_deepagents_graph_section(
+    composer: Any,
+    context: NotebookComposerContext,
+) -> list[CellSpec]:
+    return composer._create_pattern_graph_cells(
+        context.workflow_design,
+        "deepagents",
         context.feedback.resolved_max_iterations or 1,
     )
 
@@ -479,12 +511,14 @@ def get_notebook_composer_registry() -> NotebookComposerRegistry:
     registry.register_builder("subagents_nodes", _build_subagents_nodes_section)
     registry.register_builder("hybrid_nodes", _build_hybrid_nodes_section)
     registry.register_builder("autoagent_nodes", _build_autoagent_nodes_section)
+    registry.register_builder("deepagents_nodes", _build_deepagents_nodes_section)
     registry.register_builder("critique_loop_nodes", _build_critique_loop_nodes_section)
 
     registry.register_builder("router_graph", _build_router_graph_section)
     registry.register_builder("subagents_graph", _build_subagents_graph_section)
     registry.register_builder("hybrid_graph", _build_hybrid_graph_section)
     registry.register_builder("autoagent_graph", _build_autoagent_graph_section)
+    registry.register_builder("deepagents_graph", _build_deepagents_graph_section)
     registry.register_builder(
         "critique_loop_graph",
         _build_critique_loop_graph_section,
@@ -495,6 +529,7 @@ def get_notebook_composer_registry() -> NotebookComposerRegistry:
         ("subagents", "subagents_nodes", "subagents_graph"),
         ("hybrid", "hybrid_nodes", "hybrid_graph"),
         ("autoagent", "autoagent_nodes", "autoagent_graph"),
+        ("deepagents", "deepagents_nodes", "deepagents_graph"),
         ("critique_loop", "critique_loop_nodes", "critique_loop_graph"),
     ]:
         registry.register(

@@ -8,7 +8,7 @@ import json
 import keyword
 import logging
 import re
-from typing import Any, Awaitable, Callable, Dict, List, TypeVar
+from typing import Any, Awaitable, Callable, Dict, List, Optional, TypeVar
 
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
@@ -38,6 +38,7 @@ from langgraph_system_generator.generator.state import (
 from langgraph_system_generator.patterns import (
     AutoAgentPattern,
     CritiqueLoopPattern,
+    DeepAgentsPattern,
     HybridPattern,
     RouterPattern,
     SubagentsPattern,
@@ -214,6 +215,21 @@ class NotebookComposer:
 
         for package_name in ["langgraph", "langchain-core", "langchain-openai"]:
             accumulator.packages.append(package_name)
+
+        architecture_type = self._normalize_inline_text(
+            workflow_design.get("architecture_type", ""),
+            "",
+        ).lower()
+        if architecture_type == "deepagents":
+            note = (
+                "Deep Agents cells are experimental and run in deterministic fallback "
+                "mode when the optional `deepagents` SDK is unavailable. Install it "
+                "manually with `python -m pip install deepagents` only if your "
+                "environment allows package installation and provider credentials are "
+                "configured."
+            )
+            if note not in accumulator.runtime_notes:
+                accumulator.runtime_notes.append(note)
 
         for tool in tools:
             tool_status = self._normalize_inline_text(tool.get("status", ""), "").lower()
@@ -653,6 +669,8 @@ else:
             state_content = HybridPattern.generate_state_code(state_schema)
         elif architecture_type == "autoagent":
             state_content = AutoAgentPattern.generate_state_code(state_schema)
+        elif architecture_type == "deepagents":
+            state_content = DeepAgentsPattern.generate_state_code(state_schema)
         elif architecture_type == "critique_loop":
             state_content = CritiqueLoopPattern.generate_state_code(state_schema)
         else:
@@ -928,6 +946,7 @@ Generate the complete Python function implementation.""")
         self,
         workflow_design: Dict[str, Any],
         feedback: NotebookCompositionFeedback,
+        tools: Optional[List[Dict[str, Any]]] = None,
     ) -> List[CellSpec]:
         """Create node implementation cells with tracked fallback behavior."""
         cells = [
@@ -947,11 +966,12 @@ Generate the complete Python function implementation.""")
             "subagents",
             "hybrid",
             "autoagent",
+            "deepagents",
             "critique_loop",
         ]:
             # Use pattern library for architecture-specific nodes
             pattern_cells = self._create_pattern_node_cells(
-                nodes, architecture_type, workflow_design
+                nodes, architecture_type, workflow_design, tools=tools
             )
             cells.extend(pattern_cells)
         else:
@@ -1264,6 +1284,8 @@ def {safe_node_identifier}_node(state: WorkflowState) -> WorkflowState:
         nodes: List[Dict[str, Any]],
         architecture_type: str,
         workflow_design: Dict[str, Any],
+        *,
+        tools: Optional[List[Dict[str, Any]]] = None,
     ) -> List[CellSpec]:
         """Generate nodes using pattern library templates.
 
@@ -1417,6 +1439,45 @@ def {safe_node_identifier}_node(state: WorkflowState) -> WorkflowState:
                         CellSpec(cell_type="code", content=worker_code, section="nodes")
                     )
 
+        elif architecture_type == "deepagents":
+            subagents = [
+                node.get("name")
+                for node in nodes
+                if node.get("name") not in {"deep_agent", "deepagents"}
+            ]
+            tool_identifiers: List[str] = []
+            for tool in tools or []:
+                tool_status = self._normalize_inline_text(
+                    tool.get("status", ""),
+                    "ready",
+                ).lower()
+                if tool_status == "unsupported":
+                    continue
+                identifier = self._safe_identifier(
+                    tool.get("name") or tool.get("tool_id") or "",
+                    "tool",
+                )
+                if identifier not in tool_identifiers:
+                    tool_identifiers.append(identifier)
+            cells.append(
+                CellSpec(
+                    cell_type="markdown",
+                    content=DeepAgentsPattern.generate_overview_markdown(),
+                    section="nodes",
+                )
+            )
+            cells.append(
+                CellSpec(
+                    cell_type="code",
+                    content=DeepAgentsPattern.generate_agent_node_code(
+                        subagents,
+                        tools=tool_identifiers,
+                        model_config=model_config,
+                    ),
+                    section="nodes",
+                )
+            )
+
         elif architecture_type == "critique_loop":
             # Generate critique loop nodes
             generate_code = CritiqueLoopPattern.generate_generation_node_code(
@@ -1454,6 +1515,7 @@ def {safe_node_identifier}_node(state: WorkflowState) -> WorkflowState:
             "subagents",
             "hybrid",
             "autoagent",
+            "deepagents",
             "critique_loop",
         }:
             return self._create_pattern_graph_cells(
@@ -1503,6 +1565,8 @@ def {safe_node_identifier}_node(state: WorkflowState) -> WorkflowState:
                 workers,
                 max_iterations=max_iterations,
             )
+        elif architecture_type == "deepagents":
+            graph_code = DeepAgentsPattern.generate_graph_code()
         else:
             graph_code = CritiqueLoopPattern.generate_graph_code(
                 max_revisions=max_iterations,
@@ -1649,6 +1713,15 @@ graph = workflow.compile(checkpointer=memory)"""
     "dispatch_log": [],
     "iterations": 0,
     "final_output": "",
+}"""
+        elif architecture_type == "deepagents":
+            initial_state_block = """initial_state: WorkflowState = {
+    "messages": [HumanMessage(content="Plan and summarize a small research task.")],
+    "task_plan": [],
+    "artifacts": {},
+    "subagent_results": {},
+    "final_output": "",
+    "deepagents_available": False,
 }"""
         elif architecture_type == "critique_loop":
             initial_state_block = """initial_state: WorkflowState = {

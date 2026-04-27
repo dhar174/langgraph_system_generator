@@ -207,6 +207,51 @@ async def test_generate_artifacts_stub_hybrid_override(
 
 
 @pytest.mark.asyncio
+async def test_generate_artifacts_stub_deepagents_override(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.setenv("LNF_OUTPUT_BASE", "test_generate_artifacts_stub_deepagents")
+
+    import importlib
+    import langgraph_system_generator.constants as constants_module
+    import langgraph_system_generator.notebook.exporters as exporters_module
+    import langgraph_system_generator.cli as cli_module
+
+    importlib.reload(constants_module)
+    importlib.reload(exporters_module)
+    importlib.reload(cli_module)
+
+    output_dir = constants_module._BASE_OUTPUT / "test_stub_deepagents"
+    artifacts: GenerationArtifacts = await cli_module.generate_artifacts(
+        "Build an experimental Deep Agents workflow with subagents",
+        output_dir=str(output_dir),
+        mode="stub",
+        agent_type="deepagents",
+    )
+
+    generated_code = "\n\n".join(
+        cell["content"]
+        for cell in artifacts["result"]["generated_cells"]
+        if cell["cell_type"] == "code"
+    )
+    assert artifacts["manifest"]["architecture_type"] == "deepagents"
+    assert artifacts["manifest"]["agent_type"] == "deepagents"
+    assert artifacts["result"]["architecture_type"] == "deepagents"
+    assert artifacts["result"]["generation_complete"] is True
+    dependency_plan = artifacts["manifest"]["notebook_dependency_plan"]
+    assert "deepagents" not in dependency_plan["packages"]
+    assert all("deepagents" not in command for command in dependency_plan["install_commands"])
+    assert any(
+        "python -m pip install deepagents" in note
+        for note in dependency_plan["runtime_notes"]
+    )
+    assert "!pip install -q langgraph langchain-openai deepagents" not in generated_code
+    assert "create_deep_agent" in generated_code
+    assert "_deterministic_deepagents_fallback" in generated_code
+    assert "deep_agent" in artifacts["manifest"]["graph_exports"]["mermaid"]
+
+
+@pytest.mark.asyncio
 async def test_generate_artifacts_default_formats_include_markdown(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):
@@ -273,6 +318,47 @@ async def test_api_generate_stub(tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     assert payload["manifest"]["notebook_composition_feedback"]["fallback_used"] is False
     assert "langgraph" in payload["manifest"]["notebook_dependency_plan"]["packages"]
     assert payload["manifest"]["qa_repair_feedback"]["repair_attempts"] == 0
+
+
+@pytest.mark.asyncio
+async def test_api_generate_stub_accepts_deepagents_agent_type(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.setenv("LNF_OUTPUT_BASE", "test_api_stub_deepagents")
+
+    import importlib
+    import langgraph_system_generator.constants as constants_module
+    import langgraph_system_generator.notebook.exporters as exporters_module
+    import langgraph_system_generator.api.server as server_module
+
+    importlib.reload(constants_module)
+    importlib.reload(exporters_module)
+    importlib.reload(server_module)
+
+    transport = httpx.ASGITransport(app=server_module.app)
+    output_dir = constants_module._BASE_OUTPUT / tmp_path.name
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(
+            "/generate",
+            json={
+                "prompt": "API Deep Agents prompt",
+                "mode": "stub",
+                "output_dir": str(output_dir),
+                "agent_type": "deepagents",
+            },
+        )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["success"] is True
+    assert payload["manifest"]["architecture_type"] == "deepagents"
+    assert payload["manifest"]["agent_type"] == "deepagents"
+    dependency_plan = payload["manifest"]["notebook_dependency_plan"]
+    assert "deepagents" not in dependency_plan["packages"]
+    assert any(
+        "python -m pip install deepagents" in note
+        for note in dependency_plan["runtime_notes"]
+    )
 
 
 @pytest.mark.asyncio

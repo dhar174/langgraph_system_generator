@@ -121,11 +121,16 @@ def test_architecture_registry_includes_builtin_architectures():
         "subagents",
         "hybrid",
         "autoagent",
+        "deepagents",
     }
 
     hybrid = registry.get("hybrid")
     assert hybrid.default_secondary_patterns == ["router", "subagents"]
     assert hybrid.deterministic is True
+
+    deepagents = registry.get("deepagents")
+    assert deepagents.default_secondary_patterns == ["subagents"]
+    assert deepagents.deterministic is True
 
 
 @pytest.mark.asyncio
@@ -506,6 +511,43 @@ async def test_architecture_selector_normalizes_pattern_primary(monkeypatch):
         "primary pattern did not match architecture_type" in error
         for error in result.feedback.validation_errors
     )
+
+
+@pytest.mark.asyncio
+async def test_architecture_selector_accepts_explicit_deepagents(monkeypatch):
+    """Explicit Deep Agents selections should validate without changing fallback defaults."""
+
+    payload = """
+    {
+      "architecture_type": "deepagents",
+      "patterns": {"primary": "deepagents", "secondary": ["subagents"]},
+      "justification": "The prompt asks for Deep Agents planning, tools, and subagents.",
+      "feedback": {
+        "confidence": 0.79
+      }
+    }
+    """
+    monkeypatch.setattr(
+        architecture_selector,
+        "ChatOpenAI",
+        make_stub_llm(payload),
+    )
+    selector = architecture_selector.ArchitectureSelector()
+    result = await selector.select_architecture(
+        [
+            Constraint(
+                type="goal",
+                value="Build this as an explicit deepagents workflow",
+                priority=5,
+            )
+        ],
+        [],
+    )
+
+    assert result.architecture_type == "deepagents"
+    assert result.patterns.primary == "deepagents"
+    assert result.patterns.secondary == ["subagents"]
+    assert result.feedback.fallback_used is False
 
 
 @pytest.mark.asyncio
@@ -985,6 +1027,28 @@ def test_graph_design_validation_detects_cycles_and_unreachable_nodes():
     assert "cycle_detected" in issue_codes
     assert "unreachable_node" in issue_codes
     assert "missing_terminal_path" in issue_codes
+
+
+def test_graph_design_registry_deepagents_fallback_validates_and_exports():
+    """Deep Agents fallback should produce a complete terminal workflow bundle."""
+
+    registration = get_graph_design_registry().get("deepagents")
+    result = normalize_graph_design(
+        registration.fallback_builder(),
+        "deepagents",
+        registration,
+    )
+    issues = validate_graph_design(result, registration)
+    errors = [issue for issue in issues if issue.severity == "error"]
+    exports = build_graph_exports(result, registration, issues)
+
+    assert errors == []
+    assert result.architecture_type == "deepagents"
+    assert result.entry_point == "deep_agent"
+    assert [node.name for node in result.nodes] == ["deep_agent"]
+    assert "deep_agent" in exports.mermaid
+    assert exports.schema["composition_strategy"] == "deepagents_harness"
+    assert exports.schema["terminal_nodes"] == ["deep_agent"]
 
 
 def test_graph_design_registry_loads_plugin_modules(monkeypatch):

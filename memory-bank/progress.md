@@ -8,7 +8,7 @@
   and QA/repair now expose typed feedback and warning surfaces in manifests and
   API results.
 - Pattern generators and examples cover router, subagents, hybrid, autoagent,
-  critique-revise, and advanced example-only workflows.
+  experimental deepagents, critique-revise, and advanced example-only workflows.
 - Notebook composition, dependency planning, runtime validation, deterministic
   repair, rollback reporting, and export helpers are present.
 
@@ -16,8 +16,8 @@
 
 - Public docs and onboarding copy have historically lagged behind the runtime
   contract and should be kept synchronized with CLI/API behavior.
-- Optional Deep Agents support remains outside the core release-blocking
-  runtime-agent epics.
+- Experimental Deep Agents support is opt-in through `agent_type="deepagents"`
+  and keeps the optional SDK out of core imports.
 
 ## Current Status
 

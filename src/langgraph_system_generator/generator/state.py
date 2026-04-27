@@ -108,7 +108,7 @@ class RequirementsAnalysis(BaseModel):
     )
 
 
-ArchitectureType = Literal["router", "subagents", "hybrid", "autoagent"]
+ArchitectureType = Literal["router", "subagents", "hybrid", "autoagent", "deepagents"]
 
 
 class ArchitectureAlternative(BaseModel):
@@ -455,7 +455,7 @@ class NotebookPlan(BaseModel):
     )
     architecture_type: str = Field(
         default="",
-        description="Selected architecture: router, subagents, hybrid, or autoagent",
+        description="Selected architecture: router, subagents, hybrid, autoagent, or deepagents",
     )
 
 

@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 import ast
+import importlib.util
+from pathlib import Path
 
 from langgraph_system_generator.patterns import (
     AutoAgentPattern,
     CritiqueLoopPattern,
+    DeepAgentsPattern,
     HybridPattern,
     RouterPattern,
     SubagentsPattern,
@@ -284,6 +287,90 @@ class TestHybridPattern:
         assert 'workflow.add_node("finish", finish_node)' in code
         assert 'workflow.add_edge("finish", END)' in code
         assert 'workflow.add_node("specialist_1", specialist_1_node)' in code
+
+
+class TestDeepAgentsPattern:
+    """Tests for experimental Deep Agents pattern code generation."""
+
+    def test_generate_state_code(self):
+        code = DeepAgentsPattern.generate_state_code(
+            additional_fields={"request_id": "Request correlation id"}
+        )
+
+        assert "class WorkflowState(TypedDict, total=False):" in code
+        assert "deepagents_available: bool" in code
+        assert "Dict[str, Any]" in code
+        assert "request_id: str  # Request correlation id" in code
+        compile(code, "<deepagents-state>", "exec")
+
+    def test_generate_agent_node_code_uses_optional_sdk_and_subagents(self):
+        code = DeepAgentsPattern.generate_agent_node_code(
+            ["researcher", "fact_checker"],
+            tools=["lookup_topic", "summarize_findings"],
+            model_config={"model": "gpt-5-mini"},
+        )
+
+        assert "from deepagents import create_deep_agent" in code
+        assert "_deterministic_deepagents_fallback" in code
+        assert "OPENAI_API_KEY" in code
+        assert "subagents=subagents" in code
+        assert '"lookup_topic"' in code
+        assert '"summarize_findings"' in code
+        assert "tools=available_tools" in code
+        assert '"name": "fact-checker"' in code
+        assert '"openai:gpt-5-mini"' in code
+        compile(code, "<deepagents-node>", "exec")
+
+    def test_generate_agent_node_code_preserves_prefixed_model_identifiers(self):
+        code = DeepAgentsPattern.generate_agent_node_code(
+            ["researcher"],
+            model_config={"model": "anthropic:claude-sonnet-4-5"},
+        )
+
+        assert '"anthropic:claude-sonnet-4-5"' in code
+        assert "openai:anthropic:claude-sonnet-4-5" not in code
+        compile(code, "<deepagents-node-prefixed>", "exec")
+
+    def test_generate_graph_code_has_terminal_path(self):
+        code = DeepAgentsPattern.generate_graph_code()
+
+        assert 'workflow.add_node("deep_agent", deep_agent_node)' in code
+        assert 'workflow.add_edge(START, "deep_agent")' in code
+        assert 'workflow.add_edge("deep_agent", END)' in code
+        compile(code, "<deepagents-graph>", "exec")
+
+    def test_generate_execution_code_stays_offline_runnable(self):
+        code = DeepAgentsPattern.generate_execution_code()
+
+        assert "deterministic fallback path" in code
+        assert "lnf-deepagents-demo" in code
+        compile(code, "<deepagents-execution>", "exec")
+
+    def test_example_live_mode_explains_missing_optional_sdk(self, monkeypatch):
+        example_path = (
+            Path(__file__).resolve().parents[2] / "examples" / "deepagents_pattern_example.py"
+        )
+        spec = importlib.util.spec_from_file_location(
+            "deepagents_pattern_example_for_test",
+            example_path,
+        )
+        assert spec is not None
+        module = importlib.util.module_from_spec(spec)
+        assert spec.loader is not None
+        spec.loader.exec_module(module)
+
+        def raise_missing_deepagents(*args, **kwargs):
+            exc = ModuleNotFoundError("No module named 'deepagents'")
+            exc.name = "deepagents"
+            raise exc
+
+        monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+        monkeypatch.setattr(module, "build_live_agent", raise_missing_deepagents)
+
+        result = module.run_live("Summarize Deep Agents.", "openai:gpt-5-mini")
+
+        assert result["mode"] == "live-skipped"
+        assert "Install the optional 'deepagents' package" in result["final_output"]
 
 
 class TestCritiqueLoopPattern:
@@ -1145,6 +1232,10 @@ def test_generated_pattern_sections_compile_as_python():
         ),
         SubagentsPattern.generate_graph_code(["researcher"]),
         SubagentsPattern.generate_complete_example(["researcher"]),
+        DeepAgentsPattern.generate_state_code(),
+        DeepAgentsPattern.generate_agent_node_code(["researcher"]),
+        DeepAgentsPattern.generate_graph_code(),
+        DeepAgentsPattern.generate_execution_code(),
         CritiqueLoopPattern.generate_state_code(),
         CritiqueLoopPattern.generate_generation_node_code(),
         CritiqueLoopPattern.generate_critique_node_code(),

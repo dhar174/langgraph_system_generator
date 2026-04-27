@@ -78,6 +78,12 @@ The runtime pipeline also relies on adjacent supporting systems:
 - notebook composition/export code under `src/langgraph_system_generator/notebook/`
 - validators and repair helpers under `src/langgraph_system_generator/qa/`
 
+Architecture support is registry-backed. The public IDs are `router`,
+`subagents`, `hybrid`, `autoagent`, and the explicit experimental opt-in
+`deepagents`. Deep Agents notebooks must keep `deepagents` as an optional
+runtime dependency with lazy `create_deep_agent(...)` imports so stub mode and
+core package imports stay offline-friendly.
+
 ### How they interact with the architecture
 
 The outer workflow is implemented in

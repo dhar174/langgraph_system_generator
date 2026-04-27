@@ -123,6 +123,8 @@ Selects the most appropriate multi-agent pattern:
 - `subagents`: Supervisor-subagent coordination
 - `hybrid`: Combination of multiple patterns
 - `autoagent`: Planner/executor/critic loop for autonomous multi-step execution
+- `deepagents`: Experimental opt-in Deep Agents SDK harness with lazy optional
+  `create_deep_agent(...)` usage and deterministic fallback cells
 
 **Agent**: `ArchitectureSelector`  
 **LLM-Powered**: Yes (live mode) / Heuristics (stub mode)
@@ -583,8 +585,11 @@ The Pattern Library provides code generation templates:
 
 Generator-backed patterns are covered by focused unit tests and runnable
 examples. The architecture selector and graph designer can currently target
-`router`, `subagents`, `hybrid`, and `autoagent`; the pattern library also keeps
-the critique-revise loop available for direct use and examples.
+`router`, `subagents`, `hybrid`, `autoagent`, and explicit experimental
+`deepagents`; the pattern library also keeps the critique-revise loop available
+for direct use and examples. Deep Agents support keeps the SDK optional at core
+import time and adds notebook-facing optional install guidance only for Deep
+Agents outputs, so offline fallback notebooks do not auto-install `deepagents`.
 
 ## Quality Assurance System
 
