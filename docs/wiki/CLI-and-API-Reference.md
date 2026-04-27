@@ -123,13 +123,27 @@ The CLI respects these environment variables:
 | `MAX_REPAIR_ATTEMPTS` | QA repair attempts | `3` |
 | `DEFAULT_BUDGET_TOKENS` | Token budget | `100000` |
 | `LNF_OUTPUT_BASE` | Base output directory | `.` |
+| `LNF_MAX_CONCURRENT_GENERATIONS` | Async API generation concurrency | `5` |
+| `REQUIREMENTS_CONSTRAINT_TYPES` | Extra intake constraint types as JSON/comma list | `[]` |
+| `ARCHITECTURE_PATTERN_DOC_QUERIES` | Architecture retrieval query overrides as JSON object | `{}` |
+| `ARCHITECTURE_PATTERN_DOC_WEIGHTS` | Architecture retrieval weights as JSON object | `{}` |
+| `ARCHITECTURE_PROMPT_DOC_LIMIT` | Max retrieved docs per architecture query | `10` |
+| `NOTEBOOK_COMPOSER_DEFAULT_MAX_ITERATIONS` | Default generated notebook iteration cap | `5` |
+| `NOTEBOOK_COMPOSER_PARALLELISM_MODE` | Notebook LLM generation mode: `parallel` or `sequential` | `parallel` |
+| `NOTEBOOK_COMPOSER_MAX_CONCURRENCY` | Notebook composer async fan-out limit | `4` |
+| `NOTEBOOK_COMPOSER_PLUGIN_MODULES` | Extra notebook composer registry modules | None |
+| `TOOLCHAIN_ENGINEER_PLUGIN_MODULES` | Extra tool registry modules | None |
 | `GRAPH_DESIGNER_PLUGIN_MODULES` | Extra graph designer registry modules | None |
 | `QA_REPAIR_PLUGIN_MODULES` | Extra QA/repair registry modules | None |
 
-`QA_REPAIR_PLUGIN_MODULES` is an internal extension hook. Provide a JSON array
-or comma-separated list of dotted module paths; each module must expose
-`register_qa_repair_plugins(registry)` and may register validator rules or
-deterministic repair routines without adding new CLI/API request fields.
+The `*_PLUGIN_MODULES` settings are internal extension hooks. Provide a JSON
+array or comma-separated list of dotted module paths. Plugin modules should
+expose the matching registry entrypoint, such as
+`register_graph_designers(registry)`,
+`register_notebook_composer_builders(registry)`,
+`register_toolchain_tools(registry)`, or
+`register_qa_repair_plugins(registry)`. These hooks do not add new CLI/API
+request fields.
 
 ### Exit Codes
 
@@ -197,6 +211,22 @@ Health check endpoint.
 curl http://localhost:8000/health
 ```
 
+#### `GET /artifacts`
+
+Downloads an artifact path returned by a generation manifest. Paths are
+resolved under the trusted output base.
+
+**Query Parameters:**
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `path` | string | Artifact path returned in a manifest |
+
+**Example:**
+```bash
+curl "http://localhost:8000/artifacts?path=./output/api/notebook.ipynb"
+```
+
 #### `POST /generate`
 
 Generate a multi-agent system from a prompt.
@@ -207,7 +237,7 @@ Generate a multi-agent system from a prompt.
   "prompt": "string (required)",
   "mode": "stub | live (optional, default: stub)",
   "output_dir": "string (optional, default: ./output/api)",
-  "formats": ["ipynb", "html", "docx", "pdf", "zip"] (optional),
+  "formats": ["ipynb", "html", "markdown", "docx", "pdf", "zip"] (optional),
   
   // Advanced options
   "model": "string (optional)",
@@ -253,6 +283,17 @@ Generate a multi-agent system from a prompt.
       "packages": ["langgraph", "langchain-openai"],
       "provider_env_vars": ["OPENAI_API_KEY"]
     },
+    "notebook_composition_feedback": {
+      "fallback_used": false,
+      "warnings": []
+    },
+    "qa_repair_feedback": {
+      "repair_attempts": 0,
+      "rollback_used": false,
+      "unrepaired_failures": [],
+      "next_steps": [],
+      "warnings": []
+    },
     "warnings": [],
     "export_results": {
       "ipynb": {"status": "completed", "path": "./output/api/notebook.ipynb"}
@@ -277,6 +318,7 @@ Generate a multi-agent system from a prompt.
 |------|---------|
 | 200 | Success |
 | 400 | Invalid request |
+| 503 | Missing dependencies, credentials, or async generation capacity |
 | 500 | Server error |
 
 **Examples:**
@@ -300,7 +342,7 @@ curl -X POST http://localhost:8000/generate \
     "mode": "live",
     "output_dir": "./output/research",
     "formats": ["ipynb", "html", "docx"],
-    "model": "gpt-4",
+    "model": "gpt-5-mini",
     "temperature": 0.8,
     "max_tokens": 8192,
     "agent_type": "subagents"
@@ -350,13 +392,39 @@ if (result.success) {
 }
 ```
 
-#### `GET /static/*`
+#### `POST /generate-async`
 
-Serves static assets for the web interface (CSS, JavaScript, images).
+Starts generation in the background and returns a job ID plus an SSE stream URL.
+The request body is the same `GenerationRequest` used by `/generate`.
+
+**Response:**
+```json
+{
+  "job_id": "uuid",
+  "stream_url": "/stream/uuid",
+  "status": "started"
+}
+```
 
 **Example:**
 ```bash
-curl http://localhost:8000/static/styles.css
+curl -X POST http://localhost:8000/generate-async \
+  -H "Content-Type: application/json" \
+  -d '{"prompt": "Create a router chatbot", "mode": "stub"}'
+```
+
+Async generation is bounded by `LNF_MAX_CONCURRENT_GENERATIONS` and returns
+`503` when the server is at capacity.
+
+#### `GET /stream/{job_id}`
+
+Streams progress for a job created by `/generate-async` using Server-Sent
+Events. The stream emits progress/log events plus a final `complete` or `error`
+event. Clients may reconnect with `Last-Event-ID` to replay retained events.
+
+**Example:**
+```bash
+curl -N http://localhost:8000/stream/JOB_ID
 ```
 
 ### API Request Validation
@@ -453,27 +521,22 @@ print(f"Mode: {artifacts['mode']}")
 print(f"Notebook: {artifacts['manifest']['notebook_path']}")
 ```
 
-Or use the generator graph directly:
+For lower-level experiments, use the generator graph directly and provide the
+full `GeneratorState` contract. The CLI helper's internal default state builder
+is the safest reference because new feedback fields are required by downstream
+nodes:
 
 ```python
-from langgraph_system_generator.generator.graph import create_generator_graph
+import asyncio
 
-# Create the compiled app
+from langgraph_system_generator.generator.graph import create_generator_graph
+from langgraph_system_generator.cli import _default_state
+
 app = create_generator_graph()
 
-# Run generation
-initial_state = {
-    "user_prompt": "Create a research assistant",
-    "uploaded_files": None,
-    "constraints": [],
-    "requirements_feedback": {"fallback_used": False},
-    "architecture_feedback": {"fallback_used": False},
-    "graph_design_feedback": {"fallback_used": False},
-    "graph_exports": {"mermaid": "", "schema": {}},
-    # ... other state fields ...
-}
-
-result = app.invoke(initial_state)
+result = asyncio.run(
+    app.ainvoke(_default_state("Create a research assistant", generation_mode="live"))
+)
 print(f"Generated {len(result['generated_cells'])} cells")
 ```
 
@@ -487,6 +550,7 @@ Every successful generation produces:
 |------|--------|-------------|
 | `notebook.ipynb` | Jupyter | Runnable notebook |
 | `notebook.html` | HTML | Web-viewable export |
+| `notebook.md` | Markdown | Plain-text notebook export |
 | `notebook.docx` | DOCX | Word document |
 | `notebook.pdf` | PDF | Print-ready (optional) |
 | `notebook_bundle.zip` | ZIP | Complete package |
@@ -522,6 +586,24 @@ phase timing, per-format export status, graph-design exports, and non-fatal warn
         "warnings": []
       }
     }
+  },
+  "tool_planning_feedback": {
+    "fallback_used": false,
+    "environment_notes": [],
+    "dependency_conflicts": []
+  },
+  "notebook_composition_feedback": {
+    "fallback_used": false,
+    "warnings": []
+  },
+  "notebook_dependency_plan": {
+    "packages": ["langgraph", "langchain-openai"],
+    "provider_env_vars": ["OPENAI_API_KEY"]
+  },
+  "qa_repair_feedback": {
+    "repair_attempts": 0,
+    "rollback_used": false,
+    "unrepaired_failures": []
   },
   "notebook_path": "./output/api/notebook.ipynb",
   "html_path": "./output/api/notebook.html",

@@ -52,7 +52,9 @@ curl -X POST http://localhost:8000/generate \
 
 ### 4. Install Dependencies
 
-Add this cell at the beginning of your notebook (if not already present):
+Generated notebooks include a setup/install cell based on the notebook
+dependency plan. Run that generated cell first. For manual experiments, the
+common LangGraph stack is:
 
 ```python
 # Install LangGraph dependencies
@@ -491,7 +493,7 @@ for i, query in enumerate(queries):
 **Solution**: Verify secret name matches exactly: `OPENAI_API_KEY`
 
 **Issue**: Out of memory  
-**Solution**: Use smaller models (`gpt-5-mini` or `gpt-3.5-turbo` instead of `gpt-4`) or enable high-RAM runtime
+**Solution**: Use a smaller configured model such as `gpt-5-mini`, reduce batch sizes, or enable a high-RAM runtime
 
 **Issue**: Slow execution  
 **Solution**: Colab free tier has usage limits; consider Colab Pro for better performance
