@@ -235,6 +235,20 @@ def _default_registrations() -> list[ArchitectureRegistration]:
             docs_weight=0.95,
             deterministic=True,
         ),
+        ArchitectureRegistration(
+            architecture_id="deepagents",
+            selector_prompt_description=(
+                "Experimental Deep Agents harness for complex, multi-step work that benefits from "
+                "built-in planning, file/context management, and optional subagent delegation."
+            ),
+            default_secondary_patterns=["subagents"],
+            docs_queries=[
+                "LangChain Deep Agents create_deep_agent planning subagents",
+                "Deep Agents SDK built in planning filesystem subagents",
+            ],
+            docs_weight=1.05,
+            deterministic=True,
+        ),
     ]
 
 

@@ -6,7 +6,7 @@ The LangGraph System Generator includes a comprehensive pattern library that pro
 
 The Pattern Library simplifies multi-agent system development by providing:
 
-- **Production-Tested Templates**: Each pattern has ≥90% test coverage
+- **Tested Templates**: Patterns are covered by focused unit tests and runnable examples
 - **Complete Code Generation**: Generate full, runnable LangGraph workflows
 - **Flexible Customization**: Adapt patterns to your specific needs
 - **Composable Design**: Combine patterns for hybrid architectures
@@ -114,7 +114,7 @@ state_code = RouterPattern.generate_state_code(additional_fields)
 # Custom LLM model
 router_code = RouterPattern.generate_router_node_code(
     routes=routes,
-    llm_model="gpt-4",
+    llm_model="gpt-5-mini",
     use_structured_output=True
 )
 
@@ -229,7 +229,7 @@ state_code = SubagentsPattern.generate_state_code(additional_fields)
 supervisor_code = SubagentsPattern.generate_supervisor_code(
     subagents=subagents,
     subagent_descriptions=descriptions,
-    llm_model="gpt-4",
+    llm_model="gpt-5-mini",
     use_structured_output=True
 )
 
@@ -237,7 +237,7 @@ supervisor_code = SubagentsPattern.generate_supervisor_code(
 agent_code = SubagentsPattern.generate_subagent_code(
     agent_name="researcher",
     agent_description="Research specialist",
-    llm_model="gpt-4",
+    llm_model="gpt-5-mini",
     include_tools=True  # Adds tool binding placeholder
 )
 
@@ -362,13 +362,13 @@ state_code = CritiqueLoopPattern.generate_state_code(additional_fields)
 # Custom generation node
 generate_code = CritiqueLoopPattern.generate_generation_node_code(
     task_description="Generate API documentation",
-    llm_model="gpt-4"
+    llm_model="gpt-5-mini"
 )
 
 # Critique with structured output
 critique_code = CritiqueLoopPattern.generate_critique_node_code(
     criteria=criteria,
-    llm_model="gpt-4",
+    llm_model="gpt-5-mini",
     use_structured_output=True
 )
 
@@ -655,7 +655,7 @@ To add a new pattern:
 3. Add tests in `tests/unit/test_patterns.py`
 4. Create examples in `examples/your_pattern_example.py`
 5. Update documentation
-6. Ensure ≥90% test coverage
+6. Add focused unit coverage and, where useful, a runnable example
 
 ---
 

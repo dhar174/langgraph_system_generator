@@ -1,23 +1,25 @@
 # Getting Started
 
-This guide will help you install LangGraph System Generator and run your first generation.
+This guide helps you install LangGraph System Generator and run your first
+generation through the CLI, web UI, or REST API.
 
 ## Prerequisites
 
-- **Python**: Version 3.9 or higher
-- **OpenAI API Key**: Required for live mode (optional for stub mode)
-- **Operating System**: Linux, macOS, or Windows with WSL
+- **Python**: Version 3.10 or higher.
+- **OpenAI-compatible API key**: Required for `--mode live`; optional for
+  `--mode stub`.
+- **Operating system**: Linux, macOS, or Windows.
 
 ## Installation
 
-### 1. Clone the Repository
+### 1. Clone The Repository
 
 ```bash
 git clone https://github.com/dhar174/langgraph_system_generator.git
 cd langgraph_system_generator
 ```
 
-### 2. Create a Virtual Environment
+### 2. Create A Virtual Environment
 
 ```bash
 python -m venv .venv
@@ -26,90 +28,93 @@ source .venv/bin/activate  # On Windows: .venv\Scripts\activate
 
 ### 3. Install Dependencies
 
-Choose the appropriate installation based on your needs:
+Choose the profile that matches what you want to run:
 
-#### Minimal Installation (Core only)
 ```bash
+# Core package, settings, and shared types only
 pip install -e .
-```
 
-This installs the package, settings, and shared types only. It does **not** include
-the CLI/API generation stack.
-
-#### API Installation (Web server only)
-```bash
+# FastAPI/web server only
 pip install -e ".[api]"
-```
 
-#### Full Installation (All features)
-```bash
+# CLI generation, notebook export, runtime QA, and live-mode dependencies
 pip install -e ".[full]"
-```
 
-This is the install profile required for `lnf generate`, notebook export, and
-live-mode generation.
-
-#### Development Installation (Includes testing tools)
-```bash
+# Contributor/test tooling
 pip install -e ".[full,dev]"
 ```
 
+If you are using this repository directly, `pip install -r requirements.txt` is
+also supported and installs the broad dependency set used by CI.
+
 ### 4. Configure Environment Variables
 
-Copy the example environment file:
+Copy the example file:
 
 ```bash
 cp .env.example .env
 ```
 
-Edit `.env` with your API keys:
+Typical live-mode settings:
 
 ```bash
-# Required for live mode
 OPENAI_API_KEY=sk-your-openai-key-here
-
-# Optional: Alternative LLM providers
-ANTHROPIC_API_KEY=your-anthropic-key-here
-
-# Optional: LangSmith tracing
 LANGSMITH_API_KEY=your-langsmith-key-here
 LANGSMITH_PROJECT=langgraph-notebook-foundry
-
-# Vector Store Configuration (defaults work fine)
 VECTOR_STORE_TYPE=faiss
 VECTOR_STORE_PATH=./data/vector_store
-
-# Generation Settings
-DEFAULT_MODEL=gpt-4-turbo-preview
+DEFAULT_MODEL=gpt-5-mini
 MAX_REPAIR_ATTEMPTS=3
 DEFAULT_BUDGET_TOKENS=100000
 ```
 
-### 5. (Optional) Build the Vector Index
+Stub mode does not require provider credentials.
 
-The repository includes precached documentation in `data/cached_docs/`. To enable semantic search:
+### 5. Optionally Build The Vector Index
+
+The repository includes precached documentation in `data/cached_docs/`.
 
 ```bash
-python scripts/build_index.py
+# Offline-friendly test index using fake embeddings
+lnf build-index --cache ./data/cached_docs --store ./data/vector_store
+
+# OpenAI-backed semantic index
+lnf build-index --use-openai
 ```
 
-This creates a FAISS index at `./data/vector_store`. Requires an OpenAI API key for embeddings.
-
-**Note**: Vector search is optional. Stub mode works without it.
+Vector search is optional. Stub mode works without a vector store.
 
 ### 6. Verify Installation
 
-Run the test suite to verify everything is working:
+```bash
+python -m pytest --asyncio-mode=auto
+```
+
+## Developing Locally
+
+For contributor workflows, install the full editable environment and use the
+smallest validation command that matches your change:
 
 ```bash
-pytest tests/ -v
+pip install -e ".[full,dev]"
+python -m pytest tests/unit/test_documentation_coverage.py -q
+python -m pytest tests/unit --asyncio-mode=auto -q
+black src/ tests/
+ruff check src/ tests/
+mypy src/
+```
+
+For the fastest end-to-end smoke test, generate in stub mode:
+
+```bash
+lnf generate "Create a router-based support assistant" \
+  --output ./output/getting-started-smoke \
+  --mode stub
 ```
 
 ## Your First Generation
 
-Let's generate a simple multi-agent system using the CLI in stub mode (no API key needed).
-
-### Using the CLI (Stub Mode)
+Generate a simple system in stub mode:
 
 ```bash
 lnf generate "Create a customer support chatbot with routing" \
@@ -117,34 +122,23 @@ lnf generate "Create a customer support chatbot with routing" \
   --mode stub
 ```
 
-This generates:
-- `notebook.ipynb`: Runnable Jupyter notebook
-- `notebook.html`: HTML documentation
-- `notebook.docx`: Word document
-- `notebook_bundle.zip`: Complete package
-- `manifest.json`: Metadata about generated files
+This writes a subset of the following artifacts, depending on requested formats:
 
-**Output:**
-```
-✓ Requirements analysis complete
-✓ Architecture selected: router
-✓ Workflow design complete
-✓ Tool planning complete
-✓ Notebook composed (12 cells)
-✓ QA validation passed
-✓ Artifacts packaged
+- `notebook.ipynb`: Runnable Jupyter notebook.
+- `notebook.html`: HTML export.
+- `notebook.md`: Markdown export.
+- `notebook.docx`: Word document export.
+- `notebook_bundle.zip`: Bundle with notebook, requested exports, and JSON data.
+- `notebook_plan.json`: Notebook structure plan.
+- `generated_cells.json`: Raw generated cell specs.
+- `manifest.json`: Metadata, warning entries, and structured feedback.
 
-Generated artifacts in ./output/first_system:
-  - notebook.ipynb
-  - notebook.html
-  - notebook.docx
-  - notebook_bundle.zip
-  - manifest.json
-```
+The default CLI formats are `ipynb html markdown docx zip`; PDF is generated
+only when explicitly requested.
 
-### Using the CLI (Live Mode)
+## Live Mode
 
-For full LLM-powered generation (requires API key):
+For full LLM-backed generation:
 
 ```bash
 lnf generate "Create a research assistant with multiple specialized agents" \
@@ -152,13 +146,11 @@ lnf generate "Create a research assistant with multiple specialized agents" \
   --mode live
 ```
 
-Live mode uses LLMs to:
-- Analyze your requirements in detail
-- Select optimal architectures
-- Generate contextual code
-- Create comprehensive documentation
+Live mode uses the configured model to analyze requirements, select an
+architecture, design the graph, plan tools, and compose notebook cells. Runtime
+QA and deterministic repair still use the shared validator/repair engine.
 
-### Using the Web Interface
+## Web Interface
 
 Start the web server:
 
@@ -166,19 +158,21 @@ Start the web server:
 uvicorn langgraph_system_generator.api.server:app --reload
 ```
 
-Then open your browser to `http://localhost:8000`.
+Open `http://localhost:8000`.
 
 The web interface provides:
-- **Interactive form** for entering requirements
-- **Mode selection** (stub/live)
-- **Advanced options** (model, temperature, agent type, etc.)
-- **Progress tracking** with real-time updates
-- **Download buttons** for all generated artifacts
-- **Theme toggle** (dark/light mode)
 
-### Using the REST API
+- Natural-language prompt input.
+- Stub/live mode selection.
+- Advanced live options for model, temperature, max tokens, agent type, and
+  custom endpoint.
+- Progress tracking.
+- Download links for generated artifacts.
+- Dark/light theme support.
 
-For programmatic access:
+## REST API
+
+Synchronous generation:
 
 ```bash
 curl -X POST http://localhost:8000/generate \
@@ -187,27 +181,41 @@ curl -X POST http://localhost:8000/generate \
     "prompt": "Create a data analysis agent with report generation",
     "mode": "stub",
     "output_dir": "./output/api_test",
-    "formats": ["ipynb", "html", "docx"]
+    "formats": ["ipynb", "html", "markdown", "docx", "zip"]
   }'
 ```
 
-Response:
-```json
-{
-  "success": true,
-  "mode": "stub",
-  "prompt": "Create a data analysis agent with report generation",
-  "manifest": {
-    "notebook_path": "./output/api_test/notebook.ipynb",
-    "html_path": "./output/api_test/notebook.html",
-    "docx_path": "./output/api_test/notebook.docx",
-    "plan_path": "./output/api_test/notebook_plan.json",
-    "cells_path": "./output/api_test/generated_cells.json"
-  }
-}
+Async generation:
+
+```bash
+curl -X POST http://localhost:8000/generate-async \
+  -H "Content-Type: application/json" \
+  -d '{"prompt": "Create a router chatbot", "mode": "stub"}'
 ```
 
-## Understanding the Generated Notebook
+Then connect to the returned `stream_url`, for example
+`/stream/{job_id}`, to receive Server-Sent Events progress updates.
+
+## Customizing Generation
+
+CLI controls:
+
+```bash
+lnf generate "Create a chatbot" \
+  --output ./output/custom \
+  --mode live \
+  --formats ipynb html \
+  --agent-type router
+```
+
+Supported `--agent-type` values are `router`, `subagents`, `hybrid`, and
+`autoagent`. The experimental `deepagents` architecture is also available as an
+explicit opt-in.
+
+Use the REST API for request-scoped `model`, `custom_endpoint`, `temperature`,
+or `max_tokens` overrides.
+
+## Understanding The Generated Notebook
 
 Open the generated notebook in Jupyter:
 
@@ -215,92 +223,33 @@ Open the generated notebook in Jupyter:
 jupyter notebook output/first_system/notebook.ipynb
 ```
 
-The notebook includes:
+Generated notebooks typically include:
 
-1. **Installation & Setup**: Dependencies and imports
-2. **Configuration**: API keys and settings
-3. **State Schema**: TypedDict defining agent state
-4. **Agent Nodes**: Individual agent implementations
-5. **Graph Construction**: LangGraph workflow assembly
-6. **Execution Logic**: Running the system
-7. **Example Usage**: Sample inputs and outputs
+1. Introduction and graph overview.
+2. Dependency installation.
+3. Runtime configuration.
+4. State schema.
+5. Tool implementations.
+6. Node implementations.
+7. Graph construction.
+8. Execution examples.
+9. QA and repair summary, when repairs were attempted.
 
-You can run the notebook cells sequentially to execute the system.
+## Colab Usage
 
-## Next Steps
+Generated notebooks are Colab-ready:
 
-### Exploring Patterns
+1. Upload `notebook.ipynb` to Google Drive.
+2. Open it with Google Colaboratory.
+3. Run the generated setup/install cell. It is based on the notebook dependency
+   plan and only installs required packages.
+4. Add only the provider keys referenced by the notebook.
+5. Run all cells.
 
-The Pattern Library provides reusable templates:
+See [Colab Usage Guide](Colab-Usage.md) for details.
 
-```python
-from langgraph_system_generator.patterns import RouterPattern
-
-# Generate a complete router system
-routes = ["support", "sales", "technical"]
-code = RouterPattern.generate_complete_example(routes)
-print(code)
-```
-
-See [Pattern Library Guide](Pattern-Library-Guide.md) for details.
-
-### Customizing Generation
-
-Control generation with advanced options:
-
-```bash
-lnf generate "Create a chatbot" \
-  --output ./output/custom \
-  --mode live \
-  --formats ipynb html \
-  --agent-type router \
-  --memory-config long \
-  --graph-style conditional
-```
-
-### Running in Google Colab
-
-Generated notebooks are Colab-ready. Upload to Google Drive and open with Colab:
-
-1. Upload `notebook.ipynb` to Google Drive
-2. Right-click → Open with → Google Colaboratory
-3. Install dependencies in first cell:
-   ```python
-   !pip install -qU langgraph langchain langchain-openai langchain-community
-   ```
-4. Add your API key:
-   ```python
-   import os
-   os.environ["OPENAI_API_KEY"] = "sk-..."
-   ```
-5. Run all cells
-
-See detailed Colab instructions in [Colab Usage Guide](Colab-Usage.md).
-
-### Developing Locally
-
-For local development:
-
-1. Install development dependencies:
-   ```bash
-   python -m pip install --upgrade pip
-   pip install -r requirements.txt
-   pip install -e ".[full]"
-   ```
-
-2. Run tests:
-   ```bash
-   python -m pytest --asyncio-mode=auto
-   ```
-
-3. Run linting:
-   ```bash
-   black src/ tests/
-   ruff check src/ tests/
-   mypy src/
-   ```
-
-See [Architecture Deep Dive](Architecture-Deep-Dive.md) for system internals.
+For more developer-focused notes on tracing, extension hooks, and expected
+manifest fields, see [Developer Onboarding](Developer-Onboarding.md).
 
 ## Troubleshooting
 
@@ -314,34 +263,33 @@ pip install -e ".[full]"
 
 ### Missing API Key
 
-If generation fails with API errors in live mode:
+If live generation fails with credential errors:
 
-1. Check `.env` file has valid `OPENAI_API_KEY`
-2. Try stub mode instead: `--mode stub`
+1. Confirm `.env` has a valid `OPENAI_API_KEY`, or use an API request with both
+   `custom_endpoint` and `model`.
+2. Try stub mode with `--mode stub` to verify local generation.
 
 ### Vector Store Errors
 
-If you see FAISS errors:
+If FAISS or retrieval fails:
 
-1. Install FAISS: `pip install faiss-cpu`
-2. Rebuild index: `python scripts/build_index.py`
-3. Or use stub mode (doesn't need vector store)
+1. Install the full extras: `pip install -e ".[full]"`.
+2. Rebuild the index with `lnf build-index`.
+3. Continue in stub mode if retrieval is not needed.
 
 ### Notebook Execution Fails
 
-If the generated notebook doesn't run:
-
-1. Check you have all dependencies: `pip install -r requirements.txt`
-2. Set your API key in the notebook
-3. Check QA reports in the output directory
+1. Check `manifest.json` for warnings and feedback.
+2. Review `qa_repair_feedback` and any notebook `QA and Repair Summary` cell.
+3. Confirm provider keys are set before running live notebook cells.
 
 ## Getting Help
 
-- **Examples**: See `examples/` directory for comprehensive demos
-- **Documentation**: Browse other Wiki pages for detailed guides
-- **Issues**: Report problems on [GitHub Issues](https://github.com/dhar174/langgraph_system_generator/issues)
-- **Tests**: Review `tests/` for usage patterns
+- **Examples**: See `examples/`.
+- **Documentation**: Browse the wiki pages in `docs/wiki/`.
+- **Issues**: Report problems on [GitHub Issues](https://github.com/dhar174/langgraph_system_generator/issues).
+- **Tests**: Review `tests/` for usage patterns.
 
 ---
 
-**Next**: [Architecture Deep Dive →](Architecture-Deep-Dive.md) | [Pattern Library Guide →](Pattern-Library-Guide.md)
+**Next**: [Architecture Deep Dive](Architecture-Deep-Dive.md) | [Pattern Library Guide](Pattern-Library-Guide.md)

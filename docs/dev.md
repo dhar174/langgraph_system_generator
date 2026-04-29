@@ -25,3 +25,12 @@
    import langgraph_system_generator
    from langgraph_system_generator.utils.config import settings
    ```
+
+## Logging and diagnostics
+
+- The CLI now accepts `--log-level` (default comes from `LNF_LOG_LEVEL` or `INFO`)
+  so you can enable verbose output without modifying code.
+- The API layer configures the same logging helper on startup; set
+  `LNF_LOG_LEVEL=DEBUG` when running uvicorn to surface detailed traces.
+- Logs are formatted consistently as ISO timestamps with level, logger name, and
+  message to simplify grepping and log aggregation.

@@ -46,13 +46,17 @@ Every generation produces multiple artifact formats for different use cases:
 - **ZIP Bundles** (`.zip`): Complete packages with all artifacts and metadata
 
 #### 🎨 Pattern Library
-Three core multi-agent patterns are built-in:
+Generator-backed and example-backed patterns include:
 
 1. **Router Pattern**: Dynamic routing to specialized agents based on classification
 2. **Subagents Pattern**: Supervisor-based coordination of specialized agent teams
-3. **Critique-Revise Loop**: Iterative quality improvement through critique cycles
+3. **Hybrid Pattern**: Router plus team/specialist composition
+4. **AutoAgent Pattern**: Planner/executor/critic-style autonomous workflow
+5. **Critique-Revise Loop**: Iterative quality improvement through critique cycles
 
-Each pattern is production-tested with ≥90% test coverage.
+The architecture selector can target `router`, `subagents`, `hybrid`, and
+`autoagent`; the pattern library and examples also keep critique-revise and
+advanced reference patterns available for direct use.
 
 #### 🌐 Modern Interfaces
 - **Web UI**: Beautiful, responsive interface with theme toggle and progress tracking
@@ -60,11 +64,12 @@ Each pattern is production-tested with ≥90% test coverage.
 - **REST API**: FastAPI endpoints for programmatic integration
 
 #### 🔧 Quality Assurance
-Automatic QA and repair system ensures generated notebooks:
+Automatic QA and deterministic repair help generated notebooks:
 - Have valid syntax and structure
-- Include all required imports
-- Contain no placeholders
-- Compile and execute properly
+- Include required imports
+- Avoid unresolved placeholders
+- Surface runtime execution issues
+- Record repair attempts, rollbacks, and unresolved next steps
 
 ### Use Cases
 

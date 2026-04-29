@@ -35,14 +35,24 @@ from langgraph_system_generator.utils.generation_options import (
     normalize_agent_type,
     normalize_optional_string,
 )
-from langgraph_system_generator.utils.logging import configure_logging
+from langgraph_system_generator.utils.logging_utils import configure_logging_from_env
 from langgraph_system_generator.utils.optional_deps import OptionalDependencyError
 
-if not logging.getLogger().handlers:
-    configure_logging()
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title="LangGraph Notebook Foundry API", version="0.1.1")
+
+@asynccontextmanager
+async def _lifespan(app_: FastAPI):  # noqa: ARG001
+    """FastAPI lifespan: configure logging at startup, tear down at shutdown."""
+    configure_logging_from_env()
+    yield
+
+
+app = FastAPI(
+    title="LangGraph Notebook Foundry API",
+    version="0.1.1",
+    lifespan=_lifespan,
+)
 
 # Mount static files
 _STATIC_DIR = Path(__file__).parent / "static"
@@ -286,7 +296,7 @@ class GenerationRequest(BaseModel):
     )
     agent_type: Optional[str] = Field(
         default=None,
-        description="Type of agent architecture (router, subagents, hybrid, autoagent, etc.) when overriding auto-detection.",
+        description="Type of agent architecture (router, subagents, hybrid, autoagent, deepagents, etc.) when overriding auto-detection.",
     )
 
 

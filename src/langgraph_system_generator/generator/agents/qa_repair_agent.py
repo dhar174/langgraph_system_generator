@@ -2,13 +2,19 @@
 
 from __future__ import annotations
 
+import asyncio
+from pathlib import Path
+from tempfile import TemporaryDirectory
 from typing import List
 
-from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
 
-from langgraph_system_generator.generator.agents._llm import build_chat_llm
 from langgraph_system_generator.generator.state import CellSpec, QAReport
+from langgraph_system_generator.notebook.composer import (
+    NotebookComposer as NotebookFileComposer,
+)
+from langgraph_system_generator.qa.repair import NotebookRepairAgent
+from langgraph_system_generator.qa.validators import NotebookValidator
 from langgraph_system_generator.utils.config import ModelConfig
 
 
@@ -20,11 +26,10 @@ class QARepairAgent:
         model: str | None = None,
         model_config: ModelConfig | None = None,
     ):
-        self.llm = build_chat_llm(
-            model=model,
-            model_config=model_config,
-            chat_openai_class=ChatOpenAI,
-        )
+        self.model = model
+        self.model_config = model_config
+        self.chat_openai_class = ChatOpenAI
+        self.repair_engine = NotebookRepairAgent()
 
     async def validate(self, cells: List[CellSpec]) -> List[QAReport]:
         """Run all quality checks on generated cells.
@@ -35,18 +40,14 @@ class QARepairAgent:
         Returns:
             List of QA reports for each check
         """
-        reports = []
+        notebook_builder = NotebookFileComposer()
+        validator = NotebookValidator()
 
-        # Check for placeholders
-        reports.append(self._check_no_placeholders(cells))
-
-        # Check for basic structure
-        reports.append(self._check_basic_structure(cells))
-
-        # Check for imports
-        reports.append(self._check_has_imports(cells))
-
-        return reports
+        with TemporaryDirectory() as temp_dir:
+            notebook = notebook_builder.build_notebook(cells)
+            notebook_path = Path(temp_dir) / "generated.ipynb"
+            notebook_builder.write(notebook, notebook_path)
+            return validator.validate_all(notebook_path)
 
     def _check_no_placeholders(self, cells: List[CellSpec]) -> QAReport:
         """Ensure no TODO or placeholder text in critical cells."""
@@ -123,9 +124,12 @@ class QARepairAgent:
         )
 
     async def repair(
-        self, cells: List[CellSpec], qa_reports: List[QAReport]
+        self,
+        cells: List[CellSpec],
+        qa_reports: List[QAReport],
+        attempt: int = 0,
     ) -> List[CellSpec]:
-        """Attempt to fix issues identified in QA.
+        """Attempt to fix issues identified in QA through the shared repair engine.
 
         Args:
             cells: Original cell specifications
@@ -134,47 +138,13 @@ class QARepairAgent:
         Returns:
             Repaired cell specifications
         """
-        failed_reports = [r for r in qa_reports if not r.passed]
-
-        if not failed_reports:
+        if not any(not report.passed for report in qa_reports):
             return cells
 
-        # Create repair prompt
-        issues = "\n".join([f"- {r.check_name}: {r.message}" for r in failed_reports])
-
-        repair_prompt = SystemMessage(
-            content="""You are a notebook repair specialist.
-Fix the identified issues in the notebook cells while maintaining their structure and purpose.
-
-Focus on:
-1. Replacing placeholders with working code
-2. Adding missing imports
-3. Ensuring proper cell structure
-4. Maintaining code quality
-
-Return suggestions as a list of specific changes."""
+        outcome = await asyncio.to_thread(
+            self.repair_engine.repair_cells,
+            cells,
+            qa_reports,
+            attempt,
         )
-
-        cells_summary = "\n".join(
-            [
-                f"Cell {i} ({cell.cell_type}): {cell.content[:100]}..."
-                for i, cell in enumerate(cells[:10])
-            ]
-        )
-
-        user_message = HumanMessage(
-            content=f"""Issues Found:
-{issues}
-
-Cells:
-{cells_summary}
-
-Suggest specific repairs."""
-        )
-
-        # Get repair suggestions from LLM (currently unused as repair is not fully implemented)
-        await self.llm.ainvoke([repair_prompt, user_message])
-
-        # For now, return original cells as we need more context for repairs
-        # In a full implementation, we'd parse the LLM response and apply fixes
-        return cells
+        return outcome.cells if outcome.success else cells

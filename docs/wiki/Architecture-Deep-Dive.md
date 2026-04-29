@@ -90,7 +90,8 @@ Retrieves relevant LangGraph/LangChain documentation based on the requirements:
 ```
 
 **Components**: `DocsRetriever`, `VectorStoreManager`  
-**Vector Store**: FAISS with OpenAI embeddings
+**Vector Store**: FAISS; local fake embeddings are used for offline index
+builds, and OpenAI embeddings are available when requested.
 
 #### 3. Architecture Selection
 **Input**: Constraints + Documentation context  
@@ -122,42 +123,74 @@ Selects the most appropriate multi-agent pattern:
 - `subagents`: Supervisor-subagent coordination
 - `hybrid`: Combination of multiple patterns
 - `autoagent`: Planner/executor/critic loop for autonomous multi-step execution
+- `deepagents`: Experimental opt-in Deep Agents SDK harness with lazy optional
+  `create_deep_agent(...)` usage and deterministic fallback cells
 
 **Agent**: `ArchitectureSelector`  
 **LLM-Powered**: Yes (live mode) / Heuristics (stub mode)
 
 #### 4. Workflow Design
 **Input**: Architecture + Constraints + Docs  
-**Output**: Detailed workflow specification
+**Output**: Detailed workflow specification plus advisory graph-design feedback and exports
 
 Designs the specific graph structure, nodes, and edges:
 
 ```python
 {
   "workflow_design": {
+    "architecture_type": "router",
+    "state_schema": {
+      "messages": "Conversation state",
+      "route": "Selected route"
+    },
     "nodes": [
-      {"name": "router", "type": "classifier", "purpose": "Route to appropriate handler"},
-      {"name": "technical_support", "type": "handler", "purpose": "Handle technical queries"},
-      {"name": "billing_support", "type": "handler", "purpose": "Handle billing queries"},
-      {"name": "general_support", "type": "handler", "purpose": "Handle general queries"}
+      {"name": "router", "purpose": "Route to appropriate handler"},
+      {"name": "technical_support", "purpose": "Handle technical queries"},
+      {"name": "billing_support", "purpose": "Handle billing queries"},
+      {"name": "general_support", "purpose": "Handle general queries"}
     ],
     "edges": [
-      {"from": "router", "to": "technical_support", "condition": "route == 'technical'"},
-      {"from": "router", "to": "billing_support", "condition": "route == 'billing'"},
-      {"from": "router", "to": "general_support", "condition": "route == 'general'"}
+      {"from": "technical_support", "to": "finish"},
+      {"from": "billing_support", "to": "finish"},
+      {"from": "general_support", "to": "finish"}
+    ],
+    "conditional_edges": [
+      {
+        "from": "router",
+        "condition": "route == 'technical' | 'billing' | 'general'",
+        "branches": {
+          "technical": "technical_support",
+          "billing": "billing_support",
+          "general": "general_support"
+        }
+      }
     ],
     "entry_point": "router",
-    "graph_type": "conditional"
+    "checkpointing": false,
+    "graph_exports": {
+      "mermaid": "flowchart TD ...",
+      "schema": {
+        "entry_point": "router",
+        "terminal_nodes": ["finish"],
+        "validation_summary": {"errors": [], "warnings": []}
+      }
+    }
+  },
+  "graph_design_feedback": {
+    "fallback_used": false,
+    "validation_errors": [],
+    "warnings": [],
+    "composition_strategy": "router_direct"
   }
 }
 ```
 
 **Agent**: `GraphDesigner`  
-**LLM-Powered**: Yes (live mode) / Template-based (stub mode)
+**LLM-Powered**: Yes (live mode) / Deterministic registry-backed fallback (stub mode and recovery)
 
 #### 5. Tool Planning
 **Input**: Workflow design + Constraints  
-**Output**: Tool specifications
+**Output**: Tool specifications + advisory planning feedback
 
 Plans any tools/functions needed by the agents:
 
@@ -165,23 +198,23 @@ Plans any tools/functions needed by the agents:
 {
   "tools_plan": [
     {
-      "name": "search_knowledge_base",
-      "purpose": "Search internal documentation",
-      "parameters": ["query: str"],
-      "returns": "List[Document]"
-    },
-    {
-      "name": "create_ticket",
-      "purpose": "Create support ticket",
-      "parameters": ["title: str", "description: str", "priority: str"],
-      "returns": "Ticket"
+      "tool_id": "web_search",
+      "name": "Web Docs Search",
+      "purpose": "Search documentation relevant to the workflow",
+      "configuration": {"backend": "duckduckgo"},
+      "status": "ready"
     }
-  ]
+  ],
+  "tool_planning_feedback": {
+    "fallback_used": false,
+    "environment_notes": [],
+    "dependency_conflicts": []
+  }
 }
 ```
 
 **Agent**: `ToolchainEngineer`  
-**LLM-Powered**: Yes (live mode) / Basic stubs (stub mode)
+**LLM-Powered**: Yes (live mode) / Registry-backed deterministic fallbacks and validation (stub mode and recovery)
 
 #### 6. Notebook Composition
 **Input**: All previous context  
@@ -292,7 +325,9 @@ mode it is recorded as non-blocking runtime evidence.
 **Input**: Notebook + Failed QA reports  
 **Output**: Repaired notebook
 
-If QA fails, attempts to repair the notebook:
+If QA fails, the shared QA/repair engine applies registered deterministic repair
+routines in memory, revalidates the candidate notebook, and persists the repair
+only when validation is non-regressive:
 
 ```python
 {
@@ -303,19 +338,26 @@ If QA fails, attempts to repair the notebook:
   "qa_history": [
     # ... prior static/runtime reports ...,
     {"check_name": "Repair Attempt", "stage": "repair", "passed": false}
-  ]
+  ],
+  "qa_repair_feedback": {
+    "repair_attempts": 1,
+    "rollback_used": true,
+    "unrepaired_failures": ["Python Syntax: invalid syntax"],
+    "next_steps": ["Inspect the QA and Repair Summary cell before retrying."]
+  }
 }
 ```
 
 **Repair Strategy**:
 1. Identify specific failures
-2. Generate targeted fixes
-3. Apply fixes to notebook
-4. Re-run QA validation
-5. Repeat up to `MAX_REPAIR_ATTEMPTS` (default: 3)
+2. Select matching routines from `QARepairRegistry`
+3. Apply fixes to an in-memory notebook candidate
+4. Re-run QA validation and accept only non-regressive candidates
+5. Record rollback/no-op outcomes in `qa_history` and `qa_repair_feedback`
 
 **Component**: `NotebookRepairAgent`  
-**LLM-Powered**: Yes (live mode only)
+**LLM-Powered**: No; repair is deterministic and registry-backed in both stub
+and live-compatible paths
 
 #### 10. Package Outputs
 **Input**: Final notebook  
@@ -357,6 +399,9 @@ class GeneratorState(TypedDict):
     # Extracted requirements
     constraints: Annotated[List[Constraint], operator.add]
     requirements_feedback: RequirementsFeedback
+    architecture_feedback: ArchitectureFeedback
+    graph_design_feedback: GraphDesignFeedback
+    graph_exports: GraphExportBundle
     selected_patterns: Dict[str, Any]
     
     # RAG Retrieval
@@ -367,10 +412,14 @@ class GeneratorState(TypedDict):
     architecture_justification: str
     architecture_type: Optional[str]
     generation_config: Optional[GenerationConfig]
+    generation_mode: Literal["stub", "live"]
 
     # Workflow design
     workflow_design: Optional[Dict[str, Any]]
     tools_plan: Optional[List[Dict[str, Any]]]
+    tool_planning_feedback: ToolPlanningFeedback
+    notebook_composition_feedback: NotebookCompositionFeedback
+    notebook_dependency_plan: NotebookDependencyPlan
     
     # Generation
     # No reducer: last-write-wins across repair iterations
@@ -378,7 +427,9 @@ class GeneratorState(TypedDict):
     
     # QA & Repair
     qa_reports: List[QAReport]
+    qa_history: List[QAReport]
     repair_attempts: int
+    qa_repair_feedback: QARepairFeedback
     
     # Output
     artifacts_manifest: Dict[str, str]
@@ -389,6 +440,10 @@ class GeneratorState(TypedDict):
 **Key Features**:
 - **Annotated Lists**: Fields like `constraints` and `docs_context` use `operator.add` to append values across nodes
 - **Advisory Intake Feedback**: `requirements_feedback` captures fallback, conflict, and missing-input guidance without replacing `constraints` as the downstream planning contract
+- **Advisory Graph Feedback**: `graph_design_feedback` captures validation and fallback details while `graph_exports` stores Mermaid/schema bundles for manifests and notebook overview cells
+- **Advisory Tool Feedback**: `tool_planning_feedback` records fallback, validation, environment, and dependency warnings while `tools_plan` remains the downstream list
+- **Notebook Composition Feedback**: `notebook_composition_feedback` and `notebook_dependency_plan` explain fallback and dependency decisions without replacing `generated_cells`
+- **QA History**: `qa_reports` is the current snapshot; `qa_history` preserves attempt-by-attempt evidence across static QA, runtime QA, and repair
 - **Last-write-wins cells**: `generated_cells` intentionally has no reducer, so each repair pass replaces prior cells
 - **Immutability**: State updates create new state versions (LangGraph managed)
 - **Type Safety**: TypedDict provides IDE autocomplete and validation
@@ -406,7 +461,7 @@ Each pipeline stage has a dedicated agent:
 | `GraphDesigner` | Design workflow structure | Live mode |
 | `ToolchainEngineer` | Plan required tools | Live mode |
 | `NotebookComposer` | Generate notebook cells | Live mode |
-| `QARepairAgent` | Fix validation failures | Live mode |
+| `QARepairAgent` | Orchestrate deterministic QA repairs | No |
 
 ### Support Components
 
@@ -416,6 +471,7 @@ Each pipeline stage has a dedicated agent:
 | `VectorStoreManager` | FAISS index management |
 | `DocumentCache` | Cached documentation storage |
 | `NotebookValidator` | Static & runtime validation |
+| `QARepairRegistry` | Internal validator and repair routine registry |
 | `NotebookExporter` | Multi-format export |
 | `PatternLibrary` | Reusable pattern templates |
 
@@ -476,7 +532,9 @@ Precached documentation includes:
 
 ### Vector Store
 
-**Implementation**: FAISS with OpenAI embeddings
+**Implementation**: FAISS. `lnf build-index` uses local fake embeddings by
+default for offline/testing flows; `lnf build-index --use-openai` uses OpenAI
+embeddings when credentials are configured.
 
 **Index Structure**:
 ```
@@ -486,7 +544,7 @@ data/vector_store/
 ```
 
 **Retrieval Process**:
-1. Query embedding via OpenAI
+1. Query embedding via the configured embedding implementation
 2. Similarity search in FAISS (k=5 default)
 3. Return top documents with relevance scores
 4. Filter by minimum relevance threshold
@@ -525,11 +583,13 @@ The Pattern Library provides code generation templates:
 5. Conditional edges (quality threshold)
 ```
 
-All patterns are:
-- ✅ Production-tested (≥90% coverage)
-- ✅ Fully documented
-- ✅ Customizable
-- ✅ Composable
+Generator-backed patterns are covered by focused unit tests and runnable
+examples. The architecture selector and graph designer can currently target
+`router`, `subagents`, `hybrid`, `autoagent`, and explicit experimental
+`deepagents`; the pattern library also keeps the critique-revise loop available
+for direct use and examples. Deep Agents support keeps the SDK optional at core
+import time and adds notebook-facing optional install guidance only for Deep
+Agents outputs, so offline fallback notebooks do not auto-install `deepagents`.
 
 ## Quality Assurance System
 
@@ -539,19 +599,20 @@ All patterns are:
 |-------|------|-------------|
 | `json_structure` | Static | Valid notebook JSON |
 | `required_sections` | Static | All sections present |
-| `no_placeholders` | Static | No TODO/placeholder text |
-| `imports_present` | Static | Required imports included |
-| `graph_compiles` | Runtime | Code syntax validation |
+| `placeholder_content` | Static | No TODO/placeholder text |
+| `required_import_symbols` | Static | Required imports included |
+| `python_syntax` | Static | Code syntax validation |
+| `graph_structure` | Static | Parsed graph construction and terminal path validation |
 
 ### Repair Strategies
 
 When QA fails, the repair agent:
 
 1. **Analyzes failures**: Categorizes error types
-2. **Generates fixes**: Creates targeted repairs
-3. **Applies patches**: Updates specific cells
-4. **Validates**: Re-runs QA checks
-5. **Iterates**: Repeats if needed (max 3 attempts)
+2. **Selects routines**: Uses `QARepairRegistry` to find matching deterministic fixes
+3. **Applies candidates**: Updates in-memory notebook cells first
+4. **Validates**: Re-runs QA checks before accepting the candidate
+5. **Rolls back safely**: Keeps the original cells if the candidate regresses
 
 ### Best-Effort Fallback
 
@@ -580,25 +641,25 @@ Every generation produces a `manifest.json`:
 {
   "prompt": "Create a customer support chatbot with routing",
   "mode": "stub",
-  "architecture": "router",
-  "patterns": ["router"],
-  "timestamp": "YYYY-MM-DDTHH:MM:SSZ",
-  "artifacts": {
-    "notebook": "./notebook.ipynb",
-    "html": "./notebook.html",
-    "docx": "./notebook.docx",
-    "zip": "./notebook_bundle.zip"
+  "architecture_type": "router",
+  "graph_design_feedback": {
+    "fallback_used": false,
+    "validation_errors": [],
+    "warnings": []
   },
-  "qa_status": {
-    "passed": true,
-    "checks": 5,
-    "failures": 0
+  "graph_exports": {
+    "mermaid": "flowchart TD ...",
+    "schema": {
+      "entry_point": "router",
+      "terminal_nodes": ["finish"],
+      "validation_summary": {"errors": [], "warnings": []}
+    }
   },
-  "metadata": {
-    "cells_generated": 12,
-    "repair_attempts": 0,
-    "generation_time_ms": 850
-  }
+  "warnings": [],
+  "export_results": {
+    "ipynb": {"status": "completed", "path": "./notebook.ipynb"}
+  },
+  "phase_summary": [{"phase": "compose", "status": "completed"}]
 }
 ```
 
@@ -618,9 +679,13 @@ class Settings(BaseSettings):
     vector_store_path: str = "./data/vector_store"
     
     # Generation
-    default_model: str = "gpt-4-turbo-preview"
+    default_model: str = "gpt-5-mini"
     max_repair_attempts: int = 3
     default_budget_tokens: int = 100000
+    graph_designer_plugin_modules: list[str] = []
+    notebook_composer_plugin_modules: list[str] = []
+    toolchain_engineer_plugin_modules: list[str] = []
+    qa_repair_plugin_modules: list[str] = []
     
     # LangSmith
     langsmith_project: Optional[str] = None
@@ -630,7 +695,7 @@ Access via:
 ```python
 from langgraph_system_generator.utils.config import settings
 
-print(settings.default_model)  # "gpt-4-turbo-preview"
+print(settings.default_model)  # "gpt-5-mini"
 ```
 
 ## Extension Points
@@ -668,21 +733,35 @@ workflow.add_edge("custom_analysis", "rag_retrieval")
 app = workflow.compile()
 ```
 
-### Custom Validators
+### Internal QA/Repair Plugins
 
-Add validation checks:
+Register internal validation rules or repair routines without editing the core
+QA modules by setting `QA_REPAIR_PLUGIN_MODULES` to one or more dotted module
+paths. Each module should expose `register_qa_repair_plugins(registry)`:
 
 ```python
-from langgraph_system_generator.qa.validators import NotebookValidator
+from langgraph_system_generator.qa.registry import RepairRoutineRegistration
+from langgraph_system_generator.qa.validators import QAValidationRule
 
-class CustomValidator(NotebookValidator):
-    def check_custom_requirement(self, notebook_path):
-        # Your validation logic
-        return QAReport(
-            check_name="custom_check",
-            passed=True,
-            message="Custom check passed"
+
+class CustomRule(QAValidationRule):
+    rule_id = "custom_rule"
+    check_name = "Custom Rule"
+    category = "custom"
+
+    def validate(self, context):
+        return self.passed_report("Custom rule passed.")
+
+
+def register_qa_repair_plugins(registry):
+    registry.register_validator(CustomRule())
+    registry.register_repair_routine(
+        RepairRoutineRegistration(
+            routine_id="custom_repair",
+            handled_rule_ids=("custom_rule",),
+            handler=lambda agent, notebook, report: [],
         )
+    )
 ```
 
 ## Performance Characteristics
@@ -713,7 +792,7 @@ class CustomValidator(NotebookValidator):
 **Solution**: Increase timeout in settings or use stub mode
 
 **Issue**: Vector store not found  
-**Solution**: Run `python scripts/build_index.py` or use stub mode
+**Solution**: Run `lnf build-index` or use stub mode
 
 **Issue**: QA validation fails  
 **Solution**: Check QA reports in output directory, repair attempts logged

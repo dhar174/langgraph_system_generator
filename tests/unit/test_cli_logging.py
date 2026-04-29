@@ -16,10 +16,12 @@ def test_build_parser_accepts_log_level_flag():
 
 def test_main_configures_logging_before_dispatch(monkeypatch):
     observed: dict[str, object] = {}
+    root_logger = logging.getLogger()
+    original_level = root_logger.level
 
     def fake_configure_logging(level):
         observed["level"] = level
-        logging.getLogger().setLevel(getattr(logging, level or "INFO"))
+        root_logger.setLevel(getattr(logging, level or "INFO"))
         return level or "INFO"
 
     def fake_run_generate(_args):
@@ -29,9 +31,12 @@ def test_main_configures_logging_before_dispatch(monkeypatch):
     monkeypatch.setattr(cli_module, "configure_logging", fake_configure_logging)
     monkeypatch.setattr(cli_module, "_run_generate", fake_run_generate)
 
-    exit_code = cli_module.main(["--log-level", "WARNING", "generate", "hello"])
+    try:
+        exit_code = cli_module.main(["--log-level", "WARNING", "generate", "hello"])
 
-    assert exit_code == 0
-    assert observed["level"] == "WARNING"
-    assert observed["command_ran"] is True
-    assert logging.getLogger().level == logging.WARNING
+        assert exit_code == 0
+        assert observed["level"] == "WARNING"
+        assert observed["command_ran"] is True
+        assert root_logger.level == logging.WARNING
+    finally:
+        root_logger.setLevel(original_level)
