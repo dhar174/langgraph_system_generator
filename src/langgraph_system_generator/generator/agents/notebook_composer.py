@@ -117,7 +117,6 @@ class NotebookComposer:
         normalized = "\n    ".join(lines).strip()
         return normalized or fallback
 
-<<<<<<< Updated upstream
     @staticmethod
     def _merge_string_lists(*values: Any) -> List[str]:
         """Merge list-or-scalar string inputs into an ordered unique list."""
@@ -130,22 +129,11 @@ class NotebookComposer:
 
         return normalize_provider_env_var(value)
 
-=======
-<<<<<<< ours
-=======
->>>>>>> Stashed changes
     @staticmethod
     def _package_import_probe(package_name: str) -> str:
         """Return the import probe used to detect whether a package is installed."""
 
-<<<<<<< Updated upstream
         return package_import_probe(package_name)
-=======
-        return _PACKAGE_IMPORT_PROBES.get(
-            package_name,
-            package_name.replace("-", "_").replace(".", "_"),
-        )
->>>>>>> Stashed changes
 
     def _resolve_max_iterations(self, workflow_design: Dict[str, Any]) -> int:
         """Resolve the iteration limit embedded into notebook cells."""
@@ -181,7 +169,6 @@ class NotebookComposer:
             )
         )
 
-<<<<<<< Updated upstream
     @staticmethod
     def _merge_feedback(
         target: NotebookCompositionFeedback,
@@ -198,8 +185,6 @@ class NotebookComposer:
                 target.warnings.append(warning)
         target.fallback_events.extend(source.fallback_events)
 
-=======
->>>>>>> Stashed changes
     def _fallback_banner(self, label: str, reason: str) -> str:
         """Return a visible notebook-facing warning comment for fallback code."""
 
@@ -213,43 +198,6 @@ class NotebookComposer:
             f"# Reason: {safe_reason}\n\n"
         )
 
-<<<<<<< Updated upstream
-=======
-    def _add_dependency_candidate(
-        self,
-        plan: NotebookDependencyPlan,
-        selected_packages: List[str],
-        selected_families: Dict[str, str],
-        package_name: str,
-        *,
-        family: str | None = None,
-        requested_by: str | None = None,
-    ) -> None:
-        """Add a dependency candidate while deduplicating and resolving conflicts."""
-
-        normalized_package = str(package_name or "").strip()
-        if not normalized_package:
-            return
-
-        dependency_family = family or _PACKAGE_FAMILIES.get(normalized_package)
-        if dependency_family:
-            chosen = selected_families.get(dependency_family)
-            if chosen and chosen != normalized_package:
-                detail = (
-                    f"Kept '{chosen}' instead of '{normalized_package}' "
-                    f"for dependency family '{dependency_family}'."
-                )
-                if requested_by:
-                    detail += f" Requested by {requested_by}."
-                if detail not in plan.conflicts_resolved:
-                    plan.conflicts_resolved.append(detail)
-                return
-            selected_families[dependency_family] = normalized_package
-
-        if normalized_package not in selected_packages:
-            selected_packages.append(normalized_package)
-
->>>>>>> Stashed changes
     def _plan_dependencies(
         self,
         tools: List[Dict[str, Any]],
@@ -263,7 +211,6 @@ class NotebookComposer:
                 "Generated notebooks assume a Jupyter or Colab-style environment with pip available.",
             ]
         )
-<<<<<<< Updated upstream
         accumulator = DependencyAccumulator(runtime_notes=list(plan.runtime_notes))
 
         for package_name in ["langgraph", "langchain-core", "langchain-openai"]:
@@ -357,118 +304,6 @@ class NotebookComposer:
             return result
         return await asyncio.to_thread(self.llm.invoke, messages)
 
-=======
-        selected_packages: List[str] = []
-        selected_families: Dict[str, str] = {}
-
-        for package_name in ["langgraph", "langchain-core", "langchain-openai"]:
-            self._add_dependency_candidate(
-                plan,
-                selected_packages,
-                selected_families,
-                package_name,
-            )
-
-        for tool in tools:
-            category = self._normalize_inline_text(tool.get("category", ""), "").lower()
-            tool_configuration = tool.get("configuration")
-            if not isinstance(tool_configuration, dict):
-                tool_configuration = {}
-            requested_packages = tool_configuration.get("packages", [])
-            if isinstance(requested_packages, str):
-                requested_packages = [requested_packages]
-            if not isinstance(requested_packages, list):
-                requested_packages = []
-            for package_name in requested_packages:
-                self._add_dependency_candidate(
-                    plan,
-                    selected_packages,
-                    selected_families,
-                    str(package_name),
-                    requested_by=self._normalize_inline_text(tool.get("name", ""), "tool"),
-                )
-
-            inferred_packages: List[tuple[str, str | None]] = []
-            if "search" in category:
-                inferred_packages.append(("langchain-community", None))
-            if any(token in category for token in {"file", "document", "pdf"}):
-                inferred_packages.append(("pypdf", "pdf_parser"))
-            if "api" in category:
-                inferred_packages.append(("requests", None))
-
-            for package_name, family in inferred_packages:
-                self._add_dependency_candidate(
-                    plan,
-                    selected_packages,
-                    selected_families,
-                    package_name,
-                    family=family,
-                    requested_by=self._normalize_inline_text(tool.get("name", ""), "tool"),
-                )
-
-        if "langchain-openai" in selected_packages and "OPENAI_API_KEY" not in plan.provider_env_vars:
-            plan.provider_env_vars.append("OPENAI_API_KEY")
-
-        plan.packages = selected_packages
-        if selected_packages:
-            plan.install_commands = [
-                "python -m pip install -q " + " ".join(selected_packages)
-            ]
-        return plan
-
-    def _section_builders(
-        self,
-        context: _NotebookCompositionContext,
-    ) -> List[tuple[str, Any]]:
-        """Return the ordered internal section builders for notebook composition."""
-
-        resolved_max_iterations = context.feedback.resolved_max_iterations or 1
-        return [
-            (
-                "intro",
-                lambda: self._create_intro_cells(
-                    context.notebook_plan,
-                    context.architecture.get("justification"),
-                    context.workflow_design.get("graph_exports"),
-                ),
-            ),
-            ("install", lambda: self._create_install_cells(context.dependency_plan)),
-            (
-                "config",
-                lambda: self._create_config_cells(
-                    context.dependency_plan,
-                    context.feedback,
-                ),
-            ),
-            ("state", lambda: self._create_state_cells(context.workflow_design)),
-            (
-                "tools",
-                lambda: self._create_tool_cells(context.tools, context.feedback)
-                if context.tools
-                else [],
-            ),
-            (
-                "nodes",
-                lambda: self._create_node_cells(
-                    context.workflow_design,
-                    context.feedback,
-                ),
-            ),
-            (
-                "graph",
-                lambda: self._create_graph_cells(
-                    context.workflow_design,
-                    resolved_max_iterations,
-                ),
-            ),
-            (
-                "execution",
-                lambda: self._create_execution_cells(context.workflow_design),
-            ),
-        ]
-
->>>>>>> theirs
->>>>>>> Stashed changes
     async def compose_notebook(
         self,
         notebook_plan: NotebookPlan,
