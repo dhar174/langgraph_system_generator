@@ -82,10 +82,9 @@ graph LR
     Prompt[Prompt] --> Requirements[Requirements]
     Requirements --> RAG[RAG]
     RAG --> Architecture[Architecture Select]
-    Architecture --> Graph[Graph Design]
-    Graph --> Tools[Tool Planning]
-    Tools --> Notebook[Notebook Composition]
-    Notebook --> QA[QA / Repair]
+    Architecture --> Plan[Plan]
+    Plan --> Generate[Generate]
+    Generate --> QA[QA / Repair]
     QA --> Export[Export]
 ```
 
@@ -93,25 +92,34 @@ Pipeline stages:
 
 1. **Prompt**: The CLI, API, or web UI collects request options.
 2. **Requirements**: `RequirementsAnalyst` extracts typed constraints plus
-   advisory feedback.
+    advisory feedback.
 3. **RAG**: `DocsRetriever` provides cached LangChain/LangGraph context.
 4. **Architecture**: `ArchitectureSelector` chooses `router`, `subagents`,
    `hybrid`, or `autoagent`; explicit opt-in requests can select the
    experimental `deepagents` architecture.
-5. **Graph Design**: `GraphDesigner` returns a typed graph design, Mermaid
-   export, schema export, and validation feedback.
-6. **Tool Planning**: `ToolchainEngineer` normalizes tools through a registry,
-   applies environment constraints, deduplicates tools, and surfaces warnings.
-7. **Notebook Composition**: `NotebookComposer` builds cells, a dependency
-   plan, fallback feedback, and a graph overview section.
-8. **QA / Repair**: Static/runtime QA validate the notebook; deterministic
+5. **Plan**: `GraphDesigner` and `ToolchainEngineer` turn the selected
+   architecture into a typed workflow design, graph exports, tool plan, and
+   planning feedback.
+6. **Generate**: `NotebookComposer` builds cells, a dependency plan, fallback
+   feedback, and a graph overview section.
+7. **QA / Repair**: Static/runtime QA validate the notebook; deterministic
    registry-backed repair runs only when needed and records rollback/no-op
    outcomes.
-9. **Export**: The CLI/API export layer writes files and a manifest with
-   structured feedback and warnings.
+8. **Export**: The CLI/API export layer writes notebook artifacts and a manifest
+   with structured feedback and warnings.
 
-For a code-level walkthrough, see
-[docs/wiki/Architecture-Deep-Dive.md](docs/wiki/Architecture-Deep-Dive.md).
+The same pipeline powers all three entry points:
+
+- **CLI** for local generation and index building.
+- **FastAPI + web UI** for browser-based generation and downloads.
+- **Python package imports** for reuse in scripts and tests.
+
+For stage-by-stage state details, fallback behavior, and repair-loop semantics,
+see [docs/wiki/Architecture-Deep-Dive.md](docs/wiki/Architecture-Deep-Dive.md).
+For developer-focused onboarding and extension notes, see
+[docs/wiki/Developer-Onboarding.md](docs/wiki/Developer-Onboarding.md).
+For runnable and text-only workflow examples, see
+[examples/cross-cutting-workflows.md](examples/cross-cutting-workflows.md).
 For a maintainer-focused stage/state map, see
 [docs/diagrams/README.md](docs/diagrams/README.md).
 
@@ -152,7 +160,7 @@ lnf build-index --use-openai
 CLI options intentionally stay narrow. Use the API for request-scoped `model`,
 `temperature`, `max_tokens`, or `custom_endpoint` overrides.
 
-## Outputs
+## Expected Outputs And Feedback
 
 Successful generations can include:
 
@@ -173,6 +181,14 @@ The manifest includes advisory fields such as `requirements_feedback`,
 `tool_planning_feedback`, `notebook_composition_feedback`,
 `notebook_dependency_plan`, and `qa_repair_feedback`. These are response/output
 fields, not new request fields.
+
+Use `manifest.json` as the primary summary for:
+
+- the selected architecture and generation mode
+- export success or failure per artifact
+- warning surfaces and fallback paths
+- repair attempt history and next-step hints
+- artifact paths that can be downloaded through `GET /artifacts`
 
 ## API And Web UI
 
@@ -282,7 +298,37 @@ Internal extension hooks accept JSON arrays or comma-separated module names:
 These hooks are internal-first extension points; they do not add public CLI/API
 request fields.
 
-## Development
+## Extension Points
+
+The generator keeps runtime extension hooks behind environment variables so the
+public CLI/API contract stays stable:
+
+| Surface | Environment variable | Expected registration function |
+| --- | --- | --- |
+| Graph design | `GRAPH_DESIGNER_PLUGIN_MODULES` | `register_graph_designers(registry)` |
+| Notebook composition | `NOTEBOOK_COMPOSER_PLUGIN_MODULES` | `register_notebook_composer_builders(registry)` |
+| Tool planning | `TOOLCHAIN_ENGINEER_PLUGIN_MODULES` | `register_toolchain_tools(registry)` |
+| QA / repair | `QA_REPAIR_PLUGIN_MODULES` | `register_qa_repair_plugins(registry)` |
+
+Each value can be a JSON array or a comma-separated list of dotted module
+paths. These hooks extend internal registries; they do not create new request
+fields or change the top-level `lnf generate` flags.
+
+## Logging And Tracing
+
+Use the built-in logging helpers for local debugging and CI runs:
+
+- `LNF_LOG_LEVEL` or `LOG_LEVEL` sets the default log level.
+- `lnf ... --log-level DEBUG` overrides logging for CLI runs.
+- FastAPI uses the same shared logging configuration during server startup.
+- `GET /stream/{job_id}` exposes progress events for async API generations.
+
+For trace collection in live LangChain/LangGraph runs, set
+`LANGSMITH_API_KEY` and `LANGSMITH_PROJECT`. The current LangSmith guidance for
+LangGraph tracing is documented at
+[Trace LangGraph applications](https://docs.langchain.com/langsmith/trace-with-langgraph).
+
+## Developing Locally
 
 Useful local commands:
 
@@ -290,8 +336,25 @@ Useful local commands:
 python -m pip install --upgrade pip
 pip install -r requirements.txt
 pip install -e ".[full,dev]"
-python -m flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
+python -m pytest tests/unit --asyncio-mode=auto -q
 python -m pytest --asyncio-mode=auto
+black src/ tests/
+ruff check src/ tests/
+mypy src/
+```
+
+When editing docs only, the narrowest useful validation is:
+
+```bash
+python -m pytest tests/unit/test_documentation_coverage.py -q
+```
+
+Use stub mode for the fastest local verification loop:
+
+```bash
+lnf generate "Create a router-based customer support chatbot" \
+  --output ./output/docs-smoke \
+  --mode stub
 ```
 
 More docs:
@@ -299,6 +362,7 @@ More docs:
 - [Getting Started](docs/wiki/Getting-Started.md)
 - [Architecture Deep Dive](docs/wiki/Architecture-Deep-Dive.md)
 - [CLI and API Reference](docs/wiki/CLI-and-API-Reference.md)
+- [Developer Onboarding](docs/wiki/Developer-Onboarding.md)
 - [Colab Usage](docs/wiki/Colab-Usage.md)
 - [Development Guide](docs/dev.md)
 - [Maintainer Diagrams](docs/diagrams/README.md)

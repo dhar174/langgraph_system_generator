@@ -90,6 +90,28 @@ Vector search is optional. Stub mode works without a vector store.
 python -m pytest --asyncio-mode=auto
 ```
 
+## Developing Locally
+
+For contributor workflows, install the full editable environment and use the
+smallest validation command that matches your change:
+
+```bash
+pip install -e ".[full,dev]"
+python -m pytest tests/unit/test_documentation_coverage.py -q
+python -m pytest tests/unit --asyncio-mode=auto -q
+black src/ tests/
+ruff check src/ tests/
+mypy src/
+```
+
+For the fastest end-to-end smoke test, generate in stub mode:
+
+```bash
+lnf generate "Create a router-based support assistant" \
+  --output ./output/getting-started-smoke \
+  --mode stub
+```
+
 ## Your First Generation
 
 Generate a simple system in stub mode:
@@ -187,7 +209,8 @@ lnf generate "Create a chatbot" \
 ```
 
 Supported `--agent-type` values are `router`, `subagents`, `hybrid`, and
-`autoagent`.
+`autoagent`. The experimental `deepagents` architecture is also available as an
+explicit opt-in.
 
 Use the REST API for request-scoped `model`, `custom_endpoint`, `temperature`,
 or `max_tokens` overrides.
@@ -212,7 +235,7 @@ Generated notebooks typically include:
 8. Execution examples.
 9. QA and repair summary, when repairs were attempted.
 
-## Running In Google Colab
+## Colab Usage
 
 Generated notebooks are Colab-ready:
 
@@ -224,6 +247,9 @@ Generated notebooks are Colab-ready:
 5. Run all cells.
 
 See [Colab Usage Guide](Colab-Usage.md) for details.
+
+For more developer-focused notes on tracing, extension hooks, and expected
+manifest fields, see [Developer Onboarding](Developer-Onboarding.md).
 
 ## Troubleshooting
 
