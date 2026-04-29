@@ -20,16 +20,11 @@ Choose the entry point that matches your goal:
 
 All entry points reuse the same outer LangGraph pipeline:
 
-```mermaid
-graph LR
-    Prompt[Prompt] --> Requirements[Requirements]
-    Requirements --> RAG[RAG]
-    RAG --> Architecture[Architecture Select]
-    Architecture --> Plan[Plan]
-    Plan --> Generate[Generate]
-    Generate --> QA[QA / Repair]
-    QA --> Export[Export]
-```
+**Prompt → Requirements → RAG → Architecture Select → Plan → Generate → QA / Repair → Export**
+
+The repository-wide Mermaid diagram lives in the
+[top-level README](../../README.md#how-it-works), while this page focuses on the
+cross-cutting developer details around that same flow.
 
 - **Requirements**: `RequirementsAnalyst` extracts typed constraints plus
   advisory `requirements_feedback`.

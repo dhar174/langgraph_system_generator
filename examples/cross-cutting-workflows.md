@@ -17,7 +17,6 @@ Create a router-based support assistant with a billing path and a technical path
 lnf generate "Create a router-based support assistant with a billing path and a technical path." \
   --output ./output/cross-cutting-test \
   --mode stub
-python -m pytest tests/unit/test_documentation_coverage.py -q
 ```
 
 **Expected output**
@@ -26,6 +25,12 @@ python -m pytest tests/unit/test_documentation_coverage.py -q
 - `output/cross-cutting-test/manifest.json`
 - `manifest.json` reports `mode: "stub"`
 - `manifest.json` includes `architecture_type`
+
+If you are editing documentation at the same time, also run:
+
+```bash
+python -m pytest tests/unit/test_documentation_coverage.py -q
+```
 
 ## Logging And Tracing
 

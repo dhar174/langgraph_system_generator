@@ -208,7 +208,8 @@ REST endpoints:
 - `POST /generate-async`: Start an async generation job.
 - `GET /stream/{job_id}`: Server-Sent Events progress stream. Supports
   `Last-Event-ID` replay.
-- `GET /artifacts`: Download generated artifacts listed in the manifest.
+- `GET /artifacts?path=...`: Download a generated artifact path listed in the
+  manifest.
 
 Example:
 
