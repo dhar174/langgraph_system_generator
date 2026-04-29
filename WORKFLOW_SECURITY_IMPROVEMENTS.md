@@ -26,20 +26,20 @@ Created comprehensive security scanning workflow with:
 **Security Improvements**:
 - ✅ Added workflow-level `permissions: contents: read` (least privilege default)
 - ✅ Added `codeql` job dependency - diagram only updates after security scan passes
-- ✅ **Fixed critical security issue**: Pinned `githubocto/repo-visualizer@main` → `@0.11.0`
+- ✅ **Fixed critical security issue**: Pinned `githubocto/repo-visualizer@main` → `@0.9.1`
 - ✅ Scoped permissions: `contents: write` only for diagram update job
 - ✅ Added CodeQL workflow reuse
 
 **Before**: Action used unpinned `@main` tag (security risk - could pull malicious updates)
-**After**: Action pinned to stable version `@0.11.0`
+**After**: Action pinned to the latest published tag used by the workflow, `@0.9.1`
 
-### 3. Updated wiki-from-code.yml  
+### 3. Retired generated-wiki workflow
 
 **Security Improvements**:
-- ✅ Added `codeql` job dependency - wiki generation only runs after security scan passes
-- ✅ Moved `pull-requests: write` permission from workflow to job level (least privilege)
-- ✅ Added workflow-level default `permissions: contents: read`
-- ✅ CodeQL runs conditionally on same events as wiki generation
+- ✅ Removed the external generated wiki workflow
+- ✅ Removed the need for documentation-generation secrets or runtime packages
+- ✅ Replaced generated wiki updates with checked-in documentation under `docs/`
+- ✅ GitHub Pages publishes the reviewed `/docs` content from `main`
 
 ### 4. Updated wiki-page-creator-action.yml
 
@@ -75,7 +75,7 @@ Comprehensive documentation covering:
 ### ✅ Action Pinning
 All actions now use specific versions instead of `main`, `master`, or `latest`:
 - `@v4`, `@v5` for major version tags
-- `@0.11.0` for exact version tags
+- `@0.9.1` for exact repo-visualizer tags
 - `@2.0.3` for Docker images
 
 ### ✅ Least Privilege Permissions
@@ -95,18 +95,21 @@ All actions now use specific versions instead of `main`, `master`, or `latest`:
 └────────┬────────┘
          │
          ├─────────────┐
-         │             │
-         ▼             ▼
-┌─────────────┐  ┌──────────────┐
-│   Diagram   │  │  Wiki Gen    │  ← Only run if CodeQL passes
-└─────────────┘  └──────────────┘
+         │
+         ▼
+┌─────────────┐
+│   Diagram   │  ← Only runs if CodeQL passes
+└─────────────┘
 ```
+
+Documentation is now handled as checked-in Markdown under `docs/` and is
+published by GitHub Pages after changes merge to `main`.
 
 ## Files Changed
 
 1. `.github/workflows/codeql.yml` - **CREATED**
 2. `.github/workflows/diagram.yml` - **MODIFIED**
-3. `.github/workflows/wiki-from-code.yml` - **MODIFIED**
+3. Generated wiki workflow - **REMOVED**
 4. `.github/workflows/wiki-page-creator-action.yml` - **MODIFIED**
 5. `.github/workflows/python-app.yml` - **MODIFIED**
 6. `docs/CI_CD_WORKFLOWS.md` - **CREATED**
@@ -143,7 +146,7 @@ All workflow files validated:
 
 5. **Environment Protection** for sensitive workflows:
    - Already configured for `pypi` environment in python-publish.yml
-   - Consider adding for wiki-generation workflows
+   - Consider adding for future workflows that write repository content
 
 ## Security Checklist Status
 

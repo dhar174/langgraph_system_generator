@@ -87,9 +87,16 @@ def test_pages_homepage_links_to_core_docs() -> None:
 
     content = _read_repo_file("docs/index.md")
     required_links = [
-        "[Project Wiki](wiki/Home.md)",
+        "[Docs Wiki](wiki/README.md)",
         "[Getting Started](wiki/Getting-Started.md)",
         "[Developer Onboarding](wiki/Developer-Onboarding.md)",
+        "[Architecture Deep Dive](wiki/Architecture-Deep-Dive.md)",
+        "[CLI and API Reference](wiki/CLI-and-API-Reference.md)",
+        "[Pattern Library Guide](wiki/Pattern-Library-Guide.md)",
+        "[Colab Usage](wiki/Colab-Usage.md)",
+        "[Development Guide](dev.md)",
+        "[CI/CD Workflows](CI_CD_WORKFLOWS.md)",
+        "[Repository Diagrams](diagrams/README.md)",
     ]
     for link in required_links:
         assert link in content, f"docs/index.md is missing required link {link!r}"

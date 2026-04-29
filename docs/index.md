@@ -8,7 +8,7 @@ workflow patterns for common multi-agent architectures.
 
 ## Start Here
 
-- [Project Wiki](wiki/Home.md): Project overview, capabilities, and status.
+- [Docs Wiki](wiki/README.md): Checked-in `docs/wiki/` documentation index.
 - [Getting Started](wiki/Getting-Started.md): Installation, setup, and your
   first generation.
 - [Developer Onboarding](wiki/Developer-Onboarding.md): Local development,

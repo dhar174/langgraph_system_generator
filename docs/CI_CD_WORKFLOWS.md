@@ -65,7 +65,8 @@ All workflows follow security best practices:
 
 **Security Controls**:
 - **Depends on CodeQL**: Job waits for security scan to pass
-- Action pinned to `@0.9.1` (previously used unpinned `@main`)
+- Action pinned to `@0.9.1`, the latest published `githubocto/repo-visualizer`
+  tag currently used by the workflow (previously used unpinned `@main`)
 - Minimal permissions: `contents: write` only for diagram job
 
 **Workflow**:

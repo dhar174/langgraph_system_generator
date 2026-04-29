@@ -4,7 +4,7 @@
 
 ### Implementation Pattern
 
-Both `diagram.yml` and `wiki-from-code.yml` follow the same pattern:
+`diagram.yml` follows this pattern:
 
 ```yaml
 jobs:
@@ -65,49 +65,14 @@ jobs:
       contents: write  # ✅ Scoped to job only
     steps:
       - uses: actions/checkout@v4
-      - uses: githubocto/repo-visualizer@0.11.0  # ✅ Pinned!
+      - uses: githubocto/repo-visualizer@0.9.1  # ✅ Pinned!
 ```
 
-### wiki-from-code.yml - Before & After
+### Documentation Publishing
 
-**Before** (❌ No security gate):
-```yaml
-permissions:
-  contents: read
-  pull-requests: write  # ❌ Too permissive at workflow level
-
-jobs:
-  call-adapts-api:
-    if: github.event_name == 'push' || ...
-    runs-on: ubuntu-latest
-    steps:
-      # ... wiki generation
-```
-
-**After** (✅ Security gated):
-```yaml
-permissions:
-  contents: read  # ✅ Least privilege default
-
-jobs:
-  codeql:
-    if: github.event_name == 'push' || ...  # ✅ Same conditions
-    uses: ./.github/workflows/codeql.yml
-    permissions:
-      contents: read
-      security-events: write
-      actions: read
-
-  call-adapts-api:
-    if: github.event_name == 'push' || ...
-    needs: codeql  # ✅ Waits for security scan
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      pull-requests: write  # ✅ Scoped to job only
-    steps:
-      # ... wiki generation
-```
+The former generated-wiki workflow has been removed. Documentation is now
+published from the checked-in `docs/` directory through GitHub Pages, with
+coverage validated by `.github/workflows/documentation.yml`.
 
 ## Execution Flow
 
@@ -126,28 +91,25 @@ jobs:
           ├─────────────────┬────────────────────┐
           │                 │                    │
           ▼                 ▼                    ▼
-┌──────────────────┐  ┌──────────────┐  ┌─────────────┐
-│  python-app.yml  │  │ diagram.yml  │  │ wiki-from-  │
-│  (CI tests)      │  │              │  │ code.yml    │
-└──────────────────┘  └──────┬───────┘  └──────┬──────┘
-                             │                  │
-                             ▼                  ▼
-                      ┌────────────────┐  ┌───────────┐
-                      │ CodeQL (1st)   │  │ CodeQL    │
-                      └────────┬───────┘  │ (1st)     │
-                               │          └─────┬─────┘
-                      ┌────────▼───────┐        │
-                      │ ✓ Security OK  │        │
-                      └────────┬───────┘  ┌─────▼──────┐
-                               │          │ ✓ Security │
-                               ▼          │   OK       │
-                      ┌────────────────┐  └─────┬──────┘
-                      │ Update diagram │        │
-                      │ (push to main) │        ▼
-                      └────────────────┘  ┌──────────────┐
-                                          │ Generate wiki│
-                                          │ (push)       │
-                                          └──────────────┘
+┌──────────────────┐  ┌──────────────┐  ┌──────────────────┐
+│  python-app.yml  │  │ diagram.yml  │  │ documentation.yml │
+│  (CI tests)      │  │              │  │ (docs coverage)  │
+└──────────────────┘  └──────┬───────┘  └──────────────────┘
+                             │
+                             ▼
+                      ┌────────────────┐
+                      │ CodeQL (1st)   │
+                      └────────┬───────┘
+                               │
+                      ┌────────▼───────┐
+                      │ ✓ Security OK  │
+                      └────────┬───────┘
+                               │
+                               ▼
+                      ┌────────────────┐
+                      │ Update diagram │
+                      │ (push to main) │
+                      └────────────────┘
 ```
 
 ### On CodeQL Failure
@@ -188,7 +150,7 @@ jobs:
 
 ### 2. Fail Fast
 - Security issues caught before expensive operations
-- No wasted compute on diagram/wiki generation if code is insecure
+- No wasted compute on diagram generation if code is insecure
 
 ### 3. Clear Dependency Chain
 - Easy to understand: CodeQL → Push jobs
@@ -239,7 +201,6 @@ This allows:
 ```bash
 # Check workflow files
 grep -A 2 "needs:" .github/workflows/diagram.yml
-grep -A 2 "needs:" .github/workflows/wiki-from-code.yml
 
 # Expected output:
 #   needs: codeql
@@ -267,7 +228,7 @@ actionlint .github/workflows/*.yml
 
 - [x] CodeQL workflow created
 - [x] diagram.yml depends on CodeQL
-- [x] wiki-from-code.yml depends on CodeQL
+- [x] Generated-wiki workflow removed in favor of checked-in GitHub Pages docs
 - [x] All actions pinned to versions
 - [x] Least privilege permissions implemented
 - [x] Job-level permission scoping
