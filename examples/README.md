@@ -83,6 +83,16 @@ Use [benchmark_critique_vs_judge.ipynb](./benchmark_critique_vs_judge.ipynb) wit
 - Stub mode loads the checked-in fixture and renders the comparison offline.
 - Live runs should record the model name, date, prompt/completion token counts, latency, and pricing assumptions used for any refreshed results.
 
+## Cross-Cutting Workflows
+
+Use [cross-cutting-workflows.md](./cross-cutting-workflows.md) for text-only
+examples that show:
+
+- prompts and expected outputs for stub-mode smoke testing
+- logging and LangSmith tracing setup
+- internal plugin-loading configuration
+- artifact export and manifest inspection
+
 ## Notes
 
 - The public generator-backed patterns include `RouterPattern`,

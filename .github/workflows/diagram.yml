@@ -35,7 +35,7 @@ jobs:
           ref: main
           fetch-depth: 0
       - name: Update diagram
-        uses: githubocto/repo-visualizer@0.11.0
+        uses: githubocto/repo-visualizer@0.9.1
         with:
           excluded_paths: "ignore,.github"
           root_path: "src/"

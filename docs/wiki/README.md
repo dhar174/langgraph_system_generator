@@ -11,7 +11,8 @@ Comprehensive documentation for the LangGraph System Generator project.
 3. **[Architecture Deep Dive](Architecture-Deep-Dive.md)** - Internal architecture and generation pipeline
 4. **[Pattern Library Guide](Pattern-Library-Guide.md)** - Complete guide to Router, Subagents, and Critique-Revise patterns
 5. **[CLI & API Reference](CLI-and-API-Reference.md)** - Command-line and REST API documentation
-6. **[Colab Usage](Colab-Usage.md)** - Using generated notebooks in Google Colab
+6. **[Developer Onboarding](Developer-Onboarding.md)** - Cross-cutting local development, tracing, extension, and output guidance
+7. **[Colab Usage](Colab-Usage.md)** - Using generated notebooks in Google Colab
 
 ## Quick Links
 
@@ -26,6 +27,8 @@ Comprehensive documentation for the LangGraph System Generator project.
 
 ### For Developers
 - Read [Architecture Deep Dive](Architecture-Deep-Dive.md) to understand internals
+- Read [Developer Onboarding](Developer-Onboarding.md) for tracing, plugins,
+  expected outputs, and validation commands
 - Check [Pattern Library Guide](Pattern-Library-Guide.md) for pattern development
 - Review [CLI & API Reference](CLI-and-API-Reference.md) for integration options
 - Review [Repository Visualizations](../diagrams/README.md) for the maintainer-focused generator stage/state maps
@@ -45,6 +48,7 @@ docs/wiki/
 ├── Home.md                      # Project overview and introduction
 ├── Getting-Started.md           # Installation and quickstart guide
 ├── Architecture-Deep-Dive.md    # Technical architecture details
+├── Developer-Onboarding.md      # Cross-cutting development guide
 ├── Pattern-Library-Guide.md     # Pattern documentation
 ├── CLI-and-API-Reference.md     # Interface documentation
 ├── Colab-Usage.md              # Google Colab guide
@@ -95,6 +99,8 @@ This wiki provides comprehensive coverage of:
 ✅ CLI and API usage  
 ✅ Pattern library and architecture targets (Router, Subagents, Hybrid, AutoAgent, Critique-Revise)
 ✅ Architecture and internals  
+✅ Local development and onboarding  
+✅ Extension points, tracing, and logging  
 ✅ Multi-format export system  
 ✅ Structured QA, repair, rollback, and warning surfaces
 ✅ Google Colab integration  

@@ -45,19 +45,20 @@ jobs:
       - name: Get author e-mail (enterprise)
         id: pr_author
         env:
-          GH_TOKEN: ${{ secrets.ENTERPRISE_READ_TOKEN }}   # PAT or App token with read:org
+          GH_TOKEN: ${{ secrets.GH_PAT || github.token }}
         run: |
           # Handle both push and pull_request events
           if [ "${{ github.event_name }}" = "pull_request" ]; then
             login="${{ github.event.pull_request.user.login }}"
             org="${{ github.repository_owner }}"
 
-            # Single-line GraphQL avoids the UNKNOWN_CHAR error
+            # Single-line GraphQL avoids the UNKNOWN_CHAR error. Some tokens do
+            # not have read:org, so fall back to the commit author when needed.
             email=$(gh api graphql \
                 -f query='query($login:String!,$org:String!){user(login:$login){organizationVerifiedDomainEmails(login:$org)}}' \
                 -f login="$login" \
                 -f org="$org" \
-                --jq '.data.user.organizationVerifiedDomainEmails[0]')
+                --jq '.data.user.organizationVerifiedDomainEmails[0]' 2>/dev/null || true)
 
             # Fallback to HEAD-commit author e-mail if nothing came back
             if [ -z "$email" ] || [ "$email" = "null" ]; then
@@ -84,9 +85,20 @@ jobs:
           AUTHOR_EMAIL:   ${{ steps.pr_author.outputs.email }}
           REPO_LANG:      ${{ github.event.repository.language }}
           REPO_SIZE:      ${{ steps.repo_size.outputs.size }}
-          REFRESH_TOKEN:  ${{ secrets.GITHUB_TOKEN }}
-          GH_PAT:         ${{ secrets.ENTERPRISE_READ_TOKEN }}
+          REFRESH_TOKEN:  ${{ github.token }}
+          GH_PAT:         ${{ secrets.GH_PAT }}
+          GITHUB_TOKEN_FALLBACK: ${{ github.token }}
         run: |
+          if [ -z "${ADAPTS_API_KEY:-}" ]; then
+            echo "::warning::ADAPTS_API_KEY is not configured; skipping Adapts wiki generation."
+            exit 0
+          fi
+
+          if [ -z "${GH_PAT:-}" ]; then
+            echo "::warning::GH_PAT is not configured; falling back to the workflow token."
+            export GH_PAT="${GITHUB_TOKEN_FALLBACK}"
+          fi
+
           python <<'PY'
           import os, json
           from adaptsapi.generate_docs import post, PayloadValidationError
