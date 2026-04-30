@@ -81,6 +81,27 @@ def test_wiki_index_links_to_new_onboarding_page() -> None:
     assert "[Developer Onboarding](Developer-Onboarding.md)" in content
 
 
+def test_pages_homepage_links_to_core_docs() -> None:
+    pages_home = REPO_ROOT / "docs/index.md"
+    assert pages_home.exists()
+
+    content = _read_repo_file("docs/index.md")
+    required_links = [
+        "[Docs Wiki](wiki/README.md)",
+        "[Getting Started](wiki/Getting-Started.md)",
+        "[Developer Onboarding](wiki/Developer-Onboarding.md)",
+        "[Architecture Deep Dive](wiki/Architecture-Deep-Dive.md)",
+        "[CLI and API Reference](wiki/CLI-and-API-Reference.md)",
+        "[Pattern Library Guide](wiki/Pattern-Library-Guide.md)",
+        "[Colab Usage](wiki/Colab-Usage.md)",
+        "[Development Guide](dev.md)",
+        "[CI/CD Workflows](CI_CD_WORKFLOWS.md)",
+        "[Repository Diagrams](diagrams/README.md)",
+    ]
+    for link in required_links:
+        assert link in content, f"docs/index.md is missing required link {link!r}"
+
+
 def test_documentation_workflow_executes_docs_coverage_test() -> None:
     workflow = _read_repo_file(".github/workflows/documentation.yml")
     assert "pytest" in workflow
