@@ -1,8 +1,8 @@
 name: CodeQL
 
 # This workflow is intentionally reusable-only. Main-branch push scans are
-# orchestrated by caller workflows such as wiki-from-code.yml and diagram.yml,
-# while standalone PR/scheduled scans are handled by codeql-analysis.yml.
+# orchestrated by caller workflows such as diagram.yml, while standalone
+# PR/scheduled scans are handled by codeql-analysis.yml.
 on:
   workflow_call:
 

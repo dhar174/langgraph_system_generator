@@ -65,7 +65,8 @@ All workflows follow security best practices:
 
 **Security Controls**:
 - **Depends on CodeQL**: Job waits for security scan to pass
-- Action pinned to `@0.11.0` (previously used unpinned `@main`)
+- Action pinned to `@0.9.1`, the latest published `githubocto/repo-visualizer`
+  tag currently used by the workflow (previously used unpinned `@main`)
 - Minimal permissions: `contents: write` only for diagram job
 
 **Workflow**:
@@ -73,25 +74,29 @@ All workflows follow security best practices:
 2. Generate repo visualization (only if CodeQL passes)
 3. Commit diagram to repository
 
-### Generate Wiki from Code
+### GitHub Pages Documentation
 
-**File**: `.github/workflows/wiki-from-code.yml`
+**Source**: `docs/` on the `main` branch
 
-**Purpose**: Auto-generates wiki documentation from code on push to main
+**Purpose**: Publishes checked-in project documentation through GitHub Pages
 
-**Triggers**:
-- Push to `main` branch
-- Closed pull requests to `main` (only if merged)
+**Publishing Source**:
+- Branch: `main`
+- Folder: `/docs`
+- Site: `https://dhar174.github.io/langgraph_system_generator/`
 
 **Security Controls**:
-- **Depends on CodeQL**: Job waits for security scan to pass
-- Scoped permissions for API calls
-- Uses GitHub token authentication
+- Documentation is source-controlled and reviewed through pull requests
+- No third-party documentation generation API or long-lived documentation secret
+  is required
+- The `Documentation` workflow validates required documentation coverage on
+  pushes and pull requests
 
 **Workflow**:
-1. Run CodeQL security analysis (only on relevant events)
-2. Call documentation API (only if CodeQL passes)
-3. Generate wiki pages
+1. Update Markdown files under `docs/` or `docs/wiki/`
+2. Open a pull request and let the `Documentation` workflow validate coverage
+3. Merge to `main`
+4. GitHub Pages publishes the updated `/docs` content
 
 ### Python Package Publishing
 
@@ -164,15 +169,24 @@ updates:
 │  CodeQL Scan    │
 └────────┬────────┘
          │
-         ├─────────────┐
-         │             │
-         ▼             ▼
-┌─────────────┐  ┌──────────────┐
-│   Diagram   │  │  Wiki Gen    │
-└─────────────┘  └──────────────┘
+         ▼
+┌─────────────┐
+│   Diagram   │
+└─────────────┘
+
+┌────────────────────┐
+│ Documentation Check │
+└─────────┬──────────┘
+          │
+          ▼
+┌────────────────────┐
+│  GitHub Pages /docs │
+└────────────────────┘
 ```
 
-Jobs that modify the `main` branch (`diagram.yml`, `wiki-from-code.yml`) now depend on the CodeQL security scan passing. This ensures no code with security issues is committed.
+The repository documentation site is published from checked-in files under
+`docs/`. The `Documentation` workflow validates required documentation coverage
+before changes merge, and GitHub Pages serves the merged `/docs` content.
 
 ## Local Testing
 

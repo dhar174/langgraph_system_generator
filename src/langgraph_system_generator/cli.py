@@ -48,6 +48,7 @@ from langgraph_system_generator.utils.generation_options import (
     normalize_agent_type,
     resolve_architecture_type,
 )
+from langgraph_system_generator.utils.logging_utils import configure_logging, LOG_LEVEL_CHOICES
 from langgraph_system_generator.utils.optional_deps import (
     OptionalDependencyError,
     require_optional_module,
@@ -1604,6 +1605,16 @@ def _run_build_index(args: argparse.Namespace) -> int:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="LangGraph Notebook Foundry CLI")
+    parser.add_argument(
+        "--log-level",
+        type=str.upper,
+        choices=list(LOG_LEVEL_CHOICES),
+        default=None,
+        help=(
+            "Set CLI logging verbosity. "
+            "Defaults to LNF_LOG_LEVEL/LOG_LEVEL env var, otherwise INFO."
+        ),
+    )
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     gen = subparsers.add_parser("generate", help="Generate notebook artifacts")
@@ -1676,6 +1687,7 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
+    configure_logging(args.log_level)
     return args.func(args)
 
 

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import sys
 import types
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -254,7 +255,10 @@ async def test_requirements_analyst_parsing(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_requirements_analyst_fallback_truncates_prompt_on_bad_json(monkeypatch):
+async def test_requirements_analyst_fallback_truncates_prompt_on_bad_json(
+    monkeypatch,
+    caplog: pytest.LogCaptureFixture,
+):
     """Malformed model output should produce fallback constraints plus structured feedback."""
     long_prompt = "Build a workflow " + ("with a long prompt " * 15)
     assert len(long_prompt) > 200
@@ -262,6 +266,10 @@ async def test_requirements_analyst_fallback_truncates_prompt_on_bad_json(monkey
     mock_llm = MagicMock()
     mock_llm.ainvoke = AsyncMock()
     mock_llm.ainvoke.return_value.content = "not-json"
+    caplog.set_level(
+        logging.WARNING,
+        logger="langgraph_system_generator.generator.agents.requirements_analyst",
+    )
 
     with patch(
         "langgraph_system_generator.generator.agents.requirements_analyst.ChatOpenAI",
@@ -280,6 +288,11 @@ async def test_requirements_analyst_fallback_truncates_prompt_on_bad_json(monkey
     assert analysis.feedback.fallback_reason
     assert {"runtime", "environment"}.issubset(set(analysis.feedback.missing_inputs))
     assert analysis.feedback.suggestions
+    assert any(
+        "Requirements extraction fallback used" in record.message
+        and record.levelname == "WARNING"
+        for record in caplog.records
+    )
 
 
 @pytest.mark.asyncio
@@ -466,9 +479,16 @@ async def test_architecture_selector_parsing(monkeypatch):
     ],
 )
 async def test_architecture_selector_falls_back_on_invalid_payload(
-    payload, reason_fragment, monkeypatch
+    payload,
+    reason_fragment,
+    monkeypatch,
+    caplog: pytest.LogCaptureFixture,
 ):
     """ArchitectureSelector should surface fallback feedback for invalid model payloads."""
+    caplog.set_level(
+        logging.WARNING,
+        logger="langgraph_system_generator.generator.agents.architecture_selector",
+    )
     monkeypatch.setattr(
         architecture_selector,
         "ChatOpenAI",
@@ -482,6 +502,11 @@ async def test_architecture_selector_falls_back_on_invalid_payload(
     assert result.feedback.fallback_used is True
     assert result.feedback.fallback_reason
     assert any(reason_fragment in error for error in result.feedback.validation_errors)
+    assert any(
+        "Architecture selection fallback used" in record.message
+        and record.levelname == "WARNING"
+        for record in caplog.records
+    )
 
 
 @pytest.mark.asyncio
