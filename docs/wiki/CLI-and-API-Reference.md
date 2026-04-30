@@ -131,6 +131,7 @@ The CLI respects these environment variables:
 | `MAX_REPAIR_ATTEMPTS` | QA repair attempts | `3` |
 | `DEFAULT_BUDGET_TOKENS` | Token budget | `100000` |
 | `LNF_OUTPUT_BASE` | Base output directory | `.` |
+| `LNF_LOG_LEVEL` | App log verbosity (`TRACE`/`DEBUG`/`INFO`/`WARNING`/`ERROR`/`CRITICAL`) | `INFO` |
 | `LNF_MAX_CONCURRENT_GENERATIONS` | Async API generation concurrency | `5` |
 | `REQUIREMENTS_CONSTRAINT_TYPES` | Extra intake constraint types as JSON/comma list | `[]` |
 | `ARCHITECTURE_PATTERN_DOC_QUERIES` | Architecture retrieval query overrides as JSON object | `{}` |

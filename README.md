@@ -145,7 +145,15 @@ lnf generate "Create a Deep Agents research assistant" \
 lnf generate "Create a chatbot" \
   --output ./output/demo \
   --formats ipynb html markdown docx zip
+
+# Increase CLI verbosity for debugging/tracing fallback/error behavior
+lnf --log-level DEBUG generate "Create a router-based chatbot" \
+  --output ./output/debug
 ```
+
+Pass `--mode live` to `lnf generate` when you have `OPENAI_API_KEY` configured and want to invoke the full generator graph.
+For API and CLI default verbosity, set `LNF_LOG_LEVEL` (or `LOG_LEVEL`) to one of:
+`TRACE`, `DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL`.
 
 Build the docs index:
 

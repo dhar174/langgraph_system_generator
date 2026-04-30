@@ -38,6 +38,8 @@ from langgraph_system_generator.utils.generation_options import (
 from langgraph_system_generator.utils.logging_utils import configure_logging_from_env
 from langgraph_system_generator.utils.optional_deps import OptionalDependencyError
 
+logger = logging.getLogger(__name__)
+
 
 @asynccontextmanager
 async def _lifespan(app_: FastAPI):  # noqa: ARG001
@@ -391,13 +393,13 @@ async def generate_notebook(request: GenerationRequest) -> GenerationResponse:
                 output_dir=artifacts["output_dir"],
             )
         except (GenerationError, OptionalDependencyError) as exc:
-            logging.exception("Generation request failed")
+            logger.exception("Generation request failed for /generate")
             _raise_generation_http_error(exc)
         except ValueError as exc:  # pragma: no cover - surfaced via HTTPException
-            logging.exception("Generation request failed")
+            logger.exception("Generation request failed for /generate")
             raise HTTPException(status_code=400, detail=str(exc))
         except Exception as exc:  # pragma: no cover - defensive
-            logging.exception("Generation request failed")
+            logger.exception("Generation request failed for /generate")
             _raise_generation_http_error(exc)
 
 
@@ -545,7 +547,7 @@ async def _run_generation_with_progress(
         )
 
     except Exception as exc:
-        logging.exception(f"Generation failed for job {job_id}")
+        logger.exception("Generation failed for async job %s", job_id)
         payload = _generation_error_payload(exc)
         emit_log(
             job_id,
