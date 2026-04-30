@@ -45,7 +45,7 @@ jobs:
       - name: Open diagram update PR
         uses: peter-evans/create-pull-request@v8.1.1
         with:
-          token: ${{ github.token }}
+          token: ${{ secrets.GH_PAT }}
           commit-message: "Update repo visualization diagram"
           title: "Update repo visualization diagram"
           body: |
