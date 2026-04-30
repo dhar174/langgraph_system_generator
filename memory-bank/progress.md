@@ -11,6 +11,9 @@
   experimental deepagents, critique-revise, and advanced example-only workflows.
 - Notebook composition, dependency planning, runtime validation, deterministic
   repair, rollback reporting, and export helpers are present.
+- Maintainer repository visualizations are checked in under `docs/diagrams/`,
+  including the generator stage/state map and the generated
+  repo-architecture-visualizer package/module/env bundle.
 
 ## What Is Still Incomplete
 
@@ -27,6 +30,8 @@
   workflows.
 - Memory Bank documentation is now project-specific context and should be
   maintained alongside public onboarding docs.
+- Repository architecture diagrams are discoverable through public docs,
+  contributor guidance, and MemoryBank context.
 
 ## Known Issues and Limitations
 

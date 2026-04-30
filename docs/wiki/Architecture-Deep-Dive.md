@@ -12,8 +12,9 @@ See also:
 
 LangGraph System Generator follows a **linear pipeline architecture** with conditional repair loops. Each stage processes and enriches the state, ultimately producing complete, runnable Jupyter notebooks.
 
-For a maintainer-focused visual of the stage writes and adjacent QA, RAG, and
-notebook components, see [Repository visualizations](../diagrams/README.md).
+For maintainer-focused visuals of stage writes, adjacent QA/RAG/notebook
+components, and generated package/module/env relationships, see
+[Repository visualizations](../diagrams/README.md).
 
 ## Generation Pipeline
 

@@ -4,6 +4,9 @@
   CLI and FastAPI entry points, plus a reusable LangGraph pattern library.
 - Current maintenance work includes keeping the Memory Bank aligned with the
   actual codebase so future sessions do not rely on template placeholders.
+- Current documentation work includes the docs-owned
+  `docs/diagrams/repo-architecture-visualizer/2026-04-30/` bundle for
+  package/module/env relationship snapshots.
 
 ## Recent Changes Reflected in the Codebase
 
@@ -16,11 +19,15 @@
   NotebookComposer, ToolchainEngineer, and QARepairAgent have added typed
   feedback models, registry-backed internals, warning surfaces, and public
   manifest/API fields.
+- `docs/diagrams/README.md` now indexes both the hand-maintained generator
+  stage/state map and the generated repo architecture visualizer bundle.
 
 ## Immediate Next Steps
 
 - Keep public docs, examples, and onboarding copy aligned with the current
   CLI/API contract.
+- Keep maintainer visualization docs aligned when generator stages, package
+  boundaries, module relationships, or environment-variable usage changes.
 - Preserve parity between CLI-driven, API-driven, and web-driven artifact
   generation flows.
 - Keep deterministic stub mode offline-friendly while live mode uses

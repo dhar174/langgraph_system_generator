@@ -1,13 +1,21 @@
 # Repository Visualizations
 
-This folder holds maintainer-focused diagrams for the generator pipeline.
+This folder holds maintainer-focused visual documentation for the generator
+pipeline and repository-level code relationships.
 
-## Current Diagrams
+## Current Visualizations
 
-- [Generator stage and state map](generator-stage-state-map.md)
-- [Repo architecture visualizer bundle](repo-architecture-visualizer/2026-04-30/repo-knowledge.md)
+- [Generator stage and state map](generator-stage-state-map.md): a
+  hand-maintained Mermaid map of generator stages, shared state writes, and
+  adjacent QA/RAG/notebook components.
+- [Repo architecture visualizer bundle](repo-architecture-visualizer/2026-04-30/repo-knowledge.md):
+  a docs-owned generated snapshot with editable Mermaid, DOT, JSON, and
+  Figma-layout JSON sources for package, module, and environment-variable
+  relationships.
 
 ## Regeneration Notes
+
+### Generator stage/state map
 
 When the generator flow changes, refresh the diagram by re-reading the
 evidence files below and updating the Markdown source in this folder:
@@ -27,9 +35,24 @@ evidence files below and updating the Markdown source in this folder:
 - `src/langgraph_system_generator/qa/registry.py`
 - `src/langgraph_system_generator/qa/repair.py`
 
-The Markdown files here are the source of truth, so no separate generator
-script is required to keep the documentation current.
+The `generator-stage-state-map.md` Markdown file is the source of truth for the
+stage/state map, so no separate generator script is required to keep that
+diagram current.
 
-The repo architecture visualizer bundle is a generated, editable diagram
-snapshot. Refresh it with the local `repo-architecture-visualizer` skill when
-package, module, or environment-variable relationships change.
+### Repo architecture visualizer bundle
+
+The `repo-architecture-visualizer/2026-04-30/` bundle is a generated, editable
+diagram snapshot. Refresh it with the local `repo-architecture-visualizer` skill
+when package, module, or environment-variable relationships change.
+
+The bundle was emitted with:
+
+```powershell
+python C:\Users\darf3\.agents\skills\repo-architecture-visualizer\scripts\generate_repo_diagram.py
+```
+
+Keep refreshed outputs under `docs/diagrams/repo-architecture-visualizer/` so
+they remain checked in with the rest of the documentation. If Graphviz `dot` is
+available locally, SVG files may also be rendered from the DOT sources; Mermaid,
+DOT, JSON, and Figma-layout JSON are the portable sources to keep in version
+control.

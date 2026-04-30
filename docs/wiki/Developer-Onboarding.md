@@ -25,6 +25,8 @@ All entry points reuse the same outer LangGraph pipeline:
 The repository-wide Mermaid diagram lives in the
 [top-level README](../../README.md#how-it-works), while this page focuses on the
 cross-cutting developer details around that same flow.
+For maintainer-oriented stage/state and package/module/env relationship
+diagrams, use [Repository Visualizations](../diagrams/README.md).
 
 - **Requirements**: `RequirementsAnalyst` extracts typed constraints plus
   advisory `requirements_feedback`.

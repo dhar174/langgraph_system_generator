@@ -31,7 +31,9 @@ Comprehensive documentation for the LangGraph System Generator project.
   expected outputs, and validation commands
 - Check [Pattern Library Guide](Pattern-Library-Guide.md) for pattern development
 - Review [CLI & API Reference](CLI-and-API-Reference.md) for integration options
-- Review [Repository Visualizations](../diagrams/README.md) for the maintainer-focused generator stage/state maps
+- Review [Repository Visualizations](../diagrams/README.md) for the
+  maintainer-focused generator stage/state map and generated package/module/env
+  snapshots
 - Use the README's **Developing Locally** section for the current editable-install
   and validation flow
 
@@ -63,6 +65,8 @@ In addition to this wiki, the project includes:
 - **[Pattern Documentation](../patterns.md)**: Detailed pattern library reference
 - **[Development Guide](../dev.md)**: Local development setup
 - **[Web UI Guide](../WEB_UI_ENHANCEMENTS.md)**: Web interface documentation
+- **[Repository Visualizations](../diagrams/README.md)**: Maintainer diagrams
+  for generator state flow and repo architecture snapshots
 - **[Examples](../../examples/)**: Runnable code examples
 
 ## Contributing to Documentation
@@ -81,6 +85,7 @@ To improve or add documentation:
 - Include runnable code examples
 - Add diagrams where helpful (Mermaid syntax)
 - Cross-link related pages
+- Link maintainer-oriented architecture diagrams through [Repository Visualizations](../diagrams/README.md)
 - Keep pages focused and organized
 - Test all code snippets before committing
 
@@ -100,6 +105,7 @@ This wiki provides comprehensive coverage of:
 ✅ Pattern library and architecture targets (Router, Subagents, Hybrid, AutoAgent, Critique-Revise)
 ✅ Architecture and internals  
 ✅ Local development and onboarding  
+✅ Repository visualizations and maintainer diagram entry points  
 ✅ Extension points, tracing, and logging  
 ✅ Multi-format export system  
 ✅ Structured QA, repair, rollback, and warning surfaces

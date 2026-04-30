@@ -24,7 +24,8 @@ workflow patterns for common multi-agent architectures.
 - [Colab Usage](wiki/Colab-Usage.md)
 - [Development Guide](dev.md)
 - [CI/CD Workflows](CI_CD_WORKFLOWS.md)
-- [Repository Diagrams](diagrams/README.md)
+- [Repository Visualizations](diagrams/README.md) (formerly
+  [Repository Diagrams](diagrams/README.md))
 
 ## Source
 
