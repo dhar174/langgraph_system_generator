@@ -1,0 +1,140 @@
+{
+  "repo": "C:\\Users\\darf3\\Documents\\langgraph_system_generator",
+  "kind": "mixed",
+  "granularity": "module",
+  "nodes": [
+    {
+      "id": "agents",
+      "label": "agents",
+      "type": "code",
+      "group": "agents",
+      "x": 0,
+      "y": 0,
+      "width": 240,
+      "height": 72
+    },
+    {
+      "id": "agents._llm",
+      "label": "agents._llm",
+      "type": "code",
+      "group": "agents",
+      "x": 0,
+      "y": 120,
+      "width": 240,
+      "height": 72
+    },
+    {
+      "id": "agents.architecture_selector",
+      "label": "agents.architecture_selector",
+      "type": "code",
+      "group": "agents",
+      "x": 0,
+      "y": 240,
+      "width": 240,
+      "height": 72
+    },
+    {
+      "id": "agents.graph_designer",
+      "label": "agents.graph_designer",
+      "type": "code",
+      "group": "agents",
+      "x": 0,
+      "y": 360,
+      "width": 240,
+      "height": 72
+    },
+    {
+      "id": "agents.notebook_composer",
+      "label": "agents.notebook_composer",
+      "type": "code",
+      "group": "agents",
+      "x": 0,
+      "y": 480,
+      "width": 240,
+      "height": 72
+    },
+    {
+      "id": "agents.qa_repair_agent",
+      "label": "agents.qa_repair_agent",
+      "type": "code",
+      "group": "agents",
+      "x": 0,
+      "y": 600,
+      "width": 240,
+      "height": 72
+    },
+    {
+      "id": "agents.requirements_analyst",
+      "label": "agents.requirements_analyst",
+      "type": "code",
+      "group": "agents",
+      "x": 0,
+      "y": 720,
+      "width": 240,
+      "height": 72
+    },
+    {
+      "id": "agents.toolchain_engineer",
+      "label": "agents.toolchain_engineer",
+      "type": "code",
+      "group": "agents",
+      "x": 0,
+      "y": 840,
+      "width": 240,
+      "height": 72
+    }
+  ],
+  "edges": [
+    {
+      "source": "agents._llm",
+      "target": "agents",
+      "kind": "imports"
+    },
+    {
+      "source": "agents.architecture_selector",
+      "target": "agents",
+      "kind": "imports"
+    },
+    {
+      "source": "agents.graph_designer",
+      "target": "agents",
+      "kind": "imports"
+    },
+    {
+      "source": "agents.notebook_composer",
+      "target": "agents",
+      "kind": "imports"
+    },
+    {
+      "source": "agents.qa_repair_agent",
+      "target": "agents",
+      "kind": "imports"
+    },
+    {
+      "source": "agents.requirements_analyst",
+      "target": "agents",
+      "kind": "imports"
+    },
+    {
+      "source": "agents.toolchain_engineer",
+      "target": "agents",
+      "kind": "imports"
+    }
+  ],
+  "legend": {
+    "code": {
+      "fill": "#EEF2FF",
+      "stroke": "#3730A3"
+    },
+    "environment": {
+      "fill": "#FFF7ED",
+      "stroke": "#C2410C"
+    },
+    "imports": {
+      "line_style": "solid"
+    },
+    "reads-env": {
+      "line_style": "dashed"
+    }
+  }
+}

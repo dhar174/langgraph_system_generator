@@ -1,0 +1,81 @@
+flowchart LR
+%% langgraph_system_generator: mixed package diagram
+    ANTHROPIC_API_KEY(["ANTHROPIC_API_KEY"])
+    BASE_OUTPUT_DIR(["BASE_OUTPUT_DIR"])
+    DEEP_AGENTS_MODEL(["DEEP_AGENTS_MODEL"])
+    LNF_DISABLE_DOTENV(["LNF_DISABLE_DOTENV"])
+    LNF_ENV_FILE(["LNF_ENV_FILE"])
+    LNF_MAX_CONCURRENT_GENERATIONS(["LNF_MAX_CONCURRENT_GENERATIONS"])
+    LNF_MAX_EVENTS_PER_JOB(["LNF_MAX_EVENTS_PER_JOB"])
+    LNF_OUTPUT_BASE(["LNF_OUTPUT_BASE"])
+    LOG_LEVEL(["LOG_LEVEL"])
+    MODEL(["MODEL"])
+    OPENAI_API_KEY(["OPENAI_API_KEY"])
+    WORKDIR(["WORKDIR"])
+    subgraph langgraph_system_generator["langgraph_system_generator"]
+        langgraph_system_generator["langgraph_system_generator"]
+        langgraph_system_generator_api["langgraph_system_generator.api"]
+        langgraph_system_generator_cli["langgraph_system_generator.cli"]
+        langgraph_system_generator_constants["langgraph_system_generator.constants"]
+        langgraph_system_generator_examples_support["langgraph_system_generator.examples_support"]
+        langgraph_system_generator_generator["langgraph_system_generator.generator"]
+        langgraph_system_generator_notebook["langgraph_system_generator.notebook"]
+        langgraph_system_generator_patterns["langgraph_system_generator.patterns"]
+        langgraph_system_generator_qa["langgraph_system_generator.qa"]
+        langgraph_system_generator_rag["langgraph_system_generator.rag"]
+        langgraph_system_generator_repo_agent_bootstrap["langgraph_system_generator.repo_agent_bootstrap"]
+        langgraph_system_generator_utils["langgraph_system_generator.utils"]
+    end
+
+    langgraph_system_generator_api -. reads .-> LNF_MAX_CONCURRENT_GENERATIONS
+    langgraph_system_generator_api -. reads .-> LNF_MAX_EVENTS_PER_JOB
+    langgraph_system_generator_api --> langgraph_system_generator
+    langgraph_system_generator_cli -. reads .-> OPENAI_API_KEY
+    langgraph_system_generator_cli --> langgraph_system_generator
+    langgraph_system_generator_constants -. reads .-> BASE_OUTPUT_DIR
+    langgraph_system_generator_constants -. reads .-> LNF_OUTPUT_BASE
+    langgraph_system_generator_constants --> langgraph_system_generator
+    langgraph_system_generator_examples_support -. reads .-> OPENAI_API_KEY
+    langgraph_system_generator_examples_support --> langgraph_system_generator
+    langgraph_system_generator_generator --> langgraph_system_generator
+    langgraph_system_generator_notebook -. reads .-> ANTHROPIC_API_KEY
+    langgraph_system_generator_notebook -. reads .-> MODEL
+    langgraph_system_generator_notebook -. reads .-> OPENAI_API_KEY
+    langgraph_system_generator_notebook -. reads .-> WORKDIR
+    langgraph_system_generator_notebook --> langgraph_system_generator
+    langgraph_system_generator_patterns -. reads .-> DEEP_AGENTS_MODEL
+    langgraph_system_generator_patterns -. reads .-> OPENAI_API_KEY
+    langgraph_system_generator_patterns --> langgraph_system_generator
+    langgraph_system_generator_qa --> langgraph_system_generator
+    langgraph_system_generator_rag --> langgraph_system_generator
+    langgraph_system_generator_repo_agent_bootstrap --> langgraph_system_generator
+    langgraph_system_generator_utils -. reads .-> LNF_DISABLE_DOTENV
+    langgraph_system_generator_utils -. reads .-> LNF_ENV_FILE
+    langgraph_system_generator_utils -. reads .-> LOG_LEVEL
+
+    classDef code fill:#eef2ff,stroke:#3730a3,stroke-width:1.5px
+    classDef environment fill:#fff7ed,stroke:#c2410c,stroke-width:1.5px
+    class ANTHROPIC_API_KEY environment
+    class BASE_OUTPUT_DIR environment
+    class DEEP_AGENTS_MODEL environment
+    class LNF_DISABLE_DOTENV environment
+    class LNF_ENV_FILE environment
+    class LNF_MAX_CONCURRENT_GENERATIONS environment
+    class LNF_MAX_EVENTS_PER_JOB environment
+    class LNF_OUTPUT_BASE environment
+    class LOG_LEVEL environment
+    class MODEL environment
+    class OPENAI_API_KEY environment
+    class WORKDIR environment
+    class langgraph_system_generator code
+    class langgraph_system_generator_api code
+    class langgraph_system_generator_cli code
+    class langgraph_system_generator_constants code
+    class langgraph_system_generator_examples_support code
+    class langgraph_system_generator_generator code
+    class langgraph_system_generator_notebook code
+    class langgraph_system_generator_patterns code
+    class langgraph_system_generator_qa code
+    class langgraph_system_generator_rag code
+    class langgraph_system_generator_repo_agent_bootstrap code
+    class langgraph_system_generator_utils code
