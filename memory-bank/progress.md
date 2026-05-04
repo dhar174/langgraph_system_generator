@@ -14,17 +14,28 @@
 - Maintainer repository visualizations are checked in under `docs/diagrams/`,
   including the generator stage/state map and the generated
   repo-architecture-visualizer package/module/env bundle.
+- Release-readiness packaging smoke coverage now validates the minimal, API,
+  and full extras install paths in isolated virtual environments when opted in.
+- The local 1.0 release evaluation gate validates deterministic architecture
+  selection, graph design, notebook composition, QA/repair, and example
+  inventory surfaces without requiring LangSmith upload.
+- The release-readiness branch has a green full local verification baseline:
+  `python -m pytest --asyncio-mode=auto` reports 625 passed and 4 skipped, and
+  the CI fatal-error flake8 gate reports 0 findings.
+- Stale completed release-plan issues were closed with evidence, reducing the
+  open issue inventory from 49 to 26 while keeping true residual items open.
 
 ## What Is Still Incomplete
 
-- Public docs and onboarding copy have historically lagged behind the runtime
-  contract and should be kept synchronized with CLI/API behavior.
 - Experimental Deep Agents support is opt-in through `agent_type="deepagents"`
   and keeps the optional SDK out of core imports.
+- The 1.0 release is not tagged yet; #258 should close through the release PR
+  merge, and #256 remains the canonical tracker until `v1.0.0` is published.
 
 ## Current Status
 
-- The package metadata in `setup.py` marks the project as alpha.
+- The package metadata in `setup.py` now uses the 1.0.0 Production/Stable
+  release baseline on the release-readiness branch.
 - The repository already contains substantial scaffolding for CLI, API, RAG,
   notebook export, QA/repair, registry-backed planning, and pattern generation
   workflows.
@@ -32,6 +43,11 @@
   maintained alongside public onboarding docs.
 - Repository architecture diagrams are discoverable through public docs,
   contributor guidance, and MemoryBank context.
+- Release metadata now includes a root MIT license, changelog, and 1.0.0 package
+  version/classifier updates on the release-readiness branch.
+- The release-readiness branch fixes the Create diagram workflow so it uses a
+  configured `GH_PAT` automation token for PR creation and skips cleanly with a
+  notice when that secret is unavailable.
 
 ## Known Issues and Limitations
 
@@ -41,3 +57,9 @@
   unavailable, which keeps generation running but may reduce quality.
 - The SSE/job model uses in-memory queues and is not yet designed for
   distributed multi-server coordination.
+- Full-extra packaging smoke tests are intentionally opt-in because they install
+  the broad notebook/RAG/export dependency set into a fresh virtual
+  environment.
+- Router fallback/general routing (#60), iterative requirements refinement
+  (#202), and the remaining CYOA notebook cell issues are tracked as residual
+  follow-up work rather than closed stale items.

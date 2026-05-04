@@ -7,6 +7,9 @@
 - Current documentation work includes the docs-owned
   `docs/diagrams/repo-architecture-visualizer/2026-04-30/` bundle for
   package/module/env relationship snapshots.
+- Current release work is preparing the 1.0.0 readiness branch with packaging
+  smoke tests, release metadata, local LangGraph evaluation gates, and workflow
+  cleanup before opening the final release PR.
 
 ## Recent Changes Reflected in the Codebase
 
@@ -21,11 +24,21 @@
   manifest/API fields.
 - `docs/diagrams/README.md` now indexes both the hand-maintained generator
   stage/state map and the generated repo architecture visualizer bundle.
+- The 1.0 readiness branch adds a root MIT license, changelog, stable package
+  metadata, isolated install smoke tests, and `scripts/run_release_eval.py` for
+  local-only release evaluation.
+- Release-readiness issue triage closed stale completed RequirementsAnalyst,
+  pattern/example, cross-cutting, and duplicate CYOA items; remaining open
+  issues are explicit post-1.0/residual work unless #258 is still waiting for
+  the release PR merge.
 
 ## Immediate Next Steps
 
 - Keep public docs, examples, and onboarding copy aligned with the current
   CLI/API contract.
+- Keep the 1.0 release tracker (#256) aligned with packaging, workflow,
+  evaluation, metadata, issue-triage, and PR progress until the `v1.0.0`
+  release is published.
 - Keep maintainer visualization docs aligned when generator stages, package
   boundaries, module relationships, or environment-variable usage changes.
 - Preserve parity between CLI-driven, API-driven, and web-driven artifact
@@ -45,3 +58,11 @@
   live mode treats runtime support gaps as real failures.
 - The SSE implementation is appropriate for single-server development, but not a
   distributed production event bus.
+- Packaging smoke tests are opt-in through `RUN_PACKAGING_SMOKE=1` because they
+  create isolated virtual environments and the full-extra path is slow.
+- The local release evaluation gate defaults to no upload; LangSmith can remain
+  a separate explicit release-candidate comparison step when credentials are
+  available.
+- The current release-readiness branch verification baseline is `python -m
+  pytest --asyncio-mode=auto` with 625 passing tests and 4 skipped tests, plus
+  the CI fatal-error flake8 gate.

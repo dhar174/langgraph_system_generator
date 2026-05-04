@@ -53,7 +53,7 @@ DEV_DEPENDENCIES = [
 
 setup(
     name="langgraph-system-generator",
-    version="0.1.1",
+    version="1.0.0",
     description="LangGraph Notebook Foundry scaffolding",
     long_description=README,
     long_description_content_type="text/markdown",
@@ -82,7 +82,7 @@ setup(
         "Programming Language :: Python :: 3.11",
         "Programming Language :: Python :: 3.12",
         "Intended Audience :: Developers",
-        "Development Status :: 3 - Alpha",
+        "Development Status :: 5 - Production/Stable",
         "Topic :: Software Development :: Libraries",
     ],
 )

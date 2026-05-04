@@ -57,7 +57,8 @@ All workflows follow security best practices:
 
 **File**: `.github/workflows/diagram.yml`
 
-**Purpose**: Auto-generates and commits repository visualization diagram
+**Purpose**: Auto-generates the legacy top-level repository visualization diagram
+and opens an update pull request
 
 **Triggers**:
 - Push to `main` branch
@@ -67,12 +68,27 @@ All workflows follow security best practices:
 - **Depends on CodeQL**: Job waits for security scan to pass
 - Action pinned to `@0.9.1`, the latest published `githubocto/repo-visualizer`
   tag currently used by the workflow (previously used unpinned `@main`)
-- Minimal permissions: `contents: write` only for diagram job
+- Minimal permissions: `contents: write` and `pull-requests: write` only for
+  the diagram job
+- Uses `secrets.GH_PAT` for create-pull-request so automation PRs can trigger
+  normal pull request checks under branch protection
+- Skips PR creation with a workflow notice if `secrets.GH_PAT` is not
+  configured, rather than failing the whole workflow
 
 **Workflow**:
 1. Run CodeQL security analysis
 2. Generate repo visualization (only if CodeQL passes)
-3. Commit diagram to repository
+3. If `secrets.GH_PAT` is configured, open or update an
+   `automation/repo-visualization-diagram` pull request with `diagram.svg`
+
+`GH_PAT` must be a repository automation token with enough scope to push the
+automation branch and open/update pull requests. The default `GITHUB_TOKEN` is
+not used for this step because PRs created with it do not trigger the same
+pull request checks required for protected-branch merging.
+
+The docs-owned Mermaid/DOT/JSON/Figma repository architecture bundle under
+`docs/diagrams/repo-architecture-visualizer/` is refreshed locally through the
+`repo-architecture-visualizer` skill, not this GitHub Actions workflow.
 
 ### GitHub Pages Documentation
 

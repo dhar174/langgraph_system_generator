@@ -1,0 +1,51 @@
+{
+  "name": "langgraph-system-generator-1.0-local-evaluation",
+  "description": "Deterministic local release gate for core generator trajectory surfaces.",
+  "cases": [
+    {
+      "id": "router_stub",
+      "prompt": "Create a router-based customer support assistant",
+      "expected_architecture": "router",
+      "min_cell_count": 6,
+      "surfaces": ["architecture_selection", "graph_design", "notebook_composition", "qa_repair"]
+    },
+    {
+      "id": "subagents_stub",
+      "prompt": "Create a supervisor team that delegates research and writing to subagents",
+      "expected_architecture": "subagents",
+      "min_cell_count": 6,
+      "surfaces": ["architecture_selection", "graph_design", "notebook_composition", "qa_repair"]
+    },
+    {
+      "id": "autoagent_stub",
+      "prompt": "Create an AutoAgent planner executor critic assistant",
+      "expected_architecture": "autoagent",
+      "agent_type": "autoagent",
+      "min_cell_count": 6,
+      "surfaces": ["architecture_selection", "graph_design", "notebook_composition", "qa_repair"]
+    },
+    {
+      "id": "deepagents_stub",
+      "prompt": "Create a Deep Agents research assistant",
+      "expected_architecture": "deepagents",
+      "agent_type": "deepagents",
+      "min_cell_count": 6,
+      "surfaces": ["architecture_selection", "graph_design", "notebook_composition", "qa_repair"]
+    },
+    {
+      "id": "examples_inventory",
+      "prompt": "Verify release example coverage",
+      "expected_architecture": "router",
+      "min_cell_count": 0,
+      "expected_examples": [
+        "examples/router_pattern_example.py",
+        "examples/subagents_pattern_example.py",
+        "examples/deepagents_pattern_example.py",
+        "examples/human_approval_pattern.py",
+        "examples/llm_judge_example.py",
+        "examples/llm_compiler_example.py"
+      ],
+      "surfaces": ["examples"]
+    }
+  ]
+}

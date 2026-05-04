@@ -240,7 +240,13 @@ def _build_deepagents_fallback(*_args, **_kwargs) -> dict[str, Any]:
             },
         ],
         "edges": [],
-        "conditional_edges": [],
+        "conditional_edges": [
+            {
+                "from": "deep_agent",
+                "condition": "Finish once the Deep Agents harness returns a final response",
+                "branches": {"complete": "END"},
+            }
+        ],
         "entry_point": "deep_agent",
         "checkpointing": True,
     }

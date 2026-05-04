@@ -353,6 +353,17 @@ ruff check src/ tests/
 mypy src/
 ```
 
+Release-readiness checks:
+
+```bash
+# Local deterministic LangGraph release evaluation, no LangSmith upload
+python scripts/run_release_eval.py --no-upload
+
+# Isolated install matrix smoke tests for the documented package extras
+RUN_PACKAGING_SMOKE=1 PACKAGING_SMOKE_SCENARIOS=minimal,api python -m pytest tests/integration/test_packaging_install_smoke.py -q
+RUN_PACKAGING_SMOKE=1 PACKAGING_SMOKE_SCENARIOS=full python -m pytest tests/integration/test_packaging_install_smoke.py -q
+```
+
 When editing docs only, the narrowest useful validation is:
 
 ```bash
@@ -376,3 +387,5 @@ More docs:
 - [Colab Usage](docs/wiki/Colab-Usage.md)
 - [Development Guide](docs/dev.md)
 - [Repository Visualizations](docs/diagrams/README.md)
+- [Changelog](CHANGELOG.md)
+- [License](LICENSE)
