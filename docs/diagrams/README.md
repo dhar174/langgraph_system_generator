@@ -48,11 +48,12 @@ when package, module, or environment-variable relationships change.
 The bundle was emitted with:
 
 ```powershell
-python <repo-architecture-visualizer-skill>/scripts/generate_repo_diagram.py
+$skillDir = "path\to\repo-architecture-visualizer-skill"
+python "$skillDir\scripts\generate_repo_diagram.py"
 ```
 
-Replace `<repo-architecture-visualizer-skill>` with the installed skill
-directory on your machine.
+Replace the quoted `path\to\repo-architecture-visualizer-skill` value with the
+installed skill directory on your machine.
 
 Keep refreshed outputs under `docs/diagrams/repo-architecture-visualizer/` so
 they remain checked in with the rest of the documentation. If Graphviz `dot` is
