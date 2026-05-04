@@ -75,7 +75,13 @@ def test_diagram_workflow_authenticates_checkout_before_diagram_generation() -> 
     update_index = workflow.index("- name: Update diagram")
 
     assert token_check_index < checkout_index < update_index
-    assert "if: steps.diagram-token.outputs.available == 'true'\n        uses: actions/checkout@v4" in workflow
-    assert "token: ${{ secrets.GH_PAT }}" in workflow
+    assert "if: steps.diagram-token.outputs.available == 'true'" in workflow
+    assert "uses: actions/checkout@v4" in workflow
     assert "persist-credentials: true" in workflow
-    assert "Skipping diagram refresh because secrets.GH_PAT is not configured" in workflow
+
+
+def test_diagram_workflow_does_not_grant_unused_github_token_write_permissions() -> None:
+    workflow = _read(".github/workflows/diagram.yml")
+
+    assert "contents: write" not in workflow
+    assert "pull-requests: write" not in workflow

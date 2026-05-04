@@ -68,8 +68,8 @@ and opens an update pull request
 - **Depends on CodeQL**: Job waits for security scan to pass
 - Action pinned to `@0.9.1`, the latest published `githubocto/repo-visualizer`
   tag currently used by the workflow (previously used unpinned `@main`)
-- Minimal permissions: `contents: write` and `pull-requests: write` only for
-  the diagram job
+- Minimal `GITHUB_TOKEN` permissions: the diagram job keeps `contents: read`
+  because branch and pull request writes use the explicit automation token
 - Checks `secrets.GH_PAT` before checkout, then uses that token for checkout
   and create-pull-request so automation PRs can trigger normal pull request
   checks under branch protection
