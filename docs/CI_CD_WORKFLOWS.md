@@ -17,7 +17,8 @@ All workflows follow security best practices:
 
 **File**: `.github/workflows/codeql.yml`
 
-**Purpose**: Automated security scanning for Python code
+**Purpose**: Automated security scanning for Python, JavaScript/TypeScript, and
+GitHub Actions workflow code
 
 **Triggers**:
 - Push to `main` branch
@@ -29,6 +30,8 @@ All workflows follow security best practices:
 - Extended security queries
 - Security and quality analysis
 - Weekly scheduled CodeQL static code analysis
+- Matrix coverage for `actions`, `javascript-typescript`, and `python`, matching
+  the active default-branch ruleset required status checks
 
 **Permissions**:
 - `contents: read` - Repository checkout
@@ -68,23 +71,25 @@ and opens an update pull request
 - **Depends on CodeQL**: Job waits for security scan to pass
 - Action pinned to `@0.9.1`, the latest published `githubocto/repo-visualizer`
   tag currently used by the workflow (previously used unpinned `@main`)
-- Minimal permissions: `contents: write` and `pull-requests: write` only for
-  the diagram job
-- Uses `secrets.GH_PAT` for create-pull-request so automation PRs can trigger
-  normal pull request checks under branch protection
-- Skips PR creation with a workflow notice if `secrets.GH_PAT` is not
-  configured, rather than failing the whole workflow
+- Minimal `GITHUB_TOKEN` permissions: the diagram job keeps `contents: read`
+  because branch and pull request writes use the explicit automation token
+- Checks `secrets.GH_PAT` before checkout, then uses that token for checkout
+  and create-pull-request so automation PRs can trigger normal pull request
+  checks under branch protection
+- Skips checkout, diagram generation, and PR creation with a workflow notice if
+  `secrets.GH_PAT` is not configured, rather than failing the whole workflow
 
 **Workflow**:
 1. Run CodeQL security analysis
-2. Generate repo visualization (only if CodeQL passes)
-3. If `secrets.GH_PAT` is configured, open or update an
-   `automation/repo-visualization-diagram` pull request with `diagram.svg`
+2. Check whether `secrets.GH_PAT` is configured
+3. If the token is available, checkout `main`, generate repo visualization, and
+   open or update an `automation/repo-visualization-diagram` pull request with
+   `diagram.svg`
 
-`GH_PAT` must be a repository automation token with enough scope to push the
-automation branch and open/update pull requests. The default `GITHUB_TOKEN` is
-not used for this step because PRs created with it do not trigger the same
-pull request checks required for protected-branch merging.
+`GH_PAT` must be a repository automation token with enough scope to checkout
+the repository, push the automation branch, and open/update pull requests. The
+default `GITHUB_TOKEN` is not used for this path because PRs created with it do
+not trigger the same pull request checks required for protected-branch merging.
 
 The docs-owned Mermaid/DOT/JSON/Figma repository architecture bundle under
 `docs/diagrams/repo-architecture-visualizer/` is refreshed locally through the

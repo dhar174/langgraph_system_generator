@@ -31,6 +31,12 @@
   pattern/example, cross-cutting, and duplicate CYOA items; remaining open
   issues are explicit post-1.0/residual work unless #258 is still waiting for
   the release PR merge.
+- After PR #305 merged, the `Create diagram` workflow still failed while
+  creating the automation PR because checkout did not persist the configured
+  `GH_PAT` credentials for later git fetch/push operations.
+- The active default-branch ruleset requires CodeQL contexts for `actions`,
+  `javascript-typescript`, and `python`; the reusable CodeQL workflow must keep
+  that matrix aligned or otherwise green PR checks can still remain unmergeable.
 
 ## Immediate Next Steps
 
@@ -39,6 +45,8 @@
 - Keep the 1.0 release tracker (#256) aligned with packaging, workflow,
   evaluation, metadata, issue-triage, and PR progress until the `v1.0.0`
   release is published.
+- Land the follow-up `Create diagram` authentication hotfix and verify the next
+  `main` workflow run is green before tagging `v1.0.0`.
 - Keep maintainer visualization docs aligned when generator stages, package
   boundaries, module relationships, or environment-variable usage changes.
 - Preserve parity between CLI-driven, API-driven, and web-driven artifact
