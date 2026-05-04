@@ -85,3 +85,10 @@ def test_diagram_workflow_does_not_grant_unused_github_token_write_permissions()
 
     assert "contents: write" not in workflow
     assert "pull-requests: write" not in workflow
+
+
+def test_codeql_workflow_covers_ruleset_required_languages() -> None:
+    workflow = _read(".github/workflows/codeql.yml")
+
+    for language in ("actions", "javascript-typescript", "python"):
+        assert f'"{language}"' in workflow

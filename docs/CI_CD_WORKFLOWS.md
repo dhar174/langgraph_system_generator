@@ -17,7 +17,8 @@ All workflows follow security best practices:
 
 **File**: `.github/workflows/codeql.yml`
 
-**Purpose**: Automated security scanning for Python code
+**Purpose**: Automated security scanning for Python, JavaScript/TypeScript, and
+GitHub Actions workflow code
 
 **Triggers**:
 - Push to `main` branch
@@ -29,6 +30,8 @@ All workflows follow security best practices:
 - Extended security queries
 - Security and quality analysis
 - Weekly scheduled CodeQL static code analysis
+- Matrix coverage for `actions`, `javascript-typescript`, and `python`, matching
+  the active default-branch ruleset required status checks
 
 **Permissions**:
 - `contents: read` - Repository checkout

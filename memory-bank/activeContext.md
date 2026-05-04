@@ -34,6 +34,9 @@
 - After PR #305 merged, the `Create diagram` workflow still failed while
   creating the automation PR because checkout did not persist the configured
   `GH_PAT` credentials for later git fetch/push operations.
+- The active default-branch ruleset requires CodeQL contexts for `actions`,
+  `javascript-typescript`, and `python`; the reusable CodeQL workflow must keep
+  that matrix aligned or otherwise green PR checks can still remain unmergeable.
 
 ## Immediate Next Steps
 

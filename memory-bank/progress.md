@@ -48,6 +48,8 @@
 - A follow-up `Create diagram` hotfix branch checks `GH_PAT` before checkout,
   uses that token for checkout and pull-request creation, and skips cleanly
   with a notice when the secret is unavailable.
+- The same hotfix branch aligns the reusable CodeQL matrix with the active
+  ruleset-required contexts: `actions`, `javascript-typescript`, and `python`.
 
 ## Known Issues and Limitations
 
