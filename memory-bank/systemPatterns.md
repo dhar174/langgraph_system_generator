@@ -37,6 +37,10 @@
   `qa/repair.py` applies localized in-memory repairs before re-running
   validation.
 - **SSE progress streaming:** `api/progress_streaming.py` uses in-memory queues keyed by job ID to stream progress, logs, completion, and error events.
+- **Maintainer visualization surface:** `docs/diagrams/` holds the
+  hand-maintained generator stage/state map and docs-owned generated
+  repo-architecture-visualizer snapshots for package, module, and
+  environment-variable relationships.
 
 ## Component Relationships
 
@@ -49,3 +53,6 @@
   - `qa/*` for validation and repair
 - `cli.py` can run a deterministic offline stub path or invoke the compiled generator graph for live generation.
 - `api/server.py` calls the same generation entry points used by the CLI and adds HTTP request validation, output-dir sandboxing, and async progress reporting.
+- `docs/diagrams/README.md` is the maintainer entry point for visualizing the
+  generator lifecycle and repo-level relationships without changing runtime
+  behavior.

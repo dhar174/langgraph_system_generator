@@ -1,13 +1,13 @@
-## Tasks Index
+# Tasks Index
 
-- No project-specific Memory Bank task files have been added yet under
-  `memory-bank/tasks/`.
-- When task tracking is introduced, this file should become the status index for
-  individual task records in this directory.
+## Completed
+
+- [TASK001 - Repo architecture visualizer docs sync](TASK001-repo-architecture-visualizer-docs-sync.md)
 
 ## Current State
 
 - Present task files:
   - `_index.md`
-- Missing task artifacts are not an error; they simply indicate that task-level
-  Memory Bank tracking has not started yet for this repository.
+  - `TASK001-repo-architecture-visualizer-docs-sync.md`
+- Task-level Memory Bank tracking has started with the documentation and
+  visualization sync for the checked-in repo architecture bundle.

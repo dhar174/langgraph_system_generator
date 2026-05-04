@@ -120,7 +120,8 @@ For developer-focused onboarding and extension notes, see
 [docs/wiki/Developer-Onboarding.md](docs/wiki/Developer-Onboarding.md).
 For runnable and text-only workflow examples, see
 [examples/cross-cutting-workflows.md](examples/cross-cutting-workflows.md).
-For a maintainer-focused stage/state map, see
+For maintainer-focused repository visualizations, including the generator
+stage/state map and generated package/module/env snapshots, see
 [docs/diagrams/README.md](docs/diagrams/README.md).
 
 ## CLI
@@ -374,4 +375,4 @@ More docs:
 - [Developer Onboarding](docs/wiki/Developer-Onboarding.md)
 - [Colab Usage](docs/wiki/Colab-Usage.md)
 - [Development Guide](docs/dev.md)
-- [Maintainer Diagrams](docs/diagrams/README.md)
+- [Repository Visualizations](docs/diagrams/README.md)

@@ -612,5 +612,7 @@ agent documentation:
 - `src/langgraph_system_generator/generator/agents/`
 - `.github/workflows/python-app.yml`
 - `.github/instructions/agents.instructions.md`
+- `docs/diagrams/README.md`
+- `docs/diagrams/repo-architecture-visualizer/2026-04-30/repo-knowledge.md`
 - `docs/wiki/Getting-Started.md`
 - `docs/wiki/Architecture-Deep-Dive.md`

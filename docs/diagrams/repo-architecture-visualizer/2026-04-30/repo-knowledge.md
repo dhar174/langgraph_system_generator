@@ -2,10 +2,13 @@
 
 Generated: 2026-04-30
 
-This docs-owned summary maps the current checkout at
-`C:\Users\darf3\Documents\langgraph_system_generator`. It is grounded in the
-repo docs, MemoryBank files, source inspection, and the generated architecture
-diagrams in this folder.
+This docs-owned generated snapshot maps the current repository checkout. It is
+grounded in the repo docs, MemoryBank files, source inspection, and the
+generated architecture diagrams in this folder. It is checked in as maintainer
+documentation, not as a one-off ignored output artifact.
+
+Use `docs/diagrams/README.md` as the regeneration entry point when package,
+module, or environment-variable relationships change.
 
 ## Evidence Sources
 
@@ -162,7 +165,7 @@ diagrams in this folder.
 ## Generated Diagram Inventory
 
 All generated diagrams live in this docs folder and were emitted from
-`C:\Users\darf3\.agents\skills\repo-architecture-visualizer\scripts\generate_repo_diagram.py`.
+`<repo-architecture-visualizer-skill>/scripts/generate_repo_diagram.py`.
 
 | Diagram | Scope | Kind | Granularity | Nodes | Edges | Files |
 | --- | --- | --- | --- | ---: | ---: | --- |
@@ -173,3 +176,13 @@ All generated diagrams live in this docs folder and were emitted from
 Graphviz `dot` was not available on PATH during this run, so SVG rendering was
 skipped. The Mermaid, DOT, JSON, and Figma-layout JSON sources are present and
 editable.
+
+## Regeneration Guidance
+
+- Refresh this bundle with the local `repo-architecture-visualizer` skill after
+  meaningful package, module, or environment-variable relationship changes.
+- Keep refreshed outputs under
+  `docs/diagrams/repo-architecture-visualizer/<date>/` so they remain part of
+  the checked-in documentation set.
+- Re-run the JSON count check after regeneration to confirm each emitted graph
+  still contains nodes and edges.
