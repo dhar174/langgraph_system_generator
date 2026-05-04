@@ -1,9 +1,6 @@
 """Router pattern generator aligned with current LangGraph graph APIs."""
 
 from __future__ import annotations
-import pytest
-import ast
-
 
 from typing import Dict, List, Optional, Union
 

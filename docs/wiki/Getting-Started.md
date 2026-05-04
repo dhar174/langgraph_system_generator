@@ -44,6 +44,11 @@ pip install -e ".[full]"
 pip install -e ".[full,dev]"
 ```
 
+The `lnf` console entry point is registered by the core install so `lnf --help`
+works in minimal environments. Generating notebook artifacts requires the
+`full` extra; minimal installs fail with an actionable `".[full]"` hint instead
+of an import traceback.
+
 If you are using this repository directly, `pip install -r requirements.txt` is
 also supported and installs the broad dependency set used by CI.
 

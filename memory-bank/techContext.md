@@ -20,6 +20,18 @@
   - copy `.env.example` to `.env`
   - run `python -m pytest`
 - The `lnf` console entry point defined in `setup.py` is available only after the package has been installed.
+- Release-readiness packaging checks live in
+  `tests/integration/test_packaging_install_smoke.py` and are opt-in with
+  `RUN_PACKAGING_SMOKE=1`.
+- The local deterministic release evaluation script is
+  `scripts/run_release_eval.py`; it writes a JSON report and defaults to
+  no-upload behavior for CI/release PR use.
+- The current full release-readiness verification command is `python -m pytest
+  --asyncio-mode=auto`; the latest branch run reported 625 passed and 4 skipped.
+- The CI fatal-error lint gate is `python -m flake8 . --count
+  --select=E9,F63,F7,F82 --show-source --statistics`; the broader
+  `--exit-zero` flake8 statistics command is informational and still reports
+  pre-existing style findings.
 
 ## Configuration Model
 

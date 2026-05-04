@@ -15,6 +15,7 @@ from fastapi.responses import FileResponse, HTMLResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field
 
+from langgraph_system_generator import __version__
 from langgraph_system_generator.constants import _BASE_OUTPUT, resolve_under_base
 from langgraph_system_generator.cli import (
     GenerationArtifacts,
@@ -50,7 +51,7 @@ async def _lifespan(app_: FastAPI):  # noqa: ARG001
 
 app = FastAPI(
     title="LangGraph Notebook Foundry API",
-    version="0.1.1",
+    version=__version__,
     lifespan=_lifespan,
 )
 

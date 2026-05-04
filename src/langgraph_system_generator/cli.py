@@ -1547,17 +1547,17 @@ def _run_generate(args: argparse.Namespace) -> int:
             )
         )
     except GenerationError as exc:
-        print(f"✗ Failed to generate artifacts: {exc}")
+        print(f"ERROR: Failed to generate artifacts: {exc}")
         if exc.hint:
             print(f"  Hint: {exc.hint}")
         return 1
     except OptionalDependencyError as exc:
-        print(f"✗ Failed to generate artifacts: {exc}")
+        print(f"ERROR: Failed to generate artifacts: {exc}")
         if exc.hint:
             print(f"  Hint: {exc.hint}")
         return 1
 
-    print(f"✓ Generated artifacts in {artifacts['output_dir']}")
+    print(f"Generated artifacts in {artifacts['output_dir']}")
     print(f"  Manifest: {artifacts['manifest_path']}")
     if artifacts["manifest"].get("plan_path"):
         print(f"  Plan: {artifacts['manifest']['plan_path']}")
@@ -1591,7 +1591,7 @@ def _run_build_index(args: argparse.Namespace) -> int:
                 chunk_overlap=args.chunk_overlap,
             )
         )
-        print(f"✓ Vector index written to {path}")
+        print(f"Vector index written to {path}")
         return 0
     except (
         FileNotFoundError,
@@ -1599,7 +1599,7 @@ def _run_build_index(args: argparse.Namespace) -> int:
         RuntimeError,
         ValueError,
     ) as exc:  # pragma: no cover - defensive
-        print(f"✗ Failed to build index: {exc}")
+        print(f"ERROR: Failed to build index: {exc}")
         return 1
 
 

@@ -87,6 +87,18 @@ mypy src/
 The repository also ships a dedicated documentation workflow so pull requests
 surface missing coverage early.
 
+Release-readiness checks:
+
+```bash
+python scripts/run_release_eval.py --no-upload
+RUN_PACKAGING_SMOKE=1 PACKAGING_SMOKE_SCENARIOS=minimal,api python -m pytest tests/integration/test_packaging_install_smoke.py -q
+RUN_PACKAGING_SMOKE=1 PACKAGING_SMOKE_SCENARIOS=full python -m pytest tests/integration/test_packaging_install_smoke.py -q
+```
+
+The release evaluation gate is local-only by default. Use LangSmith tracing or
+upload workflows separately when credentials and a release candidate baseline
+are available.
+
 ## Logging And Tracing
 
 For local debugging:
