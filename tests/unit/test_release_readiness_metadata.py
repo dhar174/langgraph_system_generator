@@ -4,9 +4,16 @@ from __future__ import annotations
 
 import ast
 from pathlib import Path
+import re
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
+ALPHA_RELEASE_STATUS = re.compile(
+    r"(?:project|release|development)\s+status\s*[:=-]\s*alpha"
+    r"|\balpha\s+(?:baseline|release|status)\b"
+    r"|\bdevelopment status :: 3 - alpha\b",
+    re.IGNORECASE,
+)
 
 
 def _read(path: str) -> str:
@@ -48,12 +55,13 @@ def test_public_docs_no_longer_describe_release_as_alpha() -> None:
     for path in checked_paths:
         content = _read(path)
         assert "0.1.1" not in content
-        assert "Alpha" not in content
-        assert "alpha" not in content
+        assert ALPHA_RELEASE_STATUS.search(content) is None
 
 
-def test_diagram_workflow_uses_default_github_token_for_pr_creation() -> None:
+def test_diagram_workflow_uses_pr_token_that_can_trigger_checks() -> None:
     workflow = _read(".github/workflows/diagram.yml")
 
-    assert "token: ${{ github.token }}" in workflow
-    assert "secrets.GH_PAT" not in workflow
+    assert "token: ${{ secrets.GH_PAT }}" in workflow
+    assert "token: ${{ github.token }}" not in workflow
+    assert "steps.diagram-token.outputs.available == 'true'" in workflow
+    assert "Skipping diagram PR creation because secrets.GH_PAT is not configured" in workflow

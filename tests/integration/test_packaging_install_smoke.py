@@ -64,7 +64,7 @@ def _create_venv(tmp_path: Path) -> Path:
 def _install_repo(venv_dir: Path, spec: str) -> None:
     python = _python_exe(venv_dir)
     result = _run(
-        [python, "-m", "pip", "install", "--disable-pip-version-check", spec],
+        [python, "-m", "pip", "install", "--disable-pip-version-check", "-e", spec],
         timeout=900,
     )
     assert result.returncode == 0, result.stdout

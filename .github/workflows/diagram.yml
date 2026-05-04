@@ -46,10 +46,24 @@ jobs:
           commit_message: "Repo visualization diagram"
           should_push: false
 
+      - name: Check diagram PR token
+        id: diagram-token
+        shell: bash
+        env:
+          DIAGRAM_PR_TOKEN: ${{ secrets.GH_PAT }}
+        run: |
+          if [ -n "$DIAGRAM_PR_TOKEN" ]; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Skipping diagram PR creation because secrets.GH_PAT is not configured. Configure a PAT with repo/workflow scopes so automation PRs trigger required checks."
+          fi
+
       - name: Open diagram update PR
+        if: steps.diagram-token.outputs.available == 'true'
         uses: peter-evans/create-pull-request@v8.1.1
         with:
-          token: ${{ github.token }}
+          token: ${{ secrets.GH_PAT }}
           commit-message: "Update repo visualization diagram"
           title: "Update repo visualization diagram"
           body: |

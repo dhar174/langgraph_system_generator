@@ -45,8 +45,9 @@
   contributor guidance, and MemoryBank context.
 - Release metadata now includes a root MIT license, changelog, and 1.0.0 package
   version/classifier updates on the release-readiness branch.
-- The release-readiness branch fixes the Create diagram workflow token path to
-  use `github.token` instead of an unavailable `GH_PAT` secret.
+- The release-readiness branch fixes the Create diagram workflow so it uses a
+  configured `GH_PAT` automation token for PR creation and skips cleanly with a
+  notice when that secret is unavailable.
 
 ## Known Issues and Limitations
 
