@@ -2,11 +2,10 @@
 
 Generated: 2026-04-30
 
-This docs-owned generated snapshot maps the current checkout at
-`C:\Users\darf3\Documents\langgraph_system_generator`. It is grounded in the
-repo docs, MemoryBank files, source inspection, and the generated architecture
-diagrams in this folder. It is checked in as maintainer documentation, not as a
-one-off ignored output artifact.
+This docs-owned generated snapshot maps the current repository checkout. It is
+grounded in the repo docs, MemoryBank files, source inspection, and the
+generated architecture diagrams in this folder. It is checked in as maintainer
+documentation, not as a one-off ignored output artifact.
 
 Use `docs/diagrams/README.md` as the regeneration entry point when package,
 module, or environment-variable relationships change.
@@ -166,7 +165,7 @@ module, or environment-variable relationships change.
 ## Generated Diagram Inventory
 
 All generated diagrams live in this docs folder and were emitted from
-`C:\Users\darf3\.agents\skills\repo-architecture-visualizer\scripts\generate_repo_diagram.py`.
+`<repo-architecture-visualizer-skill>/scripts/generate_repo_diagram.py`.
 
 | Diagram | Scope | Kind | Granularity | Nodes | Edges | Files |
 | --- | --- | --- | --- | ---: | ---: | --- |

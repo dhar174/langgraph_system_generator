@@ -48,8 +48,11 @@ when package, module, or environment-variable relationships change.
 The bundle was emitted with:
 
 ```powershell
-python C:\Users\darf3\.agents\skills\repo-architecture-visualizer\scripts\generate_repo_diagram.py
+python <repo-architecture-visualizer-skill>/scripts/generate_repo_diagram.py
 ```
+
+Replace `<repo-architecture-visualizer-skill>` with the installed skill
+directory on your machine.
 
 Keep refreshed outputs under `docs/diagrams/repo-architecture-visualizer/` so
 they remain checked in with the rest of the documentation. If Graphviz `dot` is
