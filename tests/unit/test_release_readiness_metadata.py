@@ -64,4 +64,18 @@ def test_diagram_workflow_uses_pr_token_that_can_trigger_checks() -> None:
     assert "token: ${{ secrets.GH_PAT }}" in workflow
     assert "token: ${{ github.token }}" not in workflow
     assert "steps.diagram-token.outputs.available == 'true'" in workflow
-    assert "Skipping diagram PR creation because secrets.GH_PAT is not configured" in workflow
+    assert "Skipping diagram refresh because secrets.GH_PAT is not configured" in workflow
+
+
+def test_diagram_workflow_authenticates_checkout_before_diagram_generation() -> None:
+    workflow = _read(".github/workflows/diagram.yml")
+
+    token_check_index = workflow.index("- name: Check diagram PR token")
+    checkout_index = workflow.index("- name: Checkout code")
+    update_index = workflow.index("- name: Update diagram")
+
+    assert token_check_index < checkout_index < update_index
+    assert "if: steps.diagram-token.outputs.available == 'true'\n        uses: actions/checkout@v4" in workflow
+    assert "token: ${{ secrets.GH_PAT }}" in workflow
+    assert "persist-credentials: true" in workflow
+    assert "Skipping diagram refresh because secrets.GH_PAT is not configured" in workflow

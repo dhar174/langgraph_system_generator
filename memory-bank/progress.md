@@ -45,9 +45,9 @@
   contributor guidance, and MemoryBank context.
 - Release metadata now includes a root MIT license, changelog, and 1.0.0 package
   version/classifier updates on the release-readiness branch.
-- The release-readiness branch fixes the Create diagram workflow so it uses a
-  configured `GH_PAT` automation token for PR creation and skips cleanly with a
-  notice when that secret is unavailable.
+- A follow-up `Create diagram` hotfix branch checks `GH_PAT` before checkout,
+  uses that token for checkout and pull-request creation, and skips cleanly
+  with a notice when the secret is unavailable.
 
 ## Known Issues and Limitations
 
@@ -63,3 +63,5 @@
 - Router fallback/general routing (#60), iterative requirements refinement
   (#202), and the remaining CYOA notebook cell issues are tracked as residual
   follow-up work rather than closed stale items.
+- The `Create diagram` workflow must pass on `main` after the authentication
+  hotfix merges before the `v1.0.0` release is tagged.

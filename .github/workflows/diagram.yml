@@ -33,19 +33,6 @@ jobs:
       contents: write
       pull-requests: write
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-        with:
-          ref: main
-          fetch-depth: 0
-      - name: Update diagram
-        uses: githubocto/repo-visualizer@0.9.1
-        with:
-          excluded_paths: "ignore,.github"
-          root_path: "src/"
-          commit_message: "Repo visualization diagram"
-          should_push: false
-
       - name: Check diagram PR token
         id: diagram-token
         shell: bash
@@ -56,8 +43,26 @@ jobs:
             echo "available=true" >> "$GITHUB_OUTPUT"
           else
             echo "available=false" >> "$GITHUB_OUTPUT"
-            echo "::notice::Skipping diagram PR creation because secrets.GH_PAT is not configured. Configure a PAT with repo/workflow scopes so automation PRs trigger required checks."
+            echo "::notice::Skipping diagram refresh because secrets.GH_PAT is not configured. Configure a PAT with repo/workflow scopes so automation PRs trigger required checks."
           fi
+
+      - name: Checkout code
+        if: steps.diagram-token.outputs.available == 'true'
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+          token: ${{ secrets.GH_PAT }}
+          persist-credentials: true
+
+      - name: Update diagram
+        if: steps.diagram-token.outputs.available == 'true'
+        uses: githubocto/repo-visualizer@0.9.1
+        with:
+          excluded_paths: "ignore,.github"
+          root_path: "src/"
+          commit_message: "Repo visualization diagram"
+          should_push: false
 
       - name: Open diagram update PR
         if: steps.diagram-token.outputs.available == 'true'
