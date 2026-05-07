@@ -17,6 +17,8 @@ automation tools like Playwright or Selenium.
 
 import json
 import re
+import shutil
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -612,6 +614,23 @@ class TestIntegration:
         # Check JS script
         js_script = html_soup.find('script', attrs={'src': re.compile(r'app\.js')})
         assert js_script is not None, "HTML should reference app.js"
+
+    def test_static_javascript_parseable(self, repo_root, static_dir):
+        """Verify app.js is syntactically valid JavaScript."""
+        node_path = shutil.which("node")
+        if node_path is None:
+            pytest.skip("node executable is required for JavaScript syntax validation")
+
+        app_js = static_dir / "app.js"
+        result = subprocess.run(
+            [node_path, "--check", str(app_js)],
+            cwd=repo_root,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+
+        assert result.returncode == 0, result.stderr
     
     def test_validation_feedback_channels(self, html_soup, js_content, css_content):
         """Verify validation provides multi-channel feedback."""
