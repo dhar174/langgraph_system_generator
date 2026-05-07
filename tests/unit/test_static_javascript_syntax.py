@@ -31,6 +31,7 @@ def test_web_ui_javascript_is_parseable():
         check=False,
         capture_output=True,
         text=True,
+        timeout=10,
     )
 
     assert result.returncode == 0, result.stderr
