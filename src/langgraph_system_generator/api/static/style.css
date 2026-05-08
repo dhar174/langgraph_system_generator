@@ -160,7 +160,7 @@ header h1 {
     background: var(--bg-secondary);
     border-radius: 2rem;
     border: 1px solid var(--border-color);
-    font-size: 1rem;
+    font-size: 0.875rem;
 }
 
 .status-dot {
@@ -277,14 +277,14 @@ header h1 {
 
 .char-count {
     text-align: right;
-    font-size: 1rem;
+    font-size: 0.875rem;
     color: var(--text-muted);
     margin-top: 0.25rem;
 }
 
 .help-text {
     display: block;
-    font-size: 1rem;
+    font-size: 0.875rem;
     color: var(--text-muted);
     margin-top: 0.25rem;
 }
@@ -432,7 +432,7 @@ header h1 {
 
 .feature p {
     color: var(--text-secondary);
-    font-size: 1rem;
+    font-size: 0.875rem;
 }
 
 footer {
@@ -491,7 +491,7 @@ footer a:hover {
     border-radius: var(--radius-full);
     cursor: pointer;
     transition: all var(--transition-normal) ease;
-    font-size: 0.875rem;
+    font-size: 1rem;
     font-weight: 600;
     white-space: nowrap;
 }
@@ -940,7 +940,7 @@ textarea:focus-visible {
     min-width: 44px;
     min-height: 44px;
     padding: 0 1rem;
-    font-size: 0.875rem;
+    font-size: 1rem;
     font-weight: 600;
     display: inline-flex;
     align-items: center;

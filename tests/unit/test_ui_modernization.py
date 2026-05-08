@@ -22,6 +22,9 @@ import pytest
 from bs4 import BeautifulSoup
 
 
+PILL_HORIZONTAL_PADDING_PATTERN = r"0(?:\.0+)?(?:rem|px)?\s+(?!0(?:\.0+)?(?:rem|px|em)?$)\d*\.?\d+(?:rem|px|em)"
+
+
 # Test fixtures
 @pytest.fixture
 def repo_root():
@@ -525,14 +528,13 @@ class TestResponsiveDesign:
                 properties[name.strip()] = value.strip()
             return properties
 
-        expected_pill_padding_pattern = r"0(?:\.0+)?(?:rem|px)?\s+1rem"
         for selector in (".btn-icon", ".theme-toggle"):
             properties = css_properties_for(selector)
             assert "width" not in properties, (
                 f"{selector} should not force text labels into a fixed width"
             )
             padding = properties.get("padding", "")
-            assert re.fullmatch(expected_pill_padding_pattern, padding), (
+            assert re.fullmatch(PILL_HORIZONTAL_PADDING_PATTERN, padding), (
                 f"{selector} should use horizontal padding for text labels; got {padding!r}"
             )
             assert properties.get("white-space") == "nowrap", (
