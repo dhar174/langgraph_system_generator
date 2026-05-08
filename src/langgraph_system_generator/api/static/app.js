@@ -1066,4 +1066,3 @@ copyLastPromptBtn.addEventListener('click', () => {
 
 // Initialize history display on load
 updateHistoryDisplay();
-}

@@ -15,7 +15,6 @@ test runtime DOM behavior. For full end-to-end testing, consider using browser
 automation tools like Playwright or Selenium.
 """
 
-import json
 import re
 from pathlib import Path
 
@@ -612,7 +611,7 @@ class TestIntegration:
         # Check JS script
         js_script = html_soup.find('script', attrs={'src': re.compile(r'app\.js')})
         assert js_script is not None, "HTML should reference app.js"
-    
+
     def test_validation_feedback_channels(self, html_soup, js_content, css_content):
         """Verify validation provides multi-channel feedback."""
         # Visual: CSS classes for valid/invalid (warning is optional)
