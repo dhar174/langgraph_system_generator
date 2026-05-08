@@ -22,7 +22,29 @@ import pytest
 from bs4 import BeautifulSoup
 
 
-PILL_HORIZONTAL_PADDING_PATTERN = r"0(?:\.0+)?(?:rem|px)?\s+(?!0(?:\.0+)?(?:rem|px|em)?$)\d*\.?\d+(?:rem|px|em)"
+CSS_ZERO_VERTICAL_NONZERO_HORIZONTAL_PADDING_PATTERN = (
+    r"0(?:\.0+)?(?:rem|px)?\s+"
+    r"(?!0(?:\.0+)?(?:rem|px|em)?$)\d*\.?\d+(?:rem|px|em)"
+    r"(?:\s+0(?:\.0+)?(?:rem|px)?\s+\d*\.?\d+(?:rem|px|em))?"
+)
+
+
+def css_properties_for(css_content, selector):
+    """Return CSS declarations for a simple selector from the static stylesheet."""
+    styles_match = re.search(
+        re.escape(selector) + r"\s*\{([^}]+)\}",
+        css_content,
+        re.DOTALL,
+    )
+    assert styles_match is not None, f"{selector} styles not found"
+
+    properties = {}
+    for declaration in styles_match.group(1).split(";"):
+        if ":" not in declaration:
+            continue
+        name, value = declaration.split(":", 1)
+        properties[name.strip()] = value.strip()
+    return properties
 
 
 # Test fixtures
@@ -512,29 +534,16 @@ class TestResponsiveDesign:
 
     def test_header_text_controls_are_content_sized(self, css_content):
         """Verify visible-text header controls are not clipped to icon width."""
-        def css_properties_for(selector):
-            styles_match = re.search(
-                re.escape(selector) + r"\s*\{([^}]+)\}",
-                css_content,
-                re.DOTALL,
-            )
-            assert styles_match is not None, f"{selector} styles not found"
-
-            properties = {}
-            for declaration in styles_match.group(1).split(";"):
-                if ":" not in declaration:
-                    continue
-                name, value = declaration.split(":", 1)
-                properties[name.strip()] = value.strip()
-            return properties
-
         for selector in (".btn-icon", ".theme-toggle"):
-            properties = css_properties_for(selector)
+            properties = css_properties_for(css_content, selector)
             assert "width" not in properties, (
                 f"{selector} should not force text labels into a fixed width"
             )
             padding = properties.get("padding", "")
-            assert re.fullmatch(PILL_HORIZONTAL_PADDING_PATTERN, padding), (
+            assert re.fullmatch(
+                CSS_ZERO_VERTICAL_NONZERO_HORIZONTAL_PADDING_PATTERN,
+                padding,
+            ), (
                 f"{selector} should use horizontal padding for text labels; got {padding!r}"
             )
             assert properties.get("white-space") == "nowrap", (
