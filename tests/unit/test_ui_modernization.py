@@ -22,15 +22,8 @@ import pytest
 from bs4 import BeautifulSoup
 
 
-CSS_ZERO_VERTICAL_NONZERO_HORIZONTAL_PADDING_PATTERN = (
-    r"0(?:\.0+)?(?:rem|px)?\s+"
-    r"(?!0(?:\.0+)?(?:rem|px|em)?$)\d*\.?\d+(?:rem|px|em)"
-    r"(?:\s+0(?:\.0+)?(?:rem|px)?\s+\d*\.?\d+(?:rem|px|em))?"
-)
-
-
 def css_properties_for(css_content, selector):
-    """Return CSS declarations for a simple selector from the static stylesheet."""
+    """Return CSS declarations for one exact selector from stylesheet content."""
     styles_match = re.search(
         re.escape(selector) + r"\s*\{([^}]+)\}",
         css_content,
@@ -45,6 +38,16 @@ def css_properties_for(css_content, selector):
         name, value = declaration.split(":", 1)
         properties[name.strip()] = value.strip()
     return properties
+
+
+def is_zero_css_length(value):
+    """Return whether a CSS length token is equivalent to zero."""
+    return re.fullmatch(r"0(?:\.0+)?(?:rem|px|em)?", value) is not None
+
+
+def is_nonzero_css_length(value):
+    """Return whether a CSS length token is positive and explicit."""
+    return re.fullmatch(r"\d*\.?\d+(?:rem|px|em)", value) is not None and not is_zero_css_length(value)
 
 
 # Test fixtures
@@ -540,10 +543,19 @@ class TestResponsiveDesign:
                 f"{selector} should not force text labels into a fixed width"
             )
             padding = properties.get("padding", "")
-            assert re.fullmatch(
-                CSS_ZERO_VERTICAL_NONZERO_HORIZONTAL_PADDING_PATTERN,
-                padding,
-            ), (
+            padding_values = padding.split()
+            assert len(padding_values) in {2, 4}, (
+                f"{selector} should use 2-value or 4-value padding; got {padding!r}"
+            )
+            vertical_values = [padding_values[0]]
+            horizontal_values = [padding_values[1]]
+            if len(padding_values) == 4:
+                vertical_values.append(padding_values[2])
+                horizontal_values.append(padding_values[3])
+            assert all(is_zero_css_length(value) for value in vertical_values), (
+                f"{selector} should keep vertical padding at zero; got {padding!r}"
+            )
+            assert all(is_nonzero_css_length(value) for value in horizontal_values), (
                 f"{selector} should use horizontal padding for text labels; got {padding!r}"
             )
             assert properties.get("white-space") == "nowrap", (
