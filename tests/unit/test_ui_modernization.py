@@ -530,8 +530,9 @@ class TestResponsiveDesign:
             assert "width" not in properties, (
                 f"{selector} should not force text labels into a fixed width"
             )
-            assert re.fullmatch(r"0(?:rem|px)?\s+1rem", properties.get("padding", "")), (
-                f"{selector} should use horizontal padding for text labels"
+            padding = properties.get("padding", "")
+            assert re.fullmatch(r"0(?:\.0+)?(?:rem|px)?\s+1rem", padding), (
+                f"{selector} should use horizontal padding for text labels; got {padding!r}"
             )
             assert properties.get("white-space") == "nowrap", (
                 f"{selector} labels should stay readable within the pill control"
