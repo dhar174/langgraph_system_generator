@@ -509,7 +509,7 @@ class TestResponsiveDesign:
 
     def test_header_text_controls_are_content_sized(self, css_content):
         """Verify visible-text header controls are not clipped to icon width."""
-        for selector in (".btn-icon", ".theme-toggle"):
+        def css_properties_for(selector):
             styles_match = re.search(
                 re.escape(selector) + r"\s*\{([^}]+)\}",
                 css_content,
@@ -517,14 +517,23 @@ class TestResponsiveDesign:
             )
             assert styles_match is not None, f"{selector} styles not found"
 
-            styles = styles_match.group(1)
-            assert re.search(r"(^|\n)\s*width\s*:\s*44px", styles) is None, (
-                f"{selector} should not force text labels into a 44px width"
+            properties = {}
+            for declaration in styles_match.group(1).split(";"):
+                if ":" not in declaration:
+                    continue
+                name, value = declaration.split(":", 1)
+                properties[name.strip()] = value.strip()
+            return properties
+
+        for selector in (".btn-icon", ".theme-toggle"):
+            properties = css_properties_for(selector)
+            assert "width" not in properties, (
+                f"{selector} should not force text labels into a fixed width"
             )
-            assert "padding: 0 1rem" in styles, (
+            assert re.fullmatch(r"0(?:rem|px)?\s+1rem", properties.get("padding", "")), (
                 f"{selector} should use horizontal padding for text labels"
             )
-            assert "white-space: nowrap" in styles, (
+            assert properties.get("white-space") == "nowrap", (
                 f"{selector} labels should stay readable within the pill control"
             )
 
