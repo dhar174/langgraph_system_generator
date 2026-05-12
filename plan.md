@@ -54,8 +54,8 @@ this candidate skill and directs reviewers/users to choose among the drafts.
 - [x] Write Draft A: evidence-first story.
 - [x] Write Draft B: fast roundup.
 - [x] Write Draft C: impact profile.
-- [ ] Validate the new skill with the repository skill validator.
-- [ ] Review repository diff for accidental unrelated changes.
+- [x] Validate the new skill with the repository skill validator.
+- [x] Review repository diff for accidental unrelated changes.
 - [ ] Run final validation tools.
 - [ ] Open a PR that asks reviewers to score, rate, and rank the drafts.
 - [ ] Add a PR comment repeating the reviewer scoring request.
