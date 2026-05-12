@@ -42,14 +42,16 @@ def css_properties_for(css_content, selector):
         if "{" not in rule:
             continue
         selectors, declarations = rule.rsplit("{", 1)
+        if not selectors.strip() or not declarations.strip():
+            continue
         selector_list = selector_list_for_rule(selectors)
         if selector not in selector_list:
             continue
 
         matched = True
         for declaration in declarations.split(";"):
-            name, separator, value = declaration.partition(":")
-            if not separator:
+            name, _, value = declaration.partition(":")
+            if ":" not in declaration:
                 continue
             name = name.strip()
             value = value.strip()
