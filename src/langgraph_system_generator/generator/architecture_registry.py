@@ -67,7 +67,39 @@ class ArchitectureRegistration:
             selector_prompt_description=description,
             aliases=[
                 alias
+def _normalize_patterns(patterns: Iterable[str] | None) -> list[str]:
+    """Normalize a list of pattern strings."""
+    if not patterns:
+        return []
+    return sorted({str(p).strip().lower() for p in patterns if p})
+
+
+@dataclass(frozen=True)
+class ArchitectureRegistration:
+    architecture_id: str
+    selector_prompt_description: str
+    aliases: list[str] = field(default_factory=list)
+    default_secondary_patterns: list[str] = field(default_factory=list)
+    docs_queries: list[str] = field(default_factory=list)
+    docs_weight: float = 1.0
+    deterministic: bool = True
+
+    def normalized(self) -> "ArchitectureRegistration":
+        return ArchitectureRegistration(
+            architecture_id=self.architecture_id,
+            selector_prompt_description=self.selector_prompt_description,
+            aliases=[
+                alias
                 for alias in _normalize_patterns(self.aliases)
+                if alias != self.architecture_id
+            ],
+            default_secondary_patterns=_normalize_patterns(
+                self.default_secondary_patterns
+            ),
+            docs_queries=self.docs_queries,
+            docs_weight=self.docs_weight,
+            deterministic=self.deterministic,
+        )
                 if alias != architecture_id
             ],
             default_secondary_patterns=_normalize_patterns(
