@@ -13,8 +13,9 @@ not be inferred from these metrics alone.
 
 - **Agentic systems engineering.** Visible evidence suggests @dhar174 designed, built, and
   hardened a multi-agent LangGraph pipeline from initial architecture through QA and repair,
-  shipping more than 40 merged PRs across six interconnected agent layers in a six-week
-  window, culminating in a formal 1.0 release readiness gate.
+  shipping [more than 40 merged PRs](https://github.com/dhar174/langgraph_system_generator/pulls?q=is:pr+is:merged+created:2026-04-01..2026-05-12)
+  across six interconnected agent layers in a six-week window, culminating in a formal 1.0
+  release readiness gate.
 
 - **Curriculum delivery and educational tooling.** Their work appears concentrated in active
   course delivery: multiple semesters of Python/AI/Data Science content (lecture scripts,
@@ -112,7 +113,7 @@ preference for delegating routine maintenance to tooling.
 **Multi-project coordination:** Simultaneous active work in 6+ repositories during April–May
 2026 (verified: `langgraph_system_generator`, `python_programming_courses`,
 `intelligent_data_detective`, `tiny_village`, `secure_upscaler`, `playwright_quiz_taker`)
-suggests strong context-switching and project management capacity.
+shows concurrent active work across multiple repos.
 
 ---
 

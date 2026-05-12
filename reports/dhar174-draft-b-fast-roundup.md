@@ -83,7 +83,7 @@
 | Diagram workflow: open PRs vs. direct push | [PR #302](https://github.com/dhar174/langgraph_system_generator/pull/302) | Decided: workflow opens PRs for branch-protection compatibility |
 | 1.0 release readiness scorecard | [Issue #256](https://github.com/dhar174/langgraph_system_generator/issues/256), [PR #305](https://github.com/dhar174/langgraph_system_generator/pull/305) | Decided: formal scorecard merged; release baseline set |
 | Deep Agents as opt-in experimental architecture | [PR #299](https://github.com/dhar174/langgraph_system_generator/pull/299) | Decided: lazy imports preserve offline-friendly stub mode |
-| Wiki→GitHub Pages migration | [PR #303](https://github.com/dhar174/langgraph_system_generator/pull/303) | Decided: Pages-based docs replace Adapts wiki workflow |
+| Wiki→GitHub Pages migration | [PR #303](https://github.com/dhar174/langgraph_system_generator/pull/303) | Decided: Pages-based docs replace the prior wiki workflow |
 | Developer activity story skill: three draft variants | [PR #315](https://github.com/dhar174/langgraph_system_generator/pull/315) | Merged; draft selection deferred to skill users |
 
 ---

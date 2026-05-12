@@ -11,9 +11,9 @@ off-platform communication are not reflected here.
 
 ## Executive Summary
 
-- **Prolific polyglot builder.** @dhar174 has maintained 69 public repositories spanning
+- **Polyglot builder.** @dhar174 has maintained 69 public repositories spanning
   Python, TypeScript, JavaScript, C#, Jupyter Notebooks, HTML, and more — a range that
-  reflects both deep technical breadth and an educator's need to demonstrate across stacks.
+  reflects technical breadth across multiple languages and problem domains.
 - **Sustained, focused release push.** Between April and May 2026, visible evidence shows a
   high-tempo campaign to harden every agent layer of `langgraph_system_generator` toward a
   1.0 release, with more than 40 merged PRs in six weeks touching requirements analysis,
@@ -37,7 +37,7 @@ off-platform communication are not reflected here.
 | 2025-09 – 2025-11 | Game engine and retro UI experiments, TypeScript apps | `monster_collector`, `RL_master_video_game-`, `spritegen_animator`, `dhar174-legend-of-react-the-pixel-quest` |
 | 2025-11 – 2026-01 | C# industrial systems, security tooling, NLP demos | `RAL-andon-adam-project`, `secure_upscaler`, `NLP-Transformer-Based-Legalese-Interpreter-Demo1` |
 | 2026-01 – 2026-03 | Python course content delivery, Copilot agent tooling | `python_programming_courses` (PRs #235–#238), `custom_github_copilot_agent_builder` |
-| 2026-03 | `tiny_village` stabilization, test hardening campaign | PRs #661–#673 (10 PRs in one week) |
+| 2026-03 | `tiny_village` stabilization, test hardening campaign | [PRs #661–#673](https://github.com/dhar174/tiny_village/pulls?q=is:pr+is:merged+created:2026-03-22) (10 PRs in one day) |
 | 2026-04 (weeks 1–2) | `langgraph_system_generator` API contract hardening | PRs #270, #271, #276, #277 |
 | 2026-04 (weeks 2–3) | Full agent layer rebuild: Requirements → Architecture → Graph → Tools → Notebook | PRs #284–#294 |
 | 2026-04 (weeks 3–4) | QA and repair engine, Deep Agents experimental arch | PRs #295–#299 |
