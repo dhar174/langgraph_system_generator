@@ -31,6 +31,8 @@ def css_properties_for(css_content, selector):
         if "{" not in rule:
             continue
         selectors, declarations = rule.rsplit("{", 1)
+        if "{" in selectors:
+            selectors = selectors.rsplit("{", 1)[1]
         selector_list = [s.strip() for s in selectors.split(",")]
         if selector not in selector_list:
             continue
@@ -40,7 +42,11 @@ def css_properties_for(css_content, selector):
             if ":" not in declaration:
                 continue
             name, value = declaration.split(":", 1)
-            properties[name.strip()] = value.strip()
+            name = name.strip()
+            value = value.strip()
+            if not name or not value:
+                continue
+            properties[name] = value
 
     if not matched:
         raise AssertionError(f"{selector} styles not found")
@@ -84,6 +90,11 @@ def test_css_properties_for_merges_matching_rules_in_source_order():
     assert properties["padding"] == "0 1rem"
     assert properties["min-width"] == "44px"
     assert properties["white-space"] == "nowrap"
+
+    theme_properties = css_properties_for(css_content, ".theme-toggle")
+
+    assert theme_properties["padding"] == "0 0.5rem"
+    assert theme_properties["min-width"] == "44px"
 
 
 # Test fixtures
