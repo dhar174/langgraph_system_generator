@@ -22,6 +22,93 @@ import pytest
 from bs4 import BeautifulSoup
 
 
+def css_properties_for(css_content, selector):
+    """Return merged declarations for a selector in stylesheet order.
+
+    This lightweight parser is scoped to the repository's static CSS tests and
+    supports simple rules plus the single-level media-query chunks used here.
+    """
+
+    def selector_list_for_rule(rule_selectors):
+        """Return selectors after the last opening brace for media-query chunks."""
+        if "{" in rule_selectors:
+            # Extract selectors after an at-rule prefix such as "@media (...) {".
+            rule_selectors = rule_selectors.rsplit("{", 1)[1]
+        return [s.strip() for s in rule_selectors.split(",")]
+
+    css_without_comments = re.sub(r"/\*.*?\*/", "", css_content, flags=re.DOTALL)
+    properties = {}
+    matched = False
+    for rule in css_without_comments.split("}"):
+        if "{" not in rule:
+            continue
+        selectors, declarations = rule.rsplit("{", 1)
+        if not selectors.strip() or not declarations.strip():
+            continue
+        selector_list = selector_list_for_rule(selectors)
+        if selector not in selector_list:
+            continue
+
+        matched = True
+        for declaration in declarations.split(";"):
+            if ":" not in declaration:
+                continue
+            name, _, value = declaration.partition(":")
+            name = name.strip()
+            value = value.strip()
+            if not name or not value:
+                continue
+            properties[name] = value
+
+    if not matched:
+        raise AssertionError(f"{selector} styles not found")
+    return properties
+
+
+def is_zero_css_length(value):
+    """Return whether a CSS length token is equivalent to zero."""
+    return re.fullmatch(r"0(?:\.0+)?(?:rem|px|em)?", value) is not None
+
+
+def is_nonzero_css_length(value):
+    """Return whether a CSS length token is positive and explicit."""
+    return re.fullmatch(r"\d*\.?\d+(?:rem|px|em)", value) is not None and not is_zero_css_length(value)
+
+
+def test_css_properties_for_merges_matching_rules_in_source_order():
+    """Verify grouped selectors do not hide earlier base declarations."""
+    css_content = """
+    .theme-toggle,
+    .btn-icon {
+        min-width: 44px;
+        padding: 0 0.5rem;
+    }
+
+    .btn-icon {
+        padding: 0 1rem;
+        white-space: nowrap;
+    }
+
+    @media (max-width: 768px) {
+        .theme-toggle,
+        .btn-icon {
+            min-width: 44px;
+        }
+    }
+    """
+
+    properties = css_properties_for(css_content, ".btn-icon")
+
+    assert properties["padding"] == "0 1rem"
+    assert properties["min-width"] == "44px"
+    assert properties["white-space"] == "nowrap"
+
+    theme_properties = css_properties_for(css_content, ".theme-toggle")
+
+    assert theme_properties["padding"] == "0 0.5rem"
+    assert theme_properties["min-width"] == "44px"
+
+
 # Test fixtures
 @pytest.fixture
 def repo_root():
@@ -506,6 +593,33 @@ class TestResponsiveDesign:
                "Should use flexbox for layout"
         assert 'display: grid' in css_content or 'display:grid' in css_content, \
                "Should use grid for layout"
+
+    def test_header_text_controls_are_content_sized(self, css_content):
+        """Verify visible-text header controls are not clipped to icon width."""
+        for selector in (".btn-icon", ".theme-toggle"):
+            properties = css_properties_for(css_content, selector)
+            assert "width" not in properties, (
+                f"{selector} should not force text labels into a fixed width"
+            )
+            padding = properties.get("padding", "")
+            padding_values = padding.split()
+            assert len(padding_values) in {2, 4}, (
+                f"{selector} should use 2-value or 4-value padding; got {padding!r}"
+            )
+            vertical_values = [padding_values[0]]
+            horizontal_values = [padding_values[1]]
+            if len(padding_values) == 4:
+                vertical_values.append(padding_values[2])
+                horizontal_values.append(padding_values[3])
+            assert all(is_zero_css_length(value) for value in vertical_values), (
+                f"{selector} should keep vertical padding at zero; got {padding!r}"
+            )
+            assert all(is_nonzero_css_length(value) for value in horizontal_values), (
+                f"{selector} should use horizontal padding for text labels; got {padding!r}"
+            )
+            assert properties.get("white-space") == "nowrap", (
+                f"{selector} labels should stay readable within the pill control"
+            )
 
 
 # ============================================================================
