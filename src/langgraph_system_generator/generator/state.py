@@ -668,6 +668,7 @@ class GeneratorState(TypedDict):
     qa_history: List[QAReport]
     repair_attempts: int
     qa_repair_feedback: QARepairFeedback
+    qa_summary: Dict[str, Any]
 
     # Output
     artifacts_manifest: Dict[str, Any]

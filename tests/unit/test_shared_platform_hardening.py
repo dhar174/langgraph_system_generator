@@ -289,6 +289,20 @@ def test_web_ui_avoids_innerhtml_for_manifest_values():
         assert pattern not in app_js
 
 
+def test_web_ui_renders_qa_summary_details():
+    """Successful web results should expose non-blocking QA advisory details."""
+    repo_root = Path(__file__).resolve().parent.parent.parent
+    app_js = (repo_root / "src/langgraph_system_generator/api/static/app.js").read_text(
+        encoding="utf-8"
+    )
+
+    assert "manifest.qa_summary" in app_js
+    assert "Generation Completed With Advisories" in app_js
+    assert "appendQaSummary(resultWrapper, qaSummary)" in app_js
+    assert "finding.check_name" in app_js
+    assert "finding.suggestions" in app_js
+
+
 def test_web_ui_only_treats_server_sent_sse_errors_as_terminal():
     """Transport-level EventSource errors should be allowed to reconnect."""
     repo_root = Path(__file__).resolve().parent.parent.parent

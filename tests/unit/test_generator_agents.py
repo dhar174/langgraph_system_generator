@@ -129,6 +129,15 @@ def test_architecture_registry_includes_builtin_architectures():
     assert hybrid.default_secondary_patterns == ["router", "subagents"]
     assert hybrid.deterministic is True
 
+    assert (
+        registry.resolve_architecture_id("single-router-with-deterministic-classifier")
+        == "router"
+    )
+    assert (
+        registry.resolve_architecture_id("single_router_with_specialist_handlers")
+        == "router"
+    )
+
     deepagents = registry.get("deepagents")
     assert deepagents.default_secondary_patterns == ["subagents"]
     assert deepagents.deterministic is True
@@ -420,6 +429,48 @@ async def test_requirements_analyst_uses_configured_constraint_type_registry(mon
 
 
 @pytest.mark.asyncio
+async def test_architecture_selector_uses_strict_structured_output(monkeypatch):
+    """ArchitectureSelector should bind strict provider-enforced structured output."""
+
+    captured = {}
+
+    class StructuredLLM:
+        async def ainvoke(self, messages):
+            captured["message_count"] = len(messages)
+            return ArchitectureSelectionResult(
+                architecture_type="router",
+                patterns={"primary": "router", "secondary": []},
+                justification="A router is sufficient for this prompt.",
+            )
+
+    class StrictLLM:
+        def __init__(self, *_args, **_kwargs):
+            pass
+
+        def with_structured_output(self, schema, **kwargs):
+            captured["schema"] = schema
+            captured["kwargs"] = kwargs
+            return StructuredLLM()
+
+        async def ainvoke(self, _messages):  # pragma: no cover - should not be used
+            raise AssertionError("legacy JSON path should not run")
+
+    monkeypatch.setattr(architecture_selector, "ChatOpenAI", StrictLLM)
+
+    selector = architecture_selector.ArchitectureSelector()
+    result = await selector.select_architecture(
+        [Constraint(type="goal", value="Route requests", priority=5)],
+        [],
+    )
+
+    assert result.architecture_type == "router"
+    assert result.feedback.fallback_used is False
+    assert captured["schema"] is ArchitectureSelectionResult
+    assert captured["kwargs"] == {"method": "json_schema", "strict": True}
+    assert captured["message_count"] == 2
+
+
+@pytest.mark.asyncio
 async def test_architecture_selector_parsing(monkeypatch):
     """ArchitectureSelector returns typed results with structured feedback."""
     payload = """
@@ -534,6 +585,72 @@ async def test_architecture_selector_normalizes_pattern_primary(monkeypatch):
     assert result.patterns.primary == "autoagent"
     assert any(
         "primary pattern did not match architecture_type" in error
+        for error in result.feedback.validation_errors
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "alias",
+    [
+        "single-router-with-deterministic-classifier",
+        "single_router_with_specialist_handlers",
+    ],
+)
+async def test_architecture_selector_normalizes_known_router_aliases(alias, monkeypatch):
+    """Known router-like model ids should normalize without user-visible fallback."""
+
+    payload = f"""
+    {{
+      "architecture_type": "router",
+      "patterns": {{"primary": "{alias}", "secondary": []}},
+      "justification": "The answer is semantically a router."
+    }}
+    """
+    monkeypatch.setattr(
+        architecture_selector,
+        "ChatOpenAI",
+        make_stub_llm(payload),
+    )
+    selector = architecture_selector.ArchitectureSelector()
+    result = await selector.select_architecture(
+        [Constraint(type="goal", value="Route requests", priority=5)],
+        [],
+    )
+
+    assert result.architecture_type == "router"
+    assert result.patterns.primary == "router"
+    assert result.feedback.fallback_used is False
+    assert result.feedback.validation_errors == []
+
+
+@pytest.mark.asyncio
+async def test_architecture_selector_falls_back_on_unknown_primary_alias(monkeypatch):
+    """Unknown router-like ids should still be rejected and fall back."""
+
+    payload = """
+    {
+      "architecture_type": "router",
+      "patterns": {"primary": "single_router_with_unknown_handlers", "secondary": []},
+      "justification": "The answer is semantically a router."
+    }
+    """
+    monkeypatch.setattr(
+        architecture_selector,
+        "ChatOpenAI",
+        make_stub_llm(payload),
+    )
+    selector = architecture_selector.ArchitectureSelector()
+    result = await selector.select_architecture(
+        [Constraint(type="goal", value="Route requests", priority=5)],
+        [],
+    )
+
+    assert result.architecture_type == "router"
+    assert result.patterns.primary == "router"
+    assert result.feedback.fallback_used is True
+    assert any(
+        "unsupported primary 'single_router_with_unknown_handlers'" in error
         for error in result.feedback.validation_errors
     )
 

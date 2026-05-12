@@ -28,6 +28,7 @@ def failing_report() -> QAReport:
         check_name="Graph Compilation",
         passed=False,
         message="Compilation failed",
+        severity="error",
         suggestions=["Fix graph"],
     )
 
@@ -67,6 +68,25 @@ def test_should_repair_mixed_reports(passing_report, failing_report):
     assert should_repair(state) == "repair"
 
 
+def test_should_repair_advisory_only_reports_package(passing_report):
+    """Warning/info QA findings should be packaged as advisories."""
+
+    warning_report = QAReport(
+        check_name="Undefined Names",
+        passed=False,
+        message="Define or import 'app' before it is used.",
+        rule_id="undefined_names",
+        severity="warning",
+        suggestions=["Check graph object naming."],
+    )
+    state = build_state(
+        qa_reports=[passing_report, warning_report],
+        repair_attempts=0,
+    )
+
+    assert should_repair(state) == "package"
+
+
 @pytest.mark.skipif(settings.max_repair_attempts < 2, reason="Requires max_repair_attempts >= 2")
 def test_should_repair_attempts_remaining(failing_report):
     """Failures with attempts remaining should repair."""
@@ -94,6 +114,7 @@ def test_should_repair_runtime_unavailable_live_fails_fast():
         check_name="Runtime Check",
         passed=False,
         message="Runtime validation unavailable: kernel 'python3' is not registered.",
+        severity="error",
         stage="runtime",
         evidence={"failure_kind": "runtime_unavailable", "generation_mode": "live"},
     )

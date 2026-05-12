@@ -91,10 +91,10 @@ Consider:
 
 Return a JSON object with this structure:
 {{
-  "architecture_type": "router" | "subagents" | "hybrid" | "autoagent",
+  "architecture_type": "router" | "subagents" | "hybrid" | "autoagent" | "deepagents",
   "patterns": {{
-    "primary": "pattern_name",
-    "secondary": ["additional_patterns"]
+    "primary": "same registered id as architecture_type",
+    "secondary": ["registered supporting architecture ids"]
   }},
   "justification": "detailed explanation of why this architecture was chosen",
   "feedback": {{
@@ -121,7 +121,32 @@ Documentation Context:
 Recommend the best architecture."""
         )
 
-        response = await self.llm.ainvoke([selection_prompt, user_message])
+        messages = [selection_prompt, user_message]
+
+        structured_llm = self._structured_output_llm()
+        if structured_llm is not None:
+            try:
+                return await self._select_with_structured_output(
+                    structured_llm,
+                    messages,
+                    docs_considered=docs_considered,
+                )
+            except (ValueError, KeyError, TypeError, ValidationError) as exc:
+                reason = f"Architecture selection fallback used: {exc}"
+                logger.warning(reason)
+                return self._fallback_result(
+                    reason,
+                    docs_considered=docs_considered,
+                    validation_errors=[str(exc)],
+                )
+            except Exception as exc:  # noqa: BLE001
+                logger.warning(
+                    "Strict structured architecture selection was unavailable; "
+                    "falling back to legacy JSON parsing: %s",
+                    exc,
+                )
+
+        response = await self.llm.ainvoke(messages)
 
         try:
             result = extract_json_from_llm_response(response.content)
@@ -134,6 +159,79 @@ Recommend the best architecture."""
                 docs_considered=docs_considered,
                 validation_errors=[str(exc)],
             )
+
+    def _structured_output_llm(self) -> Any | None:
+        """Return a strict structured-output runnable when the model supports it."""
+
+        structured_output = getattr(self.llm, "with_structured_output", None)
+        if structured_output is None:
+            return None
+        try:
+            return structured_output(
+                ArchitectureSelectionResult,
+                method="json_schema",
+                strict=True,
+            )
+        except (NotImplementedError, TypeError, ValueError) as exc:
+            logger.debug(
+                "Strict structured architecture selection binding unavailable: %s",
+                exc,
+            )
+            return None
+
+    async def _select_with_structured_output(
+        self,
+        structured_llm: Any,
+        messages: list[SystemMessage | HumanMessage],
+        *,
+        docs_considered: List[str],
+    ) -> ArchitectureSelectionResult:
+        """Invoke strict structured output with one validation retry."""
+
+        validation_errors: list[str] = []
+        allowed_ids = ", ".join(
+            sorted(self.architecture_registry.selectable_architecture_types())
+        )
+        for attempt in range(2):
+            attempt_messages = list(messages)
+            if attempt:
+                attempt_messages.append(
+                    HumanMessage(
+                        content=(
+                            "The previous architecture selection failed validation: "
+                            f"{validation_errors[-1]}. Retry with only these registered "
+                            f"architecture ids: {allowed_ids}."
+                        )
+                    )
+                )
+            try:
+                result = await structured_llm.ainvoke(attempt_messages)
+                payload = self._coerce_selection_payload(result)
+                return self._normalize_selection_result(
+                    payload,
+                    docs_considered=docs_considered,
+                )
+            except (ValueError, KeyError, TypeError, ValidationError) as exc:
+                validation_errors.append(str(exc))
+
+        raise ValueError(
+            "Strict structured architecture selection failed validation after retry: "
+            + " | ".join(validation_errors)
+        )
+
+    def _coerce_selection_payload(self, result: Any) -> Any:
+        """Convert structured-output responses into the normal selection payload."""
+
+        if isinstance(result, ArchitectureSelectionResult):
+            return result.model_dump()
+        if hasattr(result, "model_dump"):
+            return result.model_dump()
+        if isinstance(result, dict):
+            return result
+        content = getattr(result, "content", None)
+        if isinstance(content, str):
+            return extract_json_from_llm_response(content)
+        raise TypeError("Architecture selection response was not a structured payload.")
 
     def _normalize_doc(self, doc: Any) -> Dict[str, Any]:
         if isinstance(doc, DocSnippet):
@@ -241,7 +339,9 @@ Recommend the best architecture."""
         return content[:80] if content else "doc"
 
     def _normalize_architecture_type(self, value: Any) -> str:
-        normalized = normalize_agent_type(value if isinstance(value, str) else None)
+        normalized = self.architecture_registry.resolve_architecture_id(
+            value if isinstance(value, str) else None
+        )
         selectable = set(self.architecture_registry.selectable_architecture_types())
         if normalized not in selectable:
             raise ValueError(
@@ -271,10 +371,15 @@ Recommend the best architecture."""
             raise ValueError("Architecture selection returned malformed patterns payload.")
 
         primary = raw_patterns.get("primary")
-        normalized_primary = normalize_agent_type(
+        normalized_primary = self.architecture_registry.resolve_architecture_id(
             primary if isinstance(primary, str) else None
         )
         if normalized_primary is None:
+            if isinstance(primary, str) and primary.strip():
+                raise ValueError(
+                    "Architecture selection returned malformed patterns payload: "
+                    f"unsupported primary '{primary}'."
+                )
             normalized_primary = architecture_type
         elif normalized_primary not in SUPPORTED_AGENT_TYPES:
             raise ValueError(
@@ -298,7 +403,9 @@ Recommend the best architecture."""
             secondary_patterns=secondary,
         )
         for item in secondary:
-            normalized_item = normalize_agent_type(item if isinstance(item, str) else None)
+            normalized_item = self.architecture_registry.resolve_architecture_id(
+                item if isinstance(item, str) else None
+            )
             if normalized_item is None:
                 continue
             if normalized_item not in SUPPORTED_AGENT_TYPES:
