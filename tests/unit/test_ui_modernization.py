@@ -23,16 +23,27 @@ from bs4 import BeautifulSoup
 
 
 def css_properties_for(css_content, selector):
-    """Return CSS declarations for one exact selector from stylesheet content."""
-    styles_match = None
-    for block in re.finditer(r"([^{]+)\{([^}]+)\}", css_content, re.DOTALL):
-        if selector in [s.strip() for s in block.group(1).split(",")]:
-            styles_match = block
-            break
-        if ":" not in declaration:
+    """Return merged declarations for a selector in stylesheet order."""
+    css_without_comments = re.sub(r"/\*.*?\*/", "", css_content, flags=re.DOTALL)
+    properties = {}
+    matched = False
+    for rule in css_without_comments.split("}"):
+        if "{" not in rule:
             continue
-        name, value = declaration.split(":", 1)
-        properties[name.strip()] = value.strip()
+        selectors, declarations = rule.rsplit("{", 1)
+        selector_list = [s.strip() for s in selectors.split(",")]
+        if selector not in selector_list:
+            continue
+
+        matched = True
+        for declaration in declarations.split(";"):
+            if ":" not in declaration:
+                continue
+            name, value = declaration.split(":", 1)
+            properties[name.strip()] = value.strip()
+
+    if not matched:
+        raise AssertionError(f"{selector} styles not found")
     return properties
 
 
@@ -44,6 +55,35 @@ def is_zero_css_length(value):
 def is_nonzero_css_length(value):
     """Return whether a CSS length token is positive and explicit."""
     return re.fullmatch(r"\d*\.?\d+(?:rem|px|em)", value) is not None and not is_zero_css_length(value)
+
+
+def test_css_properties_for_merges_matching_rules_in_source_order():
+    """Verify grouped selectors do not hide earlier base declarations."""
+    css_content = """
+    .theme-toggle,
+    .btn-icon {
+        min-width: 44px;
+        padding: 0 0.5rem;
+    }
+
+    .btn-icon {
+        padding: 0 1rem;
+        white-space: nowrap;
+    }
+
+    @media (max-width: 768px) {
+        .theme-toggle,
+        .btn-icon {
+            min-width: 44px;
+        }
+    }
+    """
+
+    properties = css_properties_for(css_content, ".btn-icon")
+
+    assert properties["padding"] == "0 1rem"
+    assert properties["min-width"] == "44px"
+    assert properties["white-space"] == "nowrap"
 
 
 # Test fixtures
