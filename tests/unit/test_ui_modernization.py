@@ -23,7 +23,18 @@ from bs4 import BeautifulSoup
 
 
 def css_properties_for(css_content, selector):
-    """Return merged declarations for a selector in stylesheet order."""
+    """Return merged declarations for a selector in stylesheet order.
+
+    This lightweight parser is scoped to the repository's static CSS tests and
+    supports simple rules plus the single-level media-query chunks used here.
+    """
+
+    def selector_list_for_rule(rule_selectors):
+        """Return the innermost comma-separated selector list for a rule chunk."""
+        if "{" in rule_selectors:
+            rule_selectors = rule_selectors.rsplit("{", 1)[1]
+        return [s.strip() for s in rule_selectors.split(",")]
+
     css_without_comments = re.sub(r"/\*.*?\*/", "", css_content, flags=re.DOTALL)
     properties = {}
     matched = False
@@ -31,17 +42,15 @@ def css_properties_for(css_content, selector):
         if "{" not in rule:
             continue
         selectors, declarations = rule.rsplit("{", 1)
-        if "{" in selectors:
-            selectors = selectors.rsplit("{", 1)[1]
-        selector_list = [s.strip() for s in selectors.split(",")]
+        selector_list = selector_list_for_rule(selectors)
         if selector not in selector_list:
             continue
 
         matched = True
         for declaration in declarations.split(";"):
-            if ":" not in declaration:
+            name, separator, value = declaration.partition(":")
+            if not separator:
                 continue
-            name, value = declaration.split(":", 1)
             name = name.strip()
             value = value.strip()
             if not name or not value:
