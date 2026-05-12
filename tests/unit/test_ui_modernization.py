@@ -30,8 +30,9 @@ def css_properties_for(css_content, selector):
     """
 
     def selector_list_for_rule(rule_selectors):
-        """Return the innermost comma-separated selector list for a rule chunk."""
+        """Return selectors after the last opening brace for media-query chunks."""
         if "{" in rule_selectors:
+            # Extract selectors after an at-rule prefix such as "@media (...) {".
             rule_selectors = rule_selectors.rsplit("{", 1)[1]
         return [s.strip() for s in rule_selectors.split(",")]
 
@@ -50,9 +51,9 @@ def css_properties_for(css_content, selector):
 
         matched = True
         for declaration in declarations.split(";"):
-            name, _, value = declaration.partition(":")
             if ":" not in declaration:
                 continue
+            name, _, value = declaration.partition(":")
             name = name.strip()
             value = value.strip()
             if not name or not value:
