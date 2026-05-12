@@ -24,15 +24,11 @@ from bs4 import BeautifulSoup
 
 def css_properties_for(css_content, selector):
     """Return CSS declarations for one exact selector from stylesheet content."""
-    styles_match = re.search(
-        re.escape(selector) + r"\s*\{([^}]+)\}",
-        css_content,
-        re.DOTALL,
-    )
-    assert styles_match is not None, f"{selector} styles not found"
-
-    properties = {}
-    for declaration in styles_match.group(1).split(";"):
+    styles_match = None
+    for block in re.finditer(r"([^{]+)\{([^}]+)\}", css_content, re.DOTALL):
+        if selector in [s.strip() for s in block.group(1).split(",")]:
+            styles_match = block
+            break
         if ":" not in declaration:
             continue
         name, value = declaration.split(":", 1)
