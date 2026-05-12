@@ -482,23 +482,24 @@ footer a:hover {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 44px;
     height: 44px;
     min-width: 44px;
     min-height: 44px;
-    padding: 0;
+    padding: 0 1rem;
     background: var(--bg-secondary);
     border: 2px solid var(--border-color);
     border-radius: var(--radius-full);
     cursor: pointer;
     transition: all var(--transition-normal) ease;
-    font-size: 1.25rem;
+    font-size: 1rem;
+    font-weight: 600;
+    white-space: nowrap;
 }
 
 .theme-toggle:hover {
     background: var(--bg-tertiary);
     border-color: var(--primary-color);
-    transform: scale(1.1) rotate(20deg);
+    transform: translateY(-1px);
     box-shadow: 0 4px 12px var(--shadow);
 }
 
@@ -509,10 +510,6 @@ footer a:hover {
 .theme-icon {
     display: inline-block;
     transition: transform var(--transition-slow) ease;
-}
-
-.theme-toggle:active .theme-icon {
-    transform: rotate(360deg);
 }
 
 /* Advanced Options Panel */
@@ -939,16 +936,17 @@ textarea:focus-visible {
 }
 
 .btn-icon {
-    width: 44px;
     height: 44px;
     min-width: 44px;
     min-height: 44px;
-    padding: 0;
-    font-size: 1.25rem;
+    padding: 0 1rem;
+    font-size: 1rem;
+    font-weight: 600;
     display: inline-flex;
     align-items: center;
     justify-content: center;
     border-radius: var(--radius-full);
+    white-space: nowrap;
 }
 
 /* Form Section Grouping */
