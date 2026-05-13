@@ -208,6 +208,21 @@ def test_architecture_registry_preserves_zero_docs_weight_and_filters_unknown_pa
     assert secondary == ["router", "subagents"]
 
 
+def test_architecture_registration_normalizes_pattern_and_query_lists():
+    """Architecture registration normalization should de-duplicate and trim helper lists."""
+
+    registration = ArchitectureRegistration(
+        architecture_id=" Custom_Router ",
+        selector_prompt_description=" Custom router variant. ",
+        default_secondary_patterns=[" Router ", "", "subagents", "router", "subagents "],
+        docs_queries=[" custom docs ", "", "custom docs", "other docs"],
+    ).normalized()
+
+    assert registration.architecture_id == "custom_router"
+    assert registration.default_secondary_patterns == ["router", "subagents"]
+    assert registration.docs_queries == ["custom docs", "other docs"]
+
+
 @pytest.mark.asyncio
 async def test_requirements_analyst_parsing(monkeypatch):
     """RequirementsAnalyst returns structured constraints and feedback."""

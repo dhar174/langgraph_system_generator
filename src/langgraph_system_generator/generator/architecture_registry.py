@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from functools import lru_cache
-from typing import Iterable, Mapping
+from typing import Iterable, Mapping, Optional
 
 
 def _normalize_architecture_id(value: str) -> str:
@@ -19,7 +19,7 @@ def _normalize_architecture_id(value: str) -> str:
     return normalized
 
 
-def _normalize_patterns(values: Iterable[str] | None) -> list[str]:
+def _normalize_patterns(values: Optional[Iterable[str]]) -> list[str]:
     """Return an ordered, de-duplicated architecture-id list."""
 
     normalized_patterns: list[str] = []
@@ -30,7 +30,7 @@ def _normalize_patterns(values: Iterable[str] | None) -> list[str]:
     return normalized_patterns
 
 
-def _normalize_queries(values: Iterable[str] | None) -> list[str]:
+def _normalize_queries(values: Optional[Iterable[str]]) -> list[str]:
     """Return an ordered, de-duplicated list of non-empty query strings."""
 
     normalized_queries: list[str] = []
@@ -76,7 +76,7 @@ class ArchitectureRegistration:
 class ArchitectureRegistry:
     """Mutable in-memory registry for architecture metadata."""
 
-    def __init__(self, registrations: Iterable[ArchitectureRegistration] | None = None):
+    def __init__(self, registrations: Optional[Iterable[ArchitectureRegistration]] = None):
         self._registrations: dict[str, ArchitectureRegistration] = {}
         for registration in registrations or []:
             self.register(registration)
@@ -116,7 +116,7 @@ class ArchitectureRegistry:
     def normalize_patterns(
         self,
         architecture_id: str,
-        secondary_patterns: Iterable[str] | None = None,
+        secondary_patterns: Optional[Iterable[str]] = None,
     ) -> tuple[str, list[str]]:
         """Normalize a pattern selection against the registry defaults."""
 
@@ -137,7 +137,7 @@ class ArchitectureRegistry:
     def docs_queries_for(
         self,
         architecture_id: str,
-        query_overrides: Mapping[str, list[str]] | None = None,
+        query_overrides: Optional[Mapping[str, list[str]]] = None,
     ) -> list[str]:
         """Return effective docs queries for an architecture."""
 
@@ -151,7 +151,7 @@ class ArchitectureRegistry:
     def docs_weight_for(
         self,
         architecture_id: str,
-        weight_overrides: Mapping[str, float] | None = None,
+        weight_overrides: Optional[Mapping[str, float]] = None,
     ) -> float:
         """Return the effective docs weight for an architecture."""
 
