@@ -295,6 +295,17 @@ At minimum, grant roles needed to push images and deploy Cloud Run:
 - Push to `main` (automatic), or
 - Run the **Deploy to Cloud Run** workflow manually from GitHub Actions.
 
+### 5) Configure GitHub Actions environment protections (optional)
+
+The deploy job targets the GitHub Actions environment `production`.
+
+- If `production` has protection rules (required reviewers or wait timers),
+  deployments pause until those checks are satisfied.
+- If you want fully automatic deploys on push to `main`, keep `production`
+  protections disabled or configured to auto-allow your workflow path.
+
+Review or adjust this in **Settings → Environments → production**.
+
 The workflow builds and pushes:
 
 `$GCP_REGION-docker.pkg.dev/$GCP_PROJECT_ID/$GCP_ARTIFACT_REGISTRY_REPOSITORY/langgraph-system-generator:$GITHUB_SHA`
