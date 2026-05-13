@@ -21,6 +21,10 @@ from langgraph_system_generator.generator.state import (
     NotebookPlan,
     ToolPlanningFeedback,
 )
+from langgraph_system_generator.notebook.composer import (
+    NotebookComposer as NotebookFileComposer,
+)
+from langgraph_system_generator.qa.validators import NotebookValidator
 from langgraph_system_generator.utils.config import ModelConfig
 
 
@@ -466,7 +470,7 @@ async def test_compose_notebook_sanitizes_provider_env_vars_for_config_code(
     config_cells = [
         cell.content
         for cell in composition.cells
-        if cell.section == "setup"
+        if cell.section == "config"
         and cell.cell_type == "code"
         and "MODEL =" in cell.content
     ]
@@ -673,7 +677,7 @@ async def test_compose_notebook_sections_and_packages(
     config_cells = [
         cell
         for cell in cells
-        if cell.section == "setup" and cell.cell_type == "code" and "MODEL =" in cell.content
+        if cell.section == "config" and cell.cell_type == "code" and "MODEL =" in cell.content
     ]
     assert config_cells
     assert 'OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")' in config_cells[0].content
@@ -745,12 +749,12 @@ async def test_compose_notebook_sections_and_packages(
     assert "OPENAI_API_KEY" in composition.dependency_plan.provider_env_vars
 
     sections = {cell.section for cell in cells}
-    assert {"intro", "setup", "state", "tools", "graph", "execution"}.issubset(
+    assert {"intro", "setup", "config", "state", "tools", "graph", "execution"}.issubset(
         sections
     )
 
     section_order = [cell.section for cell in cells if cell.section]
-    expected_order = ["intro", "setup", "state", "tools", "nodes", "graph", "execution"]
+    expected_order = ["intro", "setup", "config", "state", "tools", "nodes", "graph", "execution"]
     unique_sections: list[str] = []
     for section in section_order:
         if section not in unique_sections:
@@ -765,6 +769,88 @@ async def test_compose_notebook_sections_and_packages(
         current_expected_pos = expected_positions[section]
         assert current_expected_pos > prev_expected_pos
         prev_expected_pos = current_expected_pos
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "architecture_type,nodes",
+    [
+        (
+            "router",
+            [
+                {"name": "router", "purpose": "Route requests"},
+                {"name": "search", "purpose": "Search documents"},
+            ],
+        ),
+        (
+            "subagents",
+            [
+                {"name": "supervisor", "purpose": "Coordinate agents"},
+                {"name": "researcher", "purpose": "Research documents"},
+            ],
+        ),
+        (
+            "hybrid",
+            [
+                {"name": "router", "purpose": "Route requests"},
+                {"name": "specialist_1", "purpose": "Handle direct specialist work"},
+                {"name": "supervisor", "purpose": "Coordinate worker team"},
+                {"name": "researcher", "purpose": "Research documents"},
+            ],
+        ),
+        (
+            "autoagent",
+            [{"name": "planner", "purpose": "Plan the work"}],
+        ),
+        (
+            "deepagents",
+            [{"name": "researcher", "purpose": "Research documents"}],
+        ),
+    ],
+)
+async def test_pattern_notebooks_have_no_scaffold_created_app_advisory(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+    architecture_type: str,
+    nodes: list[dict[str, str]],
+):
+    monkeypatch.setattr(composer_module, "ChatOpenAI", DummyLLM)
+    composer = composer_module.NotebookComposer()
+
+    composition = await composer.compose_notebook(
+        notebook_plan=NotebookPlan(
+            title=f"{architecture_type} Workflow Notebook",
+            sections=["Installation", "Configuration", "Workflow", "Execution"],
+            patterns_used=[architecture_type],
+            architecture_type=architecture_type,
+        ),
+        workflow_design={
+            "architecture_type": architecture_type,
+            "state_schema": {"user_input": "User question"},
+            "nodes": nodes,
+        },
+        tools=[],
+        architecture={
+            "architecture_type": architecture_type,
+            "justification": "Matches the workflow requirements.",
+        },
+    )
+
+    notebook = NotebookFileComposer().build_notebook(
+        composition.cells,
+        ensure_minimum_sections=True,
+    )
+    notebook_path = tmp_path / f"{architecture_type}.ipynb"
+    NotebookFileComposer().write(notebook, notebook_path)
+
+    reports = NotebookValidator().validate_all(notebook_path)
+    failed_undefined_names = [
+        report
+        for report in reports
+        if report.rule_id == "undefined_names" and not report.passed
+    ]
+
+    assert failed_undefined_names == []
 
 
 @pytest.mark.asyncio
@@ -1504,14 +1590,17 @@ async def test_pattern_nodes_use_request_scoped_model_config(
         for cell in node_cells
     )
 
-    setup_code_cells = [
+    config_code_cells = [
         cell
         for cell in cells
-        if cell.section == "setup" and cell.cell_type == "code"
+        if cell.section == "config" and cell.cell_type == "code"
     ]
-    assert any('MODEL = "gpt-5.2"' in cell.content for cell in setup_code_cells)
-    assert any("TEMPERATURE = 0.3" in cell.content for cell in setup_code_cells)
-    assert any('API_BASE = "https://example.test/v1"' in cell.content for cell in setup_code_cells)
-    assert any("MAX_TOKENS = 2048" in cell.content for cell in setup_code_cells)
+    assert any('MODEL = "gpt-5.2"' in cell.content for cell in config_code_cells)
+    assert any("TEMPERATURE = 0.3" in cell.content for cell in config_code_cells)
+    assert any(
+        'API_BASE = "https://example.test/v1"' in cell.content
+        for cell in config_code_cells
+    )
+    assert any("MAX_TOKENS = 2048" in cell.content for cell in config_code_cells)
     assert composition.feedback.resolved_model == "gpt-5.2"
     assert composition.feedback.resolved_api_base == "https://example.test/v1"

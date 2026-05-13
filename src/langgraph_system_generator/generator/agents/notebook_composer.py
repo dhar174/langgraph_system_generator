@@ -650,9 +650,9 @@ else:
             CellSpec(
                 cell_type="markdown",
                 content="## Configuration\n\nSet up API keys and configuration:",
-                section="setup",
+                section="config",
             ),
-            CellSpec(cell_type="code", content=config_content, section="setup"),
+            CellSpec(cell_type="code", content=config_content, section="config"),
         ]
 
     def _create_state_cells(self, workflow_design: Dict[str, Any]) -> List[CellSpec]:

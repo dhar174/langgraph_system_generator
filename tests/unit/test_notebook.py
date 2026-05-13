@@ -38,6 +38,144 @@ def test_composer_adds_required_sections():
     nbformat.validate(nb)
 
 
+def test_composer_merges_required_sections_in_canonical_order():
+    composer = NotebookComposer()
+
+    nb = composer.build_notebook(
+        [
+            CellSpec(
+                cell_type="markdown",
+                content="# Generated Workflow",
+                section="intro",
+            ),
+            CellSpec(
+                cell_type="code",
+                content="from langgraph.graph import END, START, StateGraph",
+                section="setup",
+            ),
+            CellSpec(
+                cell_type="code",
+                content="MODEL = 'gpt-5-mini'",
+                section="config",
+            ),
+            CellSpec(
+                cell_type="code",
+                content="class WorkflowState(dict):\n    pass",
+                section="state",
+            ),
+            CellSpec(
+                cell_type="code",
+                content="workflow = StateGraph(WorkflowState)\ngraph = workflow.compile()",
+                section="graph",
+            ),
+            CellSpec(
+                cell_type="code",
+                content="final_state = graph.invoke({})",
+                section="execution",
+            ),
+        ],
+        ensure_minimum_sections=True,
+    )
+
+    unique_sections: list[str] = []
+    for cell in nb.cells:
+        section = cell.metadata.get("section")
+        if section and section not in unique_sections:
+            unique_sections.append(section)
+
+    assert unique_sections[:8] == [
+        "intro",
+        "setup",
+        "config",
+        "state",
+        "graph",
+        "execution",
+        "export",
+        "troubleshooting",
+    ]
+
+
+def test_export_scaffold_uses_graph_contract_without_undefined_app_reference():
+    composer = NotebookComposer()
+
+    nb = composer.build_notebook(
+        [
+            CellSpec(
+                cell_type="code",
+                content="workflow = object()\ngraph = workflow",
+                section="graph",
+            ),
+            CellSpec(
+                cell_type="code",
+                content="final_state = {'ok': True}",
+                section="execution",
+            ),
+        ],
+        ensure_minimum_sections=True,
+    )
+
+    export_cells = [
+        cell
+        for cell in nb.cells
+        if cell.metadata.get("section") == "export" and cell.cell_type == "code"
+    ]
+    assert export_cells
+    export_source = export_cells[0].source
+
+    assert "graph" in export_source
+    assert "app.get_state" not in export_source
+    assert 'if "app" not in globals()' not in export_source
+
+
+def test_execution_scaffold_uses_graph_contract_without_undefined_app_reference():
+    composer = NotebookComposer()
+
+    nb = composer.build_notebook(
+        [
+            CellSpec(
+                cell_type="code",
+                content="workflow = object()\ngraph = workflow",
+                section="graph",
+            )
+        ],
+        ensure_minimum_sections=True,
+    )
+
+    execution_cells = [
+        cell
+        for cell in nb.cells
+        if cell.metadata.get("section") == "execution"
+        and cell.cell_type == "code"
+    ]
+    assert execution_cells
+    execution_source = execution_cells[0].source
+
+    assert "compiled_graph" in execution_source
+    assert "compiled_graph.stream" in execution_source
+    assert "compiled_graph.get_state" in execution_source
+    assert "app.stream" not in execution_source
+    assert "app.get_state" not in execution_source
+    assert 'if "app" not in globals()' not in execution_source
+
+
+def test_graph_scaffold_defines_canonical_graph_variable():
+    composer = NotebookComposer()
+
+    nb = composer.build_notebook([], ensure_minimum_sections=True)
+
+    graph_cells = [
+        cell
+        for cell in nb.cells
+        if cell.metadata.get("section") == "graph" and cell.cell_type == "code"
+    ]
+    assert graph_cells
+    graph_source = graph_cells[0].source
+
+    assert "workflow = StateGraph(WorkflowState)" in graph_source
+    assert "graph = workflow.compile(checkpointer=memory)" in graph_source
+    assert "app = graph.compile" not in graph_source
+
+
 def test_exporters_write_files(tmp_path: Path, monkeypatch):
     # Set a test output base
     monkeypatch.setenv("LNF_OUTPUT_BASE", "test_exporters")

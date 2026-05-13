@@ -127,12 +127,12 @@ def build_graph_cells() -> List[CellSpec]:
                 goto=END,
             )
 
-        graph = StateGraph(WorkflowState)
-        graph.add_node("router_node", router_node)
-        graph.add_edge(START, "router_node")
+        workflow = StateGraph(WorkflowState)
+        workflow.add_node("router_node", router_node)
+        workflow.add_edge(START, "router_node")
 
         memory = InMemorySaver()
-        app = graph.compile(checkpointer=memory)
+        graph = workflow.compile(checkpointer=memory)
         """).strip()
 
     return [
@@ -198,21 +198,20 @@ def run_graph_cells(architecture_type: str | None = None) -> List[CellSpec]:
         """
 
     run_code = dedent(f"""
-        try:
-            app  # type: ignore[name-defined]  # noqa: F821
-        except NameError as exc:
+        compiled_graph = globals().get("graph") or globals().get("app")
+        if compiled_graph is None:
             raise NameError(
-                "`app` is not defined. Please run the 'Build Graph' cell before this one."
-            ) from exc
+                "`graph` is not defined. Please run the 'Build Graph' cell before this one."
+            )
 
         config = {{"configurable": {{"thread_id": "lnf-demo-thread"}}}}
         {initial_state_block.strip()}
 
         print("Streaming updates (per step):")
-        for update in app.stream(initial_state, config, stream_mode="updates"):
+        for update in compiled_graph.stream(initial_state, config, stream_mode="updates"):
             print(update)
 
-        final_state = app.get_state(config).values
+        final_state = compiled_graph.get_state(config).values
         print("Final message:", final_state["messages"][-1])
         """).strip()
 
@@ -232,11 +231,16 @@ def export_results_cells() -> List[CellSpec]:
         import json
         from pathlib import Path
 
-        if "app" not in globals():
-            raise NameError("`app` is not defined. Run the 'Run Graph' cell before exporting results.")
+        compiled_graph = globals().get("graph") or globals().get("app")
+        if compiled_graph is None:
+            raise NameError("`graph` is not defined. Run the 'Graph Construction' cell before exporting results.")
 
         config = {"configurable": {"thread_id": "lnf-demo-thread"}}
-        output_data = app.get_state(config).values
+        final_state_snapshot = globals().get("final_state")
+        if final_state_snapshot is not None:
+            output_data = final_state_snapshot
+        else:
+            output_data = compiled_graph.get_state(config).values
         output_path = Path("graph_results.json")
         with output_path.open("w", encoding="utf-8") as handle:
             json.dump(output_data, handle, indent=2, default=str)
