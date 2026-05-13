@@ -19,6 +19,7 @@ from langgraph_system_generator.generator.nodes import (
     tooling_plan_node,
 )
 from langgraph_system_generator.generator.state import GeneratorState
+from langgraph_system_generator.qa.summary import has_blocking_failures
 from langgraph_system_generator.utils.config import settings
 
 
@@ -35,15 +36,19 @@ def should_repair(
     """
     qa_reports = state.get("qa_reports", [])
     failed_reports = [r for r in qa_reports if not r.passed]
+    blocking_reports = [
+        report for report in failed_reports if report.severity == "error"
+    ]
 
-    # If no failures, proceed to package
-    if not failed_reports:
+    # If there are no blocking failures, proceed to package. Warning/info
+    # findings are advisory and remain visible through qa_summary.
+    if not has_blocking_failures(qa_reports):
         return "package"
 
     # Environment/runtime support failures in live mode are product-gate failures
     # and should not enter the repair loop because repair cannot provision kernels
     # or missing execution dependencies.
-    for report in failed_reports:
+    for report in blocking_reports:
         evidence = report.evidence
         if (
             report.check_name == "Runtime Check"

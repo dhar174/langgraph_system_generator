@@ -42,6 +42,10 @@ from langgraph_system_generator.notebook.runtime import (
     run_notebook_smoke_test,
 )
 from langgraph_system_generator.qa import NotebookRepairAgent, NotebookValidator
+from langgraph_system_generator.qa.summary import (
+    build_qa_summary,
+    serialize_qa_report,
+)
 from langgraph_system_generator.rag.embeddings import VectorStoreManager
 from langgraph_system_generator.rag.retriever import DocsRetriever
 from langgraph_system_generator.utils.generation_options import (
@@ -183,7 +187,6 @@ def _qa_repair_feedback_from_reports(
     unresolved_failures: List[str] = []
     next_steps: List[str] = []
     warnings: List[str] = []
-    advisory_failures: List[str] = []
 
     for report in reports:
         if report.passed:
@@ -193,23 +196,29 @@ def _qa_repair_feedback_from_reports(
         if report.severity == "error":
             if descriptor not in unresolved_failures:
                 unresolved_failures.append(descriptor)
-        else:
-            if descriptor not in advisory_failures:
-                advisory_failures.append(descriptor)
 
         for suggestion in report.suggestions:
             suggestion_text = str(suggestion or "").strip()
             if suggestion_text and suggestion_text not in next_steps:
                 next_steps.append(suggestion_text)
 
+    qa_summary = build_qa_summary(reports)
+    counts = qa_summary["counts"]
     if unresolved_failures:
         warnings.append("Blocking QA issues remain after validation or repair.")
-    if advisory_failures:
-        warnings.append("Additional non-blocking QA advisories were recorded.")
+    if counts["non_blocking"] or counts["informational"]:
+        warnings.append(
+            "Non-blocking QA advisories were recorded; artifacts remain usable."
+        )
     if rollback_used:
         warnings.append("A repair rollback preserved the previous notebook snapshot.")
     for warning in extra_warnings or []:
         warning_text = str(warning or "").strip()
+        if (
+            not unresolved_failures
+            and warning_text.startswith("No safe deterministic repair matched")
+        ):
+            continue
         if warning_text and warning_text not in warnings:
             warnings.append(warning_text)
     for step in extra_next_steps or []:
@@ -833,6 +842,8 @@ async def package_outputs_node(state: GeneratorState) -> Dict[str, Any]:
     notebook_composition_feedback = state.get("notebook_composition_feedback")
     notebook_dependency_plan = state.get("notebook_dependency_plan")
     qa_repair_feedback = state.get("qa_repair_feedback")
+    qa_reports = list(state.get("qa_reports") or [])
+    qa_summary = build_qa_summary(qa_reports)
     manifest = {
         "notebook_plan": str(state.get("notebook_plan")),
         "cell_count": str(len(state.get("generated_cells", []))),
@@ -894,10 +905,13 @@ async def package_outputs_node(state: GeneratorState) -> Dict[str, Any]:
                 qa_repair_feedback or QARepairFeedback().model_dump()
             )
         ),
+        "qa_reports": [serialize_qa_report(report) for report in qa_reports],
+        "qa_summary": qa_summary,
     }
 
     return {
         "artifacts_manifest": manifest,
+        "qa_summary": qa_summary,
         "generation_complete": True,
         "error_message": None,
     }

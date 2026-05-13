@@ -540,6 +540,39 @@ async def test_static_qa_node_surfaces_blocking_feedback(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_static_qa_node_surfaces_non_blocking_feedback(monkeypatch):
+    advisory_report = QAReport(
+        check_name="Undefined Names",
+        passed=False,
+        message="Define or import 'app' before it is used.",
+        rule_id="undefined_names",
+        severity="warning",
+        category="symbols",
+        repairable=True,
+        suggestions=["Check for small naming typos."],
+    )
+
+    monkeypatch.setattr(
+        "langgraph_system_generator.generator.nodes.NotebookValidator.validate_all",
+        lambda *_args, **_kwargs: [advisory_report],
+    )
+
+    result = await static_qa_node(
+        {
+            "generated_cells": [CellSpec(cell_type="code", content="app.invoke({})", metadata={})],
+            "qa_reports": [],
+            "repair_attempts": 0,
+        }
+    )
+
+    assert result["qa_repair_feedback"].unrepaired_failures == []
+    assert "Check for small naming typos." in result["qa_repair_feedback"].next_steps
+    assert result["qa_repair_feedback"].warnings == [
+        "Non-blocking QA advisories were recorded; artifacts remain usable."
+    ]
+
+
+@pytest.mark.asyncio
 async def test_static_qa_node_uses_plugin_validators(monkeypatch):
     module_name = "test_nodes_qa_plugin_validator"
 
@@ -954,3 +987,43 @@ async def test_package_outputs_node_manifest_fields():
     assert "requests" in manifest["notebook_dependency_plan"]["packages"]
     assert manifest["qa_repair_feedback"]["repair_attempts"] == 1
     assert result["generation_complete"] is True
+
+
+@pytest.mark.asyncio
+async def test_package_outputs_node_includes_qa_reports_and_summary():
+    report = QAReport(
+        check_name="Undefined Names",
+        passed=False,
+        message="Define or import 'app' before it is used.",
+        rule_id="undefined_names",
+        severity="warning",
+        category="symbols",
+        repairable=True,
+        suggestions=["Check graph object naming."],
+        stage="static",
+        attempt=0,
+    )
+
+    result = await package_outputs_node(
+        {
+            "notebook_plan": "Plan",
+            "generated_cells": [CellSpec(cell_type="markdown", content="Hi", metadata={})],
+            "constraints": [Constraint(type="goal", value="Test", priority=1)],
+            "selected_patterns": {"primary": "router"},
+            "qa_reports": [report],
+            "qa_repair_feedback": QARepairFeedback(
+                warnings=[
+                    "Non-blocking QA advisories were recorded; artifacts remain usable."
+                ],
+                next_steps=["Check graph object naming."],
+            ),
+        }
+    )
+
+    manifest = result["artifacts_manifest"]
+    assert manifest["qa_reports"][0]["rule_id"] == "undefined_names"
+    assert manifest["qa_summary"]["status"] == "advisories"
+    assert manifest["qa_summary"]["artifacts_usable"] is True
+    assert manifest["qa_summary"]["counts"]["non_blocking"] == 1
+    assert manifest["qa_summary"]["findings"][0]["stage"] == "static"
+    assert result["qa_summary"] == manifest["qa_summary"]

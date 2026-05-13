@@ -148,6 +148,56 @@ function appendLabeledValue(parent, label, value, options = {}) {
     parent.appendChild(item);
 }
 
+function appendQaSummary(parent, qaSummary) {
+    if (!qaSummary || !Array.isArray(qaSummary.findings) || qaSummary.findings.length === 0) {
+        return;
+    }
+
+    const qaItem = document.createElement('div');
+    qaItem.className = 'result-item';
+    qaItem.style.background = 'var(--bg-primary)';
+    qaItem.style.padding = '1rem';
+    qaItem.style.borderRadius = '0.5rem';
+    qaItem.style.marginTop = '1rem';
+
+    const heading = document.createElement('h4');
+    heading.textContent = qaSummary.status === 'blocking_failed'
+        ? 'QA Findings'
+        : 'QA Advisories';
+    heading.style.marginBottom = '0.5rem';
+    qaItem.appendChild(heading);
+
+    const status = document.createElement('p');
+    status.textContent = qaSummary.artifacts_usable === false
+        ? 'Generated artifacts need review before use.'
+        : 'Generated artifacts remain usable.';
+    qaItem.appendChild(status);
+
+    const findingsList = document.createElement('ul');
+    qaSummary.findings.forEach((finding) => {
+        const item = document.createElement('li');
+        const stage = finding.stage || 'qa';
+        const checkName = finding.check_name || 'QA Check';
+        const severity = finding.severity || 'info';
+        const message = finding.message || 'No QA message was provided.';
+        item.textContent = `${stage} / ${checkName} (${severity}): ${message}`;
+
+        if (Array.isArray(finding.suggestions) && finding.suggestions.length > 0) {
+            const suggestions = document.createElement('ul');
+            finding.suggestions.forEach((suggestion) => {
+                const suggestionItem = document.createElement('li');
+                suggestionItem.textContent = suggestion;
+                suggestions.appendChild(suggestionItem);
+            });
+            item.appendChild(suggestions);
+        }
+
+        findingsList.appendChild(item);
+    });
+    qaItem.appendChild(findingsList);
+    parent.appendChild(qaItem);
+}
+
 // Update character count
 promptTextarea.addEventListener('input', () => {
     const count = getCharacterCount(promptTextarea.value);
@@ -383,6 +433,8 @@ function showResult(data) {
     const manifest = data.manifest || {};
     const mode = data.mode || 'unknown';
     const warnings = Array.isArray(manifest.warnings) ? manifest.warnings : [];
+    const qaSummary = manifest.qa_summary || {};
+    const hasQaAdvisories = qaSummary.status === 'advisories';
 
     resultContent.replaceChildren();
 
@@ -395,9 +447,9 @@ function showResult(data) {
     const successHeading = document.createElement('h3');
     successHeading.style.color = 'var(--success-color)';
     successHeading.style.marginBottom = '0.5rem';
-    successHeading.textContent = warnings.length > 0
-        ? 'Generation Completed With Warnings'
-        : 'Generation Successful!';
+    successHeading.textContent = hasQaAdvisories
+        ? 'Generation Completed With Advisories'
+        : (warnings.length > 0 ? 'Generation Completed With Warnings' : 'Generation Successful!');
 
     const successParagraph = document.createElement('p');
     successParagraph.textContent = `Your system was generated in ${mode} mode.`;
@@ -448,6 +500,8 @@ function showResult(data) {
         warningItem.appendChild(warningList);
         resultWrapper.appendChild(warningItem);
     }
+
+    appendQaSummary(resultWrapper, qaSummary);
 
     const exportSection = document.createElement('div');
     exportSection.className = 'result-item';

@@ -299,7 +299,9 @@ Validates notebook structure without execution:
 
 Validates the generated notebook by executing the built notebook artifact. In
 `live` mode, missing notebook runtime support is a real gate failure; in `stub`
-mode it is recorded as non-blocking runtime evidence.
+mode it is recorded as non-blocking runtime evidence. Failed `error` reports are
+blocking; failed `warning` and `info` reports are advisory and can still package
+usable artifacts.
 
 ```python
 {
@@ -315,7 +317,20 @@ mode it is recorded as non-blocking runtime evidence.
         "execution": {"executed_cells": 4}
       }
     }
-  ]
+  ],
+  "qa_summary": {
+    "status": "passed",
+    "artifacts_usable": true,
+    "counts": {
+      "total": 4,
+      "passed": 4,
+      "failed": 0,
+      "blocking": 0,
+      "non_blocking": 0,
+      "informational": 0
+    },
+    "findings": []
+  }
 }
 ```
 
@@ -323,12 +338,14 @@ mode it is recorded as non-blocking runtime evidence.
 `execute_notebook`)
 
 #### 9. Repair Loop
-**Input**: Notebook + Failed QA reports  
+**Input**: Notebook + Blocking failed QA reports
 **Output**: Repaired notebook
 
-If QA fails, the shared QA/repair engine applies registered deterministic repair
-routines in memory, revalidates the candidate notebook, and persists the repair
-only when validation is non-regressive:
+If blocking QA fails, the shared QA/repair engine applies registered
+deterministic repair routines in memory, revalidates the candidate notebook, and
+persists the repair only when validation is non-regressive. Advisory-only
+failures bypass repair and package successfully with exact details in
+`qa_summary`:
 
 ```python
 {
@@ -345,12 +362,36 @@ only when validation is non-regressive:
     "rollback_used": true,
     "unrepaired_failures": ["Python Syntax: invalid syntax"],
     "next_steps": ["Inspect the QA and Repair Summary cell before retrying."]
+  },
+  "qa_summary": {
+    "status": "blocking_failed",
+    "artifacts_usable": false,
+    "counts": {
+      "total": 1,
+      "passed": 0,
+      "failed": 1,
+      "blocking": 1,
+      "non_blocking": 0,
+      "informational": 0
+    },
+    "findings": [
+      {
+        "stage": "static",
+        "check_name": "Python Syntax",
+        "rule_id": "python_syntax",
+        "severity": "error",
+        "message": "invalid syntax",
+        "suggestions": ["Inspect the generated code cell."],
+        "repairable": true,
+        "attempt": 1
+      }
+    ]
   }
 }
 ```
 
 **Repair Strategy**:
-1. Identify specific failures
+1. Identify specific blocking failures
 2. Select matching routines from `QARepairRegistry`
 3. Apply fixes to an in-memory notebook candidate
 4. Re-run QA validation and accept only non-regressive candidates
@@ -431,6 +472,7 @@ class GeneratorState(TypedDict):
     qa_history: List[QAReport]
     repair_attempts: int
     qa_repair_feedback: QARepairFeedback
+    qa_summary: Dict[str, Any]
     
     # Output
     artifacts_manifest: Dict[str, str]
@@ -444,7 +486,7 @@ class GeneratorState(TypedDict):
 - **Advisory Graph Feedback**: `graph_design_feedback` captures validation and fallback details while `graph_exports` stores Mermaid/schema bundles for manifests and notebook overview cells
 - **Advisory Tool Feedback**: `tool_planning_feedback` records fallback, validation, environment, and dependency warnings while `tools_plan` remains the downstream list
 - **Notebook Composition Feedback**: `notebook_composition_feedback` and `notebook_dependency_plan` explain fallback and dependency decisions without replacing `generated_cells`
-- **QA History**: `qa_reports` is the current snapshot; `qa_history` preserves attempt-by-attempt evidence across static QA, runtime QA, and repair
+- **QA Reports and Summary**: `qa_reports` is the current snapshot; `qa_summary` classifies failed reports as blocking, non-blocking, or informational; `qa_history` preserves attempt-by-attempt evidence across static QA, runtime QA, and repair
 - **Last-write-wins cells**: `generated_cells` intentionally has no reducer, so each repair pass replaces prior cells
 - **Immutability**: State updates create new state versions (LangGraph managed)
 - **Type Safety**: TypedDict provides IDE autocomplete and validation
@@ -607,9 +649,9 @@ Agents outputs, so offline fallback notebooks do not auto-install `deepagents`.
 
 ### Repair Strategies
 
-When QA fails, the repair agent:
+When blocking QA fails, the repair agent:
 
-1. **Analyzes failures**: Categorizes error types
+1. **Analyzes failures**: Categorizes blocking error types
 2. **Selects routines**: Uses `QARepairRegistry` to find matching deterministic fixes
 3. **Applies candidates**: Updates in-memory notebook cells first
 4. **Validates**: Re-runs QA checks before accepting the candidate
@@ -619,7 +661,7 @@ When QA fails, the repair agent:
 
 If repair fails after max attempts:
 - Packages best available version
-- Includes QA reports in manifest
+- Includes QA reports and QA summary in manifest
 - Logs warnings for manual review
 
 ## Export System

@@ -706,6 +706,74 @@ async def test_generate_artifacts_surfaces_qa_feedback_as_warnings(
     warning_codes = {warning["code"] for warning in artifacts["manifest"]["warnings"]}
     assert "qa_validation_failed" in warning_codes
     assert artifacts["manifest"]["qa_repair_feedback"]["repair_attempts"] == 1
+    assert artifacts["manifest"]["qa_summary"]["status"] == "blocking_failed"
+    assert artifacts["manifest"]["qa_reports"][0]["rule_id"] == "python_syntax"
+
+
+@pytest.mark.asyncio
+async def test_generate_artifacts_surfaces_non_blocking_qa_advisories(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.setenv("LNF_OUTPUT_BASE", "test_qa_advisory_warning")
+
+    import langgraph_system_generator.constants as constants_module
+    import langgraph_system_generator.notebook.exporters as exporters_module
+    import langgraph_system_generator.cli as cli_module
+
+    importlib.reload(constants_module)
+    importlib.reload(exporters_module)
+    importlib.reload(cli_module)
+
+    original_build_stub_result = cli_module._build_stub_result
+
+    def build_stub_result_with_qa_advisory(prompt: str, agent_type: str | None = None):
+        result = original_build_stub_result(prompt, agent_type=agent_type)
+        result["qa_reports"] = [
+            {
+                "check_name": "Undefined Names",
+                "passed": False,
+                "message": "Define or import 'app' before it is used.",
+                "rule_id": "undefined_names",
+                "severity": "warning",
+                "category": "symbols",
+                "repairable": True,
+                "suggestions": ["Check graph object naming."],
+                "stage": "static",
+                "attempt": 0,
+                "evidence": {},
+            }
+        ]
+        result["qa_repair_feedback"] = {
+            "repair_attempts": 0,
+            "rollback_used": False,
+            "unrepaired_failures": [],
+            "next_steps": ["Check graph object naming."],
+            "warnings": [
+                "Non-blocking QA advisories were recorded; artifacts remain usable."
+            ],
+        }
+        return result
+
+    monkeypatch.setattr(
+        cli_module,
+        "_build_stub_result",
+        build_stub_result_with_qa_advisory,
+    )
+
+    output_dir = constants_module._BASE_OUTPUT / "qa_advisory_stub"
+    artifacts = await cli_module.generate_artifacts(
+        "QA advisory prompt",
+        output_dir=str(output_dir),
+        mode="stub",
+    )
+
+    warning_codes = {warning["code"] for warning in artifacts["manifest"]["warnings"]}
+    assert "qa_advisories" in warning_codes
+    assert "qa_validation_failed" not in warning_codes
+    assert artifacts["manifest"]["qa_summary"]["status"] == "advisories"
+    assert artifacts["manifest"]["qa_summary"]["artifacts_usable"] is True
+    assert artifacts["manifest"]["qa_summary"]["counts"]["non_blocking"] == 1
+    assert artifacts["manifest"]["qa_reports"][0]["stage"] == "static"
 
 
 def test_build_stub_result_raises_for_invalid_stub_graph_design(monkeypatch):

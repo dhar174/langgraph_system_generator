@@ -332,6 +332,20 @@ Generate a multi-agent system from a prompt.
       "next_steps": [],
       "warnings": []
     },
+    "qa_reports": [],
+    "qa_summary": {
+      "status": "passed",
+      "artifacts_usable": true,
+      "counts": {
+        "total": 0,
+        "passed": 0,
+        "failed": 0,
+        "blocking": 0,
+        "non_blocking": 0,
+        "informational": 0
+      },
+      "findings": []
+    },
     "warnings": [],
     "export_results": {
       "ipynb": {"status": "completed", "path": "./output/api/notebook.ipynb"}
@@ -599,7 +613,8 @@ Every successful generation produces:
 ### Manifest Structure
 
 The `manifest.json` contains complete generation metadata, including structured
-phase timing, per-format export status, graph-design exports, and non-fatal warnings:
+phase timing, per-format export status, graph-design exports, exact QA
+summaries, and non-fatal warnings:
 
 ```json
 {
@@ -674,6 +689,20 @@ phase timing, per-format export status, graph-design exports, and non-fatal warn
     "unrepaired_failures": [],
     "next_steps": [],
     "warnings": []
+  },
+  "qa_reports": [],
+  "qa_summary": {
+    "status": "passed",
+    "artifacts_usable": true,
+    "counts": {
+      "total": 0,
+      "passed": 0,
+      "failed": 0,
+      "blocking": 0,
+      "non_blocking": 0,
+      "informational": 0
+    },
+    "findings": []
   },
   "notebook_path": "./output/api/notebook.ipynb",
   "html_path": "./output/api/notebook.html",

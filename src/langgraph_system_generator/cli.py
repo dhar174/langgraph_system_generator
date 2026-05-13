@@ -34,6 +34,7 @@ from langgraph_system_generator.generator.architecture_registry import (
     get_default_architecture_registry,
 )
 from langgraph_system_generator.generator.tool_registry import get_tool_registry
+from langgraph_system_generator.qa.summary import build_qa_summary, serialize_qa_report
 from langgraph_system_generator.generator.graph_design_registry import (
     build_graph_exports,
     graph_design_issue_messages,
@@ -124,6 +125,7 @@ def _default_state(
         "qa_reports": [],
         "qa_history": [],
         "repair_attempts": 0,
+        "qa_summary": build_qa_summary([]),
         "artifacts_manifest": {},
         "generation_complete": False,
         "error_message": None,
@@ -410,11 +412,15 @@ def _tool_planning_warning_entries(
 def _qa_repair_warning_entries(
     feedback: Dict[str, Any] | None,
     reports: List[Dict[str, Any]] | None,
+    qa_summary: Dict[str, Any] | None = None,
 ) -> List[Dict[str, Any]]:
     """Convert structured QA/repair feedback into manifest warnings."""
 
     feedback = feedback if isinstance(feedback, dict) else {}
     reports = reports if isinstance(reports, list) else []
+    qa_summary = qa_summary if isinstance(qa_summary, dict) else build_qa_summary(reports)
+    counts = qa_summary.get("counts") or {}
+    findings = list(qa_summary.get("findings") or [])
 
     severe_reports = [
         report
@@ -433,18 +439,46 @@ def _qa_repair_warning_entries(
     warning_entries: List[Dict[str, Any]] = []
 
     if unresolved_failures:
+        blocking_message = next(
+            (
+                warning
+                for warning in warnings
+                if str(warning).startswith("Blocking QA issues")
+            ),
+            "Blocking QA issues remain after validation or repair.",
+        )
         warning_entries.append(
             {
                 "code": "qa_validation_failed",
                 "phase": "qa",
-                "message": (
-                    warnings[0]
-                    if warnings
-                    else "Blocking QA issues remain after validation or repair."
-                ),
+                "message": blocking_message,
                 "unrepaired_failures": unresolved_failures,
                 "next_steps": next_steps,
                 "repair_attempts": int(feedback.get("repair_attempts") or 0),
+                "findings": [
+                    finding
+                    for finding in findings
+                    if finding.get("classification") == "blocking"
+                ],
+            }
+        )
+
+    if counts.get("non_blocking", 0) or counts.get("informational", 0):
+        warning_entries.append(
+            {
+                "code": "qa_advisories",
+                "phase": "qa",
+                "message": (
+                    "Generation completed with non-blocking QA advisories; "
+                    "artifacts remain usable."
+                ),
+                "artifacts_usable": qa_summary.get("artifacts_usable", True),
+                "counts": counts,
+                "findings": [
+                    finding
+                    for finding in findings
+                    if finding.get("classification") != "blocking"
+                ],
             }
         )
 
@@ -1109,6 +1143,7 @@ def _build_stub_result(prompt: str, agent_type: str | None = None) -> Dict[str, 
         "qa_reports": [],
         "qa_history": [],
         "repair_attempts": 0,
+        "qa_summary": build_qa_summary([]),
         "artifacts_manifest": {},
         "generation_complete": True,
         "error_message": None,
@@ -1226,6 +1261,8 @@ async def generate_artifacts(
     notebook_dependency_plan = serialized.get("notebook_dependency_plan") or {}
     qa_repair_feedback = serialized.get("qa_repair_feedback") or {}
     qa_reports = serialized.get("qa_reports") or []
+    serialized_qa_reports = [serialize_qa_report(report) for report in qa_reports]
+    qa_summary = build_qa_summary(serialized_qa_reports)
 
     manifest: Dict[str, Any] = {
         "prompt": prompt,
@@ -1241,13 +1278,19 @@ async def generate_artifacts(
         "notebook_composition_feedback": notebook_composition_feedback,
         "notebook_dependency_plan": notebook_dependency_plan,
         "qa_repair_feedback": qa_repair_feedback,
+        "qa_reports": serialized_qa_reports,
+        "qa_summary": qa_summary,
         "warnings": [
             *_requirements_warning_entries(requirements_feedback),
             *_architecture_warning_entries(architecture_feedback),
             *_graph_design_warning_entries(graph_design_feedback),
             *_tool_planning_warning_entries(tool_planning_feedback),
             *_notebook_composition_warning_entries(notebook_composition_feedback),
-            *_qa_repair_warning_entries(qa_repair_feedback, qa_reports),
+            *_qa_repair_warning_entries(
+                qa_repair_feedback,
+                serialized_qa_reports,
+                qa_summary,
+            ),
         ],
         "export_results": {},
     }

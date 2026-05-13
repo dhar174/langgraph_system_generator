@@ -47,6 +47,7 @@ class ArchitectureRegistration:
 
     architecture_id: str
     selector_prompt_description: str
+    aliases: list[str] = field(default_factory=list)
     default_secondary_patterns: list[str] = field(default_factory=list)
     docs_queries: list[str] = field(default_factory=list)
     docs_weight: float = 1.0
@@ -64,6 +65,11 @@ class ArchitectureRegistration:
         return ArchitectureRegistration(
             architecture_id=architecture_id,
             selector_prompt_description=description,
+            aliases=[
+                alias
+                for alias in _normalize_patterns(self.aliases)
+                if alias != architecture_id
+            ],
             default_secondary_patterns=_normalize_patterns(
                 self.default_secondary_patterns
             ),
@@ -78,6 +84,7 @@ class ArchitectureRegistry:
 
     def __init__(self, registrations: Optional[Iterable[ArchitectureRegistration]] = None):
         self._registrations: dict[str, ArchitectureRegistration] = {}
+        self._aliases: dict[str, str] = {}
         for registration in registrations or []:
             self.register(registration)
 
@@ -91,6 +98,8 @@ class ArchitectureRegistry:
 
         normalized = registration.normalized()
         self._registrations[normalized.architecture_id] = normalized
+        for alias in normalized.aliases:
+            self._aliases[alias] = normalized.architecture_id
         return normalized
 
     def get(self, architecture_id: str) -> ArchitectureRegistration:
@@ -98,6 +107,18 @@ class ArchitectureRegistry:
 
         normalized = _normalize_architecture_id(architecture_id)
         return self._registrations[normalized]
+
+    def resolve_architecture_id(self, value: str | None) -> str | None:
+        """Return the canonical architecture id for a registered id or alias."""
+
+        if value is None:
+            return None
+        normalized = str(value or "").strip().lower() or None
+        if not normalized:
+            return None
+        if normalized in self._registrations:
+            return normalized
+        return self._aliases.get(normalized)
 
     def supported_architecture_types(self) -> list[str]:
         """Return registered architecture identifiers in insertion order."""
@@ -124,7 +145,9 @@ class ArchitectureRegistry:
         registration = self.get(normalized_primary)
         normalized_secondary = list(registration.default_secondary_patterns)
         for raw_value in secondary_patterns or []:
-            normalized = str(raw_value or "").strip().lower() or None
+            normalized = self.resolve_architecture_id(
+                str(raw_value) if raw_value is not None else None
+            )
             if (
                 normalized
                 and normalized != normalized_primary
@@ -188,6 +211,10 @@ def _default_registrations() -> list[ArchitectureRegistration]:
             selector_prompt_description=(
                 "Single router that classifies incoming work and dispatches it to direct specialists."
             ),
+            aliases=[
+                "single-router-with-deterministic-classifier",
+                "single_router_with_specialist_handlers",
+            ],
             default_secondary_patterns=[],
             docs_queries=[
                 "LangGraph router pattern implementation best practices",

@@ -188,15 +188,17 @@ Successful generations can include:
 The manifest includes advisory fields such as `requirements_feedback`,
 `architecture_feedback`, `graph_design_feedback`, `graph_exports`,
 `tool_planning_feedback`, `notebook_composition_feedback`,
-`notebook_dependency_plan`, and `qa_repair_feedback`. These are response/output
-fields, not new request fields.
+`notebook_dependency_plan`, `qa_repair_feedback`, `qa_reports`, and
+`qa_summary`. These are response/output fields, not new request fields.
 
 Use `manifest.json` as the primary summary for:
 
 - the selected architecture and generation mode
 - export success or failure per artifact
 - warning surfaces and fallback paths
-- repair attempt history and next-step hints
+- repair attempt history, QA findings, and next-step hints
+- exact QA advisory details, severity classification, and whether artifacts
+  remain usable
 - artifact paths that can be downloaded through `GET /artifacts`
 
 ## API And Web UI
