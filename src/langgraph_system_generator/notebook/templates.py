@@ -145,6 +145,16 @@ def build_graph_cells() -> List[CellSpec]:
     ]
 
 
+def _compiled_graph_lookup_code() -> str:
+    """Return the shared scaffold code used to resolve the compiled graph."""
+    return dedent("""
+        if "graph" in globals():
+            compiled_graph = globals()["graph"]
+        else:
+            compiled_graph = globals().get("app")
+    """).strip()
+
+
 def run_graph_cells(architecture_type: str | None = None) -> List[CellSpec]:
     """Return Run Graph cells with an architecture-aware initial state."""
     if architecture_type == "router":
@@ -197,30 +207,33 @@ def run_graph_cells(architecture_type: str | None = None) -> List[CellSpec]:
         initial_state = {"messages": [HumanMessage(content="Hi! Show me the LangGraph demo.")]}
         """
 
-    run_code = dedent(f"""
-        if "graph" in globals():
-            compiled_graph = globals()["graph"]
-        else:
-            compiled_graph = globals().get("app")
-        if compiled_graph is None:
-            raise NameError(
-                "`graph` is not defined. Please run the 'Build Graph' cell before this one."
-            )
+    graph_lookup_code = _compiled_graph_lookup_code()
 
-        config = {{"configurable": {{"thread_id": "lnf-demo-thread"}}}}
-        {initial_state_block.strip()}
+    run_code = "\n".join(
+        [
+            graph_lookup_code,
+            dedent(f"""
+                if compiled_graph is None:
+                    raise NameError(
+                        "`graph` is not defined. Please run the 'Build Graph' cell before this one."
+                    )
 
-        print("Streaming updates (per step):")
-        for update in compiled_graph.stream(initial_state, config, stream_mode="updates"):
-            print(update)
+                config = {{"configurable": {{"thread_id": "lnf-demo-thread"}}}}
+                {initial_state_block.strip()}
 
-        final_state = compiled_graph.get_state(config).values
-        messages = final_state.get("messages", [])
-        if messages:
-            print("Final message:", messages[-1])
-        else:
-            print("Final state:", final_state)
-        """).strip()
+                print("Streaming updates (per step):")
+                for update in compiled_graph.stream(initial_state, config, stream_mode="updates"):
+                    print(update)
+
+                final_state = compiled_graph.get_state(config).values
+                messages = final_state.get("messages", [])
+                if messages:
+                    print("Final message:", messages[-1])
+                else:
+                    print("Final state:", final_state)
+                """).strip(),
+        ]
+    )
 
     return [
         CellSpec(
@@ -234,29 +247,33 @@ def run_graph_cells(architecture_type: str | None = None) -> List[CellSpec]:
 
 def export_results_cells() -> List[CellSpec]:
     """Return Export Results cells."""
-    export_code = dedent("""
-        import json
-        from pathlib import Path
+    graph_lookup_code = _compiled_graph_lookup_code()
+    export_code = "\n".join(
+        [
+            dedent("""
+                import json
+                from pathlib import Path
+                """).strip(),
+            "",
+            graph_lookup_code,
+            dedent("""
+                if compiled_graph is None:
+                    raise NameError("`graph` is not defined. Run the 'Build Graph' cell before exporting results.")
 
-        if "graph" in globals():
-            compiled_graph = globals()["graph"]
-        else:
-            compiled_graph = globals().get("app")
-        if compiled_graph is None:
-            raise NameError("`graph` is not defined. Run the 'Build Graph' cell before exporting results.")
+                config = {"configurable": {"thread_id": "lnf-demo-thread"}}
+                final_state_snapshot = globals().get("final_state")
+                if final_state_snapshot is not None:
+                    output_data = final_state_snapshot
+                else:
+                    output_data = compiled_graph.get_state(config).values
+                output_path = Path("graph_results.json")
+                with output_path.open("w", encoding="utf-8") as handle:
+                    json.dump(output_data, handle, indent=2, default=str)
 
-        config = {"configurable": {"thread_id": "lnf-demo-thread"}}
-        final_state_snapshot = globals().get("final_state")
-        if final_state_snapshot is not None:
-            output_data = final_state_snapshot
-        else:
-            output_data = compiled_graph.get_state(config).values
-        output_path = Path("graph_results.json")
-        with output_path.open("w", encoding="utf-8") as handle:
-            json.dump(output_data, handle, indent=2, default=str)
-
-        print(f"Saved results to {output_path.resolve()}")
-        """).strip()
+                print(f"Saved results to {output_path.resolve()}")
+                """).strip(),
+        ]
+    )
 
     return [
         CellSpec(
