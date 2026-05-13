@@ -420,13 +420,16 @@ from pydantic import ValidationError
                 item if isinstance(item, str) else None
             )
             if normalized_item is None:
+                raise ValueError(f"Architecture selection returned malformed patterns payload: unsupported secondary '{item}'.")
+            if normalized_item not in SUPPORTED_AGENT_TYPES:
+                raise ValueError(f"Architecture selection returned malformed patterns payload: unsupported secondary '{normalized_item}'.")
+            if normalized_item is None:
                 continue
             if normalized_item not in SUPPORTED_AGENT_TYPES:
                 raise ValueError(
                     "Architecture selection returned malformed patterns payload: "
                     f"unsupported secondary '{item}'."
                 )
-
         return (
             ArchitecturePatternSelection(
                 primary=normalized_primary,
