@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 from pathlib import Path
+from threading import RLock
 from typing import List, Optional
 
 from langchain_community.vectorstores import FAISS
@@ -20,6 +21,7 @@ class VectorStoreManager:
         self.store_path = str(store_path)
         self.embeddings = embeddings or OpenAIEmbeddings()
         self.vector_store: Optional[FAISS] = None
+        self._store_lock = RLock()
 
     def index_exists(self) -> bool:
         """Return True if a saved FAISS index is already present."""
@@ -71,16 +73,23 @@ class VectorStoreManager:
             If the integrity check for stored index files fails.
         """
 
-        if not self.index_exists():
-            raise FileNotFoundError(f"Vector store not found at {self.store_path}")
+        if self.vector_store is not None:
+            return self.vector_store
 
-        self._validate_integrity()
-        self.vector_store = FAISS.load_local(
-            self.store_path,
-            self.embeddings,
-            allow_dangerous_deserialization=True,
-        )
-        return self.vector_store
+        with self._store_lock:
+            if self.vector_store is not None:
+                return self.vector_store
+
+            if not self.index_exists():
+                raise FileNotFoundError(f"Vector store not found at {self.store_path}")
+
+            self._validate_integrity()
+            self.vector_store = FAISS.load_local(
+                self.store_path,
+                self.embeddings,
+                allow_dangerous_deserialization=True,
+            )
+            return self.vector_store
 
     def load_or_create(self, documents: List[Document]) -> FAISS:
         """Load an existing index or create a new one if missing."""

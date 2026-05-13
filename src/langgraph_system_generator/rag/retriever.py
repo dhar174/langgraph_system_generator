@@ -27,7 +27,7 @@ class DocsRetriever:
         if store is None:
             try:
                 store = self.vector_store_manager.load_index()
-            except FileNotFoundError:
+            except (FileNotFoundError, ValueError, MemoryError, OSError):
                 return []
 
         if store is None:

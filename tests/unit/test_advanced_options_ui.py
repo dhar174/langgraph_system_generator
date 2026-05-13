@@ -63,6 +63,12 @@ def test_advanced_options_html_structure():
     assert "OpenAI" in optgroup_labels, "Missing OpenAI optgroup"
     assert "Custom" in optgroup_labels, "Missing Custom optgroup"
 
+    max_tokens_input = soup.find(id="maxTokens")
+    assert max_tokens_input is not None, "Missing maxTokens input"
+    assert max_tokens_input.get("step") == "1", (
+        "Max token input should accept any integer token budget supported by the API"
+    )
+
     unsupported_field_ids = ["preset", "memoryConfig", "graphStyle", "retrieverType", "documentLoader"]
     for field_id in unsupported_field_ids:
         field = soup.find(id=field_id)
