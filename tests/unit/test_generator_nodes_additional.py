@@ -343,7 +343,7 @@ async def test_graph_design_node_defaults_architecture_type(monkeypatch):
         "State Definition",
         "Tools",
         "Nodes",
-        "Graph Construction",
+        "Build Graph",
         "Execution",
     ]
     assert notebook_plan.patterns_used == ["subagents"]

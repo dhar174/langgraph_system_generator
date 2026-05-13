@@ -1582,7 +1582,7 @@ def {safe_node_identifier}_node(state: WorkflowState) -> WorkflowState:
         return [
             CellSpec(
                 cell_type="markdown",
-                content="## Graph Construction\n\nBuild the LangGraph workflow:",
+                content="## Build Graph\n\nDefine the LangGraph workflow structure.",
                 section="graph",
             ),
             CellSpec(cell_type="code", content=graph_code, section="graph"),

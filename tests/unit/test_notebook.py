@@ -95,6 +95,63 @@ def test_composer_merges_required_sections_in_canonical_order():
     ]
 
 
+def test_composer_orders_legacy_state_definition_before_graph_cells():
+    composer = NotebookComposer()
+
+    nb = composer.build_notebook(
+        [
+            CellSpec(
+                cell_type="code",
+                content="class WorkflowState(dict):\n    pass",
+                section="state_definition",
+            ),
+            CellSpec(
+                cell_type="code",
+                content="workflow = StateGraph(WorkflowState)\ngraph = workflow.compile()",
+                section="graph",
+            ),
+        ],
+        ensure_minimum_sections=True,
+    )
+
+    state_index = next(
+        index
+        for index, cell in enumerate(nb.cells)
+        if cell.metadata.get("section") == "state_definition"
+    )
+    graph_index = next(
+        index
+        for index, cell in enumerate(nb.cells)
+        if cell.metadata.get("section") == "graph"
+    )
+
+    assert state_index < graph_index
+
+
+def test_composer_keeps_unsectioned_cells_as_leading_preamble():
+    composer = NotebookComposer()
+
+    nb = composer.build_notebook(
+        [
+            CellSpec(
+                cell_type="markdown",
+                content="# Custom Title",
+                section=None,
+            ),
+            CellSpec(
+                cell_type="code",
+                content="from langgraph.graph import StateGraph",
+                section="setup",
+            ),
+        ],
+        ensure_minimum_sections=True,
+    )
+
+    assert nb.cells[0].source == "# Custom Title"
+    assert nb.cells[0].metadata.get("section") is None
+    assert nb.cells[1].metadata.get("section") == "setup"
+
+
 def test_export_scaffold_uses_graph_contract_without_undefined_app_reference():
     composer = NotebookComposer()
 
@@ -125,6 +182,9 @@ def test_export_scaffold_uses_graph_contract_without_undefined_app_reference():
     assert "graph" in export_source
     assert "app.get_state" not in export_source
     assert 'if "app" not in globals()' not in export_source
+    assert 'if "graph" in globals()' in export_source
+    assert "globals().get(\"graph\") or globals().get(\"app\")" not in export_source
+    assert "Run the 'Build Graph' cell before exporting results." in export_source
 
 
 def test_execution_scaffold_uses_graph_contract_without_undefined_app_reference():
@@ -156,6 +216,10 @@ def test_execution_scaffold_uses_graph_contract_without_undefined_app_reference(
     assert "app.stream" not in execution_source
     assert "app.get_state" not in execution_source
     assert 'if "app" not in globals()' not in execution_source
+    assert 'if "graph" in globals()' in execution_source
+    assert "globals().get(\"graph\") or globals().get(\"app\")" not in execution_source
+    assert "messages = final_state.get(\"messages\", [])" in execution_source
+    assert 'print("Final state:", final_state)' in execution_source
 
 
 def test_graph_scaffold_defines_canonical_graph_variable():

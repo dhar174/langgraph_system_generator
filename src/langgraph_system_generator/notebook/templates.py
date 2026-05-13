@@ -198,7 +198,10 @@ def run_graph_cells(architecture_type: str | None = None) -> List[CellSpec]:
         """
 
     run_code = dedent(f"""
-        compiled_graph = globals().get("graph") or globals().get("app")
+        if "graph" in globals():
+            compiled_graph = globals()["graph"]
+        else:
+            compiled_graph = globals().get("app")
         if compiled_graph is None:
             raise NameError(
                 "`graph` is not defined. Please run the 'Build Graph' cell before this one."
@@ -212,7 +215,11 @@ def run_graph_cells(architecture_type: str | None = None) -> List[CellSpec]:
             print(update)
 
         final_state = compiled_graph.get_state(config).values
-        print("Final message:", final_state["messages"][-1])
+        messages = final_state.get("messages", [])
+        if messages:
+            print("Final message:", messages[-1])
+        else:
+            print("Final state:", final_state)
         """).strip()
 
     return [
@@ -231,9 +238,12 @@ def export_results_cells() -> List[CellSpec]:
         import json
         from pathlib import Path
 
-        compiled_graph = globals().get("graph") or globals().get("app")
+        if "graph" in globals():
+            compiled_graph = globals()["graph"]
+        else:
+            compiled_graph = globals().get("app")
         if compiled_graph is None:
-            raise NameError("`graph` is not defined. Run the 'Graph Construction' cell before exporting results.")
+            raise NameError("`graph` is not defined. Run the 'Build Graph' cell before exporting results.")
 
         config = {"configurable": {"thread_id": "lnf-demo-thread"}}
         final_state_snapshot = globals().get("final_state")

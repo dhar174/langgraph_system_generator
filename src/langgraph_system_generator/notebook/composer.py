@@ -28,6 +28,9 @@ class NotebookComposer:
         "export",
         "troubleshooting",
     ]
+    SECTION_ALIASES = {
+        "state_definition": "state",
+    }
 
     def __init__(self, colab_friendly: bool = True):
         self.colab_friendly = colab_friendly
@@ -83,7 +86,15 @@ class NotebookComposer:
         return str(target)
 
     def _with_required_sections(self, cells: Sequence[CellSpec]) -> List[CellSpec]:
-        """Ensure required sections are present and ordered for Colab-friendly execution."""
+        """Ensure required sections are present in the public notebook contract.
+
+        Recognized notebook sections are grouped into the canonical execution
+        order when minimum scaffolding is enabled. Unsectioned or unknown user
+        cells stay in their original relative order and are preserved ahead of
+        the canonical sections. Legacy ``state_definition`` cells are treated as
+        ``state`` for ordering so older stub generators still produce runnable
+        notebooks.
+        """
         provided_sections = {c.section for c in cells if c.section}
         scaffold: List[CellSpec] = []
         architecture_type = self._infer_architecture_type(cells)
@@ -116,17 +127,23 @@ class NotebookComposer:
         unknown_sections: List[CellSpec] = []
 
         for cell in cells:
-            section = cell.section or ""
+            section = self._canonical_section(cell.section) or ""
             if section in section_positions:
                 known_sections[section].append(cell)
             else:
                 unknown_sections.append(cell)
 
-        ordered: List[CellSpec] = []
+        ordered: List[CellSpec] = list(unknown_sections)
         for section in self.CANONICAL_SECTION_ORDER:
             ordered.extend(known_sections[section])
-        ordered.extend(unknown_sections)
         return ordered
+
+    @classmethod
+    def _canonical_section(cls, section: str | None) -> str | None:
+        """Normalize legacy section aliases used by older notebook generators."""
+        if section is None:
+            return None
+        return cls.SECTION_ALIASES.get(section, section)
 
     @staticmethod
     def _infer_architecture_type(cells: Sequence[CellSpec]) -> str | None:
