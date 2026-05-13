@@ -258,6 +258,49 @@ classDiagram
   }
 ```
 
+## Deploy to Google Cloud Run
+
+This repository includes `.github/workflows/deploy-cloud-run.yml` to deploy the
+containerized FastAPI app to Google Cloud Run on every push to `main`.
+
+### 1) Configure GitHub repository variables
+
+Add these **Repository Variables** in GitHub:
+
+- `GCP_PROJECT_ID`: Your Google Cloud project ID.
+- `GCP_REGION`: Cloud Run + Artifact Registry region (for example `us-central1`).
+- `GCP_CLOUD_RUN_SERVICE`: Cloud Run service name to deploy.
+- `GCP_ARTIFACT_REGISTRY_REPOSITORY`: Artifact Registry Docker repository name.
+
+### 2) Configure GitHub repository secrets
+
+Add these **Repository Secrets** in GitHub:
+
+- `GCP_WORKLOAD_IDENTITY_PROVIDER`: Full Workload Identity Provider resource,
+  for example:
+  `projects/123456789/locations/global/workloadIdentityPools/github/providers/my-provider`
+- `GCP_SERVICE_ACCOUNT`: Service account email used by GitHub Actions, for
+  example `github-actions-deployer@my-project.iam.gserviceaccount.com`
+
+### 3) Grant the service account required IAM roles
+
+At minimum, grant roles needed to push images and deploy Cloud Run:
+
+- Artifact Registry write access
+- Cloud Run admin/developer access
+- Service account user (for the Cloud Run runtime service account if needed)
+
+### 4) Trigger deployment
+
+- Push to `main` (automatic), or
+- Run the **Deploy to Cloud Run** workflow manually from GitHub Actions.
+
+The workflow builds and pushes:
+
+`$GCP_REGION-docker.pkg.dev/$GCP_PROJECT_ID/$GCP_ARTIFACT_REGISTRY_REPOSITORY/langgraph-system-generator:$GITHUB_SHA`
+
+Then it deploys that image to `GCP_CLOUD_RUN_SERVICE`.
+
 ## Colab Usage
 
 Generated notebooks are intended to run in local Jupyter and Google Colab.
