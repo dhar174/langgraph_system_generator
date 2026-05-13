@@ -131,19 +131,6 @@ Recommend the best architecture."""
                     messages,
                     docs_considered=docs_considered,
                 )
-from pydantic import ValidationError
-
-# ... (existing imports)
-
-# ... (lines 121-134 replacement)
-        structured_llm = self._structured_output_llm()
-        if structured_llm is not None:
-            try:
-                return await self._select_with_structured_output(
-                    structured_llm,
-                    messages,
-                    docs_considered=docs_considered,
-                )
             except (ValueError, KeyError, TypeError, ValidationError) as exc:
                 reason = f"Architecture selection fallback used: {exc}"
                 logger.warning(reason)
