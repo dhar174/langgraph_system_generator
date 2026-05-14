@@ -650,9 +650,9 @@ else:
             CellSpec(
                 cell_type="markdown",
                 content="## Configuration\n\nSet up API keys and configuration:",
-                section="setup",
+                section="config",
             ),
-            CellSpec(cell_type="code", content=config_content, section="setup"),
+            CellSpec(cell_type="code", content=config_content, section="config"),
         ]
 
     def _create_state_cells(self, workflow_design: Dict[str, Any]) -> List[CellSpec]:
@@ -1582,7 +1582,7 @@ def {safe_node_identifier}_node(state: WorkflowState) -> WorkflowState:
         return [
             CellSpec(
                 cell_type="markdown",
-                content="## Graph Construction\n\nBuild the LangGraph workflow:",
+                content="## Build Graph\n\nDefine the LangGraph workflow structure.",
                 section="graph",
             ),
             CellSpec(cell_type="code", content=graph_code, section="graph"),

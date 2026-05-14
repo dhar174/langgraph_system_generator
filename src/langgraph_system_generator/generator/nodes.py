@@ -457,7 +457,7 @@ async def graph_design_node(state: GeneratorState) -> Dict[str, Any]:
             "State Definition",
             "Tools",
             "Nodes",
-            "Graph Construction",
+            "Build Graph",
             "Execution",
         ],
         cell_count_estimate=len(design_result.nodes) * 3 + 10,

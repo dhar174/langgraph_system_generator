@@ -343,7 +343,7 @@ async def test_graph_design_node_defaults_architecture_type(monkeypatch):
         "State Definition",
         "Tools",
         "Nodes",
-        "Graph Construction",
+        "Build Graph",
         "Execution",
     ]
     assert notebook_plan.patterns_used == ["subagents"]
@@ -570,6 +570,22 @@ async def test_static_qa_node_surfaces_non_blocking_feedback(monkeypatch):
     assert result["qa_repair_feedback"].warnings == [
         "Non-blocking QA advisories were recorded; artifacts remain usable."
     ]
+
+
+@pytest.mark.asyncio
+async def test_static_qa_node_valid_generated_cells_do_not_report_scaffold_app():
+    result = await static_qa_node(
+        {
+            "generated_cells": _valid_generated_cells(),
+            "qa_reports": [],
+            "repair_attempts": 0,
+        }
+    )
+
+    assert not any(
+        report.rule_id == "undefined_names" and not report.passed
+        for report in result["qa_reports"]
+    )
 
 
 @pytest.mark.asyncio

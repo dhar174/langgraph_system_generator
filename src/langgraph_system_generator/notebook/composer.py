@@ -16,6 +16,22 @@ from langgraph_system_generator.notebook import templates
 class NotebookComposer:
     """Create nbformat notebooks from structured cell specifications."""
 
+    CANONICAL_SECTION_ORDER = [
+        "intro",
+        "setup",
+        "config",
+        "state",
+        "tools",
+        "nodes",
+        "graph",
+        "execution",
+        "export",
+        "troubleshooting",
+    ]
+    SECTION_ALIASES = {
+        "state_definition": "state",
+    }
+
     def __init__(self, colab_friendly: bool = True):
         self.colab_friendly = colab_friendly
 
@@ -28,8 +44,8 @@ class NotebookComposer:
 
         Args:
             cells: Ordered collection of CellSpec definitions.
-            ensure_minimum_sections: When True, prepend required scaffold
-                sections (installation, configuration, build/run/export, troubleshooting).
+            ensure_minimum_sections: When True, merge required scaffold
+                sections into the canonical notebook order.
 
         Returns:
             nbformat.NotebookNode ready to write to disk.
@@ -70,7 +86,15 @@ class NotebookComposer:
         return str(target)
 
     def _with_required_sections(self, cells: Sequence[CellSpec]) -> List[CellSpec]:
-        """Ensure required sections are present and ordered for Colab-friendly execution."""
+        """Ensure required sections are present in the public notebook contract.
+
+        Recognized notebook sections are grouped into the canonical execution
+        order when minimum scaffolding is enabled. Unsectioned or unknown user
+        cells stay in their original relative order and are preserved ahead of
+        the canonical sections. Legacy ``state_definition`` cells are treated as
+        ``state`` for ordering so older stub generators still produce runnable
+        notebooks.
+        """
         provided_sections = {c.section for c in cells if c.section}
         scaffold: List[CellSpec] = []
         architecture_type = self._infer_architecture_type(cells)
@@ -88,8 +112,38 @@ class NotebookComposer:
             if section_name not in provided_sections:
                 scaffold.extend(section_cells)
 
-        scaffold.extend(cells)
-        return scaffold
+        return self._order_sections([*cells, *scaffold])
+
+    def _order_sections(self, cells: Sequence[CellSpec]) -> List[CellSpec]:
+        """Return cells grouped by the public notebook section order."""
+
+        section_positions = {
+            section: index
+            for index, section in enumerate(self.CANONICAL_SECTION_ORDER)
+        }
+        known_sections: dict[str, List[CellSpec]] = {
+            section: [] for section in self.CANONICAL_SECTION_ORDER
+        }
+        unknown_sections: List[CellSpec] = []
+
+        for cell in cells:
+            section = self._canonical_section(cell.section) or ""
+            if section in section_positions:
+                known_sections[section].append(cell)
+            else:
+                unknown_sections.append(cell)
+
+        ordered: List[CellSpec] = list(unknown_sections)
+        for section in self.CANONICAL_SECTION_ORDER:
+            ordered.extend(known_sections[section])
+        return ordered
+
+    @classmethod
+    def _canonical_section(cls, section: str | None) -> str | None:
+        """Normalize legacy section aliases used by older notebook generators."""
+        if section is None:
+            return None
+        return cls.SECTION_ALIASES.get(section, section)
 
     @staticmethod
     def _infer_architecture_type(cells: Sequence[CellSpec]) -> str | None:
