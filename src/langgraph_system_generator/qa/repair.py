@@ -386,9 +386,18 @@ class NotebookRepairAgent:
                     "from pathlib import Path\n\nworkspace_dir = Path.cwd()\nworkspace_dir"
                 )
             elif section == "config":
-                code_source = 'MODEL = "gpt-5-mini"\nMAX_ITERATIONS = 10'
+                code_source = (
+                    'MODEL = "gpt-5-mini"\n'
+                    "MAX_ITERATIONS = 10\n"
+                    'config = {"configurable": {"thread_id": "lnf-demo-thread"}, "recursion_limit": 25}'
+                )
             elif section == "execution":
-                code_source = 'result = graph.invoke({})\nprint(result)'
+                code_source = (
+                    'initial_state = {"messages": []}\n'
+                    'config = {"configurable": {"thread_id": "lnf-demo-thread"}, "recursion_limit": 25}\n'
+                    "result = graph.invoke(initial_state, config)\n"
+                    "print(result)"
+                )
             else:
                 code_source = (
                     f'section_status = "Recovered {section}"\nprint(section_status)'

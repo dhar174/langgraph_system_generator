@@ -54,7 +54,7 @@ def _valid_graph_cells(*, execution_content: str | None = None) -> list[CellSpec
         ),
         CellSpec(
             cell_type="code",
-            content='config = {"configurable": {"thread_id": "demo"}}',
+            content='config = {"configurable": {"thread_id": "demo"}, "recursion_limit": 25}',
             metadata={"section": "config"},
             section="config",
         ),
@@ -76,7 +76,11 @@ def _valid_graph_cells(*, execution_content: str | None = None) -> list[CellSpec
         ),
         CellSpec(
             cell_type="code",
-            content=execution_content or "result = graph.invoke({})\nprint(result)",
+            content=execution_content
+            or (
+                'initial_state = {"messages": []}\n'
+                "result = graph.invoke(initial_state, config)\nprint(result)"
+            ),
             metadata={"section": "execution"},
             section="execution",
         ),
@@ -184,7 +188,7 @@ def test_repair_cells_adds_missing_langgraph_imports(repair_agent):
         ),
         CellSpec(
             cell_type="code",
-            content='config = {"configurable": {"thread_id": "demo"}}',
+            content='config = {"configurable": {"thread_id": "demo"}, "recursion_limit": 25}',
             metadata={"section": "config"},
             section="config",
         ),
@@ -206,7 +210,10 @@ def test_repair_cells_adds_missing_langgraph_imports(repair_agent):
         ),
         CellSpec(
             cell_type="code",
-            content="result = graph.invoke({})\nprint(result)",
+            content=(
+                'initial_state = {"messages": []}\n'
+                "result = graph.invoke(initial_state, config)\nprint(result)"
+            ),
             metadata={"section": "execution"},
             section="execution",
         ),
@@ -248,7 +255,7 @@ def test_repair_cells_rebuilds_incomplete_graph_scaffold(repair_agent):
         ),
         CellSpec(
             cell_type="code",
-            content='config = {"configurable": {"thread_id": "demo"}}',
+            content='config = {"configurable": {"thread_id": "demo"}, "recursion_limit": 25}',
             metadata={"section": "config"},
             section="config",
         ),
@@ -339,7 +346,9 @@ def test_repair_sections_inserts_setup_at_start(repair_agent):
 def test_repair_cells_fixes_undefined_name_typos(repair_agent):
     """Undefined-name repair should use validator suggestions for bounded typo fixes."""
 
-    cells = _valid_graph_cells(execution_content="result = grpah.invoke({})\nprint(result)")
+    cells = _valid_graph_cells(
+        execution_content='initial_state = {"messages": []}\nresult = grpah.invoke(initial_state, config)\nprint(result)'
+    )
     reports = _validate_cells(cells)
     undefined_report = _failed_report(reports, "undefined_names")
 
@@ -348,14 +357,16 @@ def test_repair_cells_fixes_undefined_name_typos(repair_agent):
     assert outcome.success is True
     code = _joined_code(outcome.cells)
     assert "grpah" not in code
-    assert "graph.invoke({})" in code
+    assert "graph.invoke(initial_state, config)" in code
     assert all(report.passed for report in outcome.qa_reports)
 
 
 def test_repair_cells_fixes_undefined_name_typos_with_interleaved_markdown(repair_agent):
     """Undefined-name repair should map validator code-cell indexes back to notebook cells."""
 
-    cells = _valid_graph_cells(execution_content="result = grpah.invoke({})\nprint(result)")
+    cells = _valid_graph_cells(
+        execution_content='initial_state = {"messages": []}\nresult = grpah.invoke(initial_state, config)\nprint(result)'
+    )
     cells.insert(
         3,
         CellSpec(
@@ -373,7 +384,7 @@ def test_repair_cells_fixes_undefined_name_typos_with_interleaved_markdown(repai
     assert outcome.success is True
     execution_cell = next(cell for cell in outcome.cells if cell.section == "execution")
     assert "grpah" not in execution_cell.content
-    assert "graph.invoke({})" in execution_cell.content
+    assert "graph.invoke(initial_state, config)" in execution_cell.content
 
 
 @pytest.mark.parametrize(
@@ -405,7 +416,9 @@ def test_repair_cells_applies_bounded_syntax_fixes(
 def test_repair_cells_rolls_back_regressive_candidates(monkeypatch, repair_agent):
     """A regressive repair candidate should be rejected and rolled back."""
 
-    cells = _valid_graph_cells(execution_content="result = grpah.invoke({})\nprint(result)")
+    cells = _valid_graph_cells(
+        execution_content='initial_state = {"messages": []}\nresult = grpah.invoke(initial_state, config)\nprint(result)'
+    )
     baseline_reports = _validate_cells(cells)
     regressive_reports = [
         QAReport(
@@ -492,7 +505,9 @@ def test_repair_notebook_persists_accepted_repairs(tmp_notebook_path: Path, repa
     """The legacy path adapter should write accepted in-memory repairs back to disk."""
 
     builder = NotebookFileComposer()
-    cells = _valid_graph_cells(execution_content="result = grpah.invoke({})\nprint(result)")
+    cells = _valid_graph_cells(
+        execution_content='initial_state = {"messages": []}\nresult = grpah.invoke(initial_state, config)\nprint(result)'
+    )
     notebook = builder.build_notebook(cells)
     builder.write(notebook, tmp_notebook_path)
     reports = repair_agent.validator.validate_all(tmp_notebook_path)
@@ -505,7 +520,7 @@ def test_repair_notebook_persists_accepted_repairs(tmp_notebook_path: Path, repa
         repaired_notebook = nbformat.read(handle, as_version=4)
     code = "\n".join(cell.source for cell in repaired_notebook.cells if cell.cell_type == "code")
     assert "grpah" not in code
-    assert "graph.invoke({})" in code
+    assert "graph.invoke(initial_state, config)" in code
 
 
 def test_repair_notebook_all_passing(tmp_notebook_path: Path, repair_agent):

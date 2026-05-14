@@ -9,12 +9,17 @@ import pytest
 from nbformat.v4 import new_code_cell, new_markdown_cell, new_notebook
 
 from langgraph_system_generator.qa.validators import (
+    CanonicalSectionOrderRule,
     GraphStructureRule,
+    InvocationConfigRule,
+    LangGraphTopologyRule,
     NotebookValidator,
     PlaceholderRule,
     PythonSyntaxRule,
     RequiredImportsRule,
     RequiredSectionsRule,
+    StateReducerSemanticsRule,
+    ToolReachabilityRule,
     UndefinedNameRule,
     ValidatorRegistry,
 )
@@ -43,10 +48,10 @@ def valid_notebook() -> nbformat.NotebookNode:
             new_code_cell('MODEL = "gpt-5-mini"', metadata={"section": "config"}),
             new_markdown_cell("## Graph", metadata={"section": "graph"}),
             new_code_cell(
-                """from typing import TypedDict
+                """from langgraph.graph import MessagesState
 
-class State(TypedDict):
-    messages: list
+class State(MessagesState):
+    pass
 
 workflow = StateGraph(State)
 workflow.add_node("start", lambda state: state)
@@ -57,7 +62,8 @@ graph = workflow.compile()""",
             ),
             new_markdown_cell("## Execution", metadata={"section": "execution"}),
             new_code_cell(
-                'result = graph.invoke({"messages": []})',
+                'config = {"configurable": {"thread_id": "validator-test"}, "recursion_limit": 25}\n'
+                'result = graph.invoke({"messages": []}, config)',
                 metadata={"section": "execution"},
             ),
         ]
@@ -264,6 +270,199 @@ graph = workflow.compile()""",
     assert "terminal path to END" in report.message
 
 
+def test_canonical_section_order_rule_rejects_export_before_execution(
+    tmp_notebook_path: Path,
+):
+    notebook = new_notebook()
+    notebook.cells.extend(
+        [
+            new_code_cell("print('export')", metadata={"section": "export"}),
+            new_code_cell("print('run')", metadata={"section": "execution"}),
+        ]
+    )
+    _write_notebook(tmp_notebook_path, notebook)
+
+    reports = NotebookValidator().validate_all(tmp_notebook_path)
+    report = _report_by_name(reports, "Canonical Section Order")
+
+    assert report.passed is False
+    assert report.rule_id == "canonical_section_order"
+    assert report.severity == "error"
+
+
+def test_langgraph_topology_rule_rejects_duplicates_and_self_loop(
+    tmp_notebook_path: Path,
+):
+    notebook = new_notebook()
+    notebook.cells.append(
+        new_code_cell(
+            """from langgraph.graph import END, START, StateGraph
+from langgraph.graph import MessagesState
+
+class WorkflowState(MessagesState):
+    pass
+
+def finish_node(state: WorkflowState) -> dict:
+    return {"messages": []}
+
+def finish_node(state: WorkflowState) -> dict:
+    return {"messages": []}
+
+workflow = StateGraph(WorkflowState)
+workflow.add_node("finish", finish_node)
+workflow.add_node("finish", finish_node)
+workflow.add_edge(START, "finish")
+workflow.add_edge("finish", "finish")
+workflow.add_edge("finish", END)
+graph = workflow.compile()""",
+            metadata={"section": "graph"},
+        )
+    )
+    _write_notebook(tmp_notebook_path, notebook)
+
+    reports = NotebookValidator().validate_all(tmp_notebook_path)
+    report = _report_by_name(reports, "LangGraph Topology")
+    issue_codes = {issue["code"] for issue in report.evidence["issues"]}
+
+    assert report.passed is False
+    assert "duplicate_node_registration" in issue_codes
+    assert "duplicate_node_function" in issue_codes
+    assert "unguarded_self_loop" in issue_codes
+
+
+def test_state_reducer_semantics_rule_rejects_duplicate_fields(
+    tmp_notebook_path: Path,
+):
+    notebook = new_notebook()
+    notebook.cells.append(
+        new_code_cell(
+            """from typing import Annotated, List
+from typing_extensions import TypedDict
+from langchain_core.messages import BaseMessage
+from langgraph.graph.message import add_messages
+
+class WorkflowState(TypedDict):
+    messages: Annotated[List[BaseMessage], add_messages]
+    messages: list
+""",
+            metadata={"section": "state"},
+        )
+    )
+    _write_notebook(tmp_notebook_path, notebook)
+
+    reports = NotebookValidator().validate_all(tmp_notebook_path)
+    report = _report_by_name(reports, "State Reducer Semantics")
+
+    assert report.passed is False
+    assert report.rule_id == "state_reducer_semantics"
+    assert report.evidence["issues"][0]["code"] == "duplicate_state_field"
+
+
+def test_state_reducer_semantics_rule_warns_for_multi_writer_without_reducer(
+    tmp_notebook_path: Path,
+):
+    notebook = new_notebook()
+    notebook.cells.append(
+        new_code_cell(
+            """from typing_extensions import TypedDict
+from langgraph.graph import MessagesState
+
+class WorkflowState(MessagesState):
+    final_output: str
+
+def first_node(state: WorkflowState) -> dict:
+    return {"final_output": "first"}
+
+def second_node(state: WorkflowState) -> dict:
+    return {"final_output": "second"}
+""",
+            metadata={"section": "state"},
+        )
+    )
+    _write_notebook(tmp_notebook_path, notebook)
+
+    reports = NotebookValidator().validate_all(tmp_notebook_path)
+    report = _report_by_name(reports, "State Reducer Semantics")
+
+    assert report.passed is False
+    assert report.severity == "warning"
+    assert report.evidence["warnings"][0]["code"] == "multi_writer_field_without_reducer"
+
+
+def test_tool_reachability_rule_flags_unbound_placeholder_tools(tmp_notebook_path: Path):
+    notebook = new_notebook()
+    notebook.cells.append(
+        new_code_cell(
+            """from langchain_core.tools import tool
+
+@tool
+def lookup_context(query: str) -> str:
+    \"\"\"Placeholder tool for auxiliary context lookup.\"\"\"
+    return f"Context for: {query}"
+""",
+            metadata={"section": "tools"},
+        )
+    )
+    _write_notebook(tmp_notebook_path, notebook)
+
+    reports = NotebookValidator().validate_all(tmp_notebook_path)
+    report = _report_by_name(reports, "Tool Reachability")
+    issue_codes = {issue["code"] for issue in report.evidence["advisories"]}
+
+    assert report.passed is False
+    assert report.severity == "warning"
+    assert "placeholder_tool_description" in issue_codes
+    assert "unreachable_tool" in issue_codes
+
+
+def test_invocation_config_rule_requires_thread_id_and_recursion_limit(
+    tmp_notebook_path: Path,
+):
+    notebook = new_notebook()
+    notebook.cells.append(
+        new_code_cell(
+            """config = {"configurable": {"thread_id": "demo"}}
+final_state = graph.invoke({"messages": []}, config)
+for update in graph.stream({"messages": []}, config, stream_mode="updates"):
+    print(update)
+""",
+            metadata={"section": "execution"},
+        )
+    )
+    _write_notebook(tmp_notebook_path, notebook)
+
+    reports = NotebookValidator().validate_all(tmp_notebook_path)
+    report = _report_by_name(reports, "Invocation Config")
+    issue_codes = {issue["code"] for issue in report.evidence["issues"]}
+
+    assert report.passed is False
+    assert issue_codes == {"missing_recursion_limit"}
+
+
+def test_invocation_config_rule_accepts_documented_config(tmp_notebook_path: Path):
+    notebook = new_notebook()
+    notebook.cells.append(
+        new_code_cell(
+            """config = {
+    "configurable": {"thread_id": "demo"},
+    "recursion_limit": 25,
+}
+for update in graph.stream({"messages": []}, config, stream_mode="updates"):
+    print(update)
+final_state = graph.invoke({"messages": []}, config)
+snapshot = graph.get_state(config)
+""",
+            metadata={"section": "execution"},
+        )
+    )
+    _write_notebook(tmp_notebook_path, notebook)
+
+    reports = NotebookValidator().validate_all(tmp_notebook_path)
+    report = _report_by_name(reports, "Invocation Config")
+
+    assert report.passed is True
+
+
 def test_validate_all_emits_structured_reports(tmp_notebook_path: Path, valid_notebook):
     _write_notebook(tmp_notebook_path, valid_notebook)
 
@@ -322,6 +521,11 @@ def test_single_check_helpers_use_registry_backed_rules(
             CustomPythonSyntaxRule(),
             UndefinedNameRule(),
             CustomGraphStructureRule(),
+            CanonicalSectionOrderRule(),
+            LangGraphTopologyRule(),
+            StateReducerSemanticsRule(),
+            ToolReachabilityRule(),
+            InvocationConfigRule(),
         ]
     )
     _write_notebook(tmp_notebook_path, valid_notebook)

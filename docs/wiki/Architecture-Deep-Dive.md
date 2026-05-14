@@ -455,6 +455,7 @@ class GeneratorState(TypedDict):
     architecture_type: Optional[str]
     generation_config: Optional[GenerationConfig]
     generation_mode: Literal["stub", "live"]
+    generation_context_pack: GenerationContextPack
 
     # Workflow design
     workflow_design: Optional[Dict[str, Any]]
@@ -485,6 +486,7 @@ class GeneratorState(TypedDict):
 - **Advisory Intake Feedback**: `requirements_feedback` captures fallback, conflict, and missing-input guidance without replacing `constraints` as the downstream planning contract
 - **Advisory Graph Feedback**: `graph_design_feedback` captures validation and fallback details while `graph_exports` stores Mermaid/schema bundles for manifests and notebook overview cells
 - **Advisory Tool Feedback**: `tool_planning_feedback` records fallback, validation, environment, and dependency warnings while `tools_plan` remains the downstream list
+- **Generation Context Pack**: `generation_context_pack` records the docs/source precedence, architecture registry facts, notebook contract, and specialist QA gate names made available to generation stages
 - **Notebook Composition Feedback**: `notebook_composition_feedback` and `notebook_dependency_plan` explain fallback and dependency decisions without replacing `generated_cells`
 - **QA Reports and Summary**: `qa_reports` is the current snapshot; `qa_summary` classifies failed reports as blocking, non-blocking, or informational; `qa_history` preserves attempt-by-attempt evidence across static QA, runtime QA, and repair
 - **Last-write-wins cells**: `generated_cells` intentionally has no reducer, so each repair pass replaces prior cells

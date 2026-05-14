@@ -686,7 +686,10 @@ def build_initial_state(user_request: str) -> WorkflowState:
 
 async def run_example(user_request: str) -> WorkflowState:
     """Run the critique loop and return the final state."""
-    config = {{"configurable": {{"thread_id": "example-thread"}}}}
+    config = {{
+        "configurable": {{"thread_id": "example-thread"}},
+        "recursion_limit": 25,
+    }}
     return await graph.ainvoke(build_initial_state(user_request), config=config)
 
 

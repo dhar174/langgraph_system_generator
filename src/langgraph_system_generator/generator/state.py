@@ -444,6 +444,48 @@ class DocSnippet(BaseModel):
     )
 
 
+class GenerationContextPack(BaseModel):
+    """Compact generation facts shared across downstream runtime stages."""
+
+    source_precedence: List[str] = Field(
+        default_factory=lambda: [
+            "langchain-docs-local",
+            "context7",
+            "cached_repo_docs",
+            "rag_index",
+        ],
+        description="Preferred source order for LangGraph/LangChain docs facts.",
+    )
+    request: Dict[str, Any] = Field(
+        default_factory=dict,
+        description="Current request settings and extracted high-priority goals.",
+    )
+    architecture_registry: Dict[str, Any] = Field(
+        default_factory=dict,
+        description="Supported architecture ids and registry-backed constraints.",
+    )
+    notebook_contract: Dict[str, Any] = Field(
+        default_factory=dict,
+        description="Notebook artifact contract facts used by generation and QA.",
+    )
+    qa_gates: List[str] = Field(
+        default_factory=list,
+        description="Deterministic QA gates expected before packaging.",
+    )
+    docs_snippets: List[Dict[str, Any]] = Field(
+        default_factory=list,
+        description="Compact docs snippets available to generation stages.",
+    )
+    fallback_used: bool = Field(
+        default=False,
+        description="Whether the pack had to fall back to local/static facts only.",
+    )
+    warnings: List[str] = Field(
+        default_factory=list,
+        description="Context-pack construction warnings.",
+    )
+
+
 class NotebookPlan(BaseModel):
     """Plan for notebook structure."""
 
@@ -640,6 +682,7 @@ class GeneratorState(TypedDict):
 
     # RAG context
     docs_context: Annotated[List[DocSnippet], operator.add]
+    generation_context_pack: GenerationContextPack
 
     # Planning
     notebook_plan: Optional[NotebookPlan]

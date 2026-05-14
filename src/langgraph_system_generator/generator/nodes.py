@@ -25,6 +25,7 @@ from langgraph_system_generator.generator.state import (
     CellSpec,
     DocSnippet,
     GeneratorState,
+    GenerationContextPack,
     GraphDesignFeedback,
     GraphExportBundle,
     NotebookCompositionFeedback,
@@ -361,6 +362,100 @@ async def rag_retrieval_node(state: GeneratorState) -> Dict[str, Any]:
         logger.warning("RAG retrieval failed: %s", e)
         # If RAG fails, continue without docs
         return {"docs_context": []}
+
+
+def _build_generation_context_pack(state: GeneratorState) -> GenerationContextPack:
+    """Build a compact docs/repo/request context pack for downstream stages."""
+
+    constraints = list(state.get("constraints") or [])
+    docs_context = list(state.get("docs_context") or [])
+    generation_config = state.get("generation_config")
+    supported_architectures = ARCHITECTURE_REGISTRY.supported_architecture_types()
+    docs_snippets: List[Dict[str, Any]] = []
+
+    for snippet in docs_context[:6]:
+        payload = (
+            snippet.model_dump()
+            if hasattr(snippet, "model_dump")
+            else dict(snippet)
+            if isinstance(snippet, dict)
+            else {
+                "content": str(getattr(snippet, "content", "")),
+                "source": str(getattr(snippet, "source", "")),
+                "relevance_score": getattr(snippet, "relevance_score", 0.0),
+                "heading": getattr(snippet, "heading", None),
+            }
+        )
+        content = str(payload.get("content", ""))
+        docs_snippets.append(
+            {
+                "source": payload.get("source"),
+                "heading": payload.get("heading"),
+                "relevance_score": payload.get("relevance_score", 0.0),
+                "excerpt": content[:600],
+            }
+        )
+
+    request_payload: Dict[str, Any] = {
+        "prompt_excerpt": str(state.get("user_prompt", ""))[:500],
+        "generation_mode": _generation_mode(state),
+        "constraints": [
+            constraint.model_dump() if hasattr(constraint, "model_dump") else constraint
+            for constraint in constraints[:10]
+        ],
+    }
+    if generation_config is not None and hasattr(generation_config, "model_dump"):
+        request_payload["generation_config"] = generation_config.model_dump()
+
+    return GenerationContextPack(
+        request=request_payload,
+        architecture_registry={
+            "supported_architecture_types": supported_architectures,
+            "default_architecture": "router",
+            "experimental_architectures": ["deepagents"],
+        },
+        notebook_contract={
+            "canonical_sections": NotebookFileComposer.CANONICAL_SECTION_ORDER,
+            "compiled_graph_variable": "graph",
+            "legacy_compiled_graph_fallback": "app",
+            "required_invocation_config": {
+                "configurable.thread_id": "required",
+                "recursion_limit": "required_top_level_key",
+            },
+            "final_notebook_qa_rules": [
+                "canonical_section_order",
+                "langgraph_topology",
+                "state_reducer_semantics",
+                "tool_reachability",
+                "invocation_config",
+            ],
+        },
+        qa_gates=[
+            "json_structure",
+            "python_syntax",
+            "graph_structure",
+            "langgraph_topology",
+            "state_reducer_semantics",
+            "tool_reachability",
+            "invocation_config",
+            "runtime_smoke_test",
+        ],
+        docs_snippets=docs_snippets,
+        fallback_used=not bool(docs_snippets),
+        warnings=(
+            [
+                "No retrieved docs snippets were available; using repo/static context facts only."
+            ]
+            if not docs_snippets
+            else []
+        ),
+    )
+
+
+async def context_pack_node(state: GeneratorState) -> Dict[str, Any]:
+    """Build the generation context pack used by later stages and manifests."""
+
+    return {"generation_context_pack": _build_generation_context_pack(state)}
 
 
 async def architecture_selection_node(state: GeneratorState) -> Dict[str, Any]:
@@ -841,6 +936,7 @@ async def package_outputs_node(state: GeneratorState) -> Dict[str, Any]:
     tool_planning_feedback = state.get("tool_planning_feedback")
     notebook_composition_feedback = state.get("notebook_composition_feedback")
     notebook_dependency_plan = state.get("notebook_dependency_plan")
+    generation_context_pack = state.get("generation_context_pack")
     qa_repair_feedback = state.get("qa_repair_feedback")
     qa_reports = list(state.get("qa_reports") or [])
     qa_summary = build_qa_summary(qa_reports)
@@ -881,6 +977,14 @@ async def package_outputs_node(state: GeneratorState) -> Dict[str, Any]:
             else (
                 tool_planning_feedback
                 or ToolPlanningFeedback(available_tool_ids=[]).model_dump()
+            )
+        ),
+        "generation_context_pack": (
+            generation_context_pack.model_dump()
+            if hasattr(generation_context_pack, "model_dump")
+            else (
+                generation_context_pack
+                or _build_generation_context_pack(state).model_dump()
             )
         ),
         "notebook_composition_feedback": (

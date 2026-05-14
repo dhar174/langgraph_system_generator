@@ -656,6 +656,51 @@ summaries, and non-fatal warnings:
     ],
     "warnings": []
   },
+  "generation_context_pack": {
+    "source_precedence": [
+      "langchain-docs-local",
+      "context7",
+      "cached_repo_docs",
+      "rag_index"
+    ],
+    "request": {
+      "prompt_excerpt": "User's original prompt",
+      "generation_mode": "live",
+      "constraints": []
+    },
+    "architecture_registry": {
+      "supported_architecture_types": [
+        "router",
+        "subagents",
+        "hybrid",
+        "autoagent",
+        "deepagents"
+      ],
+      "default_architecture": "router",
+      "experimental_architectures": ["deepagents"]
+    },
+    "notebook_contract": {
+      "compiled_graph_variable": "graph",
+      "legacy_compiled_graph_fallback": "app",
+      "required_invocation_config": {
+        "configurable.thread_id": "required",
+        "recursion_limit": "required_top_level_key"
+      }
+    },
+    "qa_gates": [
+      "json_structure",
+      "python_syntax",
+      "graph_structure",
+      "langgraph_topology",
+      "state_reducer_semantics",
+      "tool_reachability",
+      "invocation_config",
+      "runtime_smoke_test"
+    ],
+    "docs_snippets": [],
+    "fallback_used": false,
+    "warnings": []
+  },
   "notebook_composition_feedback": {
     "fallback_used": false,
     "warnings": [],

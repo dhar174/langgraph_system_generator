@@ -14,6 +14,7 @@ from langgraph_system_generator.generator.agents import (
 )
 from langgraph_system_generator.generator.nodes import (
     architecture_selection_node,
+    context_pack_node,
     graph_design_node,
     intake_node,
     notebook_assembly_node,
@@ -28,6 +29,8 @@ from langgraph_system_generator.generator.state import (
     ArchitectureFeedback,
     CellSpec,
     Constraint,
+    DocSnippet,
+    GenerationContextPack,
     GraphDesignFeedback,
     GraphExportBundle,
     NotebookCompositionFeedback,
@@ -94,7 +97,7 @@ def _valid_generated_cells(*, execution_content: str | None = None):
         ),
         CellSpec(
             cell_type="code",
-            content='config = {"configurable": {"thread_id": "demo"}}',
+            content='config = {"configurable": {"thread_id": "demo"}, "recursion_limit": 25}',
             metadata={"section": "config"},
             section="config",
         ),
@@ -116,7 +119,11 @@ def _valid_generated_cells(*, execution_content: str | None = None):
         ),
         CellSpec(
             cell_type="code",
-            content=execution_content or "result = graph.invoke({})\nprint(result)",
+            content=execution_content
+            or (
+                'initial_state = {"messages": []}\n'
+                "result = graph.invoke(initial_state, config)\nprint(result)"
+            ),
             metadata={"section": "execution"},
             section="execution",
         ),
@@ -189,6 +196,56 @@ async def test_rag_retrieval_node_falls_back_on_failure(monkeypatch):
     result = await rag_retrieval_node({"user_prompt": "Need docs"})
 
     assert result["docs_context"] == []
+
+
+@pytest.mark.asyncio
+async def test_context_pack_node_builds_docs_backed_contract_pack():
+    result = await context_pack_node(
+        {
+            "user_prompt": "Build a museum artifact workflow",
+            "generation_mode": "stub",
+            "constraints": [
+                Constraint(type="goal", value="Catalog artifacts", priority=5)
+            ],
+            "docs_context": [
+                DocSnippet(
+                    content="LangGraph recursion_limit is a top-level config key.",
+                    source="https://docs.langchain.com/oss/python/langgraph/graph-api",
+                    relevance_score=0.9,
+                    heading="Recursion limit",
+                )
+            ],
+        }
+    )
+
+    pack = result["generation_context_pack"]
+    assert isinstance(pack, GenerationContextPack)
+    assert pack.source_precedence[0] == "langchain-docs-local"
+    assert "router" in pack.architecture_registry["supported_architecture_types"]
+    assert pack.notebook_contract["compiled_graph_variable"] == "graph"
+    assert (
+        pack.notebook_contract["required_invocation_config"]["recursion_limit"]
+        == "required_top_level_key"
+    )
+    assert pack.docs_snippets[0]["source"].startswith("https://docs.langchain.com")
+    assert pack.fallback_used is False
+
+
+@pytest.mark.asyncio
+async def test_context_pack_node_falls_back_to_static_repo_facts_without_docs():
+    result = await context_pack_node(
+        {
+            "user_prompt": "Build a workflow",
+            "generation_mode": "stub",
+            "constraints": [],
+            "docs_context": [],
+        }
+    )
+
+    pack = result["generation_context_pack"]
+    assert pack.fallback_used is True
+    assert pack.warnings
+    assert "invocation_config" in pack.qa_gates
 
 
 @pytest.mark.asyncio
@@ -973,6 +1030,10 @@ async def test_package_outputs_node_manifest_fields():
             available_tool_ids=["web_search", "http_client"],
             warnings=["Tool planning used heuristic fallback inference."],
         ),
+        "generation_context_pack": GenerationContextPack(
+            notebook_contract={"compiled_graph_variable": "graph"},
+            qa_gates=["invocation_config"],
+        ),
         "notebook_composition_feedback": NotebookCompositionFeedback(
             fallback_used=True,
             warnings=["Deterministic fallback used for node \"enrich\"."],
@@ -999,6 +1060,10 @@ async def test_package_outputs_node_manifest_fields():
     assert manifest["graph_design_feedback"]["fallback_used"] is True
     assert "flowchart TD" in manifest["graph_exports"]["mermaid"]
     assert manifest["tool_planning_feedback"]["fallback_used"] is True
+    assert manifest["generation_context_pack"]["notebook_contract"][
+        "compiled_graph_variable"
+    ] == "graph"
+    assert "invocation_config" in manifest["generation_context_pack"]["qa_gates"]
     assert manifest["notebook_composition_feedback"]["fallback_used"] is True
     assert "requests" in manifest["notebook_dependency_plan"]["packages"]
     assert manifest["qa_repair_feedback"]["repair_attempts"] == 1

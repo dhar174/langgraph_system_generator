@@ -27,7 +27,7 @@ def _valid_graph_cells(*, execution_content: str | None = None) -> list[CellSpec
         ),
         CellSpec(
             cell_type="code",
-            content='config = {"configurable": {"thread_id": "demo"}}',
+            content='config = {"configurable": {"thread_id": "demo"}, "recursion_limit": 25}',
             metadata={"section": "config"},
             section="config",
         ),
@@ -49,7 +49,11 @@ def _valid_graph_cells(*, execution_content: str | None = None) -> list[CellSpec
         ),
         CellSpec(
             cell_type="code",
-            content=execution_content or "result = graph.invoke({})\nprint(result)",
+            content=execution_content
+            or (
+                'initial_state = {"messages": []}\n'
+                "result = graph.invoke(initial_state, config)\nprint(result)"
+            ),
             metadata={"section": "execution"},
             section="execution",
         ),
@@ -196,18 +200,22 @@ def test_regression_incomplete_graph_scaffold_is_recovered(repair_agent):
 
 
 def test_regression_undefined_name_typo_uses_validator_suggestion(repair_agent):
-    cells = _valid_graph_cells(execution_content="result = grpah.invoke({})\nprint(result)")
+    cells = _valid_graph_cells(
+        execution_content='initial_state = {"messages": []}\nresult = grpah.invoke(initial_state, config)\nprint(result)'
+    )
     reports = _validate_cells(cells)
 
     outcome = repair_agent.repair_cells(cells, [_failed_report(reports, "undefined_names")])
 
     assert outcome.success is True
     assert "grpah" not in _joined_code(outcome.cells)
-    assert "graph.invoke({})" in _joined_code(outcome.cells)
+    assert "graph.invoke(initial_state, config)" in _joined_code(outcome.cells)
 
 
 def test_regression_interleaved_markdown_does_not_break_typo_repair(repair_agent):
-    cells = _valid_graph_cells(execution_content="result = grpah.invoke({})\nprint(result)")
+    cells = _valid_graph_cells(
+        execution_content='initial_state = {"messages": []}\nresult = grpah.invoke(initial_state, config)\nprint(result)'
+    )
     cells.insert(
         3,
         CellSpec(
@@ -224,7 +232,7 @@ def test_regression_interleaved_markdown_does_not_break_typo_repair(repair_agent
     assert outcome.success is True
     execution = next(cell for cell in outcome.cells if cell.section == "execution")
     assert "grpah" not in execution.content
-    assert "graph.invoke({})" in execution.content
+    assert "graph.invoke(initial_state, config)" in execution.content
 
 
 def test_regression_missing_colon_syntax_repair_is_bounded(repair_agent):
