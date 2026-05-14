@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ast
 import json
 import zipfile
 from pathlib import Path
@@ -12,6 +13,7 @@ from jupyter_client.kernelspec import NoSuchKernel
 from nbclient.client import NotebookClient
 
 from langgraph_system_generator.generator.state import CellSpec
+from langgraph_system_generator.notebook import templates
 from langgraph_system_generator.notebook.composer import NotebookComposer
 from langgraph_system_generator.notebook.exporters import NotebookExporter
 from langgraph_system_generator.notebook.manuscript_docx import ManuscriptDOCXGenerator
@@ -220,6 +222,22 @@ def test_execution_scaffold_uses_graph_contract_without_undefined_app_reference(
     assert "globals().get(\"graph\") or globals().get(\"app\")" not in execution_source
     assert "messages = final_state.get(\"messages\", [])" in execution_source
     assert 'print("Final state:", final_state)' in execution_source
+
+
+@pytest.mark.parametrize(
+    "architecture_type",
+    [None, "router", "subagents", "autoagent", "critique_loop"],
+)
+def test_generated_run_scaffold_cells_are_valid_python(architecture_type):
+    run_source = templates.run_graph_cells(architecture_type)[1].content
+
+    ast.parse(run_source)
+
+
+def test_generated_export_scaffold_cell_is_valid_python():
+    export_source = templates.export_results_cells()[1].content
+
+    ast.parse(export_source)
 
 
 def test_graph_scaffold_defines_canonical_graph_variable():

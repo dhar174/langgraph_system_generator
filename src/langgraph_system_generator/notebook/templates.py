@@ -158,69 +158,72 @@ def _compiled_graph_lookup_code() -> str:
 def run_graph_cells(architecture_type: str | None = None) -> List[CellSpec]:
     """Return Run Graph cells with an architecture-aware initial state."""
     if architecture_type == "router":
-        initial_state_block = """
-        initial_state = {
-            "messages": [HumanMessage(content="Route this request to the best specialist and produce a concise answer.")],
-            "route": "",
-            "results": {},
-            "final_output": "",
-        }
-        """
+        initial_state_block = dedent("""
+            initial_state = {
+                "messages": [HumanMessage(content="Route this request to the best specialist and produce a concise answer.")],
+                "route": "",
+                "results": {},
+                "final_output": "",
+            }
+            """).strip()
     elif architecture_type == "subagents":
-        initial_state_block = """
-        initial_state = {
-            "messages": [HumanMessage(content="Research the topic, draft a response, and review it before finishing.")],
-            "next": "supervisor",
-            "instructions": "",
-            "task_results": {},
-        }
-        """
+        initial_state_block = dedent("""
+            initial_state = {
+                "messages": [HumanMessage(content="Research the topic, draft a response, and review it before finishing.")],
+                "next": "supervisor",
+                "instructions": "",
+                "task_results": {},
+            }
+            """).strip()
     elif architecture_type == "autoagent":
-        initial_state_block = """
-        initial_state = {
-            "messages": [HumanMessage(content="Plan the task, execute it, and critique the result before finishing.")],
-            "next_agent": "coordinator",
-            "instructions": "",
-            "task_results": {},
-            "dispatch_log": [],
-            "iterations": 0,
-        }
-        """
+        initial_state_block = dedent("""
+            initial_state = {
+                "messages": [HumanMessage(content="Plan the task, execute it, and critique the result before finishing.")],
+                "next_agent": "coordinator",
+                "instructions": "",
+                "task_results": {},
+                "dispatch_log": [],
+                "iterations": 0,
+            }
+            """).strip()
     elif architecture_type == "critique_loop":
-        initial_state_block = """
-        initial_state = {
-            "messages": [HumanMessage(content="Draft a polished explanation of how this workflow should solve the task.")],
-            "current_draft": "",
-            "critique_feedback": "",
-            "revision_count": 0,
-            "quality_score": 0.0,
-            "approved": False,
-            "criteria": [
-                "Accuracy and correctness",
-                "Clarity and readability",
-                "Completeness",
-            ],
-        }
-        """
+        initial_state_block = dedent("""
+            initial_state = {
+                "messages": [HumanMessage(content="Draft a polished explanation of how this workflow should solve the task.")],
+                "current_draft": "",
+                "critique_feedback": "",
+                "revision_count": 0,
+                "quality_score": 0.0,
+                "approved": False,
+                "criteria": [
+                    "Accuracy and correctness",
+                    "Clarity and readability",
+                    "Completeness",
+                ],
+            }
+            """).strip()
     else:
-        initial_state_block = """
-        initial_state = {"messages": [HumanMessage(content="Hi! Show me the LangGraph demo.")]}
-        """
+        initial_state_block = dedent("""
+            initial_state = {"messages": [HumanMessage(content="Hi! Show me the LangGraph demo.")]}
+            """).strip()
 
     graph_lookup_code = _compiled_graph_lookup_code()
 
     run_code = "\n".join(
         [
             graph_lookup_code,
-            dedent(f"""
+            "",
+            dedent("""
                 if compiled_graph is None:
                     raise NameError(
                         "`graph` is not defined. Please run the 'Build Graph' cell before this one."
                     )
 
-                config = {{"configurable": {{"thread_id": "lnf-demo-thread"}}}}
-                {initial_state_block.strip()}
-
+                config = {"configurable": {"thread_id": "lnf-demo-thread"}}
+                """).strip(),
+            initial_state_block,
+            "",
+            dedent("""
                 print("Streaming updates (per step):")
                 for update in compiled_graph.stream(initial_state, config, stream_mode="updates"):
                     print(update)
