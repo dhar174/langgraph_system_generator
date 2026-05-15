@@ -136,7 +136,7 @@ The CLI respects these environment variables:
 | `REQUIREMENTS_CONSTRAINT_TYPES` | Extra intake constraint types as JSON/comma list | `[]` |
 | `ARCHITECTURE_PATTERN_DOC_QUERIES` | Architecture retrieval query overrides as JSON object | `{}` |
 | `ARCHITECTURE_PATTERN_DOC_WEIGHTS` | Architecture retrieval weights as JSON object | `{}` |
-| `ARCHITECTURE_PROMPT_DOC_LIMIT` | Max retrieved docs per architecture query | `8` |
+| `ARCHITECTURE_PROMPT_DOC_LIMIT` | Max retrieved docs per architecture query | `16` |
 | `NOTEBOOK_COMPOSER_DEFAULT_MAX_ITERATIONS` | Default generated notebook iteration cap | `10` |
 | `NOTEBOOK_COMPOSER_PARALLELISM_MODE` | Notebook LLM generation mode: `parallel` or `sequential` | `parallel` |
 | `NOTEBOOK_COMPOSER_MAX_CONCURRENCY` | Notebook composer async fan-out limit | `4` |
