@@ -109,7 +109,7 @@ def _valid_generated_cells(*, execution_content: str | None = None):
                 "    messages: list\n\n"
                 "workflow = StateGraph(WorkflowState)\n\n"
                 "def start_node(state: WorkflowState):\n"
-                "    return state\n\n"
+                "    return {}\n\n"
                 "workflow.add_node('start', start_node)\n"
                 "workflow.add_edge(START, 'start')\n"
                 "workflow.add_edge('start', END)\n"
@@ -231,7 +231,36 @@ async def test_context_pack_node_builds_docs_backed_contract_pack():
     parsed_source = urlparse(pack.docs_snippets[0]["source"])
     assert parsed_source.scheme == "https"
     assert parsed_source.netloc == "docs.langchain.com"
+    assert pack.docs_snippets[0]["source_kind"] == "rag_index"
+    assert pack.docs_snippets[0]["source_precedence_rank"] == 3
+    assert pack.source_summary["docs_snippet_count"] == 1
+    assert pack.source_summary["source_counts"]["rag_index"] == 1
     assert pack.fallback_used is False
+
+
+@pytest.mark.asyncio
+async def test_context_pack_uses_explicit_source_kind_for_local_docs():
+    result = await context_pack_node(
+        {
+            "user_prompt": "Build a museum artifact workflow",
+            "generation_mode": "stub",
+            "constraints": [],
+            "docs_context": [
+                DocSnippet(
+                    content="LangGraph recursion_limit is a top-level config key.",
+                    source="https://docs.langchain.com/oss/python/langgraph/graph-api",
+                    source_kind="langchain-docs-local",
+                    relevance_score=0.9,
+                    heading="Recursion limit",
+                )
+            ],
+        }
+    )
+
+    pack = result["generation_context_pack"]
+    assert pack.docs_snippets[0]["source_kind"] == "langchain-docs-local"
+    assert pack.docs_snippets[0]["source_precedence_rank"] == 0
+    assert pack.source_summary["source_counts"]["langchain-docs-local"] == 1
 
 
 @pytest.mark.asyncio
@@ -270,6 +299,7 @@ async def test_context_pack_node_falls_back_to_static_repo_facts_without_docs():
     assert pack.fallback_used is True
     assert pack.warnings
     assert "invocation_config" in pack.qa_gates
+    assert pack.source_summary["docs_live_required"] is False
 
 
 @pytest.mark.asyncio
@@ -298,7 +328,9 @@ async def test_architecture_selection_node_defaults_when_missing(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_architecture_selection_node_surfaces_selector_fallback_feedback(monkeypatch):
+async def test_architecture_selection_node_surfaces_selector_fallback_feedback(
+    monkeypatch,
+):
     payload = '{"architecture_type":"swarm","patterns":{"primary":"swarm","secondary":[]},"justification":"x"}'
 
     monkeypatch.setattr(
@@ -509,9 +541,7 @@ async def test_notebook_assembly_node_returns_generated_cells(monkeypatch):
         fallback_used=True,
         warnings=["Notebook composition used deterministic fallback content."],
     )
-    dependency_plan = NotebookDependencyPlan(
-        packages=["langgraph", "langchain-openai"]
-    )
+    dependency_plan = NotebookDependencyPlan(packages=["langgraph", "langchain-openai"])
     # Mock NotebookComposer to return cells without needing LLM
     payload = "[]"  # Dummy payload since we'll mock the compose method
 
@@ -608,7 +638,9 @@ async def test_static_qa_node_surfaces_blocking_feedback(monkeypatch):
 
     result = await static_qa_node(
         {
-            "generated_cells": [CellSpec(cell_type="code", content="broken(", metadata={})],
+            "generated_cells": [
+                CellSpec(cell_type="code", content="broken(", metadata={})
+            ],
             "qa_reports": [],
             "repair_attempts": 0,
         }
@@ -617,7 +649,10 @@ async def test_static_qa_node_surfaces_blocking_feedback(monkeypatch):
     assert result["qa_repair_feedback"].unrepaired_failures == [
         "Python Syntax: Syntax error in notebook code: invalid syntax at line 3"
     ]
-    assert "Fix the syntax error before execution." in result["qa_repair_feedback"].next_steps
+    assert (
+        "Fix the syntax error before execution."
+        in result["qa_repair_feedback"].next_steps
+    )
 
 
 @pytest.mark.asyncio
@@ -640,7 +675,9 @@ async def test_static_qa_node_surfaces_non_blocking_feedback(monkeypatch):
 
     result = await static_qa_node(
         {
-            "generated_cells": [CellSpec(cell_type="code", content="app.invoke({})", metadata={})],
+            "generated_cells": [
+                CellSpec(cell_type="code", content="app.invoke({})", metadata={})
+            ],
             "qa_reports": [],
             "repair_attempts": 0,
         }
@@ -737,7 +774,9 @@ async def test_runtime_qa_node_executes_trusted_smoke_test(monkeypatch):
     )
 
     state = {
-        "generated_cells": [CellSpec(cell_type="code", content="print('Hi')", metadata={})],
+        "generated_cells": [
+            CellSpec(cell_type="code", content="print('Hi')", metadata={})
+        ],
         "qa_reports": [],
         "qa_history": [],
         "generation_mode": "live",
@@ -848,7 +887,9 @@ async def test_repair_node_success_refreshes_cells_and_appends_history(monkeypat
     initial_cells = [CellSpec(cell_type="markdown", content="Hi", metadata={})]
     updated_cells = [CellSpec(cell_type="markdown", content="Updated", metadata={})]
     updated_reports = [QAReport(check_name="Fix", passed=True, message="done")]
-    existing_history = [QAReport(check_name="Runtime Check", passed=False, message="boom")]
+    existing_history = [
+        QAReport(check_name="Runtime Check", passed=False, message="boom")
+    ]
 
     monkeypatch.setattr(
         "langgraph_system_generator.generator.nodes.NotebookRepairAgent.repair_cells",
@@ -866,7 +907,12 @@ async def test_repair_node_success_refreshes_cells_and_appends_history(monkeypat
     state = {
         "generated_cells": initial_cells,
         "qa_reports": [
-            QAReport(check_name="Runtime Check", passed=False, message="boom", stage="runtime")
+            QAReport(
+                check_name="Runtime Check",
+                passed=False,
+                message="boom",
+                stage="runtime",
+            )
         ],
         "qa_history": existing_history,
         "repair_attempts": 1,
@@ -874,10 +920,14 @@ async def test_repair_node_success_refreshes_cells_and_appends_history(monkeypat
     result = await repair_node(state)
 
     managed_cells = [
-        cell for cell in result["generated_cells"] if cell.section != "qa_repair_summary"
+        cell
+        for cell in result["generated_cells"]
+        if cell.section != "qa_repair_summary"
     ]
     summary_cell = next(
-        cell for cell in result["generated_cells"] if cell.section == "qa_repair_summary"
+        cell
+        for cell in result["generated_cells"]
+        if cell.section == "qa_repair_summary"
     )
 
     assert managed_cells == updated_cells
@@ -902,7 +952,9 @@ async def test_repair_node_success_refreshes_cells_and_appends_history(monkeypat
 async def test_repair_node_failure_keeps_cells_and_appends_history(monkeypatch):
     initial_cells = [CellSpec(cell_type="markdown", content="Hi", metadata={})]
     updated_reports = [QAReport(check_name="Fix", passed=False, message="fail")]
-    existing_history = [QAReport(check_name="Runtime Check", passed=False, message="boom")]
+    existing_history = [
+        QAReport(check_name="Runtime Check", passed=False, message="boom")
+    ]
 
     monkeypatch.setattr(
         "langgraph_system_generator.generator.nodes.NotebookRepairAgent.repair_cells",
@@ -922,7 +974,12 @@ async def test_repair_node_failure_keeps_cells_and_appends_history(monkeypatch):
     state = {
         "generated_cells": initial_cells,
         "qa_reports": [
-            QAReport(check_name="Runtime Check", passed=False, message="boom", stage="runtime")
+            QAReport(
+                check_name="Runtime Check",
+                passed=False,
+                message="boom",
+                stage="runtime",
+            )
         ],
         "qa_history": existing_history,
         "repair_attempts": 3,
@@ -930,10 +987,14 @@ async def test_repair_node_failure_keeps_cells_and_appends_history(monkeypatch):
     result = await repair_node(state)
 
     managed_cells = [
-        cell for cell in result["generated_cells"] if cell.section != "qa_repair_summary"
+        cell
+        for cell in result["generated_cells"]
+        if cell.section != "qa_repair_summary"
     ]
     summary_cell = next(
-        cell for cell in result["generated_cells"] if cell.section == "qa_repair_summary"
+        cell
+        for cell in result["generated_cells"]
+        if cell.section == "qa_repair_summary"
     )
 
     assert managed_cells == initial_cells
@@ -1004,9 +1065,7 @@ async def test_repair_node_uses_plugin_repair_routines(monkeypatch):
     )
 
     code = "\n".join(
-        cell.content
-        for cell in result["generated_cells"]
-        if cell.cell_type == "code"
+        cell.content for cell in result["generated_cells"] if cell.cell_type == "code"
     )
     assert "NODE_PLUGIN_BROKEN" not in code
     assert "NODE_PLUGIN_REPAIRED" in code
@@ -1060,7 +1119,7 @@ async def test_package_outputs_node_manifest_fields():
         ),
         "notebook_composition_feedback": NotebookCompositionFeedback(
             fallback_used=True,
-            warnings=["Deterministic fallback used for node \"enrich\"."],
+            warnings=['Deterministic fallback used for node "enrich".'],
             sections_built=["intro", "install", "config", "state", "nodes", "graph"],
         ),
         "notebook_dependency_plan": NotebookDependencyPlan(
@@ -1084,9 +1143,12 @@ async def test_package_outputs_node_manifest_fields():
     assert manifest["graph_design_feedback"]["fallback_used"] is True
     assert "flowchart TD" in manifest["graph_exports"]["mermaid"]
     assert manifest["tool_planning_feedback"]["fallback_used"] is True
-    assert manifest["generation_context_pack"]["notebook_contract"][
-        "compiled_graph_variable"
-    ] == "graph"
+    assert (
+        manifest["generation_context_pack"]["notebook_contract"][
+            "compiled_graph_variable"
+        ]
+        == "graph"
+    )
     assert "invocation_config" in manifest["generation_context_pack"]["qa_gates"]
     assert manifest["notebook_composition_feedback"]["fallback_used"] is True
     assert "requests" in manifest["notebook_dependency_plan"]["packages"]
@@ -1112,7 +1174,9 @@ async def test_package_outputs_node_includes_qa_reports_and_summary():
     result = await package_outputs_node(
         {
             "notebook_plan": "Plan",
-            "generated_cells": [CellSpec(cell_type="markdown", content="Hi", metadata={})],
+            "generated_cells": [
+                CellSpec(cell_type="markdown", content="Hi", metadata={})
+            ],
             "constraints": [Constraint(type="goal", value="Test", priority=1)],
             "selected_patterns": {"primary": "router"},
             "qa_reports": [report],

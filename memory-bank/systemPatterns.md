@@ -15,10 +15,17 @@
 - Architecture selection, graph design, tool planning, notebook composition, and
   QA/repair use internal registries and typed advisory feedback models so
   recoverable failures surface in manifests instead of disappearing silently.
+- Graph design produces a canonical spec that preserves backward-compatible
+  `workflow_design` payloads while also carrying command routes, tool
+  reachability, domain terms, guarded cycles, terminal nodes, and the compiled
+  graph variable for exports, manifests, and notebook rendering.
 - QA is split into static validation, runtime smoke testing, and a bounded
   deterministic repair loop. Repair attempts are capped by
   `settings.max_repair_attempts`, and rollback/no-op outcomes are recorded in
   `qa_repair_feedback`.
+- Static QA includes LangGraph contract checks for reducer semantics, partial
+  state updates, reachable tool execution claims, domain/architecture label
+  alignment, and invocation config shape.
 - The API layer constrains untrusted output paths to a trusted base directory and limits concurrent async jobs with a semaphore.
 
 ## Design Patterns in Use

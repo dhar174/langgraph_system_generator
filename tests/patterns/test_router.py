@@ -57,6 +57,9 @@ class TestRouterPatternCodeGeneration:
         assert "Literal" in code
         assert "Recent conversation (last {window_size} messages):" in code
         assert 'Resolve coreferences such as "it", "that", and "the one"' in code
+        assert "AIMessage" in code
+        assert 'AIMessage(content=f"Routing to:' in code
+        assert 'HumanMessage(content=f"Routing to:' not in code
 
     def test_generate_router_node_code_simple_output(self):
         """Test router node generation without structured output."""
@@ -122,6 +125,17 @@ class TestRouterPatternCodeGeneration:
         assert "add_conditional_edges" in code
         assert "InMemorySaver()" in code
         assert "compile" in code
+
+    def test_generate_graph_code_sanitizes_conditional_route_targets(self):
+        """Route labels and graph node ids must use the same sanitizer."""
+        routes = ["Repository Ingest (Terminal)", "Return to Intake (Terminal)"]
+        code = RouterPattern.generate_graph_code(routes, use_conditional_edges=True)
+
+        assert "repository_ingest_terminal" in code
+        assert "return_to_intake_terminal" in code
+        assert "repository_ingest_(terminal)" not in code
+        assert "return_to_intake_(terminal)" not in code
+        compile(code, "<router_graph>", "exec")
 
     def test_generate_graph_code_without_conditional_edges(self):
         """Test graph construction with simple edges."""
@@ -282,7 +296,10 @@ class TestRouterPatternCodeQuality:
 
         assert "window_size: int = 5" in router_code
         assert "window_size = max(window_size, 1)" in router_code
-        assert "recent_messages = messages[-window_size:] if messages else []" in router_code
+        assert (
+            "recent_messages = messages[-window_size:] if messages else []"
+            in router_code
+        )
 
     def test_generated_code_includes_error_handling(self):
         """Test generated code includes appropriate error handling."""
@@ -291,7 +308,9 @@ class TestRouterPatternCodeQuality:
         )
 
         # Should have validation for invalid routes
-        assert "valid_routes" in router_code.lower() or "validate" in router_code.lower()
+        assert (
+            "valid_routes" in router_code.lower() or "validate" in router_code.lower()
+        )
 
 
 class TestRouterPatternValidation:

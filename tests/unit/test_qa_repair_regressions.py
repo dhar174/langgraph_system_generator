@@ -38,7 +38,7 @@ def _valid_graph_cells(*, execution_content: str | None = None) -> list[CellSpec
                 "    messages: list\n\n"
                 "workflow = StateGraph(WorkflowState)\n\n"
                 "def start_node(state: WorkflowState):\n"
-                "    return state\n\n"
+                "    return {}\n\n"
                 "workflow.add_node('start', start_node)\n"
                 "workflow.add_edge(START, 'start')\n"
                 "workflow.add_edge('start', END)\n"

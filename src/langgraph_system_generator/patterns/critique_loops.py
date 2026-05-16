@@ -254,7 +254,6 @@ Criteria Reviewed:
 {criteria_summary}"""
 
     return {
-        **state,
         "critique_feedback": normalized_feedback,
         "quality_score": quality_score,
         "approved": approved,
@@ -328,7 +327,6 @@ def critique_node(state: WorkflowState) -> dict:
     )
 
     return {{
-        **state,
         "critique_feedback": feedback,
         "quality_score": assessment.quality_score,
         "approved": assessment.approved,
@@ -371,7 +369,6 @@ def critique_node(state: WorkflowState) -> dict:
     feedback = parts[2] if len(parts) > 2 else response.content
 
     return {{
-        **state,
         "critique_feedback": feedback,
         "quality_score": score,
         "approved": approved,
