@@ -29,7 +29,9 @@ from langgraph_system_generator.generator.state import (
 from langgraph_system_generator.generator.utils import extract_json_from_llm_response
 from langgraph_system_generator.utils.config import ModelConfig, settings
 from langgraph_system_generator.utils.error_handling import GenerationError
-from langgraph_system_generator.utils.generation_options import resolve_architecture_type
+from langgraph_system_generator.utils.generation_options import (
+    resolve_architecture_type,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -88,15 +90,21 @@ class GraphDesigner:
                 f"Cycles allowed: {registration.cycles_allowed}\n\n"
                 "For the workflow, specify:\n"
                 "1. state_schema: TypedDict fields needed for the workflow\n"
-                "2. nodes: List of node names and their purposes\n"
+                "2. nodes: List of node specs with name, purpose, role, domain_terms, and required_tools\n"
                 "3. edges: Direct edges between nodes\n"
                 "4. conditional_edges: Conditional routing logic with conditions\n"
-                "5. entry_point: Starting node\n"
-                "6. checkpointing: Whether to enable checkpointing\n\n"
+                "5. command_routes: Command-returning dynamic routes with source, destinations, update_fields, and condition\n"
+                "6. tool_reachability: Metadata for each generated tool's execution path, node, and rationale\n"
+                "7. domain_terms: Request-specific terms reflected in nodes, routes, tools, and prose\n"
+                "8. entry_point: Starting node\n"
+                "9. compiled_graph_variable: Compiled graph variable name, normally graph\n"
+                "10. checkpointing: Whether to enable checkpointing\n\n"
                 "Return a JSON object with this structure:\n"
                 "{\n"
                 '  "state_schema": {"field_name": "description"},\n'
-                '  "nodes": [{"name": "node_name", "purpose": "description"}],\n'
+                '  "nodes": [{"name": "node_name", "purpose": "description", '
+                '"role": "router|worker|direct_specialist|tool_executor", '
+                '"domain_terms": ["domain_term"], "required_tools": ["tool_id"]}],\n'
                 '  "edges": [{"from": "node_a", "to": "node_b"}],\n'
                 '  "conditional_edges": [\n'
                 "    {\n"
@@ -105,7 +113,25 @@ class GraphDesigner:
                 '      "branches": {"branch_name": "target_node", "FINISH": "END"}\n'
                 "    }\n"
                 "  ],\n"
+                '  "command_routes": [\n'
+                "    {\n"
+                '      "source": "node_name",\n'
+                '      "destinations": ["target_node", "END"],\n'
+                '      "update_fields": ["route_or_next_agent"],\n'
+                '      "condition": "Command route condition"\n'
+                "    }\n"
+                "  ],\n"
+                '  "tool_reachability": [\n'
+                "    {\n"
+                '      "tool_id": "tool_name",\n'
+                '      "execution_path": "deterministic_node|tool_node|manual_loop|create_react_agent|omitted_demo_only",\n'
+                '      "node": "node_name",\n'
+                '      "rationale": "How the graph can execute this tool, or why it is intentionally omitted"\n'
+                "    }\n"
+                "  ],\n"
+                '  "domain_terms": ["domain_term"],\n'
                 '  "entry_point": "start_node",\n'
+                '  "compiled_graph_variable": "graph",\n'
                 '  "checkpointing": true\n'
                 "}\n"
             )
@@ -128,7 +154,9 @@ class GraphDesigner:
         try:
             response = await self.llm.ainvoke([design_prompt, user_message])
             payload = extract_json_from_llm_response(response.content)
-            live_result = normalize_graph_design(payload, architecture_type, registration)
+            live_result = normalize_graph_design(
+                payload, architecture_type, registration
+            )
             if not live_result.domain_terms:
                 live_result = live_result.model_copy(
                     update={"domain_terms": domain_terms_for_constraints(constraints)}
@@ -265,7 +293,9 @@ class GraphDesigner:
                 status_code=500,
             )
 
-        warnings = [f"Recovered using deterministic {registration.architecture_id} fallback."]
+        warnings = [
+            f"Recovered using deterministic {registration.architecture_id} fallback."
+        ]
         return self._finalize_result(
             fallback_result,
             registration,

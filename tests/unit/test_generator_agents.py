@@ -150,7 +150,9 @@ async def test_qa_repair_agent_validate_uses_shared_notebook_validator():
     agent = qa_repair_agent.QARepairAgent()
     reports = await agent.validate(
         [
-            CellSpec(cell_type="markdown", content="## Graph", metadata={"section": "graph"}),
+            CellSpec(
+                cell_type="markdown", content="## Graph", metadata={"section": "graph"}
+            ),
             CellSpec(
                 cell_type="code",
                 content="graph_hint = 'StateGraph'\nprint(graph_hint)",
@@ -159,7 +161,9 @@ async def test_qa_repair_agent_validate_uses_shared_notebook_validator():
         ]
     )
 
-    graph_report = next(report for report in reports if report.check_name == "Graph Compilation")
+    graph_report = next(
+        report for report in reports if report.check_name == "Graph Compilation"
+    )
 
     assert graph_report.rule_id == "graph_structure"
     assert graph_report.passed is False
@@ -225,7 +229,13 @@ def test_architecture_registration_normalizes_pattern_and_query_lists():
     registration = ArchitectureRegistration(
         architecture_id=" Custom_Router ",
         selector_prompt_description=" Custom router variant. ",
-        default_secondary_patterns=[" Router ", "", "subagents", "router", "subagents "],
+        default_secondary_patterns=[
+            " Router ",
+            "",
+            "subagents",
+            "router",
+            "subagents ",
+        ],
         docs_queries=[" custom docs ", "", "custom docs", "other docs"],
     ).normalized()
 
@@ -274,7 +284,10 @@ async def test_requirements_analyst_parsing(monkeypatch):
     analysis = await analyst.analyze("x")
     assert analysis.constraints[0].value == "from-json"
     assert analysis.constraints[0].confidence == pytest.approx(0.92)
-    assert analysis.constraints[0].explanation == "Prompt clearly asks for this deliverable."
+    assert (
+        analysis.constraints[0].explanation
+        == "Prompt clearly asks for this deliverable."
+    )
     assert analysis.feedback.fallback_used is False
     assert "goal" in analysis.feedback.available_constraint_types
     assert "environment" in analysis.feedback.available_constraint_types
@@ -387,17 +400,23 @@ async def test_requirements_analyst_detects_conflicts_and_missing_inputs(monkeyp
     )
 
     analyst = requirements_analyst.RequirementsAnalyst()
-    analysis = await analyst.analyze("Build an agent notebook with conflicting model instructions")
+    analysis = await analyst.analyze(
+        "Build an agent notebook with conflicting model instructions"
+    )
 
     assert analysis.feedback.fallback_used is False
     assert "environment" in analysis.feedback.missing_inputs
     assert analysis.feedback.conflicts
-    assert any("runtime" in conflict.lower() for conflict in analysis.feedback.conflicts)
+    assert any(
+        "runtime" in conflict.lower() for conflict in analysis.feedback.conflicts
+    )
     assert analysis.feedback.suggestions
 
 
 @pytest.mark.asyncio
-async def test_requirements_analyst_uses_configured_constraint_type_registry(monkeypatch):
+async def test_requirements_analyst_uses_configured_constraint_type_registry(
+    monkeypatch,
+):
     """Configured extra requirement types should appear in the prompt registry and feedback."""
     captured_messages = []
     monkeypatch.setattr(
@@ -614,7 +633,9 @@ async def test_architecture_selector_normalizes_pattern_primary(monkeypatch):
         "single_router_with_specialist_handlers",
     ],
 )
-async def test_architecture_selector_normalizes_known_router_aliases(alias, monkeypatch):
+async def test_architecture_selector_normalizes_known_router_aliases(
+    alias, monkeypatch
+):
     """Known router-like model ids should normalize without user-visible fallback."""
 
     payload = f"""
@@ -808,7 +829,10 @@ async def test_architecture_selector_uses_registry_weighted_docs_and_limit(monke
         "shared.md#Overview",
         "subagents.md#Team",
     ]
-    assert "Subagent team guidance should win the dedupe race." in captured_messages[0][1].content
+    assert (
+        "Subagent team guidance should win the dedupe race."
+        in captured_messages[0][1].content
+    )
     assert "AutoAgent notes." not in captured_messages[0][1].content
 
 
@@ -850,7 +874,10 @@ async def test_architecture_selector_uses_docs_context_when_registry_retrieval_i
     )
 
     assert result.feedback.docs_considered == ["rag.md#Useful"]
-    assert "Existing RAG docs should still inform the selector prompt." in captured_messages[0][1].content
+    assert (
+        "Existing RAG docs should still inform the selector prompt."
+        in captured_messages[0][1].content
+    )
 
 
 @pytest.mark.asyncio
@@ -921,7 +948,9 @@ async def test_architecture_selector_dedupes_blank_metadata_by_content(monkeypat
 
 
 @pytest.mark.asyncio
-async def test_architecture_selector_uses_programmatically_registered_metadata(monkeypatch):
+async def test_architecture_selector_uses_programmatically_registered_metadata(
+    monkeypatch,
+):
     """Programmatic registry entries should participate in selector prompt/doc metadata."""
     captured_messages = []
     retriever = StubDocsRetriever(
@@ -971,9 +1000,15 @@ async def test_architecture_selector_uses_programmatically_registered_metadata(m
         [],
     )
 
-    assert any(query == "LangGraph research team orchestration" for query, _k in retriever.queries)
+    assert any(
+        query == "LangGraph research team orchestration"
+        for query, _k in retriever.queries
+    )
     assert "research_team" in captured_messages[0][0].content
-    assert "Research team architecture for discovery-heavy workflows." in captured_messages[0][0].content
+    assert (
+        "Research team architecture for discovery-heavy workflows."
+        in captured_messages[0][0].content
+    )
 
 
 @pytest.mark.asyncio
@@ -996,7 +1031,11 @@ async def test_architecture_selector_normalizes_hybrid_secondary_patterns(monkey
     )
     selector = architecture_selector.ArchitectureSelector()
     result = await selector.select_architecture(
-        [Constraint(type="goal", value="Mix direct specialists with a team path", priority=5)],
+        [
+            Constraint(
+                type="goal", value="Mix direct specialists with a team path", priority=5
+            )
+        ],
         [],
     )
 
@@ -1073,6 +1112,55 @@ async def test_graph_designer_returns_typed_result_with_exports(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_graph_designer_prompt_requests_canonical_contract_fields(monkeypatch):
+    """Live GraphDesigner prompt should ask for every canonical graph contract field."""
+
+    payload = """
+    {
+      "state_schema": {"messages": "Conversation state"},
+      "nodes": [
+        {"name": "router", "purpose": "Route requests", "role": "router"}
+      ],
+      "edges": [],
+      "conditional_edges": [],
+      "command_routes": [],
+      "tool_reachability": [],
+      "domain_terms": ["support"],
+      "entry_point": "router",
+      "compiled_graph_variable": "graph",
+      "checkpointing": false
+    }
+    """
+    captured_messages = []
+    monkeypatch.setattr(
+        graph_designer,
+        "ChatOpenAI",
+        make_recording_llm(payload, captured_messages),
+    )
+
+    designer = graph_designer.GraphDesigner()
+    await designer.design_workflow(
+        {
+            "architecture_type": "router",
+            "justification": "Routing is sufficient.",
+            "selected_patterns": {"primary": "router", "secondary": []},
+        },
+        [Constraint(type="goal", value="Build a support router workflow", priority=5)],
+    )
+
+    system_prompt = captured_messages[0][0].content
+    for field_name in [
+        "role",
+        "domain_terms",
+        "required_tools",
+        "command_routes",
+        "tool_reachability",
+        "compiled_graph_variable",
+    ]:
+        assert field_name in system_prompt
+
+
+@pytest.mark.asyncio
 async def test_graph_designer_falls_back_for_invalid_live_graph(monkeypatch):
     """Invalid live graph payloads should trigger validated fallback feedback."""
 
@@ -1107,8 +1195,12 @@ async def test_graph_designer_falls_back_for_invalid_live_graph(monkeypatch):
     assert isinstance(result, GraphDesignResult)
     assert result.feedback.fallback_used is True
     assert result.feedback.fallback_reason
-    assert any("duplicate" in message.lower() for message in result.feedback.validation_errors)
-    assert any("missing_target" in message for message in result.feedback.validation_errors)
+    assert any(
+        "duplicate" in message.lower() for message in result.feedback.validation_errors
+    )
+    assert any(
+        "missing_target" in message for message in result.feedback.validation_errors
+    )
     assert result.entry_point == "router"
     assert "flowchart TD" in result.exports.mermaid
 
@@ -1380,7 +1472,9 @@ def test_graph_design_registry_surfaces_plugin_import_failures(monkeypatch):
         get_graph_design_registry(plugin_modules=("broken_graph_plugin",))
 
 
-def test_graph_designer_hybrid_fallback_contains_router_supervisor_and_team(monkeypatch):
+def test_graph_designer_hybrid_fallback_contains_router_supervisor_and_team(
+    monkeypatch,
+):
     """Hybrid fallback should produce a real mixed routing/team workflow shape."""
     monkeypatch.setattr(
         graph_designer,
@@ -1396,15 +1490,20 @@ def test_graph_designer_hybrid_fallback_contains_router_supervisor_and_team(monk
     assert node_names.count("supervisor") == 1
     assert node_names.count("finish") == 1
     assert len([name for name in node_names if name.startswith("specialist_")]) >= 1
-    assert len(
-        [
-            name
-            for name in node_names
-            if name not in {"router", "supervisor", "finish"}
-            and not name.startswith("specialist_")
-        ]
-    ) >= 2
-    router_edges = [edge for edge in result["conditional_edges"] if edge["from"] == "router"]
+    assert (
+        len(
+            [
+                name
+                for name in node_names
+                if name not in {"router", "supervisor", "finish"}
+                and not name.startswith("specialist_")
+            ]
+        )
+        >= 2
+    )
+    router_edges = [
+        edge for edge in result["conditional_edges"] if edge["from"] == "router"
+    ]
     supervisor_edges = [
         edge for edge in result["conditional_edges"] if edge["from"] == "supervisor"
     ]
@@ -1458,12 +1557,15 @@ def test_graph_design_exports_escape_mermaid_labels():
     assert "<br/>" in exports.mermaid
 
 
-
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("payload", "expected_count", "expected_fallback"),
     [
-        ('[{"name":"search","category":"search","purpose":"x","configuration":{}}]', 1, False),
+        (
+            '[{"name":"search","category":"search","purpose":"x","configuration":{}}]',
+            1,
+            False,
+        ),
         ("invalid", 0, True),
     ],
 )
@@ -1695,7 +1797,10 @@ async def test_toolchain_engineer_prompt_catalog_comes_from_registry(monkeypatch
     await engineer.plan_tools({"nodes": []}, [])
 
     system_prompt = captured_messages[0][0].content
-    assert "- plugin_tool: Custom plugin-only capability for specialized workflows." in system_prompt
+    assert (
+        "- plugin_tool: Custom plugin-only capability for specialized workflows."
+        in system_prompt
+    )
     assert "- tool_id: Canonical tool identifier or supported alias" in system_prompt
     assert "- name: Human-readable display name for the tool" in system_prompt
 
@@ -1743,7 +1848,11 @@ async def test_toolchain_engineer_blocks_network_tools_for_offline_constraints(
     engineer = toolchain_engineer.ToolchainEngineer()
     result = await engineer.plan_tools(
         {"nodes": [{"name": "research", "purpose": "Search docs and fetch APIs"}]},
-        [Constraint(type="environment", value="Offline only, no network access", priority=5)],
+        [
+            Constraint(
+                type="environment", value="Offline only, no network access", priority=5
+            )
+        ],
     )
 
     statuses = {tool.tool_id: tool.status for tool in result.tools}
@@ -1816,7 +1925,11 @@ async def test_toolchain_engineer_honors_plugin_environment_metadata(
     engineer = toolchain_engineer.ToolchainEngineer(registry=registry)
     result = await engineer.plan_tools(
         {"nodes": [{"name": "fetch", "purpose": "Call internal APIs and search docs"}]},
-        [Constraint(type="environment", value="Firewalled internal only runtime", priority=5)],
+        [
+            Constraint(
+                type="environment", value="Firewalled internal only runtime", priority=5
+            )
+        ],
     )
 
     statuses = {tool.tool_id: tool.status for tool in result.tools}
@@ -1864,7 +1977,9 @@ async def test_toolchain_engineer_blocks_non_notebook_safe_tools_for_jupyter(
     )
 
     assert result.tools[0].status == "unsupported"
-    assert any("notebook-safe tools" in note for note in result.feedback.environment_notes)
+    assert any(
+        "notebook-safe tools" in note for note in result.feedback.environment_notes
+    )
     assert result.feedback.unresolved_tools == ["shell_runner"]
 
 
@@ -1953,7 +2068,9 @@ async def test_toolchain_engineer_keeps_conflicting_tool_configs_separate(
         "multiple configurations" in message
         for message in result.feedback.dependency_conflicts
     )
-    assert any("pdf_parser" in message for message in result.feedback.dependency_conflicts)
+    assert any(
+        "pdf_parser" in message for message in result.feedback.dependency_conflicts
+    )
 
 
 def test_package_import_probe_maps_non_module_distribution_names():

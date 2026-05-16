@@ -9,7 +9,16 @@ import json
 import re
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional, Protocol, Sequence, runtime_checkable
+from typing import (
+    Any,
+    Dict,
+    Iterable,
+    List,
+    Optional,
+    Protocol,
+    Sequence,
+    runtime_checkable,
+)
 
 import nbformat
 from nbformat import NotebookNode
@@ -139,12 +148,12 @@ def _has_deny_by_default_http_guard(
             term in test_text or any(term in name for name in names)
             for term in guard_terms
         )
-        denies_request = any(
-            isinstance(descendant, (ast.Raise, ast.Return))
+        blocks_request = any(
+            isinstance(descendant, ast.Raise)
             for statement in child.body
             for descendant in ast.walk(statement)
         )
-        if references_target and references_guard and denies_request:
+        if references_target and references_guard and blocks_request:
             return True
     return False
 
@@ -465,7 +474,9 @@ class RequiredImportsRule(QAValidationRule):
         missing_symbols: List[str] = []
         for symbol in self.required_symbols:
             if symbol == "langgraph":
-                if not any(module.startswith("langgraph") for module in imported_modules):
+                if not any(
+                    module.startswith("langgraph") for module in imported_modules
+                ):
                     missing_symbols.append(symbol)
             elif symbol not in imported_names:
                 missing_symbols.append(symbol)
@@ -632,7 +643,9 @@ class UndefinedNameRule(QAValidationRule):
                     currently_defined.add(alias.asname or alias.name)
                 return
 
-            if isinstance(statement, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            if isinstance(
+                statement, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)
+            ):
                 currently_defined.add(statement.name)
                 return
 
@@ -793,7 +806,10 @@ class GraphStructureRule(QAValidationRule):
             elif call_name.endswith(".set_finish_point"):
                 terminal_calls.append(call_evidence)
             elif call_name.endswith(".add_conditional_edges"):
-                for argument in [*node.args, *(keyword.value for keyword in node.keywords)]:
+                for argument in [
+                    *node.args,
+                    *(keyword.value for keyword in node.keywords),
+                ]:
                     if isinstance(argument, ast.Dict):
                         for value in argument.values:
                             if _node_is_symbol(value, "END"):
@@ -970,7 +986,9 @@ class LangGraphTopologyRule(QAValidationRule):
             if call_name.endswith(".add_node") and node.args:
                 node_id = _literal_string(node.args[0])
                 if node_id:
-                    handler_name = _call_name(node.args[1]) if len(node.args) > 1 else ""
+                    handler_name = (
+                        _call_name(node.args[1]) if len(node.args) > 1 else ""
+                    )
                     node_registrations.append(
                         {
                             "node": node_id,
@@ -1211,7 +1229,9 @@ class StateReducerSemanticsRule(QAValidationRule):
                 for key in _dict_string_keys(value):
                     writer_map.setdefault(key, set()).add(function_name)
                 return
-            if isinstance(value, ast.Call) and _call_name(value.func).endswith("Command"):
+            if isinstance(value, ast.Call) and _call_name(value.func).endswith(
+                "Command"
+            ):
                 for keyword in value.keywords:
                     if keyword.arg == "update" and isinstance(keyword.value, ast.Dict):
                         for key in _dict_string_keys(keyword.value):
@@ -1258,7 +1278,9 @@ class StateReducerSemanticsRule(QAValidationRule):
                                     "instead of a partial update."
                                 ),
                                 "function": node.name,
-                                **context.resolve_line(getattr(statement, "lineno", None)),
+                                **context.resolve_line(
+                                    getattr(statement, "lineno", None)
+                                ),
                             }
                         )
                     if not registered_node_functions or is_registered_node:
@@ -1299,7 +1321,9 @@ class StateReducerSemanticsRule(QAValidationRule):
                     "issues": issues,
                     "warnings": warnings,
                     "state_fields": state_fields,
-                    "writer_map": {key: sorted(value) for key, value in writer_map.items()},
+                    "writer_map": {
+                        key: sorted(value) for key, value in writer_map.items()
+                    },
                 },
             )
 
@@ -1318,7 +1342,9 @@ class StateReducerSemanticsRule(QAValidationRule):
                 evidence={
                     "warnings": warnings,
                     "state_fields": state_fields,
-                    "writer_map": {key: sorted(value) for key, value in writer_map.items()},
+                    "writer_map": {
+                        key: sorted(value) for key, value in writer_map.items()
+                    },
                 },
             )
 
@@ -1353,7 +1379,9 @@ class ToolReachabilityRule(QAValidationRule):
 
         for node in ast.walk(tree):
             if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                decorators = {_call_name(decorator) for decorator in node.decorator_list}
+                decorators = {
+                    _call_name(decorator) for decorator in node.decorator_list
+                }
                 docstring = ast.get_docstring(node) or ""
                 is_tool = "tool" in decorators or any(
                     decorator.endswith(".tool") for decorator in decorators
@@ -1365,7 +1393,10 @@ class ToolReachabilityRule(QAValidationRule):
                         **context.resolve_line(getattr(node, "lineno", None)),
                     }
                     lowered_doc = docstring.lower()
-                    if "placeholder" in lowered_doc or "auxiliary context lookup" in lowered_doc:
+                    if (
+                        "placeholder" in lowered_doc
+                        or "auxiliary context lookup" in lowered_doc
+                    ):
                         advisories.append(
                             {
                                 "code": "placeholder_tool_description",
@@ -1436,7 +1467,9 @@ class ToolReachabilityRule(QAValidationRule):
                     elif isinstance(argument, ast.List):
                         bound_tools.update(
                             name
-                            for name in (_call_name(element) for element in argument.elts)
+                            for name in (
+                                _call_name(element) for element in argument.elts
+                            )
                             if name
                         )
             elif call_name.endswith("create_react_agent"):
@@ -1461,7 +1494,9 @@ class ToolReachabilityRule(QAValidationRule):
                     reachable_tools.update(list_assignments.get(argument.id, set()))
                 elif isinstance(argument, ast.List):
                     reachable_tools.update(
-                        name for name in (_call_name(element) for element in argument.elts) if name
+                        name
+                        for name in (_call_name(element) for element in argument.elts)
+                        if name
                     )
 
         for tool_name in sorted(tool_functions):
@@ -1664,7 +1699,9 @@ class InvocationConfigRule(QAValidationRule):
                 }
             keys = _dict_string_keys(resolved)
             configurable = _dict_value_for_key(resolved, "configurable")
-            configurable_keys = _dict_string_keys(configurable) if configurable else set()
+            configurable_keys = (
+                _dict_string_keys(configurable) if configurable else set()
+            )
             return {
                 "has_config": True,
                 "has_thread_id": "thread_id" in configurable_keys,
@@ -1698,7 +1735,10 @@ class InvocationConfigRule(QAValidationRule):
             if config_node is None:
                 if method in {"get_state", "aget_state"} and node.args:
                     config_node = node.args[0]
-                elif method in {"invoke", "ainvoke", "stream", "astream"} and len(node.args) >= 2:
+                elif (
+                    method in {"invoke", "ainvoke", "stream", "astream"}
+                    and len(node.args) >= 2
+                ):
                     config_node = node.args[1]
 
             status = _config_status(config_node)
@@ -1941,7 +1981,9 @@ class NotebookValidator:
 
         try:
             context = self._context_from_path(notebook_path)
-            return self.registry.get("placeholder_content").validate(context) or QAReport(
+            return self.registry.get("placeholder_content").validate(
+                context
+            ) or QAReport(
                 check_name="No Placeholders",
                 passed=True,
                 message="No placeholders found in notebook.",
@@ -2015,7 +2057,9 @@ class NotebookValidator:
                 severity="error",
                 category="imports",
                 repairable=True,
-                suggestions=["Verify notebook code cells can be parsed for import analysis."],
+                suggestions=[
+                    "Verify notebook code cells can be parsed for import analysis."
+                ],
                 evidence={"error_type": type(exc).__name__},
             )
 

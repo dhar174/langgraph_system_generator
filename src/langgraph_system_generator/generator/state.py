@@ -28,7 +28,9 @@ def normalize_constraint_type(value: str) -> str:
     return value.strip().lower().replace("-", "_").replace(" ", "_")
 
 
-def build_constraint_type_registry(extra_types: Optional[List[str]] = None) -> List[str]:
+def build_constraint_type_registry(
+    extra_types: Optional[List[str]] = None,
+) -> List[str]:
     """Build the ordered, de-duplicated registry of supported constraint types."""
 
     registry: List[str] = []
@@ -279,7 +281,9 @@ class GraphToolReachabilitySpec(BaseModel):
         "create_react_agent",
         "demo_only",
         "omitted",
-    ] = Field(description="How the generated graph can execute or intentionally omit the tool.")
+    ] = Field(
+        description="How the generated graph can execute or intentionally omit the tool."
+    )
     node: Optional[str] = Field(
         default=None,
         description="Node that owns the execution path, when applicable.",
@@ -420,9 +424,7 @@ class GraphDesignResult(BaseModel):
             "conditional_edges": [
                 edge.model_dump(by_alias=True) for edge in self.conditional_edges
             ],
-            "command_routes": [
-                route.model_dump() for route in self.command_routes
-            ],
+            "command_routes": [route.model_dump() for route in self.command_routes],
             "tool_reachability": [
                 reachability.model_dump() for reachability in self.tool_reachability
             ],
@@ -527,6 +529,10 @@ class DocSnippet(BaseModel):
 
     content: str = Field(description="Documentation content text")
     source: str = Field(description="Source URL or identifier")
+    source_kind: Optional[str] = Field(
+        default=None,
+        description="Explicit provenance category for docs source ranking.",
+    )
     relevance_score: float = Field(
         default=0.0, description="Relevance score from retrieval"
     )
