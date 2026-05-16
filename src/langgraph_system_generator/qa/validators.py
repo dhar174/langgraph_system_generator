@@ -86,6 +86,69 @@ def _dict_string_keys(node: ast.AST) -> set[str]:
     return keys
 
 
+def _referenced_names(node: ast.AST) -> set[str]:
+    """Collect best-effort symbol and attribute names referenced by a node."""
+
+    names: set[str] = set()
+    for child in ast.walk(node):
+        if isinstance(child, ast.Name):
+            names.add(child.id)
+        elif isinstance(child, ast.Attribute):
+            names.add(child.attr)
+            dotted_name = _call_name(child)
+            if dotted_name:
+                names.add(dotted_name)
+    return names
+
+
+def _has_deny_by_default_http_guard(
+    node: ast.FunctionDef | ast.AsyncFunctionDef,
+    broad_arg_names: set[str],
+) -> bool:
+    """Return True when a network tool enforces an allowlist-style guard."""
+
+    guard_terms = {
+        "allowlist",
+        "allow_list",
+        "allowlisted",
+        "allowed",
+        "approved",
+        "trusted",
+        "deny",
+        "block",
+        "blocked",
+    }
+    target_terms = {
+        "host",
+        "hostname",
+        "domain",
+        "endpoint",
+        "netloc",
+        *broad_arg_names,
+    }
+
+    for child in ast.walk(node):
+        if not isinstance(child, ast.If):
+            continue
+        test_text = ast.unparse(child.test).lower()
+        names = {name.lower() for name in _referenced_names(child.test)}
+        references_target = bool(names & target_terms) or any(
+            term in test_text for term in target_terms
+        )
+        references_guard = any(
+            term in test_text or any(term in name for name in names)
+            for term in guard_terms
+        )
+        denies_request = any(
+            isinstance(descendant, (ast.Raise, ast.Return))
+            for statement in child.body
+            for descendant in ast.walk(statement)
+        )
+        if references_target and references_guard and denies_request:
+            return True
+    return False
+
+
 def _dict_value_for_key(node: ast.AST, key_name: str) -> ast.AST | None:
     """Return a dictionary value for a literal string key."""
 
@@ -1154,13 +1217,39 @@ class StateReducerSemanticsRule(QAValidationRule):
                         for key in _dict_string_keys(keyword.value):
                             writer_map.setdefault(key, set()).add(function_name)
 
+        def _registered_node_function_names() -> set[str]:
+            node_functions: set[str] = set()
+            for call in ast.walk(tree):
+                if not isinstance(call, ast.Call):
+                    continue
+                if not _call_name(call.func).endswith("add_node"):
+                    continue
+                function_arg = None
+                if len(call.args) >= 2:
+                    function_arg = call.args[1]
+                elif len(call.args) == 1:
+                    function_arg = call.args[0]
+                if function_arg is None:
+                    continue
+                function_name = _call_name(function_arg)
+                if function_name:
+                    node_functions.add(function_name.rsplit(".", 1)[-1])
+            return node_functions
+
+        registered_node_functions = _registered_node_function_names()
+
         for node in ast.walk(tree):
             if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 continue
             has_state_arg = bool(node.args.args and node.args.args[0].arg == "state")
+            is_registered_node = node.name in registered_node_functions
             for statement in ast.walk(node):
                 if isinstance(statement, ast.Return):
-                    if has_state_arg and _records_full_state_copy(statement.value):
+                    if (
+                        is_registered_node
+                        and has_state_arg
+                        and _records_full_state_copy(statement.value)
+                    ):
                         issues.append(
                             {
                                 "code": "full_state_overwrite",
@@ -1172,7 +1261,8 @@ class StateReducerSemanticsRule(QAValidationRule):
                                 **context.resolve_line(getattr(statement, "lineno", None)),
                             }
                         )
-                    _record_return_keys(node.name, statement.value)
+                    if not registered_node_functions or is_registered_node:
+                        _record_return_keys(node.name, statement.value)
 
         for field_name, writers in sorted(writer_map.items()):
             field = state_fields.get(field_name)
@@ -1287,29 +1377,33 @@ class ToolReachabilityRule(QAValidationRule):
                     broad_network_arg = bool(
                         arg_names & {"url", "uri", "endpoint", "host", "domain"}
                     )
+                    broad_network_arg_names = arg_names & {
+                        "url",
+                        "uri",
+                        "endpoint",
+                        "host",
+                        "domain",
+                    }
                     uses_network_client = any(
                         isinstance(child, ast.Call)
                         and _call_name(child.func).rsplit(".", 1)[0]
                         in {"requests", "httpx", "urllib.request"}
                         for child in ast.walk(node)
                     )
-                    has_safety_hint = any(
-                        phrase in lowered_doc
-                        for phrase in {
-                            "allowlist",
-                            "allow-list",
-                            "approved endpoint",
-                            "deny-by-default",
-                            "trusted",
-                        }
+                    has_safety_guard = _has_deny_by_default_http_guard(
+                        node, broad_network_arg_names
                     )
-                    if broad_network_arg and uses_network_client and not has_safety_hint:
+                    if (
+                        broad_network_arg
+                        and uses_network_client
+                        and not has_safety_guard
+                    ):
                         advisories.append(
                             {
                                 "code": "unsafe_http_tool",
                                 "message": (
                                     f"Tool '{node.name}' accepts broad network targets "
-                                    "without documenting an allowlist or deny-by-default guard."
+                                    "without enforcing an allowlist or deny-by-default guard."
                                 ),
                                 "tool": node.name,
                             }

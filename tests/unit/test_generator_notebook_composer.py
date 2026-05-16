@@ -1614,6 +1614,66 @@ def test_graph_fallback_uses_sanitized_function_references(
     compile(graph_code, "<graph_fallback>", "exec")
 
 
+def test_graph_fallback_lowers_command_routes_to_conditional_edges(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    monkeypatch.setattr(composer_module, "ChatOpenAI", DummyLLM)
+    composer = composer_module.NotebookComposer()
+
+    graph_code = composer._generate_graph_fallback(
+        {
+            "entry_point": "planner",
+            "nodes": [
+                {"name": "planner"},
+                {"name": "reviewer"},
+            ],
+            "command_routes": [
+                {
+                    "source": "planner",
+                    "destinations": ["reviewer", "END"],
+                    "update_fields": ["next_agent"],
+                }
+            ],
+        }
+    )
+
+    assert "_command_route_from_planner_0_path_map" in graph_code
+    assert '"reviewer": "reviewer"' in graph_code
+    assert '"__end__": END' in graph_code
+    assert 'state.get("next_agent")' in graph_code
+    assert (
+        'workflow.add_conditional_edges("planner", _command_route_from_planner_0, '
+        "_command_route_from_planner_0_path_map)"
+    ) in graph_code
+    compile(graph_code, "<graph_fallback_command_routes>", "exec")
+
+
+def test_split_hybrid_nodes_uses_role_metadata_for_worker_membership():
+    direct, direct_descriptions, workers, worker_descriptions = (
+        composer_module.NotebookComposer._split_hybrid_nodes(
+            [
+                {"name": "router", "purpose": "Route requests"},
+                {"name": "supervisor", "purpose": "Coordinate workers"},
+                {
+                    "name": "claims_intake",
+                    "purpose": "Handle direct claims triage",
+                    "role": "direct_specialist",
+                },
+                {
+                    "name": "claims_qa",
+                    "purpose": "Review claim handling quality",
+                    "role": "worker",
+                },
+            ]
+        )
+    )
+
+    assert direct == ["claims_intake"]
+    assert "claims_intake" in direct_descriptions
+    assert "claims_qa" in workers
+    assert "claims_qa" in worker_descriptions
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "architecture_type",

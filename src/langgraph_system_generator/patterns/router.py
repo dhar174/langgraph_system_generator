@@ -143,7 +143,7 @@ Select the most appropriate route and explain your reasoning."""
         "route": decision.route,
         "route_reasoning": decision.reasoning,
         "route_history": [decision.route],
-        "messages": [HumanMessage(content=f"Routing to: {{decision.route}} ({{decision.reasoning}})")],
+        "messages": [AIMessage(content=f"Routing to: {{decision.route}} ({{decision.reasoning}})")],
     }}'''
         else:
             return f'''from langchain_openai import ChatOpenAI

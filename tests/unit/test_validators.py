@@ -492,13 +492,16 @@ def test_state_reducer_semantics_rule_rejects_full_state_overwrite(
     notebook = new_notebook()
     notebook.cells.append(
         new_code_cell(
-            """from langgraph.graph import MessagesState
+            """from langgraph.graph import MessagesState, StateGraph
 
 class WorkflowState(MessagesState):
     route: str
 
 def router_node(state: WorkflowState) -> dict:
     return {**state, "route": "artifact_cataloger"}
+
+workflow = StateGraph(WorkflowState)
+workflow.add_node("router", router_node)
 """,
             metadata={"section": "state"},
         )
@@ -511,6 +514,39 @@ def router_node(state: WorkflowState) -> dict:
 
     assert report.passed is False
     assert "full_state_overwrite" in issue_codes
+
+
+def test_state_reducer_semantics_rule_ignores_unregistered_state_helpers(
+    tmp_notebook_path: Path,
+):
+    notebook = new_notebook()
+    notebook.cells.append(
+        new_code_cell(
+            """from langgraph.graph import MessagesState, StateGraph
+
+class WorkflowState(MessagesState):
+    route: str
+
+def copy_state(state: WorkflowState) -> WorkflowState:
+    return state
+
+def router_node(state: WorkflowState) -> dict:
+    return {"route": "artifact_cataloger"}
+
+workflow = StateGraph(WorkflowState)
+workflow.add_node("router", router_node)
+""",
+            metadata={"section": "state"},
+        )
+    )
+    _write_notebook(tmp_notebook_path, notebook)
+
+    reports = NotebookValidator().validate_all(tmp_notebook_path)
+    report = _report_by_name(reports, "State Reducer Semantics")
+
+    assert report.passed is True
+    assert "route" in report.evidence["writer_map"]
+    assert "copy_state" not in report.evidence["writer_map"].get("route", [])
 
 
 def test_tool_reachability_rule_flags_unbound_placeholder_tools(tmp_notebook_path: Path):
@@ -567,6 +603,68 @@ result = fetch_url.invoke("https://example.com")
 
     assert report.passed is False
     assert "unsafe_http_tool" in issue_codes
+
+
+def test_tool_reachability_rule_rejects_docstring_only_http_safety(
+    tmp_notebook_path: Path,
+):
+    notebook = new_notebook()
+    notebook.cells.append(
+        new_code_cell(
+            """from langchain_core.tools import tool
+import requests
+
+@tool
+def fetch_url(url: str) -> str:
+    '''Fetch only trusted allowlist endpoints for context.'''
+    return requests.get(url, timeout=5).text
+
+result = fetch_url.invoke("https://example.com")
+""",
+            metadata={"section": "tools"},
+        )
+    )
+    _write_notebook(tmp_notebook_path, notebook)
+
+    reports = NotebookValidator().validate_all(tmp_notebook_path)
+    report = _report_by_name(reports, "Tool Reachability")
+    issue_codes = {issue["code"] for issue in report.evidence["advisories"]}
+
+    assert report.passed is False
+    assert "unsafe_http_tool" in issue_codes
+
+
+def test_tool_reachability_rule_accepts_enforced_http_allowlist(
+    tmp_notebook_path: Path,
+):
+    notebook = new_notebook()
+    notebook.cells.append(
+        new_code_cell(
+            """from langchain_core.tools import tool
+from urllib.parse import urlparse
+import requests
+
+ALLOWED_HOSTS = {"example.com"}
+
+@tool
+def fetch_url(url: str) -> str:
+    '''Fetch approved context from a bounded endpoint list.'''
+    host = urlparse(url).hostname
+    if host not in ALLOWED_HOSTS:
+        raise ValueError("Blocked unapproved host")
+    return requests.get(url, timeout=5).text
+
+result = fetch_url.invoke("https://example.com")
+""",
+            metadata={"section": "tools"},
+        )
+    )
+    _write_notebook(tmp_notebook_path, notebook)
+
+    reports = NotebookValidator().validate_all(tmp_notebook_path)
+    report = _report_by_name(reports, "Tool Reachability")
+
+    assert report.passed is True
 
 
 def test_domain_architecture_alignment_rule_rejects_generic_domain_nodes(

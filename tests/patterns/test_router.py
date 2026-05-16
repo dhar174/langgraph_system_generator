@@ -57,6 +57,9 @@ class TestRouterPatternCodeGeneration:
         assert "Literal" in code
         assert "Recent conversation (last {window_size} messages):" in code
         assert 'Resolve coreferences such as "it", "that", and "the one"' in code
+        assert "AIMessage" in code
+        assert 'AIMessage(content=f"Routing to:' in code
+        assert 'HumanMessage(content=f"Routing to:' not in code
 
     def test_generate_router_node_code_simple_output(self):
         """Test router node generation without structured output."""

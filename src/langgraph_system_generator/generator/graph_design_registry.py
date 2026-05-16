@@ -102,11 +102,23 @@ def _normalize_architecture_id(value: str) -> str:
     return normalized
 
 
-def _normalize_string_list(values: Iterable[str] | None) -> list[str]:
+def _normalize_string_list(values: Any) -> list[str]:
     """Return an ordered, de-duplicated list of non-empty strings."""
 
+    if values is None:
+        raw_values: Iterable[Any] = []
+    elif isinstance(values, str):
+        raw_values = [values]
+    elif isinstance(values, Mapping):
+        raw_values = values.values()
+    else:
+        try:
+            raw_values = list(values)
+        except TypeError:
+            raw_values = [values]
+
     normalized_values: list[str] = []
-    for raw_value in values or []:
+    for raw_value in raw_values:
         normalized = str(raw_value or "").strip()
         if normalized and normalized not in normalized_values:
             normalized_values.append(normalized)

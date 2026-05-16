@@ -1244,6 +1244,39 @@ def test_graph_design_exports_canonical_spec_metadata():
     assert "-." in exports.mermaid
 
 
+def test_graph_design_normalization_preserves_scalar_command_route_values():
+    """Scalar command route metadata should stay as one value, not character tokens."""
+
+    registration = get_graph_design_registry().get("router")
+    result = normalize_graph_design(
+        {
+            "architecture_type": "router",
+            "state_schema": {"route": "Selected route"},
+            "nodes": [
+                {
+                    "name": "router",
+                    "purpose": "Route the request",
+                    "role": "router",
+                }
+            ],
+            "command_routes": [
+                {
+                    "source": "router",
+                    "destinations": "END",
+                    "update_fields": "route",
+                    "condition": "Route directly to the terminal branch.",
+                }
+            ],
+            "entry_point": "router",
+        },
+        "router",
+        registration,
+    )
+
+    assert result.command_routes[0].destinations == ["END"]
+    assert result.command_routes[0].update_fields == ["route"]
+
+
 def test_graph_design_fallback_uses_domain_specific_roles():
     """Deterministic fallbacks should avoid generic specialists for domain prompts."""
 
