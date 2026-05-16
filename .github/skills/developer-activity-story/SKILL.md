@@ -49,9 +49,3 @@ summary.
 - Avoid inferring protected traits or private motivations.
 - Frame risks and gaps as workflow observations or follow-up questions, not as
   personal judgments.
-
-## Reviewer Instructions
-
-Score each draft from 1 to 5 on discovery quality, workflow usefulness, evidence
-discipline, privacy/fairness, and concision. Rank all three drafts. Suggest
-changes only for the draft you support with the highest score.
