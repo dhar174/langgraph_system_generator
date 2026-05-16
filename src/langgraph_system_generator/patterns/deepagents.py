@@ -200,7 +200,10 @@ graph = workflow.compile(checkpointer=memory)'''
 
 # Execute the workflow. Without `deepagents` and OPENAI_API_KEY, this uses the
 # deterministic fallback path so the notebook remains runnable offline.
-config = {"configurable": {"thread_id": "lnf-deepagents-demo"}}
+config = {
+    "configurable": {"thread_id": "lnf-deepagents-demo"},
+    "recursion_limit": 25,
+}
 initial_state: WorkflowState = {
     "messages": [HumanMessage(content="Plan and summarize a small research task.")],
     "task_plan": [],

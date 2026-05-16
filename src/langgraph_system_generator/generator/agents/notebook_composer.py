@@ -1745,8 +1745,8 @@ graph = workflow.compile(checkpointer=memory)"""
 
         exec_content = f"""from langchain_core.messages import HumanMessage
 
-# Execute the workflow with a durable thread
-config = {{"configurable": {{"thread_id": "lnf-demo-thread"}}}}
+# Execute the workflow with a durable thread and bounded graph recursion.
+config = {{"configurable": {{"thread_id": "lnf-demo-thread"}}, "recursion_limit": 25}}
 {initial_state_block}
 
 print("Streaming state updates:")

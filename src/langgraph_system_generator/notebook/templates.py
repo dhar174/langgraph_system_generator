@@ -219,7 +219,7 @@ def run_graph_cells(architecture_type: str | None = None) -> List[CellSpec]:
                         "`graph` is not defined. Please run the 'Build Graph' cell before this one."
                     )
 
-                config = {"configurable": {"thread_id": "lnf-demo-thread"}}
+                config = {"configurable": {"thread_id": "lnf-demo-thread"}, "recursion_limit": 25}
                 """).strip(),
             initial_state_block,
             "",
@@ -263,7 +263,7 @@ def export_results_cells() -> List[CellSpec]:
                 if compiled_graph is None:
                     raise NameError("`graph` is not defined. Run the 'Build Graph' cell before exporting results.")
 
-                config = {"configurable": {"thread_id": "lnf-demo-thread"}}
+                config = {"configurable": {"thread_id": "lnf-demo-thread"}, "recursion_limit": 25}
                 final_state_snapshot = globals().get("final_state")
                 if final_state_snapshot is not None:
                     output_data = final_state_snapshot

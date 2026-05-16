@@ -61,6 +61,15 @@ async def test_generate_artifacts_stub(tmp_path: Path, monkeypatch: pytest.Monke
     assert artifacts["manifest"]["graph_design_feedback"]["fallback_used"] is False
     assert "flowchart TD" in artifacts["manifest"]["graph_exports"]["mermaid"]
     assert artifacts["manifest"]["tool_planning_feedback"]["fallback_used"] is False
+    assert artifacts["manifest"]["generation_context_pack"]["source_precedence"][0] == (
+        "langchain-docs-local"
+    )
+    assert artifacts["manifest"]["generation_context_pack"]["notebook_contract"][
+        "compiled_graph_variable"
+    ] == "graph"
+    assert "invocation_config" in artifacts["manifest"]["generation_context_pack"][
+        "qa_gates"
+    ]
     assert artifacts["manifest"]["notebook_composition_feedback"]["fallback_used"] is False
     assert "langgraph" in artifacts["manifest"]["notebook_dependency_plan"]["packages"]
     assert artifacts["manifest"]["qa_repair_feedback"]["repair_attempts"] == 0
@@ -93,6 +102,8 @@ def test_default_state_includes_generation_mode_and_qa_history():
     assert state["graph_design_feedback"].fallback_used is False
     assert state["graph_exports"].schema == {}
     assert state["tool_planning_feedback"].fallback_used is False
+    assert state["generation_context_pack"].source_precedence[0] == "langchain-docs-local"
+    assert state["generation_context_pack"].request["generation_mode"] == "live"
     assert state["notebook_composition_feedback"].fallback_used is False
     assert state["notebook_dependency_plan"].packages == []
     assert state["qa_repair_feedback"].repair_attempts == 0

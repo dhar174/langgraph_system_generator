@@ -55,7 +55,7 @@ def _valid_graph_cells(*, execution_content: str | None = None) -> list[CellSpec
         ),
         CellSpec(
             cell_type="code",
-            content='config = {"configurable": {"thread_id": "demo"}}',
+            content='config = {"configurable": {"thread_id": "demo"}, "recursion_limit": 25}',
             metadata={"section": "config"},
             section="config",
         ),
@@ -77,7 +77,11 @@ def _valid_graph_cells(*, execution_content: str | None = None) -> list[CellSpec
         ),
         CellSpec(
             cell_type="code",
-            content=execution_content or "result = graph.invoke({})\nprint(result)",
+            content=execution_content
+            or (
+                'initial_state = {"messages": []}\n'
+                "result = graph.invoke(initial_state, config)\nprint(result)"
+            ),
             metadata={"section": "execution"},
             section="execution",
         ),
@@ -128,6 +132,11 @@ def test_default_registry_contains_builtin_validators_and_repairs():
         "python_syntax",
         "undefined_names",
         "graph_structure",
+        "canonical_section_order",
+        "langgraph_topology",
+        "state_reducer_semantics",
+        "tool_reachability",
+        "invocation_config",
     ]
     assert registry.registered_repair_routine_ids() == [
         "placeholder_cleanup",

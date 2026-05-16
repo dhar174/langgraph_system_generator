@@ -21,6 +21,7 @@ from langgraph_system_generator.generator.state import (
     build_constraint_type_registry,
     CellSpec,
     Constraint,
+    GenerationContextPack,
     GraphDesignFeedback,
     GraphExportBundle,
     NotebookCompositionFeedback,
@@ -85,6 +86,70 @@ def _available_tool_ids() -> List[str]:
     return get_tool_registry().supported_tool_ids()
 
 
+def _build_cli_context_pack(
+    prompt: str,
+    *,
+    architecture_type: str | None = None,
+    generation_mode: GenerationMode = "stub",
+) -> GenerationContextPack:
+    """Build the CLI/API generation context pack for shortcut paths."""
+
+    return GenerationContextPack(
+        request={
+            "prompt_excerpt": prompt[:500],
+            "generation_mode": generation_mode,
+            "constraints": [],
+        },
+        architecture_registry={
+            "supported_architecture_types": get_default_architecture_registry().supported_architecture_types(),
+            "default_architecture": "router",
+            "experimental_architectures": ["deepagents"],
+            **({"selected_architecture": architecture_type} if architecture_type else {}),
+        },
+        notebook_contract={
+            "canonical_sections": [
+                "intro",
+                "setup",
+                "config",
+                "state",
+                "tools",
+                "nodes",
+                "graph",
+                "execution",
+                "export",
+                "troubleshooting",
+            ],
+            "compiled_graph_variable": "graph",
+            "legacy_compiled_graph_fallback": "app",
+            "required_invocation_config": {
+                "configurable.thread_id": "required",
+                "recursion_limit": "required_top_level_key",
+            },
+            "final_notebook_qa_rules": [
+                "canonical_section_order",
+                "langgraph_topology",
+                "state_reducer_semantics",
+                "tool_reachability",
+                "invocation_config",
+            ],
+        },
+        qa_gates=[
+            "json_structure",
+            "python_syntax",
+            "graph_structure",
+            "langgraph_topology",
+            "state_reducer_semantics",
+            "tool_reachability",
+            "invocation_config",
+            "runtime_smoke_test",
+        ],
+        fallback_used=True,
+        warnings=[
+            "Shortcut generation path used static repo context facts; live docs retrieval is not required for stub mode."
+        ],
+    )
+
+
 def _default_state(
     prompt: str,
     generation_config: GenerationConfig | None = None,
@@ -114,6 +179,10 @@ def _default_state(
         "qa_repair_feedback": QARepairFeedback(),
         "selected_patterns": {},
         "docs_context": [],
+        "generation_context_pack": _build_cli_context_pack(
+            prompt,
+            generation_mode=generation_mode,
+        ),
         "notebook_plan": None,
         "architecture_justification": "",
         "architecture_type": None,
@@ -1132,6 +1201,11 @@ def _build_stub_result(prompt: str, agent_type: str | None = None) -> Dict[str, 
             "secondary": secondary_patterns,
         },
         "docs_context": [],
+        "generation_context_pack": _build_cli_context_pack(
+            prompt,
+            architecture_type=architecture_type,
+            generation_mode="stub",
+        ),
         "notebook_plan": plan,
         "architecture_type": plan.architecture_type,
         "architecture_justification": justification,
@@ -1255,6 +1329,13 @@ async def generate_artifacts(
     graph_design_feedback = serialized.get("graph_design_feedback") or {}
     graph_exports = serialized.get("graph_exports") or {}
     tool_planning_feedback = serialized.get("tool_planning_feedback") or {}
+    generation_context_pack = serialized.get("generation_context_pack") or (
+        _build_cli_context_pack(
+            prompt,
+            architecture_type=architecture_type,
+            generation_mode=mode,
+        ).model_dump()
+    )
     notebook_composition_feedback = (
         serialized.get("notebook_composition_feedback") or {}
     )
@@ -1275,6 +1356,7 @@ async def generate_artifacts(
         "graph_design_feedback": graph_design_feedback,
         "graph_exports": graph_exports,
         "tool_planning_feedback": tool_planning_feedback,
+        "generation_context_pack": generation_context_pack,
         "notebook_composition_feedback": notebook_composition_feedback,
         "notebook_dependency_plan": notebook_dependency_plan,
         "qa_repair_feedback": qa_repair_feedback,

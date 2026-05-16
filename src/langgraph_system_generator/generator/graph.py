@@ -8,6 +8,7 @@ from langgraph.graph import END, START, StateGraph
 
 from langgraph_system_generator.generator.nodes import (
     architecture_selection_node,
+    context_pack_node,
     graph_design_node,
     intake_node,
     notebook_assembly_node,
@@ -98,6 +99,7 @@ def create_generator_graph(*, generation_config=None) -> StateGraph:
     # Add all nodes
     workflow.add_node("intake", intake_node)
     workflow.add_node("rag_retrieval", rag_retrieval_node)
+    workflow.add_node("context_pack", context_pack_node)
     workflow.add_node("architecture_selection", architecture_selection_node)
     workflow.add_node("graph_design", graph_design_node)
     workflow.add_node("tooling_plan", tooling_plan_node)
@@ -111,7 +113,8 @@ def create_generator_graph(*, generation_config=None) -> StateGraph:
     workflow.add_edge(START, "intake")
     workflow.add_edge("intake", "rag_retrieval")
     workflow.add_edge("rag_retrieval", "architecture_selection")
-    workflow.add_edge("architecture_selection", "graph_design")
+    workflow.add_edge("architecture_selection", "context_pack")
+    workflow.add_edge("context_pack", "graph_design")
     workflow.add_edge("graph_design", "tooling_plan")
     workflow.add_edge("tooling_plan", "notebook_assembly")
     workflow.add_edge("notebook_assembly", "static_qa")

@@ -9,7 +9,7 @@ import json
 import re
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, Iterable, List, Optional, Protocol, Sequence, runtime_checkable
+from typing import Any, Dict, Iterable, List, Optional, Protocol, Sequence, runtime_checkable
 
 import nbformat
 from nbformat import NotebookNode
@@ -45,6 +45,10 @@ def _target_names(node: ast.AST) -> set[str]:
     names: set[str] = set()
     if isinstance(node, ast.Name):
         names.add(node.id)
+    elif isinstance(node, ast.Attribute):
+        target_name = _call_name(node)
+        if target_name:
+            names.add(target_name)
     elif isinstance(node, (ast.Tuple, ast.List)):
         for element in node.elts:
             names.update(_target_names(element))
@@ -59,6 +63,70 @@ def _node_is_symbol(node: ast.AST, symbol: str) -> bool:
     if isinstance(node, ast.Constant) and isinstance(node.value, str):
         return node.value == symbol
     return False
+
+
+def _literal_string(node: ast.AST) -> str | None:
+    """Return a string literal value when an AST node is a simple string."""
+
+    if isinstance(node, ast.Constant) and isinstance(node.value, str):
+        return node.value
+    return None
+
+
+def _dict_string_keys(node: ast.AST) -> set[str]:
+    """Return literal string keys from a dictionary AST node."""
+
+    if not isinstance(node, ast.Dict):
+        return set()
+    keys: set[str] = set()
+    for key in node.keys:
+        value = _literal_string(key) if key is not None else None
+        if value:
+            keys.add(value)
+    return keys
+
+
+def _dict_value_for_key(node: ast.AST, key_name: str) -> ast.AST | None:
+    """Return a dictionary value for a literal string key."""
+
+    if not isinstance(node, ast.Dict):
+        return None
+    for key, value in zip(node.keys, node.values):
+        if key is not None and _literal_string(key) == key_name:
+            return value
+    return None
+
+
+def _keyword_value(node: ast.Call, keyword_name: str) -> ast.AST | None:
+    """Return a keyword argument value from a call if present."""
+
+    for keyword in node.keywords:
+        if keyword.arg == keyword_name:
+            return keyword.value
+    return None
+
+
+def _annotation_uses_annotated(node: ast.AST | None) -> bool:
+    """Return True when a type annotation uses typing.Annotated."""
+
+    if node is None:
+        return False
+    if isinstance(node, ast.Subscript):
+        call_name = _call_name(node.value)
+        return call_name.endswith("Annotated")
+    return False
+
+
+def _class_base_names(node: ast.ClassDef) -> set[str]:
+    """Return dotted names for a class' base expressions."""
+
+    return {_call_name(base) for base in node.bases if _call_name(base)}
+
+
+def _is_graph_boundary_symbol(name: str) -> bool:
+    """Return True for START/END symbols, including dotted imports."""
+
+    return name in {"__end__"} or name.rsplit(".", 1)[-1] in {"START", "END"}
 
 
 @dataclass(frozen=True)
@@ -726,6 +794,722 @@ class GraphStructureRule(QAValidationRule):
                 "compile_calls": compile_calls,
                 "entrypoint_calls": entrypoint_calls,
                 "terminal_calls": terminal_calls,
+            },
+        )
+
+
+class CanonicalSectionOrderRule(QAValidationRule):
+    """Ensure generated notebook sections follow the public execution contract."""
+
+    rule_id = "canonical_section_order"
+    check_name = "Canonical Section Order"
+    category = "notebook_contract"
+    failure_severity = "error"
+    repairable = False
+
+    CANONICAL_ORDER = [
+        "intro",
+        "setup",
+        "config",
+        "state",
+        "tools",
+        "nodes",
+        "graph",
+        "execution",
+        "export",
+        "troubleshooting",
+    ]
+    SECTION_ALIASES = {"state_definition": "state"}
+
+    def validate(self, context: NotebookValidationContext) -> QAReport:
+        section_positions = {
+            section: index for index, section in enumerate(self.CANONICAL_ORDER)
+        }
+        seen_sections: list[dict[str, Any]] = []
+        last_position = -1
+        violations: list[dict[str, Any]] = []
+
+        for cell_index, cell in enumerate(context.notebook.cells):
+            raw_section = cell.metadata.get("section")
+            section = self.SECTION_ALIASES.get(raw_section, raw_section)
+            if section not in section_positions:
+                continue
+            position = section_positions[section]
+            seen_sections.append(
+                {
+                    "section": raw_section,
+                    "canonical_section": section,
+                    "cell_index": cell_index,
+                    "position": position,
+                }
+            )
+            if position < last_position:
+                violations.append(
+                    {
+                        "section": raw_section,
+                        "canonical_section": section,
+                        "cell_index": cell_index,
+                    }
+                )
+            last_position = max(last_position, position)
+
+        if violations:
+            return self.failed_report(
+                "Notebook sections are not in canonical order.",
+                suggestions=[
+                    "Render final notebooks in intro, setup, config, state, tools, nodes, graph, execution, export, troubleshooting order.",
+                    "Preserve leading unsectioned preamble cells before canonical sections.",
+                ],
+                evidence={
+                    "canonical_order": self.CANONICAL_ORDER,
+                    "seen_sections": seen_sections,
+                    "violations": violations,
+                },
+            )
+
+        return self.passed_report(
+            "Notebook sections follow the canonical execution order.",
+            evidence={
+                "canonical_order": self.CANONICAL_ORDER,
+                "seen_sections": seen_sections,
+            },
+        )
+
+
+class LangGraphTopologyRule(QAValidationRule):
+    """Validate final notebook graph topology beyond basic compile presence."""
+
+    rule_id = "langgraph_topology"
+    check_name = "LangGraph Topology"
+    category = "graph_structure"
+    failure_severity = "error"
+    repairable = False
+
+    def validate(self, context: NotebookValidationContext) -> Optional[QAReport]:
+        tree = context.ast_tree()
+        if tree is None:
+            return None
+
+        function_defs: dict[str, list[dict[str, object]]] = {}
+        node_registrations: list[dict[str, object]] = []
+        edge_registrations: list[dict[str, object]] = []
+
+        for node in ast.walk(tree):
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                function_defs.setdefault(node.name, []).append(
+                    context.resolve_line(getattr(node, "lineno", None))
+                )
+                continue
+
+            if not isinstance(node, ast.Call):
+                continue
+            call_name = _call_name(node.func)
+            if call_name.endswith(".add_node") and node.args:
+                node_id = _literal_string(node.args[0])
+                if node_id:
+                    handler_name = _call_name(node.args[1]) if len(node.args) > 1 else ""
+                    node_registrations.append(
+                        {
+                            "node": node_id,
+                            "handler": handler_name,
+                            **context.resolve_line(getattr(node, "lineno", None)),
+                        }
+                    )
+            elif call_name.endswith(".add_edge") and len(node.args) >= 2:
+                source = _literal_string(node.args[0]) or _call_name(node.args[0])
+                target = _literal_string(node.args[1]) or _call_name(node.args[1])
+                edge_registrations.append(
+                    {
+                        "source": source,
+                        "target": target,
+                        **context.resolve_line(getattr(node, "lineno", None)),
+                    }
+                )
+            elif call_name.endswith(".add_conditional_edges"):
+                source_arg = (
+                    node.args[0] if node.args else _keyword_value(node, "source")
+                )
+                path_map = (
+                    node.args[2]
+                    if len(node.args) >= 3
+                    else _keyword_value(node, "path_map")
+                )
+                source = (
+                    (_literal_string(source_arg) or _call_name(source_arg))
+                    if source_arg is not None
+                    else ""
+                )
+                if isinstance(path_map, ast.Dict):
+                    for value in path_map.values:
+                        target = _literal_string(value) or _call_name(value)
+                        if target:
+                            edge_registrations.append(
+                                {
+                                    "source": source,
+                                    "target": target,
+                                    "conditional": True,
+                                    **context.resolve_line(
+                                        getattr(node, "lineno", None)
+                                    ),
+                                }
+                            )
+
+        issues: list[dict[str, object]] = []
+        node_counts: dict[str, int] = {}
+        for registration in node_registrations:
+            node_id = str(registration["node"])
+            node_counts[node_id] = node_counts.get(node_id, 0) + 1
+        for node_id, count in sorted(node_counts.items()):
+            if count > 1:
+                issues.append(
+                    {
+                        "code": "duplicate_node_registration",
+                        "message": f"Duplicate graph node registration for '{node_id}'.",
+                        "node": node_id,
+                        "count": count,
+                    }
+                )
+
+        for function_name, occurrences in sorted(function_defs.items()):
+            if len(occurrences) > 1 and (
+                function_name.endswith("_node") or function_name in node_counts
+            ):
+                issues.append(
+                    {
+                        "code": "duplicate_node_function",
+                        "message": f"Duplicate node function definition '{function_name}'.",
+                        "function": function_name,
+                        "locations": occurrences,
+                    }
+                )
+
+        node_ids = set(node_counts)
+        edge_pairs: dict[tuple[str, str], int] = {}
+        for edge in edge_registrations:
+            source = str(edge.get("source") or "")
+            target = str(edge.get("target") or "")
+            if not source or not target:
+                continue
+            edge_pairs[(source, target)] = edge_pairs.get((source, target), 0) + 1
+            if (
+                source == target
+                and not _is_graph_boundary_symbol(target)
+                and not edge.get("conditional")
+            ):
+                issues.append(
+                    {
+                        "code": "unguarded_self_loop",
+                        "message": f"Unguarded self-loop '{source} -> {target}'.",
+                        "source": source,
+                        "target": target,
+                    }
+                )
+            if source not in node_ids and not _is_graph_boundary_symbol(source):
+                issues.append(
+                    {
+                        "code": "unknown_edge_source",
+                        "message": f"Edge source '{source}' is not a registered graph node.",
+                        "source": source,
+                    }
+                )
+            if target not in node_ids and not _is_graph_boundary_symbol(target):
+                issues.append(
+                    {
+                        "code": "unknown_edge_target",
+                        "message": f"Edge target '{target}' is not a registered graph node or END.",
+                        "target": target,
+                    }
+                )
+
+        for (source, target), count in sorted(edge_pairs.items()):
+            if count > 1:
+                issues.append(
+                    {
+                        "code": "duplicate_edge_registration",
+                        "message": f"Duplicate edge registration '{source} -> {target}'.",
+                        "source": source,
+                        "target": target,
+                        "count": count,
+                    }
+                )
+
+        if issues:
+            return self.failed_report(
+                "Invalid LangGraph topology detected in generated notebook code.",
+                suggestions=[
+                    "Generate each node function and workflow.add_node registration exactly once.",
+                    "Reject graph specs with unknown edge endpoints or unguarded terminal self-loops before notebook rendering.",
+                    "Ensure Mermaid/prose/code are based on the same validated graph spec.",
+                ],
+                evidence={
+                    "issues": issues,
+                    "node_registrations": node_registrations,
+                    "edge_registrations": edge_registrations,
+                },
+            )
+
+        return self.passed_report(
+            "No duplicate node registrations, invalid endpoints, or unguarded self-loops were detected.",
+            evidence={
+                "node_registrations": node_registrations,
+                "edge_registrations": edge_registrations,
+            },
+        )
+
+
+class StateReducerSemanticsRule(QAValidationRule):
+    """Validate state schemas preserve reducer-backed update semantics."""
+
+    rule_id = "state_reducer_semantics"
+    check_name = "State Reducer Semantics"
+    category = "state"
+    failure_severity = "error"
+    repairable = False
+
+    STATE_CLASS_NAMES = {"WorkflowState", "GraphState", "State"}
+
+    def validate(self, context: NotebookValidationContext) -> Optional[QAReport]:
+        tree = context.ast_tree()
+        if tree is None:
+            return None
+
+        issues: list[dict[str, object]] = []
+        warnings: list[dict[str, object]] = []
+        state_fields: dict[str, dict[str, object]] = {}
+
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.ClassDef):
+                continue
+            base_names = _class_base_names(node)
+            is_state_class = (
+                node.name in self.STATE_CLASS_NAMES
+                or any(base.endswith("TypedDict") for base in base_names)
+                or any(base.endswith("MessagesState") for base in base_names)
+            )
+            if not is_state_class:
+                continue
+            if any(base.endswith("MessagesState") for base in base_names):
+                state_fields.setdefault(
+                    "messages",
+                    {
+                        "class": node.name,
+                        "has_reducer": True,
+                        "source": "MessagesState",
+                    },
+                )
+
+            seen_in_class: dict[str, dict[str, object]] = {}
+            for statement in node.body:
+                if not isinstance(statement, ast.AnnAssign):
+                    continue
+                field_names = _target_names(statement.target)
+                for field_name in field_names:
+                    field_info = {
+                        "class": node.name,
+                        "field": field_name,
+                        "has_reducer": _annotation_uses_annotated(statement.annotation),
+                        **context.resolve_line(getattr(statement, "lineno", None)),
+                    }
+                    if field_name in seen_in_class:
+                        issues.append(
+                            {
+                                "code": "duplicate_state_field",
+                                "message": f"Duplicate state field '{field_name}' in {node.name}.",
+                                "field": field_name,
+                                "class": node.name,
+                                "first": seen_in_class[field_name],
+                                "duplicate": field_info,
+                            }
+                        )
+                    seen_in_class[field_name] = field_info
+                    state_fields[field_name] = field_info
+
+        writer_map: dict[str, set[str]] = {}
+
+        def _record_return_keys(function_name: str, value: ast.AST | None) -> None:
+            if value is None:
+                return
+            if isinstance(value, ast.Dict):
+                for key in _dict_string_keys(value):
+                    writer_map.setdefault(key, set()).add(function_name)
+                return
+            if isinstance(value, ast.Call) and _call_name(value.func).endswith("Command"):
+                for keyword in value.keywords:
+                    if keyword.arg == "update" and isinstance(keyword.value, ast.Dict):
+                        for key in _dict_string_keys(keyword.value):
+                            writer_map.setdefault(key, set()).add(function_name)
+
+        for node in ast.walk(tree):
+            if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                continue
+            for statement in ast.walk(node):
+                if isinstance(statement, ast.Return):
+                    _record_return_keys(node.name, statement.value)
+
+        for field_name, writers in sorted(writer_map.items()):
+            field = state_fields.get(field_name)
+            has_reducer = bool(field and field.get("has_reducer"))
+            if field_name == "messages" and writers and not has_reducer:
+                issues.append(
+                    {
+                        "code": "messages_missing_reducer",
+                        "message": "State field 'messages' is updated by nodes but does not use add_messages or MessagesState.",
+                        "field": field_name,
+                        "writers": sorted(writers),
+                    }
+                )
+            elif len(writers) > 1 and field is not None and not has_reducer:
+                warnings.append(
+                    {
+                        "code": "multi_writer_field_without_reducer",
+                        "message": f"State field '{field_name}' is updated by multiple nodes without an explicit reducer.",
+                        "field": field_name,
+                        "writers": sorted(writers),
+                    }
+                )
+
+        if issues:
+            return self.failed_report(
+                "Invalid LangGraph state reducer semantics detected.",
+                suggestions=[
+                    "Do not emit duplicate TypedDict field annotations.",
+                    "Use MessagesState or Annotated[..., add_messages] for message state.",
+                    "Add reducers for state fields that can receive updates from multiple nodes.",
+                ],
+                evidence={
+                    "issues": issues,
+                    "warnings": warnings,
+                    "state_fields": state_fields,
+                    "writer_map": {key: sorted(value) for key, value in writer_map.items()},
+                },
+            )
+
+        if warnings:
+            return QAReport(
+                check_name=self.check_name,
+                passed=False,
+                message="State reducer advisories detected.",
+                rule_id=self.rule_id,
+                severity="warning",
+                category=self.category,
+                repairable=self.repairable,
+                suggestions=[
+                    "Add reducers for state fields that may receive updates from multiple nodes, or document why writers are mutually exclusive.",
+                ],
+                evidence={
+                    "warnings": warnings,
+                    "state_fields": state_fields,
+                    "writer_map": {key: sorted(value) for key, value in writer_map.items()},
+                },
+            )
+
+        return self.passed_report(
+            "State schema has no duplicate fields and message reducers are preserved.",
+            evidence={
+                "state_fields": state_fields,
+                "writer_map": {key: sorted(value) for key, value in writer_map.items()},
+            },
+        )
+
+
+class ToolReachabilityRule(QAValidationRule):
+    """Check that generated LangChain tools are reachable and honestly described."""
+
+    rule_id = "tool_reachability"
+    check_name = "Tool Reachability"
+    category = "tools"
+    failure_severity = "warning"
+    repairable = False
+
+    def validate(self, context: NotebookValidationContext) -> Optional[QAReport]:
+        tree = context.ast_tree()
+        if tree is None:
+            return None
+
+        tool_functions: dict[str, dict[str, object]] = {}
+        reachable_tools: set[str] = set()
+        bound_tools: set[str] = set()
+        list_assignments: dict[str, set[str]] = {}
+        advisories: list[dict[str, object]] = []
+
+        for node in ast.walk(tree):
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                decorators = {_call_name(decorator) for decorator in node.decorator_list}
+                docstring = ast.get_docstring(node) or ""
+                is_tool = "tool" in decorators or any(
+                    decorator.endswith(".tool") for decorator in decorators
+                )
+                if is_tool:
+                    tool_functions[node.name] = {
+                        "name": node.name,
+                        "docstring": docstring,
+                        **context.resolve_line(getattr(node, "lineno", None)),
+                    }
+                    lowered_doc = docstring.lower()
+                    if "placeholder" in lowered_doc or "auxiliary context lookup" in lowered_doc:
+                        advisories.append(
+                            {
+                                "code": "placeholder_tool_description",
+                                "message": f"Tool '{node.name}' is described as placeholder/fallback behavior.",
+                                "tool": node.name,
+                            }
+                        )
+                elif "placeholder tool" in docstring.lower():
+                    advisories.append(
+                        {
+                            "code": "unmarked_placeholder_tool",
+                            "message": f"Function '{node.name}' looks like a placeholder tool but is not decorated as a LangChain tool.",
+                            "tool": node.name,
+                        }
+                    )
+            elif isinstance(node, ast.Assign):
+                if isinstance(node.value, ast.List):
+                    names = {_call_name(element) for element in node.value.elts}
+                    names = {name for name in names if name}
+                    for target in node.targets:
+                        for target_name in _target_names(target):
+                            list_assignments[target_name] = names
+
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            call_name = _call_name(node.func)
+            tool_args: list[ast.AST] = []
+            if call_name.endswith(".bind_tools"):
+                for argument in node.args[:1]:
+                    if isinstance(argument, ast.Name):
+                        bound_tools.update(list_assignments.get(argument.id, set()))
+                    elif isinstance(argument, ast.List):
+                        bound_tools.update(
+                            name
+                            for name in (_call_name(element) for element in argument.elts)
+                            if name
+                        )
+            elif call_name.endswith("create_react_agent"):
+                for keyword in node.keywords:
+                    if keyword.arg == "tools":
+                        tool_args.append(keyword.value)
+                if len(node.args) >= 2:
+                    tool_args.append(node.args[1])
+            elif call_name.endswith("ToolNode"):
+                tool_args.extend(node.args[:1])
+                tools_keyword = _keyword_value(node, "tools")
+                if tools_keyword is not None:
+                    tool_args.append(tools_keyword)
+            elif call_name in tool_functions:
+                reachable_tools.add(call_name)
+            elif call_name.rsplit(".", 1)[0] in tool_functions and call_name.endswith(
+                (".invoke", ".run")
+            ):
+                reachable_tools.add(call_name.rsplit(".", 1)[0])
+            for argument in tool_args:
+                if isinstance(argument, ast.Name):
+                    reachable_tools.update(list_assignments.get(argument.id, set()))
+                elif isinstance(argument, ast.List):
+                    reachable_tools.update(
+                        name for name in (_call_name(element) for element in argument.elts) if name
+                    )
+
+        for tool_name in sorted(tool_functions):
+            if tool_name not in reachable_tools:
+                code = (
+                    "bound_tool_without_executor"
+                    if tool_name in bound_tools
+                    else "unreachable_tool"
+                )
+                advisories.append(
+                    {
+                        "code": code,
+                        "message": (
+                            f"Tool '{tool_name}' is bound to a model but not executed by a ToolNode/manual loop."
+                            if code == "bound_tool_without_executor"
+                            else f"Tool '{tool_name}' is defined but not called or passed to a documented tool execution pattern."
+                        ),
+                        "tool": tool_name,
+                    }
+                )
+
+        if advisories:
+            return self.failed_report(
+                "Tool reachability advisories detected.",
+                suggestions=[
+                    "Bind generated tools with model.bind_tools(...) and execute returned tool calls, or pass tools into a documented LangGraph agent/tool node.",
+                    "Label placeholder tools honestly and keep broad external API tools deny-by-default.",
+                ],
+                evidence={
+                    "advisories": advisories,
+                    "tool_functions": tool_functions,
+                    "reachable_tools": sorted(reachable_tools),
+                    "bound_tools": sorted(bound_tools),
+                },
+            )
+
+        return self.passed_report(
+            "Generated tools are either absent or reachable through a documented tool pattern.",
+            evidence={
+                "tool_functions": tool_functions,
+                "reachable_tools": sorted(reachable_tools),
+                "bound_tools": sorted(bound_tools),
+            },
+        )
+
+
+class InvocationConfigRule(QAValidationRule):
+    """Validate generated graph invocations include documented runtime config."""
+
+    rule_id = "invocation_config"
+    check_name = "Invocation Config"
+    category = "docs_alignment"
+    failure_severity = "error"
+    repairable = False
+
+    def validate(self, context: NotebookValidationContext) -> Optional[QAReport]:
+        tree = context.ast_tree()
+        if tree is None:
+            return None
+
+        config_assignments: dict[str, ast.Dict] = {}
+        graph_references: set[str] = {"app", "compiled_graph", "graph"}
+        invocations: list[dict[str, object]] = []
+        issues: list[dict[str, object]] = []
+
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Assign) and isinstance(node.value, ast.Dict):
+                for target in node.targets:
+                    for name in _target_names(target):
+                        config_assignments[name] = node.value
+            elif (
+                isinstance(node, ast.Assign)
+                and isinstance(node.value, ast.Call)
+                and _call_name(node.value.func).endswith(".compile")
+            ):
+                for target in node.targets:
+                    graph_references.update(_target_names(target))
+
+        def _config_status(config_node: ast.AST | None) -> dict[str, object]:
+            if config_node is None:
+                return {
+                    "has_config": False,
+                    "has_thread_id": False,
+                    "has_recursion_limit": False,
+                    "config_source": None,
+                }
+            source = "literal"
+            resolved = config_node
+            if isinstance(config_node, ast.Name):
+                source = config_node.id
+                resolved = config_assignments.get(config_node.id)
+            if not isinstance(resolved, ast.Dict):
+                return {
+                    "has_config": True,
+                    "has_thread_id": False,
+                    "has_recursion_limit": False,
+                    "config_source": source,
+                    "unresolved": True,
+                }
+            keys = _dict_string_keys(resolved)
+            configurable = _dict_value_for_key(resolved, "configurable")
+            configurable_keys = _dict_string_keys(configurable) if configurable else set()
+            return {
+                "has_config": True,
+                "has_thread_id": "thread_id" in configurable_keys,
+                "has_recursion_limit": "recursion_limit" in keys,
+                "config_source": source,
+            }
+
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            call_name = _call_name(node.func)
+            method = call_name.rsplit(".", 1)[-1]
+            if method not in {
+                "invoke",
+                "ainvoke",
+                "stream",
+                "astream",
+                "get_state",
+                "aget_state",
+            }:
+                continue
+            target_name = call_name.rsplit(".", 1)[0]
+            if target_name not in graph_references:
+                continue
+
+            config_node: ast.AST | None = None
+            for keyword in node.keywords:
+                if keyword.arg == "config":
+                    config_node = keyword.value
+                    break
+            if config_node is None:
+                if method in {"get_state", "aget_state"} and node.args:
+                    config_node = node.args[0]
+                elif method in {"invoke", "ainvoke", "stream", "astream"} and len(node.args) >= 2:
+                    config_node = node.args[1]
+
+            status = _config_status(config_node)
+            invocation = {
+                "call_name": call_name,
+                "method": method,
+                **status,
+                **context.resolve_line(getattr(node, "lineno", None)),
+            }
+            invocations.append(invocation)
+            if not status["has_config"]:
+                issues.append(
+                    {
+                        "code": "missing_config",
+                        "message": f"{call_name}(...) does not pass a config object.",
+                        "call_name": call_name,
+                    }
+                )
+            else:
+                if not status["has_thread_id"]:
+                    issues.append(
+                        {
+                            "code": "missing_thread_id",
+                            "message": f"{call_name}(...) config does not include configurable.thread_id.",
+                            "call_name": call_name,
+                            "config_source": status["config_source"],
+                        }
+                    )
+                if not status["has_recursion_limit"]:
+                    issues.append(
+                        {
+                            "code": "missing_recursion_limit",
+                            "message": f"{call_name}(...) config does not include top-level recursion_limit.",
+                            "call_name": call_name,
+                            "config_source": status["config_source"],
+                        }
+                    )
+
+        if not invocations:
+            issues.append(
+                {
+                    "code": "missing_graph_invocation",
+                    "message": "No graph invocation or state-read call was found to validate.",
+                    "graph_references": sorted(graph_references),
+                }
+            )
+
+        if issues:
+            return self.failed_report(
+                "Graph invocation config is missing required LangGraph runtime keys.",
+                suggestions=[
+                    'Use config = {"configurable": {"thread_id": "lnf-demo-thread"}, "recursion_limit": 25}.',
+                    "Pass the same config object to graph.invoke(...), graph.stream(...), and graph.get_state(...).",
+                ],
+                evidence={
+                    "issues": issues,
+                    "invocations": invocations,
+                    "graph_references": sorted(graph_references),
+                },
+            )
+
+        return self.passed_report(
+            "Graph invocation examples include configurable.thread_id and top-level recursion_limit.",
+            evidence={
+                "invocations": invocations,
+                "graph_references": sorted(graph_references),
             },
         )
 

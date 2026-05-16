@@ -186,6 +186,7 @@ def test_export_scaffold_uses_graph_contract_without_undefined_app_reference():
     assert 'if "app" not in globals()' not in export_source
     assert 'if "graph" in globals()' in export_source
     assert "globals().get(\"graph\") or globals().get(\"app\")" not in export_source
+    assert '"recursion_limit": 25' in export_source
     assert "Run the 'Build Graph' cell before exporting results." in export_source
 
 
@@ -215,6 +216,7 @@ def test_execution_scaffold_uses_graph_contract_without_undefined_app_reference(
     assert "compiled_graph" in execution_source
     assert "compiled_graph.stream" in execution_source
     assert "compiled_graph.get_state" in execution_source
+    assert '"recursion_limit": 25' in execution_source
     assert "app.stream" not in execution_source
     assert "app.get_state" not in execution_source
     assert 'if "app" not in globals()' not in execution_source
