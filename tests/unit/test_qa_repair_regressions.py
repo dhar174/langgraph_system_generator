@@ -236,7 +236,12 @@ def test_regression_interleaved_markdown_does_not_break_typo_repair(repair_agent
 
 
 def test_regression_missing_colon_syntax_repair_is_bounded(repair_agent):
-    cells = _valid_graph_cells(execution_content="if True\n    print(graph)")
+    cells = _valid_graph_cells(
+        execution_content=(
+            'if True\n    print(graph)\ninitial_state = {"messages": []}\n'
+            "result = graph.invoke(initial_state, config)"
+        )
+    )
     reports = _validate_cells(cells)
 
     outcome = repair_agent.repair_cells(cells, [_failed_report(reports, "python_syntax")])
@@ -246,7 +251,12 @@ def test_regression_missing_colon_syntax_repair_is_bounded(repair_agent):
 
 
 def test_regression_unclosed_delimiter_syntax_repair_is_bounded(repair_agent):
-    cells = _valid_graph_cells(execution_content="print(1 + 2")
+    cells = _valid_graph_cells(
+        execution_content=(
+            'print(1 + 2\ninitial_state = {"messages": []}\n'
+            "result = graph.invoke(initial_state, config)"
+        )
+    )
     reports = _validate_cells(cells)
 
     outcome = repair_agent.repair_cells(cells, [_failed_report(reports, "python_syntax")])
@@ -256,7 +266,14 @@ def test_regression_unclosed_delimiter_syntax_repair_is_bounded(repair_agent):
 
 
 def test_regression_regressive_candidate_rolls_back(monkeypatch, repair_agent):
-    cells = _valid_graph_cells(execution_content="result = grpah.invoke({})\nprint(result)")
+    cells = _valid_graph_cells(
+        execution_content=(
+            'initial_state = {"messages": []}\n'
+            "result = grpah.invoke(initial_state, config)\n"
+            "snapshot = graph.get_state(config)\n"
+            "print(result)"
+        )
+    )
     baseline_reports = _validate_cells(cells)
     regressive_reports = [
         QAReport(

@@ -134,7 +134,14 @@ def test_repair_cells_removes_placeholders_and_accepts_candidate(repair_agent):
     """Placeholder cleanup should remove marker content without dropping real code."""
 
     cells = _valid_graph_cells(
-        execution_content="# TODO: implement\nvalue = 1\n# FIXME: remove placeholder"
+        execution_content=(
+            "# TODO: implement\n"
+            "value = 1\n"
+            'initial_state = {"messages": []}\n'
+            "result = graph.invoke(initial_state, config)\n"
+            "print(result)\n"
+            "# FIXME: remove placeholder"
+        )
     )
     reports = _validate_cells(cells)
     placeholder_report = _failed_report(reports, "placeholder_content")
@@ -267,7 +274,11 @@ def test_repair_cells_rebuilds_incomplete_graph_scaffold(repair_agent):
         ),
         CellSpec(
             cell_type="code",
-            content="print('ready')",
+            content=(
+                'initial_state = {"messages": []}\n'
+                "result = graph.invoke(initial_state, config)\n"
+                "print(result)"
+            ),
             metadata={"section": "execution"},
             section="execution",
         ),
@@ -390,8 +401,16 @@ def test_repair_cells_fixes_undefined_name_typos_with_interleaved_markdown(repai
 @pytest.mark.parametrize(
     ("execution_content", "expected_fragment"),
     [
-        ("if True\n    print(graph)", "if True:"),
-        ("print(1 + 2", "print(1 + 2)"),
+        (
+            'if True\n    print(graph)\ninitial_state = {"messages": []}\n'
+            "result = graph.invoke(initial_state, config)",
+            "if True:",
+        ),
+        (
+            'print(1 + 2\ninitial_state = {"messages": []}\n'
+            "result = graph.invoke(initial_state, config)",
+            "print(1 + 2)",
+        ),
     ],
 )
 def test_repair_cells_applies_bounded_syntax_fixes(
@@ -417,7 +436,12 @@ def test_repair_cells_rolls_back_regressive_candidates(monkeypatch, repair_agent
     """A regressive repair candidate should be rejected and rolled back."""
 
     cells = _valid_graph_cells(
-        execution_content='initial_state = {"messages": []}\nresult = grpah.invoke(initial_state, config)\nprint(result)'
+        execution_content=(
+            'initial_state = {"messages": []}\n'
+            "result = grpah.invoke(initial_state, config)\n"
+            "snapshot = graph.get_state(config)\n"
+            "print(result)"
+        )
     )
     baseline_reports = _validate_cells(cells)
     regressive_reports = [

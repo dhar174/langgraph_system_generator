@@ -112,9 +112,9 @@ def create_generator_graph(*, generation_config=None) -> StateGraph:
     # Define the linear workflow with conditional repair loop
     workflow.add_edge(START, "intake")
     workflow.add_edge("intake", "rag_retrieval")
-    workflow.add_edge("rag_retrieval", "context_pack")
-    workflow.add_edge("context_pack", "architecture_selection")
-    workflow.add_edge("architecture_selection", "graph_design")
+    workflow.add_edge("rag_retrieval", "architecture_selection")
+    workflow.add_edge("architecture_selection", "context_pack")
+    workflow.add_edge("context_pack", "graph_design")
     workflow.add_edge("graph_design", "tooling_plan")
     workflow.add_edge("tooling_plan", "notebook_assembly")
     workflow.add_edge("notebook_assembly", "static_qa")

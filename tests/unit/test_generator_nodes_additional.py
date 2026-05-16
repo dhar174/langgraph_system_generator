@@ -2,6 +2,7 @@
 
 import sys
 import types
+from urllib.parse import urlparse
 
 import pytest
 
@@ -227,8 +228,31 @@ async def test_context_pack_node_builds_docs_backed_contract_pack():
         pack.notebook_contract["required_invocation_config"]["recursion_limit"]
         == "required_top_level_key"
     )
-    assert pack.docs_snippets[0]["source"].startswith("https://docs.langchain.com")
+    parsed_source = urlparse(pack.docs_snippets[0]["source"])
+    assert parsed_source.scheme == "https"
+    assert parsed_source.netloc == "docs.langchain.com"
     assert pack.fallback_used is False
+
+
+@pytest.mark.asyncio
+async def test_context_pack_includes_selected_architecture_after_selection():
+    result = await context_pack_node(
+        {
+            "user_prompt": "Build a museum artifact workflow",
+            "generation_mode": "live",
+            "architecture_type": "hybrid",
+            "selected_patterns": {"primary": "hybrid", "secondary": ["router"]},
+            "constraints": [],
+            "docs_context": [],
+        }
+    )
+
+    pack = result["generation_context_pack"]
+    assert pack.architecture_registry["selected_architecture"] == "hybrid"
+    assert pack.architecture_registry["selected_patterns"] == {
+        "primary": "hybrid",
+        "secondary": ["router"],
+    }
 
 
 @pytest.mark.asyncio

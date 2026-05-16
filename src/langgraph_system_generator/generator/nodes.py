@@ -413,6 +413,16 @@ def _build_generation_context_pack(state: GeneratorState) -> GenerationContextPa
             "supported_architecture_types": supported_architectures,
             "default_architecture": "router",
             "experimental_architectures": ["deepagents"],
+            **(
+                {"selected_architecture": state.get("architecture_type")}
+                if state.get("architecture_type")
+                else {}
+            ),
+            **(
+                {"selected_patterns": state.get("selected_patterns")}
+                if state.get("selected_patterns")
+                else {}
+            ),
         },
         notebook_contract={
             "canonical_sections": NotebookFileComposer.CANONICAL_SECTION_ORDER,

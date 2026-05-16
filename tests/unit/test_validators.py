@@ -330,6 +330,50 @@ graph = workflow.compile()""",
     assert "unguarded_self_loop" in issue_codes
 
 
+def test_langgraph_topology_rule_accepts_keyword_path_map_and_dotted_boundaries(
+    tmp_notebook_path: Path,
+):
+    notebook = new_notebook()
+    notebook.cells.append(
+        new_code_cell(
+            """from langgraph import graph as lg_graph
+from langgraph.graph import StateGraph
+
+class WorkflowState(dict):
+    pass
+
+def refine_node(state: WorkflowState) -> dict:
+    return state
+
+def should_continue(state: WorkflowState) -> str:
+    return "retry"
+
+workflow = StateGraph(WorkflowState)
+workflow.add_node("refine", refine_node)
+workflow.add_edge(lg_graph.START, "refine")
+workflow.add_conditional_edges(
+    source="refine",
+    path=should_continue,
+    path_map={"retry": "refine", "done": lg_graph.END},
+)
+graph = workflow.compile()""",
+            metadata={"section": "graph"},
+        )
+    )
+    _write_notebook(tmp_notebook_path, notebook)
+
+    reports = NotebookValidator().validate_all(tmp_notebook_path)
+    report = _report_by_name(reports, "LangGraph Topology")
+
+    assert report.passed is True
+    assert any(
+        edge.get("source") == "refine"
+        and edge.get("target") == "refine"
+        and edge.get("conditional")
+        for edge in report.evidence["edge_registrations"]
+    )
+
+
 def test_state_reducer_semantics_rule_rejects_duplicate_fields(
     tmp_notebook_path: Path,
 ):
@@ -356,6 +400,58 @@ class WorkflowState(TypedDict):
     assert report.passed is False
     assert report.rule_id == "state_reducer_semantics"
     assert report.evidence["issues"][0]["code"] == "duplicate_state_field"
+
+
+def test_state_reducer_semantics_rule_detects_prefixed_typeddict(
+    tmp_notebook_path: Path,
+):
+    notebook = new_notebook()
+    notebook.cells.append(
+        new_code_cell(
+            """import typing
+
+class WorkflowState(typing.TypedDict):
+    messages: list
+
+def worker(state: WorkflowState) -> dict:
+    return {"messages": ["hello"]}
+""",
+            metadata={"section": "state"},
+        )
+    )
+    _write_notebook(tmp_notebook_path, notebook)
+
+    reports = NotebookValidator().validate_all(tmp_notebook_path)
+    report = _report_by_name(reports, "State Reducer Semantics")
+
+    assert report.passed is False
+    assert report.evidence["issues"][0]["code"] == "messages_missing_reducer"
+
+
+def test_state_reducer_semantics_rule_catches_messagesstate_reducer_override(
+    tmp_notebook_path: Path,
+):
+    notebook = new_notebook()
+    notebook.cells.append(
+        new_code_cell(
+            """from langgraph.graph import MessagesState
+
+class WorkflowState(MessagesState):
+    messages: list
+
+def worker(state: WorkflowState) -> dict:
+    return {"messages": ["hello"]}
+""",
+            metadata={"section": "state"},
+        )
+    )
+    _write_notebook(tmp_notebook_path, notebook)
+
+    reports = NotebookValidator().validate_all(tmp_notebook_path)
+    report = _report_by_name(reports, "State Reducer Semantics")
+
+    assert report.passed is False
+    assert report.evidence["issues"][0]["code"] == "messages_missing_reducer"
 
 
 def test_state_reducer_semantics_rule_warns_for_multi_writer_without_reducer(
@@ -415,6 +511,60 @@ def lookup_context(query: str) -> str:
     assert "unreachable_tool" in issue_codes
 
 
+def test_tool_reachability_rule_requires_executor_for_bound_tools(
+    tmp_notebook_path: Path,
+):
+    notebook = new_notebook()
+    notebook.cells.append(
+        new_code_cell(
+            """from langchain_core.tools import tool
+
+@tool
+def lookup_context(query: str) -> str:
+    \"\"\"Lookup context.\"\"\"
+    return query
+
+tools = [lookup_context]
+model_with_tools = model.bind_tools(tools)
+""",
+            metadata={"section": "tools"},
+        )
+    )
+    _write_notebook(tmp_notebook_path, notebook)
+
+    reports = NotebookValidator().validate_all(tmp_notebook_path)
+    report = _report_by_name(reports, "Tool Reachability")
+
+    assert report.passed is False
+    assert report.evidence["advisories"][0]["code"] == "bound_tool_without_executor"
+
+
+def test_tool_reachability_rule_accepts_tool_node_executor(tmp_notebook_path: Path):
+    notebook = new_notebook()
+    notebook.cells.append(
+        new_code_cell(
+            """from langchain_core.tools import tool
+from langgraph.prebuilt import ToolNode
+
+@tool
+def lookup_context(query: str) -> str:
+    \"\"\"Lookup context.\"\"\"
+    return query
+
+tools = [lookup_context]
+tool_node = ToolNode(tools)
+""",
+            metadata={"section": "tools"},
+        )
+    )
+    _write_notebook(tmp_notebook_path, notebook)
+
+    reports = NotebookValidator().validate_all(tmp_notebook_path)
+    report = _report_by_name(reports, "Tool Reachability")
+
+    assert report.passed is True
+
+
 def test_invocation_config_rule_requires_thread_id_and_recursion_limit(
     tmp_notebook_path: Path,
 ):
@@ -437,6 +587,54 @@ for update in graph.stream({"messages": []}, config, stream_mode="updates"):
 
     assert report.passed is False
     assert issue_codes == {"missing_recursion_limit"}
+
+
+def test_invocation_config_rule_checks_async_and_custom_graph_targets(
+    tmp_notebook_path: Path,
+):
+    notebook = new_notebook()
+    notebook.cells.append(
+        new_code_cell(
+"""workflow = builder()
+self.graph = workflow.compile()
+config = {"configurable": {"thread_id": "demo"}, "recursion_limit": 25}
+async def run_graph() -> None:
+    final_state = await self.graph.ainvoke({"messages": []}, config)
+    async for update in self.graph.astream({"messages": []}, config):
+        print(update)
+""",
+            metadata={"section": "execution"},
+        )
+    )
+    _write_notebook(tmp_notebook_path, notebook)
+
+    reports = NotebookValidator().validate_all(tmp_notebook_path)
+    report = _report_by_name(reports, "Invocation Config")
+
+    assert report.passed is True
+    assert "self.graph" in report.evidence["graph_references"]
+
+
+def test_invocation_config_rule_fails_when_execution_is_missing(
+    tmp_notebook_path: Path,
+):
+    notebook = new_notebook()
+    notebook.cells.append(
+        new_code_cell(
+            """workflow = builder()
+graph = workflow.compile()
+print("compiled")
+""",
+            metadata={"section": "execution"},
+        )
+    )
+    _write_notebook(tmp_notebook_path, notebook)
+
+    reports = NotebookValidator().validate_all(tmp_notebook_path)
+    report = _report_by_name(reports, "Invocation Config")
+
+    assert report.passed is False
+    assert report.evidence["issues"][0]["code"] == "missing_graph_invocation"
 
 
 def test_invocation_config_rule_accepts_documented_config(tmp_notebook_path: Path):

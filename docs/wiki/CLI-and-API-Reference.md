@@ -698,8 +698,10 @@ summaries, and non-fatal warnings:
       "runtime_smoke_test"
     ],
     "docs_snippets": [],
-    "fallback_used": false,
-    "warnings": []
+    "fallback_used": true,
+    "warnings": [
+      "No retrieved docs snippets were available; using repo/static context facts only."
+    ]
   },
   "notebook_composition_feedback": {
     "fallback_used": false,

@@ -45,6 +45,10 @@ def _target_names(node: ast.AST) -> set[str]:
     names: set[str] = set()
     if isinstance(node, ast.Name):
         names.add(node.id)
+    elif isinstance(node, ast.Attribute):
+        target_name = _call_name(node)
+        if target_name:
+            names.add(target_name)
     elif isinstance(node, (ast.Tuple, ast.List)):
         for element in node.elts:
             names.update(_target_names(element))
@@ -93,6 +97,15 @@ def _dict_value_for_key(node: ast.AST, key_name: str) -> ast.AST | None:
     return None
 
 
+def _keyword_value(node: ast.Call, keyword_name: str) -> ast.AST | None:
+    """Return a keyword argument value from a call if present."""
+
+    for keyword in node.keywords:
+        if keyword.arg == keyword_name:
+            return keyword.value
+    return None
+
+
 def _annotation_uses_annotated(node: ast.AST | None) -> bool:
     """Return True when a type annotation uses typing.Annotated."""
 
@@ -108,6 +121,12 @@ def _class_base_names(node: ast.ClassDef) -> set[str]:
     """Return dotted names for a class' base expressions."""
 
     return {_call_name(base) for base in node.bases if _call_name(base)}
+
+
+def _is_graph_boundary_symbol(name: str) -> bool:
+    """Return True for START/END symbols, including dotted imports."""
+
+    return name in {"__end__"} or name.rsplit(".", 1)[-1] in {"START", "END"}
 
 
 @dataclass(frozen=True)
@@ -786,7 +805,7 @@ class CanonicalSectionOrderRule(QAValidationRule):
     check_name = "Canonical Section Order"
     category = "notebook_contract"
     failure_severity = "error"
-    repairable = True
+    repairable = False
 
     CANONICAL_ORDER = [
         "intro",
@@ -906,9 +925,20 @@ class LangGraphTopologyRule(QAValidationRule):
                         **context.resolve_line(getattr(node, "lineno", None)),
                     }
                 )
-            elif call_name.endswith(".add_conditional_edges") and len(node.args) >= 3:
-                source = _literal_string(node.args[0]) or _call_name(node.args[0])
-                path_map = node.args[2]
+            elif call_name.endswith(".add_conditional_edges"):
+                source_arg = (
+                    node.args[0] if node.args else _keyword_value(node, "source")
+                )
+                path_map = (
+                    node.args[2]
+                    if len(node.args) >= 3
+                    else _keyword_value(node, "path_map")
+                )
+                source = (
+                    (_literal_string(source_arg) or _call_name(source_arg))
+                    if source_arg is not None
+                    else ""
+                )
                 if isinstance(path_map, ast.Dict):
                     for value in path_map.values:
                         target = _literal_string(value) or _call_name(value)
@@ -954,7 +984,6 @@ class LangGraphTopologyRule(QAValidationRule):
                 )
 
         node_ids = set(node_counts)
-        special_targets = {"START", "END", "__end__"}
         edge_pairs: dict[tuple[str, str], int] = {}
         for edge in edge_registrations:
             source = str(edge.get("source") or "")
@@ -962,7 +991,11 @@ class LangGraphTopologyRule(QAValidationRule):
             if not source or not target:
                 continue
             edge_pairs[(source, target)] = edge_pairs.get((source, target), 0) + 1
-            if source == target and target not in special_targets:
+            if (
+                source == target
+                and not _is_graph_boundary_symbol(target)
+                and not edge.get("conditional")
+            ):
                 issues.append(
                     {
                         "code": "unguarded_self_loop",
@@ -971,7 +1004,7 @@ class LangGraphTopologyRule(QAValidationRule):
                         "target": target,
                     }
                 )
-            if source not in node_ids and source not in special_targets:
+            if source not in node_ids and not _is_graph_boundary_symbol(source):
                 issues.append(
                     {
                         "code": "unknown_edge_source",
@@ -979,7 +1012,7 @@ class LangGraphTopologyRule(QAValidationRule):
                         "source": source,
                     }
                 )
-            if target not in node_ids and target not in special_targets:
+            if target not in node_ids and not _is_graph_boundary_symbol(target):
                 issues.append(
                     {
                         "code": "unknown_edge_target",
@@ -1043,7 +1076,6 @@ class StateReducerSemanticsRule(QAValidationRule):
         issues: list[dict[str, object]] = []
         warnings: list[dict[str, object]] = []
         state_fields: dict[str, dict[str, object]] = {}
-        uses_messages_state = False
 
         for node in ast.walk(tree):
             if not isinstance(node, ast.ClassDef):
@@ -1051,13 +1083,12 @@ class StateReducerSemanticsRule(QAValidationRule):
             base_names = _class_base_names(node)
             is_state_class = (
                 node.name in self.STATE_CLASS_NAMES
-                or "TypedDict" in base_names
+                or any(base.endswith("TypedDict") for base in base_names)
                 or any(base.endswith("MessagesState") for base in base_names)
             )
             if not is_state_class:
                 continue
             if any(base.endswith("MessagesState") for base in base_names):
-                uses_messages_state = True
                 state_fields.setdefault(
                     "messages",
                     {
@@ -1118,8 +1149,6 @@ class StateReducerSemanticsRule(QAValidationRule):
         for field_name, writers in sorted(writer_map.items()):
             field = state_fields.get(field_name)
             has_reducer = bool(field and field.get("has_reducer"))
-            if field_name == "messages" and uses_messages_state:
-                has_reducer = True
             if field_name == "messages" and writers and not has_reducer:
                 issues.append(
                     {
@@ -1199,6 +1228,7 @@ class ToolReachabilityRule(QAValidationRule):
 
         tool_functions: dict[str, dict[str, object]] = {}
         reachable_tools: set[str] = set()
+        bound_tools: set[str] = set()
         list_assignments: dict[str, set[str]] = {}
         advisories: list[dict[str, object]] = []
 
@@ -1246,13 +1276,32 @@ class ToolReachabilityRule(QAValidationRule):
             call_name = _call_name(node.func)
             tool_args: list[ast.AST] = []
             if call_name.endswith(".bind_tools"):
-                tool_args.extend(node.args[:1])
+                for argument in node.args[:1]:
+                    if isinstance(argument, ast.Name):
+                        bound_tools.update(list_assignments.get(argument.id, set()))
+                    elif isinstance(argument, ast.List):
+                        bound_tools.update(
+                            name
+                            for name in (_call_name(element) for element in argument.elts)
+                            if name
+                        )
             elif call_name.endswith("create_react_agent"):
                 for keyword in node.keywords:
                     if keyword.arg == "tools":
                         tool_args.append(keyword.value)
                 if len(node.args) >= 2:
                     tool_args.append(node.args[1])
+            elif call_name.endswith("ToolNode"):
+                tool_args.extend(node.args[:1])
+                tools_keyword = _keyword_value(node, "tools")
+                if tools_keyword is not None:
+                    tool_args.append(tools_keyword)
+            elif call_name in tool_functions:
+                reachable_tools.add(call_name)
+            elif call_name.rsplit(".", 1)[0] in tool_functions and call_name.endswith(
+                (".invoke", ".run")
+            ):
+                reachable_tools.add(call_name.rsplit(".", 1)[0])
             for argument in tool_args:
                 if isinstance(argument, ast.Name):
                     reachable_tools.update(list_assignments.get(argument.id, set()))
@@ -1263,10 +1312,19 @@ class ToolReachabilityRule(QAValidationRule):
 
         for tool_name in sorted(tool_functions):
             if tool_name not in reachable_tools:
+                code = (
+                    "bound_tool_without_executor"
+                    if tool_name in bound_tools
+                    else "unreachable_tool"
+                )
                 advisories.append(
                     {
-                        "code": "unreachable_tool",
-                        "message": f"Tool '{tool_name}' is defined but not bound or passed to a documented tool execution pattern.",
+                        "code": code,
+                        "message": (
+                            f"Tool '{tool_name}' is bound to a model but not executed by a ToolNode/manual loop."
+                            if code == "bound_tool_without_executor"
+                            else f"Tool '{tool_name}' is defined but not called or passed to a documented tool execution pattern."
+                        ),
                         "tool": tool_name,
                     }
                 )
@@ -1282,6 +1340,7 @@ class ToolReachabilityRule(QAValidationRule):
                     "advisories": advisories,
                     "tool_functions": tool_functions,
                     "reachable_tools": sorted(reachable_tools),
+                    "bound_tools": sorted(bound_tools),
                 },
             )
 
@@ -1290,6 +1349,7 @@ class ToolReachabilityRule(QAValidationRule):
             evidence={
                 "tool_functions": tool_functions,
                 "reachable_tools": sorted(reachable_tools),
+                "bound_tools": sorted(bound_tools),
             },
         )
 
@@ -1301,7 +1361,7 @@ class InvocationConfigRule(QAValidationRule):
     check_name = "Invocation Config"
     category = "docs_alignment"
     failure_severity = "error"
-    repairable = True
+    repairable = False
 
     def validate(self, context: NotebookValidationContext) -> Optional[QAReport]:
         tree = context.ast_tree()
@@ -1309,6 +1369,7 @@ class InvocationConfigRule(QAValidationRule):
             return None
 
         config_assignments: dict[str, ast.Dict] = {}
+        graph_references: set[str] = {"app", "compiled_graph", "graph"}
         invocations: list[dict[str, object]] = []
         issues: list[dict[str, object]] = []
 
@@ -1317,6 +1378,13 @@ class InvocationConfigRule(QAValidationRule):
                 for target in node.targets:
                     for name in _target_names(target):
                         config_assignments[name] = node.value
+            elif (
+                isinstance(node, ast.Assign)
+                and isinstance(node.value, ast.Call)
+                and _call_name(node.value.func).endswith(".compile")
+            ):
+                for target in node.targets:
+                    graph_references.update(_target_names(target))
 
         def _config_status(config_node: ast.AST | None) -> dict[str, object]:
             if config_node is None:
@@ -1354,10 +1422,17 @@ class InvocationConfigRule(QAValidationRule):
                 continue
             call_name = _call_name(node.func)
             method = call_name.rsplit(".", 1)[-1]
-            if method not in {"invoke", "stream", "get_state"}:
+            if method not in {
+                "invoke",
+                "ainvoke",
+                "stream",
+                "astream",
+                "get_state",
+                "aget_state",
+            }:
                 continue
             target_name = call_name.rsplit(".", 1)[0]
-            if target_name not in {"graph", "compiled_graph", "app"}:
+            if target_name not in graph_references:
                 continue
 
             config_node: ast.AST | None = None
@@ -1366,9 +1441,9 @@ class InvocationConfigRule(QAValidationRule):
                     config_node = keyword.value
                     break
             if config_node is None:
-                if method == "get_state" and node.args:
+                if method in {"get_state", "aget_state"} and node.args:
                     config_node = node.args[0]
-                elif method in {"invoke", "stream"} and len(node.args) >= 2:
+                elif method in {"invoke", "ainvoke", "stream", "astream"} and len(node.args) >= 2:
                     config_node = node.args[1]
 
             status = _config_status(config_node)
@@ -1407,6 +1482,15 @@ class InvocationConfigRule(QAValidationRule):
                         }
                     )
 
+        if not invocations:
+            issues.append(
+                {
+                    "code": "missing_graph_invocation",
+                    "message": "No graph invocation or state-read call was found to validate.",
+                    "graph_references": sorted(graph_references),
+                }
+            )
+
         if issues:
             return self.failed_report(
                 "Graph invocation config is missing required LangGraph runtime keys.",
@@ -1414,12 +1498,19 @@ class InvocationConfigRule(QAValidationRule):
                     'Use config = {"configurable": {"thread_id": "lnf-demo-thread"}, "recursion_limit": 25}.',
                     "Pass the same config object to graph.invoke(...), graph.stream(...), and graph.get_state(...).",
                 ],
-                evidence={"issues": issues, "invocations": invocations},
+                evidence={
+                    "issues": issues,
+                    "invocations": invocations,
+                    "graph_references": sorted(graph_references),
+                },
             )
 
         return self.passed_report(
             "Graph invocation examples include configurable.thread_id and top-level recursion_limit.",
-            evidence={"invocations": invocations},
+            evidence={
+                "invocations": invocations,
+                "graph_references": sorted(graph_references),
+            },
         )
 
 
