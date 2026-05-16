@@ -11,7 +11,7 @@ permissions:
 
 concurrency:
   group: deploy-cloud-run-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 env:
   PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
@@ -26,7 +26,8 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        # actions/checkout v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
 
       - name: Validate required configuration
         shell: bash
@@ -35,25 +36,35 @@ jobs:
           GCP_REGION: ${{ vars.GCP_REGION }}
           GCP_CLOUD_RUN_SERVICE: ${{ vars.GCP_CLOUD_RUN_SERVICE }}
           GCP_ARTIFACT_REGISTRY_REPOSITORY: ${{ vars.GCP_ARTIFACT_REGISTRY_REPOSITORY }}
-          GCP_WORKLOAD_IDENTITY_PROVIDER: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
-          GCP_SERVICE_ACCOUNT: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+          GCP_WORKLOAD_IDENTITY_PROVIDER_CONFIGURED: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER != '' }}
+          GCP_SERVICE_ACCOUNT_CONFIGURED: ${{ secrets.GCP_SERVICE_ACCOUNT != '' }}
         run: |
           set -euo pipefail
-          for value in GCP_PROJECT_ID GCP_REGION GCP_CLOUD_RUN_SERVICE GCP_ARTIFACT_REGISTRY_REPOSITORY GCP_WORKLOAD_IDENTITY_PROVIDER GCP_SERVICE_ACCOUNT; do
+          for value in GCP_PROJECT_ID GCP_REGION GCP_CLOUD_RUN_SERVICE GCP_ARTIFACT_REGISTRY_REPOSITORY; do
             if [ -z "${!value:-}" ]; then
               echo "::error::Missing required GitHub configuration: $value"
               exit 1
             fi
           done
+          if [ "$GCP_WORKLOAD_IDENTITY_PROVIDER_CONFIGURED" != "true" ]; then
+            echo "::error::Missing required GitHub configuration: GCP_WORKLOAD_IDENTITY_PROVIDER"
+            exit 1
+          fi
+          if [ "$GCP_SERVICE_ACCOUNT_CONFIGURED" != "true" ]; then
+            echo "::error::Missing required GitHub configuration: GCP_SERVICE_ACCOUNT"
+            exit 1
+          fi
 
       - name: Authenticate to Google Cloud
-        uses: google-github-actions/auth@v2
+        # google-github-actions/auth v2
+        uses: google-github-actions/auth@c200f3691d83b41bf9bbd8638997a462592937ed
         with:
           workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
           service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
 
       - name: Set up gcloud
-        uses: google-github-actions/setup-gcloud@v2
+        # google-github-actions/setup-gcloud v2
+        uses: google-github-actions/setup-gcloud@e427ad8a34f8676edf47cf7d7925499adf3eb74f
         with:
           project_id: ${{ env.PROJECT_ID }}
 
@@ -72,7 +83,8 @@ jobs:
 
       - name: Deploy to Cloud Run
         id: deploy
-        uses: google-github-actions/deploy-cloudrun@v2
+        # google-github-actions/deploy-cloudrun v2
+        uses: google-github-actions/deploy-cloudrun@251330ba9a8a34bfbc1622895f42e1d53fd14522
         with:
           service: ${{ env.SERVICE }}
           region: ${{ env.REGION }}
