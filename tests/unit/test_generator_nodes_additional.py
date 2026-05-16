@@ -109,7 +109,7 @@ def _valid_generated_cells(*, execution_content: str | None = None):
                 "    messages: list\n\n"
                 "workflow = StateGraph(WorkflowState)\n\n"
                 "def start_node(state: WorkflowState):\n"
-                "    return state\n\n"
+                "    return {}\n\n"
                 "workflow.add_node('start', start_node)\n"
                 "workflow.add_edge(START, 'start')\n"
                 "workflow.add_edge('start', END)\n"
@@ -231,6 +231,10 @@ async def test_context_pack_node_builds_docs_backed_contract_pack():
     parsed_source = urlparse(pack.docs_snippets[0]["source"])
     assert parsed_source.scheme == "https"
     assert parsed_source.netloc == "docs.langchain.com"
+    assert pack.docs_snippets[0]["source_kind"] == "langchain-docs-local"
+    assert pack.docs_snippets[0]["source_precedence_rank"] == 0
+    assert pack.source_summary["docs_snippet_count"] == 1
+    assert pack.source_summary["source_counts"]["langchain-docs-local"] == 1
     assert pack.fallback_used is False
 
 
@@ -270,6 +274,7 @@ async def test_context_pack_node_falls_back_to_static_repo_facts_without_docs():
     assert pack.fallback_used is True
     assert pack.warnings
     assert "invocation_config" in pack.qa_gates
+    assert pack.source_summary["docs_live_required"] is False
 
 
 @pytest.mark.asyncio

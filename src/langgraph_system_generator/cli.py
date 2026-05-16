@@ -143,6 +143,17 @@ def _build_cli_context_pack(
             "invocation_config",
             "runtime_smoke_test",
         ],
+        source_summary={
+            "source_precedence": [
+                "langchain-docs-local",
+                "context7",
+                "cached_repo_docs",
+                "rag_index",
+            ],
+            "docs_snippet_count": 0,
+            "source_counts": {},
+            "docs_live_required": False,
+        },
         fallback_used=True,
         warnings=[
             "Shortcut generation path used static repo context facts; live docs retrieval is not required for stub mode."

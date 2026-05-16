@@ -68,11 +68,6 @@ class WorkflowState(TypedDict, total=False):
 
         specs = _route_specs(routes)
         route_literals = ", ".join(double_quoted_literal(label) for label, _ in specs)
-        node_literals = ", ".join(double_quoted_literal(node_name) for _, node_name in specs)
-        route_map_lines = ",\n        ".join(
-            f"{double_quoted_literal(label)}: {double_quoted_literal(node_name)}"
-            for label, node_name in specs
-        )
         route_help = "\n".join(
             f"- {label}: Handle {label}-specific requests." for label, _ in specs
         )
@@ -145,9 +140,10 @@ Select the most appropriate route and explain your reasoning."""
     decision = structured_llm.invoke([system_prompt, HumanMessage(content=classification_prompt)])
     
     return {{
-        **state,
         "route": decision.route,
-        "messages": messages + [HumanMessage(content=f"Routing to: {{decision.route}} ({{decision.reasoning}})")],
+        "route_reasoning": decision.reasoning,
+        "route_history": [decision.route],
+        "messages": [HumanMessage(content=f"Routing to: {{decision.route}} ({{decision.reasoning}})")],
     }}'''
         else:
             return f'''from langchain_openai import ChatOpenAI
@@ -191,8 +187,8 @@ Route:""")
         selected_route = valid_routes[0]  # Default to first route
     
     return {{
-        **state,
         "route": selected_route,
+        "route_history": [selected_route],
     }}'''
 
     @staticmethod
@@ -264,9 +260,14 @@ Responsibility:
             # Generate conditional routing function
             route_conditions = "\n    ".join(
                 [
-                    f'if route == "{route}":\n        return "{route.lower().replace(" ", "_")}"'
-                    for route in routes
+                    f"if route == {double_quoted_literal(route)}:\n"
+                    f"        return {double_quoted_literal(node_name)}"
+                    for route, node_name in specs
                 ]
+            )
+            path_map_entries = ", ".join(
+                f"{double_quoted_literal(node_name)}: {double_quoted_literal(node_name)}"
+                for _, node_name in specs
             )
 
             return f'''from langgraph.graph import END, START, StateGraph
@@ -297,11 +298,11 @@ workflow.add_edge(START, "router")
 workflow.add_conditional_edges(
     "router",
     route_decision,
-    {{{", ".join([f'"{route.lower().replace(" ", "_")}": "{route.lower().replace(" ", "_")}"' for route in routes])}, "END": END}}
+    {{{path_map_entries}, "END": END}}
 )
 
 # Connect all routes to END
-{chr(10).join([f'workflow.add_edge("{route.lower().replace(" ", "_")}", END)' for route in routes])}
+{terminal_edges}
 
 # Compile graph
 graph = workflow.compile(checkpointer=memory)'''

@@ -60,6 +60,70 @@ class NotebookComposer:
     stub and offline workflows.
     """
 
+    _PATTERN_STATE_FIELDS: dict[str, set[str]] = {
+        "router": {
+            "messages",
+            "route",
+            "route_reasoning",
+            "route_history",
+            "results",
+            "final_output",
+        },
+        "subagents": {
+            "messages",
+            "next_agent",
+            "instructions",
+            "iterations",
+            "dispatch_log",
+            "task_results",
+            "final_output",
+        },
+        "autoagent": {
+            "messages",
+            "next_agent",
+            "instructions",
+            "iterations",
+            "dispatch_log",
+            "task_results",
+            "final_output",
+        },
+        "hybrid": {
+            "messages",
+            "route",
+            "route_reasoning",
+            "route_history",
+            "next_agent",
+            "instructions",
+            "iterations",
+            "dispatch_log",
+            "results",
+            "task_results",
+            "final_output",
+        },
+        "deepagents": {
+            "messages",
+            "task_plan",
+            "artifacts",
+            "subagent_results",
+            "final_output",
+            "deepagents_available",
+        },
+        "critique_loop": {
+            "messages",
+            "current_draft",
+            "critique_feedback",
+            "revision_count",
+            "quality_score",
+            "approved",
+            "criteria",
+            "draft_history",
+            "revision_history",
+            "final_output",
+            "human_feedback_handler",
+            "previous_quality_score",
+        },
+    }
+
     def __init__(
         self,
         model: str | None = None,
@@ -98,6 +162,25 @@ class NotebookComposer:
             if not slug.isidentifier() or keyword.iskeyword(slug):
                 slug = "_identifier"
         return slug
+
+    def _state_schema_extensions(
+        self,
+        architecture_type: str,
+        state_schema: Dict[str, Any],
+    ) -> Dict[str, str]:
+        """Return graph-spec fields not already declared by the pattern state."""
+
+        reserved = self._PATTERN_STATE_FIELDS.get(architecture_type, {"messages"})
+        extensions: Dict[str, str] = {}
+        if not isinstance(state_schema, dict):
+            return extensions
+
+        for field_name, description in state_schema.items():
+            safe_field = self._safe_identifier(field_name, "field").lower()
+            if safe_field in reserved:
+                continue
+            extensions[str(field_name)] = str(description)
+        return extensions
 
     @staticmethod
     def _normalize_inline_text(value: Any, fallback: str) -> str:
@@ -232,7 +315,9 @@ class NotebookComposer:
                 accumulator.runtime_notes.append(note)
 
         for tool in tools:
-            tool_status = self._normalize_inline_text(tool.get("status", ""), "").lower()
+            tool_status = self._normalize_inline_text(
+                tool.get("status", ""), ""
+            ).lower()
             if tool_status == "unsupported":
                 continue
             accumulate_tool_dependencies(accumulator, tool)
@@ -348,12 +433,16 @@ class NotebookComposer:
             ),
         )
 
-        architecture_type = str(
-            workflow_design.get("architecture_type")
-            or architecture.get("architecture_type")
-            or notebook_plan.architecture_type
-            or "router"
-        ).strip().lower()
+        architecture_type = (
+            str(
+                workflow_design.get("architecture_type")
+                or architecture.get("architecture_type")
+                or notebook_plan.architecture_type
+                or "router"
+            )
+            .strip()
+            .lower()
+        )
         workflow_design["architecture_type"] = architecture_type
         registration = self.registry.resolve(architecture_type)
         cells: List[CellSpec] = []
@@ -578,7 +667,11 @@ if missing_packages:
 else:
     print("All required packages are already available.")"""
 
-        markdown_lines = ["## Installation", "", "Install any missing packages needed by this notebook."]
+        markdown_lines = [
+            "## Installation",
+            "",
+            "Install any missing packages needed by this notebook.",
+        ]
         if dependency_plan.runtime_notes:
             markdown_lines.extend(["", "### Environment Notes", ""])
             markdown_lines.extend(f"- {note}" for note in dependency_plan.runtime_notes)
@@ -632,7 +725,7 @@ else:
             config_lines.extend(
                 [
                     f'{safe_env_var} = os.environ.get("{safe_env_var}", "")',
-                    f'if not {safe_env_var}:',
+                    f"if not {safe_env_var}:",
                     f'    print("{safe_env_var} is not set. Configure it in your environment before running live model cells.")',
                     "    # Optional interactive fallback for local notebook sessions:",
                     "    # from getpass import getpass",
@@ -657,8 +750,13 @@ else:
 
     def _create_state_cells(self, workflow_design: Dict[str, Any]) -> List[CellSpec]:
         """Create state definition cells using pattern library or custom generation."""
-        architecture_type = workflow_design.get("architecture_type", "router")
-        state_schema = workflow_design.get("state_schema", {})
+        architecture_type = str(
+            workflow_design.get("architecture_type", "router")
+        ).lower()
+        state_schema = self._state_schema_extensions(
+            architecture_type,
+            workflow_design.get("state_schema", {}),
+        )
 
         # Use pattern library for known architectures
         if architecture_type == "router":
@@ -775,12 +873,14 @@ Common tool categories and approaches:
 Return ONLY the Python function code, nothing else."""
             )
 
-            user_prompt = HumanMessage(content=f"""Tool Name: {tool_name}
+            user_prompt = HumanMessage(
+                content=f"""Tool Name: {tool_name}
 Purpose: {tool_purpose}
 Category: {tool_category}
 Configuration: {tool_config}
 
-Generate the complete Python function implementation.""")
+Generate the complete Python function implementation."""
+            )
 
             # Use the async LLM path so multiple tool implementations can run concurrently.
             response = await self._invoke_llm([system_prompt, user_prompt])
@@ -844,9 +944,7 @@ Generate the complete Python function implementation.""")
         )
         safe_tool_category = self._normalize_inline_text(tool_category, "general")
         func_name = self._safe_identifier(tool_name, "unknown_tool")
-        warning = (
-            f'Deterministic fallback used for tool "{safe_tool_name}".'
-        )
+        warning = f'Deterministic fallback used for tool "{safe_tool_name}".'
         self._record_fallback(
             feedback,
             kind="tool",
@@ -1032,7 +1130,7 @@ Generate a complete, production-ready Python function for a LangGraph node.
 
 Requirements:
 - Function signature: {function_signature}
-- The function MUST return an updated state dictionary (not just 'return state')
+- The function MUST return a partial state update dictionary (not a full state copy or 'return state')
 - Include proper LLM initialization and invocation if needed
 - Use MessagesState pattern with proper message handling
 - Import necessary libraries at the function level
@@ -1047,13 +1145,15 @@ Return ONLY the Python function code, nothing else."""
                 [f"- {field}: {desc}" for field, desc in state_schema.items()]
             )
 
-            user_prompt = HumanMessage(content=f"""Node Name: {node_name}
+            user_prompt = HumanMessage(
+                content=f"""Node Name: {node_name}
 Purpose: {node_purpose}
 
 State Schema:
 {state_info}
 
-Generate the complete Python function implementation.""")
+Generate the complete Python function implementation."""
+            )
 
             # Use the async LLM path so custom nodes can run concurrently.
             response = await self._invoke_llm([system_prompt, user_prompt])
@@ -1136,7 +1236,7 @@ Generate the complete Python function implementation.""")
         )
 
         update_lines = [
-            "    updates: dict[str, object] = dict(state)",
+            "    updates: dict[str, object] = {}",
             '    messages = list(state.get("messages", []))',
             '    last_content = messages[-1].content if messages else ""',
             f'    node_summary = {node_name_literal} + " completed: " + (last_content or {node_purpose_literal})',

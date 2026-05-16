@@ -66,7 +66,7 @@ def _valid_graph_cells(*, execution_content: str | None = None) -> list[CellSpec
                 "    messages: list\n\n"
                 "workflow = StateGraph(WorkflowState)\n\n"
                 "def start_node(state: WorkflowState):\n"
-                "    return state\n\n"
+                "    return {}\n\n"
                 "workflow.add_node('start', start_node)\n"
                 "workflow.add_edge(START, 'start')\n"
                 "workflow.add_edge('start', END)\n"
@@ -136,6 +136,7 @@ def test_default_registry_contains_builtin_validators_and_repairs():
         "langgraph_topology",
         "state_reducer_semantics",
         "tool_reachability",
+        "domain_architecture_alignment",
         "invocation_config",
     ]
     assert registry.registered_repair_routine_ids() == [

@@ -1126,6 +1126,21 @@ class StateReducerSemanticsRule(QAValidationRule):
 
         writer_map: dict[str, set[str]] = {}
 
+        def _is_state_name(node: ast.AST | None) -> bool:
+            return isinstance(node, ast.Name) and node.id == "state"
+
+        def _records_full_state_copy(value: ast.AST | None) -> bool:
+            if _is_state_name(value):
+                return True
+            if isinstance(value, ast.Call) and _call_name(value.func) == "dict":
+                return bool(value.args and _is_state_name(value.args[0]))
+            if isinstance(value, ast.Dict):
+                return any(
+                    key is None and _is_state_name(item)
+                    for key, item in zip(value.keys, value.values)
+                )
+            return False
+
         def _record_return_keys(function_name: str, value: ast.AST | None) -> None:
             if value is None:
                 return
@@ -1142,8 +1157,21 @@ class StateReducerSemanticsRule(QAValidationRule):
         for node in ast.walk(tree):
             if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 continue
+            has_state_arg = bool(node.args.args and node.args.args[0].arg == "state")
             for statement in ast.walk(node):
                 if isinstance(statement, ast.Return):
+                    if has_state_arg and _records_full_state_copy(statement.value):
+                        issues.append(
+                            {
+                                "code": "full_state_overwrite",
+                                "message": (
+                                    f"Node '{node.name}' returns a full state copy "
+                                    "instead of a partial update."
+                                ),
+                                "function": node.name,
+                                **context.resolve_line(getattr(statement, "lineno", None)),
+                            }
+                        )
                     _record_return_keys(node.name, statement.value)
 
         for field_name, writers in sorted(writer_map.items()):
@@ -1175,6 +1203,7 @@ class StateReducerSemanticsRule(QAValidationRule):
                     "Do not emit duplicate TypedDict field annotations.",
                     "Use MessagesState or Annotated[..., add_messages] for message state.",
                     "Add reducers for state fields that can receive updates from multiple nodes.",
+                    "Return partial state updates from nodes instead of returning state or {**state, ...}.",
                 ],
                 evidence={
                     "issues": issues,
@@ -1251,6 +1280,37 @@ class ToolReachabilityRule(QAValidationRule):
                             {
                                 "code": "placeholder_tool_description",
                                 "message": f"Tool '{node.name}' is described as placeholder/fallback behavior.",
+                                "tool": node.name,
+                            }
+                        )
+                    arg_names = {arg.arg.lower() for arg in node.args.args}
+                    broad_network_arg = bool(
+                        arg_names & {"url", "uri", "endpoint", "host", "domain"}
+                    )
+                    uses_network_client = any(
+                        isinstance(child, ast.Call)
+                        and _call_name(child.func).rsplit(".", 1)[0]
+                        in {"requests", "httpx", "urllib.request"}
+                        for child in ast.walk(node)
+                    )
+                    has_safety_hint = any(
+                        phrase in lowered_doc
+                        for phrase in {
+                            "allowlist",
+                            "allow-list",
+                            "approved endpoint",
+                            "deny-by-default",
+                            "trusted",
+                        }
+                    )
+                    if broad_network_arg and uses_network_client and not has_safety_hint:
+                        advisories.append(
+                            {
+                                "code": "unsafe_http_tool",
+                                "message": (
+                                    f"Tool '{node.name}' accepts broad network targets "
+                                    "without documenting an allowlist or deny-by-default guard."
+                                ),
                                 "tool": node.name,
                             }
                         )
@@ -1351,6 +1411,107 @@ class ToolReachabilityRule(QAValidationRule):
                 "reachable_tools": sorted(reachable_tools),
                 "bound_tools": sorted(bound_tools),
             },
+        )
+
+
+class DomainArchitectureAlignmentRule(QAValidationRule):
+    """Warn when domain-specific notebooks still expose generic architecture names."""
+
+    rule_id = "domain_architecture_alignment"
+    check_name = "Domain Architecture Alignment"
+    category = "docs_alignment"
+    failure_severity = "warning"
+    repairable = False
+
+    DOMAIN_CUES = {
+        "museum": {"museum", "artifact", "catalog", "archive", "collection"},
+        "incident": {"incident", "outage", "sre", "remediation", "alert"},
+        "support": {"support", "customer", "ticket", "escalation", "case"},
+        "research": {"research", "report", "synthesis", "citation", "source"},
+        "data": {"data", "dataset", "schema", "validation", "catalog"},
+    }
+    HIGH_SIGNAL_CUES = {
+        "museum": {"museum", "artifact"},
+        "incident": {"incident", "outage", "remediation"},
+        "support": {"ticket", "escalation"},
+        "research": {"research", "synthesis", "citation"},
+        "data": {"dataset", "schema", "validation"},
+    }
+    GENERIC_NODE_PATTERN = re.compile(
+        r"^(specialist|worker|agent|subagent|node|default)_?\d*$"
+    )
+
+    def validate(self, context: NotebookValidationContext) -> Optional[QAReport]:
+        content = "\n".join(_cell_source(cell) for cell in context.notebook.cells)
+        lowered_content = content.lower()
+        content_tokens = set(re.findall(r"[a-z][a-z0-9_]+", lowered_content))
+        matched_domains = sorted(
+            domain
+            for domain, cues in self.DOMAIN_CUES.items()
+            if len(content_tokens & cues) >= 2
+            or bool(content_tokens & self.HIGH_SIGNAL_CUES.get(domain, set()))
+        )
+        if not matched_domains:
+            return self.passed_report(
+                "No strong domain-specific cues required architecture-name alignment.",
+                evidence={"matched_domains": []},
+            )
+
+        tree = context.ast_tree()
+        if tree is None:
+            return None
+
+        generic_nodes: list[dict[str, object]] = []
+        routing_claims: list[str] = []
+        uses_command = "Command(" in content
+        uses_conditional_edges = ".add_conditional_edges" in content
+
+        if "command" in lowered_content and uses_conditional_edges and not uses_command:
+            routing_claims.append(
+                "Notebook prose mentions Command routing but code only shows conditional edges."
+            )
+
+        for node in ast.walk(tree):
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                function_name = node.name.removesuffix("_node")
+                if self.GENERIC_NODE_PATTERN.match(function_name):
+                    generic_nodes.append(
+                        {
+                            "identifier": function_name,
+                            "kind": "function",
+                            **context.resolve_line(getattr(node, "lineno", None)),
+                        }
+                    )
+            elif isinstance(node, ast.Call) and _call_name(node.func).endswith(
+                ".add_node"
+            ):
+                node_name = _literal_string(node.args[0]) if node.args else None
+                if node_name and self.GENERIC_NODE_PATTERN.match(node_name):
+                    generic_nodes.append(
+                        {
+                            "identifier": node_name,
+                            "kind": "graph_node",
+                            **context.resolve_line(getattr(node, "lineno", None)),
+                        }
+                    )
+
+        if generic_nodes or routing_claims:
+            return self.failed_report(
+                "Domain-specific notebook still contains generic or misaligned architecture labels.",
+                suggestions=[
+                    "Carry request-domain terms into node ids, function names, Mermaid labels, and prose.",
+                    "Make routing prose match the actual implementation style: Command routes or conditional edges.",
+                ],
+                evidence={
+                    "matched_domains": matched_domains,
+                    "generic_nodes": generic_nodes,
+                    "routing_claims": routing_claims,
+                },
+            )
+
+        return self.passed_report(
+            "Domain-specific notebook labels align with the request domain.",
+            evidence={"matched_domains": matched_domains, "generic_nodes": []},
         )
 
 

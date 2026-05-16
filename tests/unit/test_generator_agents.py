@@ -42,10 +42,12 @@ from langgraph_system_generator.generator.state import (
     CellSpec,
     Constraint,
     DocSnippet,
+    GraphCommandRouteSpec,
     GraphConditionalEdgeSpec,
     GraphDesignResult,
     GraphEdgeSpec,
     GraphNodeSpec,
+    GraphToolReachabilitySpec,
     QAReport,
     ToolSpec,
 )
@@ -1184,6 +1186,84 @@ def test_graph_design_validation_detects_cycles_and_unreachable_nodes():
     assert "cycle_detected" in issue_codes
     assert "unreachable_node" in issue_codes
     assert "missing_terminal_path" in issue_codes
+
+
+def test_graph_design_exports_canonical_spec_metadata():
+    """Graph exports should carry the richer graph/spec contract."""
+
+    result = GraphDesignResult(
+        architecture_type="router",
+        state_schema={"messages": "Conversation state"},
+        nodes=[
+            GraphNodeSpec(
+                name="router",
+                purpose="Route artifact requests",
+                role="router",
+                domain_terms=["museum", "artifact"],
+                required_tools=["catalog_lookup"],
+            ),
+            GraphNodeSpec(
+                name="artifact_cataloger",
+                purpose="Catalog museum artifacts",
+                role="direct_specialist",
+                domain_terms=["museum", "artifact"],
+            ),
+        ],
+        edges=[],
+        conditional_edges=[],
+        command_routes=[
+            GraphCommandRouteSpec(
+                source="router",
+                destinations=["artifact_cataloger", "END"],
+                update_fields=["route"],
+                condition="Route by artifact request type",
+            )
+        ],
+        tool_reachability=[
+            GraphToolReachabilitySpec(
+                tool_id="catalog_lookup",
+                execution_path="deterministic_node",
+                node="artifact_cataloger",
+                rationale="Catalog lookup is called by the cataloger node.",
+            )
+        ],
+        domain_terms=["museum", "artifact"],
+        entry_point="router",
+        checkpointing=False,
+    )
+
+    registration = get_graph_design_registry().get("router")
+    issues = validate_graph_design(result, registration)
+    exports = build_graph_exports(result, registration, issues)
+
+    assert not [issue for issue in issues if issue.severity == "error"]
+    assert exports.schema["compiled_graph_variable"] == "graph"
+    assert exports.schema["command_routes"][0]["source"] == "router"
+    assert exports.schema["tool_reachability"][0]["tool_id"] == "catalog_lookup"
+    assert exports.schema["domain_terms"] == ["museum", "artifact"]
+    assert "-." in exports.mermaid
+
+
+def test_graph_design_fallback_uses_domain_specific_roles():
+    """Deterministic fallbacks should avoid generic specialists for domain prompts."""
+
+    registration = get_graph_design_registry().get("router")
+    payload = registration.fallback_builder(
+        constraints=[
+            Constraint(
+                type="goal",
+                value="Build a museum artifact cataloging workflow.",
+                priority=5,
+            )
+        ]
+    )
+    result = normalize_graph_design(payload, "router", registration)
+
+    node_names = [node.name for node in result.nodes]
+    assert "artifact_cataloger" in node_names
+    assert "metadata_validator" in node_names
+    assert "specialist_1" not in node_names
+    assert {"museum", "artifact"} <= set(result.domain_terms)
 
 
 def test_graph_design_registry_deepagents_fallback_validates_and_exports():

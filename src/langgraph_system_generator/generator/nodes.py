@@ -373,6 +373,24 @@ def _build_generation_context_pack(state: GeneratorState) -> GenerationContextPa
     supported_architectures = ARCHITECTURE_REGISTRY.supported_architecture_types()
     docs_snippets: List[Dict[str, Any]] = []
 
+    source_precedence = [
+        "langchain-docs-local",
+        "context7",
+        "cached_repo_docs",
+        "rag_index",
+    ]
+    source_counts: Dict[str, int] = {source: 0 for source in source_precedence}
+
+    def _source_kind(source: Any) -> str:
+        normalized = str(source or "").lower()
+        if "context7" in normalized:
+            return "context7"
+        if "langchain" in normalized or "langgraph" in normalized:
+            return "langchain-docs-local"
+        if "cache" in normalized or "docs/" in normalized:
+            return "cached_repo_docs"
+        return "rag_index"
+
     for snippet in docs_context[:6]:
         payload = (
             snippet.model_dump()
@@ -387,9 +405,15 @@ def _build_generation_context_pack(state: GeneratorState) -> GenerationContextPa
             }
         )
         content = str(payload.get("content", ""))
+        source_kind = _source_kind(payload.get("source"))
+        source_counts[source_kind] = source_counts.get(source_kind, 0) + 1
         docs_snippets.append(
             {
                 "source": payload.get("source"),
+                "source_kind": source_kind,
+                "source_precedence_rank": source_precedence.index(source_kind)
+                if source_kind in source_precedence
+                else len(source_precedence),
                 "heading": payload.get("heading"),
                 "relevance_score": payload.get("relevance_score", 0.0),
                 "excerpt": content[:600],
@@ -451,6 +475,14 @@ def _build_generation_context_pack(state: GeneratorState) -> GenerationContextPa
             "runtime_smoke_test",
         ],
         docs_snippets=docs_snippets,
+        source_summary={
+            "source_precedence": source_precedence,
+            "docs_snippet_count": len(docs_snippets),
+            "source_counts": {
+                key: value for key, value in source_counts.items() if value
+            },
+            "docs_live_required": False,
+        },
         fallback_used=not bool(docs_snippets),
         warnings=(
             [

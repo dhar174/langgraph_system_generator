@@ -15,6 +15,7 @@ from langgraph_system_generator.generator.graph_design_registry import (
     GraphDesignRegistration,
     GraphDesignRegistry,
     build_graph_exports,
+    domain_terms_for_constraints,
     get_graph_design_registry,
     graph_design_issue_messages,
     normalize_graph_design,
@@ -128,6 +129,10 @@ class GraphDesigner:
             response = await self.llm.ainvoke([design_prompt, user_message])
             payload = extract_json_from_llm_response(response.content)
             live_result = normalize_graph_design(payload, architecture_type, registration)
+            if not live_result.domain_terms:
+                live_result = live_result.model_copy(
+                    update={"domain_terms": domain_terms_for_constraints(constraints)}
+                )
             live_issues = validate_graph_design(live_result, registration)
             if self._has_blocking_issues(live_issues):
                 fallback_reason = "Live graph design validation failed."
