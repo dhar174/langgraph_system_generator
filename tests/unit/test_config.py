@@ -82,6 +82,7 @@ def test_settings_defaults(monkeypatch):
     assert loaded.default_model == "gpt-5-mini"
     assert loaded.max_repair_attempts == 3
     assert loaded.default_budget_tokens == 100000
+    assert loaded.architecture_prompt_doc_limit == 16
 
 
 def test_settings_defaults_ignore_project_env_under_pytest(tmp_path, monkeypatch):

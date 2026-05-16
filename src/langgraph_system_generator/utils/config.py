@@ -150,7 +150,7 @@ class Settings(BaseSettings):
         ),
     )
     architecture_prompt_doc_limit: int = Field(
-        default=8,
+        default=16,
         ge=1,
         description="Maximum number of weighted docs snippets included in the architecture selector prompt.",
     )
