@@ -44,6 +44,13 @@ def test_package_metadata_is_ready_for_1_0_release() -> None:
     assert '__version__ = "1.0.0"' in init_version
 
 
+def test_package_includes_web_ui_static_assets() -> None:
+    keywords = _setup_call_keywords()
+
+    package_data = ast.literal_eval(keywords["package_data"])
+    assert package_data["langgraph_system_generator.api"] == ["static/*"]
+
+
 def test_public_docs_no_longer_describe_release_as_alpha() -> None:
     checked_paths = [
         "README.md",
