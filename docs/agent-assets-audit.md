@@ -109,7 +109,9 @@ contracts.
 - Small top-level mirrors such as `langsmith-dataset`,
   `langsmith-evaluator`, `mcp-cli`, `image-manipulation-image-magick`, and
   `refactor` should stay byte-synchronized with their `.github/skills/`
-  counterparts when either copy changes.
+  counterparts in the final tree when either copy changes. If a PR shows a
+  one-sided diff because one mirror already had the target content, record a
+  mirror hash check in the verification notes.
 - `skills/repo-agent-bootstrap/SKILL.md` is a lightweight pointer mirror by
   design. The full runnable repo-local bootstrap skill lives in
   `.github/skills/repo-agent-bootstrap/`, with the Codex-local full mirror in
