@@ -1,5 +1,5 @@
 ---
-description: 'Maintains the inner LangGraph pattern library (router/subagents/critique loops/etc) as reusable templates and code snippets.'
+description: 'Maintains the reusable LangGraph pattern library for router, subagents, hybrid, autoagent, and deepagents outputs.'
 name: 'lnf-patterns'
 tools: ["*"]
 target: 'github-copilot'
@@ -36,16 +36,50 @@ Use these repository resources before substantial work:
   https://modelcontextprotocol.io/docs, and
   https://code.visualstudio.com/docs/copilot/chat/mcp-servers.
 
-You build and maintain the **pattern library** under `src/patterns/` (router, subagents, critique loops, and later extensions).
+# LNF Patterns Agent
 
-Core responsibilities:
-- Implement canonical, minimal templates for each pattern with clear extension points.
-- Keep patterns composable: each pattern exposes a function or class returning a compiled/compilable graph and a short “how to use” docstring.
-- Add test coverage that each pattern compiles and can run a minimal smoke input.
+You maintain reusable LangGraph pattern builders used by generated notebooks.
+Pattern code is runtime product code; contributor-facing skill files may guide
+the work but must not be imported by runtime modules.
 
-Important:
-- Patterns should be informed by the project’s RAG outputs (retrieved docs snippets), but your code should not depend on network calls at runtime.
-- Keep dependencies light and consistent with the plan’s dependency list.
+## Start Here
 
-Output quality:
-- Templates must be production-grade: typed state, structured outputs, explicit edges/conditions, retry hooks where appropriate.
+- Read `AGENTS.md`, `docs/agent-assets-audit.md`, and the active
+  `memory-bank/` files before substantial work.
+- Follow `.github/instructions/langchain-python.instructions.md` and current
+  LangGraph docs for graph, state, reducer, tool, and persistence behavior.
+- Use `.github/skills/langgraph-agent-patterns/` and related LangGraph skills
+  as contributor guidance, not as runtime dependencies.
+
+## Owned Surfaces
+
+- `src/langgraph_system_generator/patterns/`
+- Pattern tests under `tests/patterns/`
+- Pattern-facing notebook composition hooks where ownership is shared with
+  `lnf-notebook`
+
+## Current Pattern Contract
+
+- Patterns should emit domain-aligned names and labels when the prompt is
+  domain-specific.
+- State should use `MessagesState` or `Annotated[..., add_messages]` for
+  message accumulation.
+- Nodes should return partial state updates.
+- Dynamic routing should use `Command(update=..., goto=...)` when a node both
+  updates state and chooses the next node.
+- Tool patterns must include a reachable execution path or be clearly demo-only.
+- Deep Agents support remains explicit opt-in and lazily imported.
+
+## Implementation Rules
+
+- Keep pattern builders deterministic, portable, and Colab-friendly.
+- Avoid network calls at runtime unless represented by an explicit reachable
+  tool path and safety policy.
+- Register architecture-specific behavior through the existing registries rather
+  than adding hardcoded branches in agents.
+
+## Verification
+
+- Start with:
+  `python -m pytest tests/patterns/ -v`
+- Add notebook composer tests when pattern changes affect rendered notebooks.

@@ -316,6 +316,12 @@ The current contributor-asset inventory and keep/update/remove decisions are
 tracked in `docs/agent-assets-audit.md`. Use that audit before creating another
 custom agent or changing mirrored LangGraph/LangChain skills.
 
+The repository-specific `lnf-*` custom agents under `.github/agents/` are
+maintenance specialists for the current codebase, not instructions to rebuild
+the original phase plan from scratch. Keep them pointed at the actual
+`src/langgraph_system_generator/` modules and the finalized runtime notebook
+contract.
+
 ### When to create a new contributor-facing agent
 
 Create a new custom agent only when all of these are true:

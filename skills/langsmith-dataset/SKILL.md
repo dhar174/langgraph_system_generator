@@ -102,7 +102,7 @@ client = Client()
 # 2. Process traces into dataset examples
 examples = []
 for jsonl_file in Path("./traces").glob("*.jsonl"):
-    runs = [json.loads(line) for line in jsonl_file.read_text().strip().split("\n")]
+    runs = [json.loads(line) for line in jsonl_file.read_text().splitlines() if line.strip()]
     root = next((r for r in runs if r.get("parent_run_id") is None), None)
     if root and root.get("inputs") and root.get("outputs"):
         examples.append({

@@ -58,6 +58,10 @@
 - Keep contributor-facing LangGraph/LangChain skills and LNF custom agents
   aligned with the canonical runtime notebook contract without importing those
   assets into runtime code.
+- After the #322 follow-up, the LNF custom agents should be treated as
+  maintenance specialists for the current codebase rather than initial
+  phase-by-phase builders, and mirrored LangChain/LangSmith skills should stay
+  synchronized where they are true mirrors.
 - Keep the 1.0 release tracker (#256) aligned with packaging, workflow,
   evaluation, metadata, issue-triage, and PR progress until the `v1.0.0`
   release is published.

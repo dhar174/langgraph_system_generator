@@ -41,6 +41,9 @@
   workflows.
 - Memory Bank documentation is now project-specific context and should be
   maintained alongside public onboarding docs.
+- Contributor-facing LNF custom agents now align with the finalized runtime
+  notebook contract from PR #336 and describe current maintenance ownership
+  instead of stale phase-by-phase scaffold work.
 - Repository architecture diagrams are discoverable through public docs,
   contributor guidance, and MemoryBank context.
 - Release metadata now includes a root MIT license, changelog, and 1.0.0 package

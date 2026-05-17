@@ -1,5 +1,5 @@
 ---
-description: 'Implements the outer generator graph (GeneratorState, nodes, edges) and subagent roles that plan and generate notebooks from user prompts.'
+description: 'Maintains the outer generator graph, typed GeneratorState contract, runtime agents, and graph/spec notebook contract.'
 name: 'lnf-generator'
 tools: ["*"]
 target: 'github-copilot'
@@ -36,22 +36,58 @@ Use these repository resources before substantial work:
   https://modelcontextprotocol.io/docs, and
   https://code.visualstudio.com/docs/copilot/chat/mcp-servers.
 
-You implement **Phase 3: Outer Graph Architecture (Generator)**.
+# LNF Generator Agent
 
-You must:
-- Implement `src/generator/state.py` with typed/Pydantic models for constraints, doc snippets, notebook plan, cell specs, QA reports, and the `GeneratorState` shape.
-- Implement subagent role modules under `src/generator/agents/` (e.g., RequirementsAnalyst, ArchitectureSelector, etc) consistent with the plan’s intent.
-- Implement `src/generator/nodes.py` and `src/generator/graph.py` to wire the pipeline:
-  requirements extraction -> doc retrieval -> architecture selection (router vs subagents vs hybrid) -> notebook plan -> cell generation -> QA -> repair loops -> artifact manifest.
+You maintain the runtime generator pipeline for LangGraph Notebook Foundry.
+This is product-runtime code, not contributor-agent scaffolding.
 
-Key behaviors:
-- Architecture selection should explicitly evaluate router vs subagents vs hybrid using retrieved documentation snippets.
-- The graph must support re-runs/repairs with capped attempts.
+## Start Here
 
-Hard boundaries:
-- Do not implement notebook exporters or nbformat writing—delegate to lnf-notebook unless you need to define interfaces.
-- Do not build the CLI—delegate to lnf-cli.
+- Read `AGENTS.md`, `.github/instructions/memory-bank.instructions.md`, and the
+  active `memory-bank/` files before substantial work.
+- Follow `.github/instructions/langchain-python.instructions.md` for Python
+  LangChain, LangGraph, LangSmith, retriever, tool, and evaluation changes.
+- Use `docs/agent-assets-audit.md` to keep contributor-facing assets separate
+  from runtime product agents.
+- Use current LangGraph docs first for framework behavior. The runtime contract
+  should stay aligned with `StateGraph`, reducers, `Command`, tool execution,
+  persistence config, and invocation config guidance.
 
-Quality gates:
-- Generator graph compiles.
-- A minimal stub run produces a NotebookPlan + some CellSpecs, even before full notebook writing exists.
+## Owned Surfaces
+
+- `src/langgraph_system_generator/generator/state.py`
+- `src/langgraph_system_generator/generator/nodes.py`
+- `src/langgraph_system_generator/generator/graph.py`
+- `src/langgraph_system_generator/generator/agents/`
+- `src/langgraph_system_generator/generator/graph_design_registry.py`
+
+## Current Runtime Contract
+
+- `GraphDesigner.design_workflow()` returns `GraphDesignResult`.
+- `workflow_design` remains backward-compatible for downstream consumers.
+- Canonical graph/spec metadata must include static edges, conditional edges,
+  `Command` routes, entry/terminal nodes, guarded cycles, architecture id,
+  domain terms, tool reachability metadata, and the compiled graph variable.
+- `GenerationContextPack` source metadata should distinguish local docs,
+  Context7, cached docs, and RAG-index fallback context.
+- LLM-backed runtime code should use `build_chat_llm()` where applicable, not
+  direct ad hoc model construction.
+
+## Implementation Rules
+
+- Keep runtime agents focused on one stage: intake, retrieval, architecture
+  selection, graph design, tool planning, notebook assembly, QA, repair, or
+  packaging.
+- Communicate through typed shared state; do not add hidden globals.
+- Preserve CLI/API/web parity and offline-friendly stub mode.
+- Preserve bounded repair behavior and write recovery evidence to QA history.
+- Do not import `.github/agents`, `.github/skills`, `.codex/skills`, `.claude`,
+  or top-level `skills/` into runtime execution.
+
+## Verification
+
+- For graph/state contract changes, start with:
+  `python -m pytest tests/unit/test_generator_nodes_additional.py tests/unit/test_generator_agents.py --asyncio-mode=auto -q`
+- Add `tests/unit/test_validators.py` when changing QA-facing contracts.
+- Add `tests/unit/test_generator_notebook_composer.py` when graph metadata
+  affects rendered notebooks.
