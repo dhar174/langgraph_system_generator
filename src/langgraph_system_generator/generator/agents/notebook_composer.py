@@ -60,6 +60,70 @@ class NotebookComposer:
     stub and offline workflows.
     """
 
+    _PATTERN_STATE_FIELDS: dict[str, set[str]] = {
+        "router": {
+            "messages",
+            "route",
+            "route_reasoning",
+            "route_history",
+            "results",
+            "final_output",
+        },
+        "subagents": {
+            "messages",
+            "next_agent",
+            "instructions",
+            "iterations",
+            "dispatch_log",
+            "task_results",
+            "final_output",
+        },
+        "autoagent": {
+            "messages",
+            "next_agent",
+            "instructions",
+            "iterations",
+            "dispatch_log",
+            "task_results",
+            "final_output",
+        },
+        "hybrid": {
+            "messages",
+            "route",
+            "route_reasoning",
+            "route_history",
+            "next_agent",
+            "instructions",
+            "iterations",
+            "dispatch_log",
+            "results",
+            "task_results",
+            "final_output",
+        },
+        "deepagents": {
+            "messages",
+            "task_plan",
+            "artifacts",
+            "subagent_results",
+            "final_output",
+            "deepagents_available",
+        },
+        "critique_loop": {
+            "messages",
+            "current_draft",
+            "critique_feedback",
+            "revision_count",
+            "quality_score",
+            "approved",
+            "criteria",
+            "draft_history",
+            "revision_history",
+            "final_output",
+            "human_feedback_handler",
+            "previous_quality_score",
+        },
+    }
+
     def __init__(
         self,
         model: str | None = None,
@@ -98,6 +162,25 @@ class NotebookComposer:
             if not slug.isidentifier() or keyword.iskeyword(slug):
                 slug = "_identifier"
         return slug
+
+    def _state_schema_extensions(
+        self,
+        architecture_type: str,
+        state_schema: Dict[str, Any],
+    ) -> Dict[str, str]:
+        """Return graph-spec fields not already declared by the pattern state."""
+
+        reserved = self._PATTERN_STATE_FIELDS.get(architecture_type, {"messages"})
+        extensions: Dict[str, str] = {}
+        if not isinstance(state_schema, dict):
+            return extensions
+
+        for field_name, description in state_schema.items():
+            safe_field = self._safe_identifier(field_name, "field").lower()
+            if safe_field in reserved:
+                continue
+            extensions[str(field_name)] = str(description)
+        return extensions
 
     @staticmethod
     def _normalize_inline_text(value: Any, fallback: str) -> str:
@@ -232,7 +315,9 @@ class NotebookComposer:
                 accumulator.runtime_notes.append(note)
 
         for tool in tools:
-            tool_status = self._normalize_inline_text(tool.get("status", ""), "").lower()
+            tool_status = self._normalize_inline_text(
+                tool.get("status", ""), ""
+            ).lower()
             if tool_status == "unsupported":
                 continue
             accumulate_tool_dependencies(accumulator, tool)
@@ -348,12 +433,16 @@ class NotebookComposer:
             ),
         )
 
-        architecture_type = str(
-            workflow_design.get("architecture_type")
-            or architecture.get("architecture_type")
-            or notebook_plan.architecture_type
-            or "router"
-        ).strip().lower()
+        architecture_type = (
+            str(
+                workflow_design.get("architecture_type")
+                or architecture.get("architecture_type")
+                or notebook_plan.architecture_type
+                or "router"
+            )
+            .strip()
+            .lower()
+        )
         workflow_design["architecture_type"] = architecture_type
         registration = self.registry.resolve(architecture_type)
         cells: List[CellSpec] = []
@@ -578,7 +667,11 @@ if missing_packages:
 else:
     print("All required packages are already available.")"""
 
-        markdown_lines = ["## Installation", "", "Install any missing packages needed by this notebook."]
+        markdown_lines = [
+            "## Installation",
+            "",
+            "Install any missing packages needed by this notebook.",
+        ]
         if dependency_plan.runtime_notes:
             markdown_lines.extend(["", "### Environment Notes", ""])
             markdown_lines.extend(f"- {note}" for note in dependency_plan.runtime_notes)
@@ -632,7 +725,7 @@ else:
             config_lines.extend(
                 [
                     f'{safe_env_var} = os.environ.get("{safe_env_var}", "")',
-                    f'if not {safe_env_var}:',
+                    f"if not {safe_env_var}:",
                     f'    print("{safe_env_var} is not set. Configure it in your environment before running live model cells.")',
                     "    # Optional interactive fallback for local notebook sessions:",
                     "    # from getpass import getpass",
@@ -657,8 +750,13 @@ else:
 
     def _create_state_cells(self, workflow_design: Dict[str, Any]) -> List[CellSpec]:
         """Create state definition cells using pattern library or custom generation."""
-        architecture_type = workflow_design.get("architecture_type", "router")
-        state_schema = workflow_design.get("state_schema", {})
+        architecture_type = str(
+            workflow_design.get("architecture_type", "router")
+        ).lower()
+        state_schema = self._state_schema_extensions(
+            architecture_type,
+            workflow_design.get("state_schema", {}),
+        )
 
         # Use pattern library for known architectures
         if architecture_type == "router":
@@ -775,12 +873,14 @@ Common tool categories and approaches:
 Return ONLY the Python function code, nothing else."""
             )
 
-            user_prompt = HumanMessage(content=f"""Tool Name: {tool_name}
+            user_prompt = HumanMessage(
+                content=f"""Tool Name: {tool_name}
 Purpose: {tool_purpose}
 Category: {tool_category}
 Configuration: {tool_config}
 
-Generate the complete Python function implementation.""")
+Generate the complete Python function implementation."""
+            )
 
             # Use the async LLM path so multiple tool implementations can run concurrently.
             response = await self._invoke_llm([system_prompt, user_prompt])
@@ -844,9 +944,7 @@ Generate the complete Python function implementation.""")
         )
         safe_tool_category = self._normalize_inline_text(tool_category, "general")
         func_name = self._safe_identifier(tool_name, "unknown_tool")
-        warning = (
-            f'Deterministic fallback used for tool "{safe_tool_name}".'
-        )
+        warning = f'Deterministic fallback used for tool "{safe_tool_name}".'
         self._record_fallback(
             feedback,
             kind="tool",
@@ -1032,7 +1130,7 @@ Generate a complete, production-ready Python function for a LangGraph node.
 
 Requirements:
 - Function signature: {function_signature}
-- The function MUST return an updated state dictionary (not just 'return state')
+- The function MUST return a partial state update dictionary (not a full state copy or 'return state')
 - Include proper LLM initialization and invocation if needed
 - Use MessagesState pattern with proper message handling
 - Import necessary libraries at the function level
@@ -1047,13 +1145,15 @@ Return ONLY the Python function code, nothing else."""
                 [f"- {field}: {desc}" for field, desc in state_schema.items()]
             )
 
-            user_prompt = HumanMessage(content=f"""Node Name: {node_name}
+            user_prompt = HumanMessage(
+                content=f"""Node Name: {node_name}
 Purpose: {node_purpose}
 
 State Schema:
 {state_info}
 
-Generate the complete Python function implementation.""")
+Generate the complete Python function implementation."""
+            )
 
             # Use the async LLM path so custom nodes can run concurrently.
             response = await self._invoke_llm([system_prompt, user_prompt])
@@ -1136,7 +1236,7 @@ Generate the complete Python function implementation.""")
         )
 
         update_lines = [
-            "    updates: dict[str, object] = dict(state)",
+            "    updates: dict[str, object] = {}",
             '    messages = list(state.get("messages", []))',
             '    last_content = messages[-1].content if messages else ""',
             f'    node_summary = {node_name_literal} + " completed: " + (last_content or {node_purpose_literal})',
@@ -1225,14 +1325,38 @@ def {safe_node_identifier}_node(state: WorkflowState) -> WorkflowState:
         non_router_nodes = [
             node for node in nodes if node.get("name") not in {"router", "supervisor"}
         ]
-        direct_specialists = [
-            str(node.get("name"))
-            for node in non_router_nodes
-            if not any(
-                token in str(node.get("name", "")).lower()
-                for token in {"research", "review", "worker", "planner", "critic"}
-            )
-        ]
+        direct_role_names = {"direct", "direct_specialist", "specialist"}
+        worker_role_names = {
+            "worker",
+            "team_worker",
+            "subagent",
+            "reviewer",
+            "planner",
+            "critic",
+            "qa",
+            "quality_assurance",
+        }
+        worker_name_tokens = {
+            "research",
+            "review",
+            "worker",
+            "planner",
+            "critic",
+            "qa",
+        }
+        direct_specialists: list[str] = []
+        team_workers: list[str] = []
+        for node in non_router_nodes:
+            node_name = str(node.get("name"))
+            role_name = str(node.get("role", "")).strip().lower()
+            if role_name in direct_role_names:
+                direct_specialists.append(node_name)
+            elif role_name in worker_role_names or any(
+                token in node_name.lower() for token in worker_name_tokens
+            ):
+                team_workers.append(node_name)
+            else:
+                direct_specialists.append(node_name)
         if not direct_specialists:
             if non_router_nodes:
                 direct_specialists = [str(non_router_nodes[0].get("name"))]
@@ -1240,9 +1364,7 @@ def {safe_node_identifier}_node(state: WorkflowState) -> WorkflowState:
                 direct_specialists = ["specialist_1"]
 
         team_workers = [
-            str(node.get("name"))
-            for node in non_router_nodes
-            if str(node.get("name")) not in direct_specialists
+            worker for worker in team_workers if worker not in direct_specialists
         ]
         if len(team_workers) < 2:
             fallback_workers = [
@@ -1601,6 +1723,24 @@ def {safe_node_identifier}_node(state: WorkflowState) -> WorkflowState:
         nodes = workflow_design.get("nodes", [])
         edges = workflow_design.get("edges", [])
         conditional_edges = workflow_design.get("conditional_edges", [])
+        command_routes = workflow_design.get("command_routes", [])
+
+        def _as_string_list(values: Any) -> list[str]:
+            if values is None:
+                raw_values: list[Any] = []
+            elif isinstance(values, str):
+                raw_values = [values]
+            else:
+                try:
+                    raw_values = list(values)
+                except TypeError:
+                    raw_values = [values]
+            normalized_values: list[str] = []
+            for raw_value in raw_values:
+                normalized_value = str(raw_value or "").strip()
+                if normalized_value and normalized_value not in normalized_values:
+                    normalized_values.append(normalized_value)
+            return normalized_values
 
         # Generate node additions
         node_bindings = [
@@ -1651,6 +1791,63 @@ workflow.add_conditional_edges({safe_source}, {function_name}, {{"__end__": END}
                 conditional_blocks
             )
 
+        command_route_code = ""
+        if command_routes:
+            command_blocks = []
+            for index, route in enumerate(command_routes):
+                if not isinstance(route, dict):
+                    continue
+                source = str(route.get("source") or route.get("from") or "").strip()
+                if not source:
+                    continue
+                destinations = _as_string_list(route.get("destinations"))
+                update_fields = _as_string_list(route.get("update_fields"))
+                path_items: list[str] = []
+                route_keys: list[str] = []
+                for destination in destinations:
+                    if destination in {"END", "__end__"}:
+                        route_key = "__end__"
+                        path_items.append('"__end__": END')
+                    else:
+                        route_key = destination
+                        path_items.append(
+                            f"{json.dumps(route_key)}: {json.dumps(destination)}"
+                        )
+                    route_keys.append(route_key)
+                if not path_items:
+                    continue
+                path_map_literal = "{" + ", ".join(path_items) + "}"
+                default_route = json.dumps(route_keys[0])
+                source_slug = self._safe_identifier(source, "node")
+                function_name = f"_command_route_from_{source_slug}_{index}"
+                path_map_name = f"{function_name}_path_map"
+                field_checks = "\n".join(
+                    [
+                        f"""    value = state.get({json.dumps(field_name)})
+    if value in path_map:
+        return value"""
+                        for field_name in update_fields
+                    ]
+                )
+                if not field_checks:
+                    field_checks = f"    return {default_route}"
+                else:
+                    field_checks = f"{field_checks}\n    return {default_route}"
+                command_blocks.append(
+                    f"""{path_map_name} = {path_map_literal}
+
+def {function_name}(state: WorkflowState) -> str:
+    path_map = {path_map_name}
+{field_checks}
+
+workflow.add_conditional_edges({json.dumps(source)}, {function_name}, {path_map_name})"""
+                )
+            if command_blocks:
+                command_route_code = (
+                    "\n\n# Add Command route metadata as executable conditional wiring\n"
+                    + "\n\n".join(command_blocks)
+                )
+
         return f"""from langgraph.graph import END, START, StateGraph
 from langgraph.checkpoint.memory import InMemorySaver
 
@@ -1667,6 +1864,7 @@ workflow.add_edge(START, "{entry_point}")
 # Add edges
 {edge_additions if edge_additions else "# Add your edges here"}
 {conditional_code}
+{command_route_code}
 
 # Compile graph
 graph = workflow.compile(checkpointer=memory)"""

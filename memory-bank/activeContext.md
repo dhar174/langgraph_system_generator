@@ -22,6 +22,19 @@
   NotebookComposer, ToolchainEngineer, and QARepairAgent have added typed
   feedback models, registry-backed internals, warning surfaces, and public
   manifest/API fields.
+- The graph design contract now carries richer canonical spec metadata for
+  command routes, tool reachability, domain terms, guarded cycles, terminal
+  nodes, and the compiled graph variable while keeping `workflow_design`
+  backward-compatible.
+- Generation context packs now summarize source provenance so notebooks,
+  manifests, and QA can explain whether docs came from local LangChain docs,
+  Context7, cached repo docs, or fallback retrieval context.
+- Runtime QA now checks for LangGraph notebook contract drift such as full-state
+  overwrite node returns, unsafe broad HTTP tool placeholders, and generic
+  architecture labels in domain-specific notebooks.
+- `docs/agent-assets-audit.md` records the contributor-facing custom
+  agent/skill inventory and keeps those assets separate from runtime product
+  agents.
 - `docs/diagrams/README.md` now indexes both the hand-maintained generator
   stage/state map and the generated repo architecture visualizer bundle.
 - The 1.0 readiness branch adds a root MIT license, changelog, stable package
@@ -42,6 +55,13 @@
 
 - Keep public docs, examples, and onboarding copy aligned with the current
   CLI/API contract.
+- Keep contributor-facing LangGraph/LangChain skills and LNF custom agents
+  aligned with the canonical runtime notebook contract without importing those
+  assets into runtime code.
+- After the #322 follow-up, the LNF custom agents should be treated as
+  maintenance specialists for the current codebase rather than initial
+  phase-by-phase builders, and mirrored LangChain/LangSmith skills should stay
+  synchronized where they are true mirrors.
 - Keep the 1.0 release tracker (#256) aligned with packaging, workflow,
   evaluation, metadata, issue-triage, and PR progress until the `v1.0.0`
   release is published.
@@ -64,6 +84,9 @@
 - Runtime QA performs environment preflight and smoke-test validation; in stub
   mode unavailable notebook runtimes are recorded as non-blocking evidence, but
   live mode treats runtime support gaps as real failures.
+- Generated notebooks should use explicit LangGraph state/reducer semantics,
+  partial node updates, reachable tool execution claims, domain-aligned labels,
+  and a standard compiled `graph` variable with thread-aware invocation config.
 - The SSE implementation is appropriate for single-server development, but not a
   distributed production event bus.
 - Packaging smoke tests are opt-in through `RUN_PACKAGING_SMOKE=1` because they

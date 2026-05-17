@@ -11,6 +11,7 @@ from nbformat import NotebookNode
 from langgraph_system_generator.generator.state import QAReport
 from langgraph_system_generator.qa.validators import (
     CanonicalSectionOrderRule,
+    DomainArchitectureAlignmentRule,
     GraphStructureRule,
     InvocationConfigRule,
     LangGraphTopologyRule,
@@ -219,6 +220,7 @@ def build_default_validator_registry() -> ValidatorRegistry:
             LangGraphTopologyRule(),
             StateReducerSemanticsRule(),
             ToolReachabilityRule(),
+            DomainArchitectureAlignmentRule(),
             InvocationConfigRule(),
         ]
     )

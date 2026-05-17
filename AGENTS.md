@@ -199,6 +199,10 @@ raw dict. Keep these conventions aligned when changing graph design behavior:
   validation fails
 - keep `workflow_design` backward-compatible for `ToolchainEngineer` and
   `NotebookComposer`
+- keep the canonical graph/spec metadata aligned across prose, Mermaid/schema
+  exports, manifests, and notebook rendering; this includes `Command` routes,
+  tool reachability, domain terms, guarded cycles, terminal nodes, and the
+  compiled graph variable name
 - surface recoverable graph issues through `graph_design_feedback` and
   `graph_exports` instead of silently discarding them
 - register new architecture-specific graph behavior through
@@ -239,6 +243,11 @@ that shared engine, not a second repair implementation.
   `qa_repair_feedback` stable for CLI/API/manifest consumers
 - validate repair candidates in memory first, persist only non-regressive
   results, and keep rollback/no-op outcomes visible in `qa_history`
+- keep validator coverage aligned with official LangGraph notebook semantics:
+  accumulated messages need reducer semantics, graph nodes should return
+  partial state updates, tool descriptions must match reachable execution
+  paths, and domain-specific prompts should not render generic architecture
+  placeholders
 - prefer bounded deterministic repairs over free-form rewrites, especially in
   stub mode and CI-facing tests
 
@@ -302,6 +311,16 @@ Use the right asset type for the job:
 Some shared skills are mirrored under the top-level `skills/` directory.
 If you update a skill that exists in both places, keep the mirrored copy in
 sync.
+
+The current contributor-asset inventory and keep/update/remove decisions are
+tracked in `docs/agent-assets-audit.md`. Use that audit before creating another
+custom agent or changing mirrored LangGraph/LangChain skills.
+
+The repository-specific `lnf-*` custom agents under `.github/agents/` are
+maintenance specialists for the current codebase, not instructions to rebuild
+the original phase plan from scratch. Keep them pointed at the actual
+`src/langgraph_system_generator/` modules and the finalized runtime notebook
+contract.
 
 ### When to create a new contributor-facing agent
 

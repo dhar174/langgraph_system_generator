@@ -148,6 +148,8 @@ The current LangChain docs show two common approaches:
 import bs4
 
 from langchain_community.document_loaders import WebBaseLoader
+from langchain_core.vectorstores import InMemoryVectorStore
+from langchain_openai import OpenAIEmbeddings
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 loader = WebBaseLoader(
@@ -166,6 +168,10 @@ splitter = RecursiveCharacterTextSplitter(
     add_start_index=True,
 )
 splits = splitter.split_documents(docs)
+
+embedding_model = OpenAIEmbeddings()
+vector_store = InMemoryVectorStore(embedding=embedding_model)
+vector_store.add_documents(splits)
 ```
 
 ### Minimal retrieval tool

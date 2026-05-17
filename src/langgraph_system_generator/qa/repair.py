@@ -35,7 +35,7 @@ recovered_workflow = StateGraph(RecoveredWorkflowState)
 
 
 def recovered_start(state: RecoveredWorkflowState):
-    return state
+    return {{}}
 
 
 recovered_workflow.add_node("recovered_start", recovered_start)

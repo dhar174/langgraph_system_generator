@@ -28,7 +28,9 @@ def normalize_constraint_type(value: str) -> str:
     return value.strip().lower().replace("-", "_").replace(" ", "_")
 
 
-def build_constraint_type_registry(extra_types: Optional[List[str]] = None) -> List[str]:
+def build_constraint_type_registry(
+    extra_types: Optional[List[str]] = None,
+) -> List[str]:
     """Build the ordered, de-duplicated registry of supported constraint types."""
 
     registry: List[str] = []
@@ -199,6 +201,18 @@ class GraphNodeSpec(BaseModel):
 
     name: str = Field(description="Stable node identifier used in graph wiring.")
     purpose: str = Field(description="Human-readable purpose for the node.")
+    role: Optional[str] = Field(
+        default=None,
+        description="Domain or architecture role carried into notebook rendering.",
+    )
+    domain_terms: List[str] = Field(
+        default_factory=list,
+        description="Request-specific domain terms represented by this node.",
+    )
+    required_tools: List[str] = Field(
+        default_factory=list,
+        description="Tool identifiers this node can reach directly or through a tool executor.",
+    )
 
 
 class GraphEdgeSpec(BaseModel):
@@ -223,6 +237,60 @@ class GraphConditionalEdgeSpec(BaseModel):
     branches: Dict[str, str] = Field(
         default_factory=dict,
         description="Mapping from branch labels to target node identifiers or END.",
+    )
+    routing_mechanism: Literal["conditional_edge", "command"] = Field(
+        default="conditional_edge",
+        description="Whether the route is implemented as a conditional edge or Command route.",
+    )
+    guarded_cycle: bool = Field(
+        default=False,
+        description="Whether a self/cyclic branch is explicitly guarded by routing logic.",
+    )
+
+
+class GraphCommandRouteSpec(BaseModel):
+    """Normalized Command-based route specification."""
+
+    source: str = Field(description="Node returning a langgraph.types.Command route.")
+    destinations: List[str] = Field(
+        default_factory=list,
+        description="Possible goto destinations, including END when applicable.",
+    )
+    update_fields: List[str] = Field(
+        default_factory=list,
+        description="State keys updated by the Command route.",
+    )
+    condition: str = Field(
+        default="",
+        description="Human-readable Command routing condition.",
+    )
+    guarded_cycle: bool = Field(
+        default=False,
+        description="Whether any cyclic Command route is bounded by explicit state checks.",
+    )
+
+
+class GraphToolReachabilitySpec(BaseModel):
+    """Normalized tool reachability contract for a graph design."""
+
+    tool_id: str = Field(description="Canonical tool identifier.")
+    execution_path: Literal[
+        "deterministic_node",
+        "tool_node",
+        "manual_loop",
+        "create_react_agent",
+        "demo_only",
+        "omitted",
+    ] = Field(
+        description="How the generated graph can execute or intentionally omit the tool."
+    )
+    node: Optional[str] = Field(
+        default=None,
+        description="Node that owns the execution path, when applicable.",
+    )
+    rationale: str = Field(
+        default="",
+        description="Why this reachability status is honest for the generated notebook.",
     )
 
 
@@ -312,7 +380,23 @@ class GraphDesignResult(BaseModel):
         default_factory=list,
         description="Normalized conditional graph edges.",
     )
+    command_routes: List[GraphCommandRouteSpec] = Field(
+        default_factory=list,
+        description="Normalized Command-based routes represented by the graph spec.",
+    )
+    tool_reachability: List[GraphToolReachabilitySpec] = Field(
+        default_factory=list,
+        description="Tool reachability metadata used by notebook rendering and QA.",
+    )
+    domain_terms: List[str] = Field(
+        default_factory=list,
+        description="Request-specific domain terms carried through graph/prose/code exports.",
+    )
     entry_point: str = Field(description="Entry point node identifier.")
+    compiled_graph_variable: str = Field(
+        default="graph",
+        description="Canonical compiled graph variable expected in generated notebooks.",
+    )
     checkpointing: bool = Field(
         default=False,
         description="Whether the generated workflow should enable checkpointing.",
@@ -332,12 +416,21 @@ class GraphDesignResult(BaseModel):
         return {
             "architecture_type": self.architecture_type,
             "state_schema": dict(self.state_schema),
-            "nodes": [node.model_dump() for node in self.nodes],
+            "nodes": [
+                node.model_dump(exclude_none=True, exclude_defaults=True)
+                for node in self.nodes
+            ],
             "edges": [edge.model_dump(by_alias=True) for edge in self.edges],
             "conditional_edges": [
                 edge.model_dump(by_alias=True) for edge in self.conditional_edges
             ],
+            "command_routes": [route.model_dump() for route in self.command_routes],
+            "tool_reachability": [
+                reachability.model_dump() for reachability in self.tool_reachability
+            ],
+            "domain_terms": list(self.domain_terms),
             "entry_point": self.entry_point,
+            "compiled_graph_variable": self.compiled_graph_variable,
             "checkpointing": self.checkpointing,
             "graph_exports": self.exports.model_dump(by_alias=True),
         }
@@ -436,6 +529,10 @@ class DocSnippet(BaseModel):
 
     content: str = Field(description="Documentation content text")
     source: str = Field(description="Source URL or identifier")
+    source_kind: Optional[str] = Field(
+        default=None,
+        description="Explicit provenance category for docs source ranking.",
+    )
     relevance_score: float = Field(
         default=0.0, description="Relevance score from retrieval"
     )
@@ -475,6 +572,10 @@ class GenerationContextPack(BaseModel):
     docs_snippets: List[Dict[str, Any]] = Field(
         default_factory=list,
         description="Compact docs snippets available to generation stages.",
+    )
+    source_summary: Dict[str, Any] = Field(
+        default_factory=dict,
+        description="Summary of docs/source provenance used to build the pack.",
     )
     fallback_used: bool = Field(
         default=False,

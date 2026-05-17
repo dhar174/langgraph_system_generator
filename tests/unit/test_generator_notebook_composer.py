@@ -10,7 +10,9 @@ import types
 
 import pytest
 
-from langgraph_system_generator.generator.agents import notebook_composer as composer_module
+from langgraph_system_generator.generator.agents import (
+    notebook_composer as composer_module,
+)
 import langgraph_system_generator.generator.notebook_composer_registry as registry_module
 from langgraph_system_generator.generator.notebook_composer_registry import (
     NotebookComposerArchitectureRegistration,
@@ -77,8 +79,7 @@ class TrackingLLM(DummyLLM):
                 label, "tool"
             )
             content = (
-                f"def {safe_identifier}(query: str) -> str:\n"
-                f"    return {label!r}"
+                f"def {safe_identifier}(query: str) -> str:\n" f"    return {label!r}"
             )
         elif node_match:
             label = node_match.group(1).strip()
@@ -172,6 +173,35 @@ def test_notebook_composer_registry_preserves_explicit_section_subset():
     assert registration.section_order == ["intro", "state"]
 
 
+def test_state_cells_filter_pattern_base_state_fields(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """Graph-spec state metadata should not duplicate pattern base fields."""
+
+    monkeypatch.setattr(composer_module, "ChatOpenAI", DummyLLM)
+    composer = composer_module.NotebookComposer()
+
+    cells = composer._create_state_cells(
+        {
+            "architecture_type": "router",
+            "state_schema": {
+                "messages": "Conversation state",
+                "route": "Selected route",
+                "results": "Specialist outputs",
+                "final_output": "Final answer",
+                "catalog_id": "Museum catalog identifier",
+            },
+        }
+    )
+    state_code = next(cell.content for cell in cells if cell.cell_type == "code")
+
+    assert state_code.count("    messages:") == 1
+    assert state_code.count("    route:") == 1
+    assert state_code.count("    results:") == 1
+    assert state_code.count("    final_output:") == 1
+    assert "catalog_id: str  # Museum catalog identifier" in state_code
+
+
 @pytest.mark.asyncio
 async def test_notebook_composer_registry_plugins_can_inject_pre_section_cells(
     monkeypatch: pytest.MonkeyPatch,
@@ -236,7 +266,9 @@ async def test_notebook_composer_registry_plugins_can_inject_pre_section_cells(
         architecture={"architecture_type": "router", "justification": "Plugin test."},
     )
 
-    intro_cells = [cell.content for cell in composition.cells if cell.section == "intro"]
+    intro_cells = [
+        cell.content for cell in composition.cells if cell.section == "intro"
+    ]
     assert any("Plugin intro banner" in cell for cell in intro_cells)
     registry_module.get_notebook_composer_registry.cache_clear()
 
@@ -271,7 +303,9 @@ async def test_compose_notebook_emits_tool_planning_warning_cells(
             validation_errors=["Unsupported tool suggestion 'swarm_tool'."],
             unresolved_tools=["swarm_tool"],
             environment_notes=["Blocked tool 'web_search' for an offline runtime."],
-            dependency_conflicts=["Kept 'pypdf' instead of 'pdfminer.six' for PDF parsing."],
+            dependency_conflicts=[
+                "Kept 'pypdf' instead of 'pdfminer.six' for PDF parsing."
+            ],
             available_tool_ids=["web_search"],
             warnings=["Tool planning used heuristic fallback inference."],
         ),
@@ -323,7 +357,10 @@ async def test_compose_notebook_dependency_plan_uses_tool_packages_and_env_vars(
                 "warnings": [],
             }
         ],
-        architecture={"architecture_type": "router", "justification": "Dependency test."},
+        architecture={
+            "architecture_type": "router",
+            "justification": "Dependency test.",
+        },
     )
 
     assert "requests" in composition.dependency_plan.packages
@@ -384,7 +421,9 @@ async def test_compose_notebook_emits_deepagents_sections_and_dependency(
         },
     )
 
-    code = "\n\n".join(cell.content for cell in composition.cells if cell.cell_type == "code")
+    code = "\n\n".join(
+        cell.content for cell in composition.cells if cell.cell_type == "code"
+    )
     markdown = "\n\n".join(
         cell.content for cell in composition.cells if cell.cell_type == "markdown"
     )
@@ -453,13 +492,11 @@ async def test_compose_notebook_sanitizes_provider_env_vars_for_config_code(
     assert "ENV_123_SERVICE_KEY" in composition.dependency_plan.provider_env_vars
     assert "ENV_FOR" in composition.dependency_plan.provider_env_vars
     assert any(
-        "Normalized provider env var 'openai-api-key' to 'OPENAI_API_KEY'"
-        in note
+        "Normalized provider env var 'openai-api-key' to 'OPENAI_API_KEY'" in note
         for note in composition.dependency_plan.runtime_notes
     )
     assert any(
-        "Normalized provider env var '123 service key' to 'ENV_123_SERVICE_KEY'"
-        in note
+        "Normalized provider env var '123 service key' to 'ENV_123_SERVICE_KEY'" in note
         for note in composition.dependency_plan.runtime_notes
     )
     assert any(
@@ -475,10 +512,7 @@ async def test_compose_notebook_sanitizes_provider_env_vars_for_config_code(
         and "MODEL =" in cell.content
     ]
     assert config_cells
-    assert (
-        'OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")'
-        in config_cells[0]
-    )
+    assert 'OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")' in config_cells[0]
     assert (
         'ENV_123_SERVICE_KEY = os.environ.get("ENV_123_SERVICE_KEY", "")'
         in config_cells[0]
@@ -542,7 +576,9 @@ async def test_custom_registry_can_override_graph_section_builder(
         architecture={"architecture_type": "router", "justification": "Override test."},
     )
 
-    graph_cells = [cell.content for cell in composition.cells if cell.section == "graph"]
+    graph_cells = [
+        cell.content for cell in composition.cells if cell.section == "graph"
+    ]
     assert "## Custom Graph" in graph_cells[0]
     assert "graph = 'custom_graph'" in graph_cells[1]
 
@@ -677,10 +713,15 @@ async def test_compose_notebook_sections_and_packages(
     config_cells = [
         cell
         for cell in cells
-        if cell.section == "config" and cell.cell_type == "code" and "MODEL =" in cell.content
+        if cell.section == "config"
+        and cell.cell_type == "code"
+        and "MODEL =" in cell.content
     ]
     assert config_cells
-    assert 'OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")' in config_cells[0].content
+    assert (
+        'OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")'
+        in config_cells[0].content
+    )
     assert "ANTHROPIC_API_KEY" not in config_cells[0].content
     assert "MAX_ITERATIONS = 10" in config_cells[0].content
 
@@ -694,7 +735,9 @@ async def test_compose_notebook_sections_and_packages(
         cell for cell in cells if cell.section == "tools" and cell.cell_type == "code"
     ]
     assert tool_cells
-    assert tool_cells[0].content.startswith("# WARNING: Deterministic fallback generated")
+    assert tool_cells[0].content.startswith(
+        "# WARNING: Deterministic fallback generated"
+    )
     assert "def File_Reader" in tool_cells[0].content
     assert "Path(" in tool_cells[0].content
     assert "pass" not in tool_cells[0].content
@@ -722,9 +765,13 @@ async def test_compose_notebook_sections_and_packages(
     if architecture_type == "hybrid":
         assert "route: str" in state_cells[0].content
         assert 'workflow.add_node("router", router_node)' in graph_cells[0].content
-        assert 'workflow.add_node("supervisor", supervisor_node)' in graph_cells[0].content
+        assert (
+            'workflow.add_node("supervisor", supervisor_node)' in graph_cells[0].content
+        )
         assert 'workflow.add_edge("specialist_1", "finish")' in graph_cells[0].content
-        node_source = "\n\n".join(cell.content for cell in cells if cell.section == "nodes")
+        node_source = "\n\n".join(
+            cell.content for cell in cells if cell.section == "nodes"
+        )
         assert "def router_node" in node_source
         assert "def supervisor_node" in node_source
         assert "def reviewer_node" in node_source
@@ -749,12 +796,27 @@ async def test_compose_notebook_sections_and_packages(
     assert "OPENAI_API_KEY" in composition.dependency_plan.provider_env_vars
 
     sections = {cell.section for cell in cells}
-    assert {"intro", "setup", "config", "state", "tools", "graph", "execution"}.issubset(
-        sections
-    )
+    assert {
+        "intro",
+        "setup",
+        "config",
+        "state",
+        "tools",
+        "graph",
+        "execution",
+    }.issubset(sections)
 
     section_order = [cell.section for cell in cells if cell.section]
-    expected_order = ["intro", "setup", "config", "state", "tools", "nodes", "graph", "execution"]
+    expected_order = [
+        "intro",
+        "setup",
+        "config",
+        "state",
+        "tools",
+        "nodes",
+        "graph",
+        "execution",
+    ]
     unique_sections: list[str] = []
     for section in section_order:
         if section not in unique_sections:
@@ -897,7 +959,10 @@ async def test_compose_notebook_parallel_tool_generation_preserves_order_and_cap
             {"name": "Tool Beta", "purpose": "Second tool", "category": "misc"},
             {"name": "Tool Gamma", "purpose": "Third tool", "category": "misc"},
         ],
-        architecture={"architecture_type": "router", "justification": "Parallel tools."},
+        architecture={
+            "architecture_type": "router",
+            "justification": "Parallel tools.",
+        },
     )
 
     tool_cells = [
@@ -956,7 +1021,10 @@ async def test_compose_notebook_parallel_tool_fallback_metadata_preserves_input_
             {"name": "Tool Beta", "purpose": "Second tool", "category": "misc"},
             {"name": "Tool Gamma", "purpose": "Third tool", "category": "misc"},
         ],
-        architecture={"architecture_type": "router", "justification": "Parallel tools."},
+        architecture={
+            "architecture_type": "router",
+            "justification": "Parallel tools.",
+        },
     )
 
     assert [event.item_name for event in composition.feedback.fallback_events] == [
@@ -1012,7 +1080,10 @@ async def test_compose_notebook_parallel_custom_node_generation_preserves_order(
             ],
         },
         tools=[],
-        architecture={"architecture_type": "custom", "justification": "Parallel nodes."},
+        architecture={
+            "architecture_type": "custom",
+            "justification": "Parallel nodes.",
+        },
     )
 
     node_cells = [
@@ -1068,7 +1139,10 @@ async def test_compose_notebook_parallel_node_fallback_metadata_preserves_input_
             ],
         },
         tools=[],
-        architecture={"architecture_type": "custom", "justification": "Parallel nodes."},
+        architecture={
+            "architecture_type": "custom",
+            "justification": "Parallel nodes.",
+        },
     )
 
     assert [event.item_name for event in composition.feedback.fallback_events] == [
@@ -1127,7 +1201,10 @@ async def test_compose_notebook_sequential_mode_serializes_llm_generation(
             {"name": "Tool Two", "purpose": "Second tool", "category": "misc"},
             {"name": "Tool Three", "purpose": "Third tool", "category": "misc"},
         ],
-        architecture={"architecture_type": "router", "justification": "Sequential tools."},
+        architecture={
+            "architecture_type": "router",
+            "justification": "Sequential tools.",
+        },
     )
 
     assert TrackingLLM._class_max_active_calls == 1
@@ -1175,7 +1252,10 @@ async def test_compose_notebook_parallel_mode_treats_zero_concurrency_as_one(
             {"name": "Tool One", "purpose": "First tool", "category": "misc"},
             {"name": "Tool Two", "purpose": "Second tool", "category": "misc"},
         ],
-        architecture={"architecture_type": "router", "justification": "Zero concurrency."},
+        architecture={
+            "architecture_type": "router",
+            "justification": "Zero concurrency.",
+        },
     )
 
     assert TrackingLLM._class_max_active_calls == 1
@@ -1209,7 +1289,10 @@ async def test_compose_notebook_hybrid_sparse_nodes_keep_defaults_aligned(
         notebook_plan=plan,
         workflow_design=workflow_design,
         tools=[],
-        architecture={"architecture_type": "hybrid", "justification": "Fallback hybrid."},
+        architecture={
+            "architecture_type": "hybrid",
+            "justification": "Fallback hybrid.",
+        },
     )
     cells = composition.cells
 
@@ -1252,7 +1335,10 @@ async def test_compose_notebook_normalizes_mixed_case_architecture_type(
             ],
         },
         tools=[],
-        architecture={"architecture_type": "Router", "justification": "Mixed case input."},
+        architecture={
+            "architecture_type": "Router",
+            "justification": "Mixed case input.",
+        },
     )
 
     state_code = next(
@@ -1303,7 +1389,10 @@ async def test_compose_notebook_hybrid_sanitizes_worker_and_specialist_graph_ids
         notebook_plan=plan,
         workflow_design=workflow_design,
         tools=[],
-        architecture={"architecture_type": "hybrid", "justification": "Hybrid sanitization."},
+        architecture={
+            "architecture_type": "hybrid",
+            "justification": "Hybrid sanitization.",
+        },
     )
     cells = composition.cells
 
@@ -1359,12 +1448,17 @@ async def test_compose_notebook_includes_graph_overview_from_exports(
         notebook_plan=plan,
         workflow_design=workflow_design,
         tools=[],
-        architecture={"architecture_type": "router", "justification": "Router is sufficient."},
+        architecture={
+            "architecture_type": "router",
+            "justification": "Router is sufficient.",
+        },
     )
     cells = composition.cells
 
     intro_markdown = "\n\n".join(
-        cell.content for cell in cells if cell.section == "intro" and cell.cell_type == "markdown"
+        cell.content
+        for cell in cells
+        if cell.section == "intro" and cell.cell_type == "markdown"
     )
 
     assert "Graph Overview" in intro_markdown
@@ -1410,7 +1504,11 @@ async def test_generate_tool_implementation_records_visible_fallback_warning(
     feedback = composer_module.NotebookCompositionFeedback()
 
     fallback_code = await composer._generate_tool_implementation(
-        {"name": "Example Tool", "purpose": "Fallback to a deterministic helper", "category": "misc"},
+        {
+            "name": "Example Tool",
+            "purpose": "Fallback to a deterministic helper",
+            "category": "misc",
+        },
         feedback=feedback,
     )
 
@@ -1432,7 +1530,9 @@ async def test_generate_node_implementation_records_visible_fallback_warning(
         {
             "architecture_type": "custom",
             "state_schema": {"results": "Collected outputs"},
-            "nodes": [{"name": "enrich", "purpose": "Enrich the current workflow results"}],
+            "nodes": [
+                {"name": "enrich", "purpose": "Enrich the current workflow results"}
+            ],
         },
         feedback=feedback,
     )
@@ -1456,7 +1556,7 @@ def test_tool_fallback_sanitizes_identifier_and_compiles(
         }
     )
 
-    assert 'def _9_bad_tool_print_oops' in fallback_code
+    assert "def _9_bad_tool_print_oops" in fallback_code
     assert '# Tool: 9 bad tool"; print("oops")' in fallback_code
     assert '9 bad tool";\nprint("oops")' not in fallback_code
     assert '"category": "api\\" # injected"' in fallback_code
@@ -1483,7 +1583,7 @@ def test_node_fallback_sanitizes_identifier_and_compiles(
         {},
     )
 
-    assert 'def _9_node_name_raise_SystemExit_node' in fallback_code
+    assert "def _9_node_name_raise_SystemExit_node" in fallback_code
     assert '9 node name";\nraise SystemExit' not in fallback_code
     assert '\\"\\"\\"' in fallback_code
     compile(fallback_code, "<node_fallback>", "exec")
@@ -1512,6 +1612,66 @@ def test_graph_fallback_uses_sanitized_function_references(
     assert 'workflow.add_node("start node", start_node_node)' in graph_code
     assert 'workflow.add_node("9 result-node", _9_result_node_node)' in graph_code
     compile(graph_code, "<graph_fallback>", "exec")
+
+
+def test_graph_fallback_lowers_command_routes_to_conditional_edges(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    monkeypatch.setattr(composer_module, "ChatOpenAI", DummyLLM)
+    composer = composer_module.NotebookComposer()
+
+    graph_code = composer._generate_graph_fallback(
+        {
+            "entry_point": "planner",
+            "nodes": [
+                {"name": "planner"},
+                {"name": "reviewer"},
+            ],
+            "command_routes": [
+                {
+                    "source": "planner",
+                    "destinations": ["reviewer", "END"],
+                    "update_fields": ["next_agent"],
+                }
+            ],
+        }
+    )
+
+    assert "_command_route_from_planner_0_path_map" in graph_code
+    assert '"reviewer": "reviewer"' in graph_code
+    assert '"__end__": END' in graph_code
+    assert 'state.get("next_agent")' in graph_code
+    assert (
+        'workflow.add_conditional_edges("planner", _command_route_from_planner_0, '
+        "_command_route_from_planner_0_path_map)"
+    ) in graph_code
+    compile(graph_code, "<graph_fallback_command_routes>", "exec")
+
+
+def test_split_hybrid_nodes_uses_role_metadata_for_worker_membership():
+    direct, direct_descriptions, workers, worker_descriptions = (
+        composer_module.NotebookComposer._split_hybrid_nodes(
+            [
+                {"name": "router", "purpose": "Route requests"},
+                {"name": "supervisor", "purpose": "Coordinate workers"},
+                {
+                    "name": "claims_intake",
+                    "purpose": "Handle direct claims triage",
+                    "role": "direct_specialist",
+                },
+                {
+                    "name": "claims_qa",
+                    "purpose": "Review claim handling quality",
+                    "role": "worker",
+                },
+            ]
+        )
+    )
+
+    assert direct == ["claims_intake"]
+    assert "claims_intake" in direct_descriptions
+    assert "claims_qa" in workers
+    assert "claims_qa" in worker_descriptions
 
 
 @pytest.mark.asyncio
@@ -1591,9 +1751,7 @@ async def test_pattern_nodes_use_request_scoped_model_config(
     )
 
     config_code_cells = [
-        cell
-        for cell in cells
-        if cell.section == "config" and cell.cell_type == "code"
+        cell for cell in cells if cell.section == "config" and cell.cell_type == "code"
     ]
     assert any('MODEL = "gpt-5.2"' in cell.content for cell in config_code_cells)
     assert any("TEMPERATURE = 0.3" in cell.content for cell in config_code_cells)

@@ -10,16 +10,81 @@ import re
 from typing import Any, Callable, Iterable, Mapping
 
 from langgraph_system_generator.generator.state import (
+    Constraint,
+    GraphCommandRouteSpec,
     GraphConditionalEdgeSpec,
     GraphDesignResult,
     GraphEdgeSpec,
     GraphExportBundle,
     GraphNodeSpec,
+    GraphToolReachabilitySpec,
     GraphValidationIssue,
 )
 from langgraph_system_generator.utils.config import settings
 
 END_TARGETS = {"END", "__end__"}
+_DOMAIN_STOPWORDS = {
+    "a",
+    "about",
+    "agent",
+    "agents",
+    "ai",
+    "and",
+    "app",
+    "build",
+    "create",
+    "for",
+    "from",
+    "generate",
+    "graph",
+    "help",
+    "into",
+    "langgraph",
+    "make",
+    "notebook",
+    "of",
+    "or",
+    "please",
+    "system",
+    "task",
+    "that",
+    "the",
+    "to",
+    "tool",
+    "tools",
+    "turn",
+    "use",
+    "user",
+    "with",
+    "workflow",
+}
+_DOMAIN_ROLE_PRESETS: tuple[tuple[set[str], list[str], list[str]], ...] = (
+    (
+        {"museum", "artifact", "artifacts", "catalog", "cataloging", "archive"},
+        ["artifact_cataloger", "metadata_validator"],
+        ["provenance_researcher", "collection_reviewer"],
+    ),
+    (
+        {"incident", "sre", "outage", "alert", "alerts", "remediation"},
+        ["incident_triage", "impact_assessor"],
+        ["remediation_planner", "postmortem_reviewer"],
+    ),
+    (
+        {"support", "customer", "ticket", "escalation", "case"},
+        ["support_triage", "account_researcher"],
+        ["resolution_specialist", "quality_reviewer"],
+    ),
+    (
+        {"research", "report", "synthesis", "sources", "literature"},
+        ["source_researcher", "evidence_synthesizer"],
+        ["outline_planner", "citation_reviewer"],
+    ),
+    (
+        {"data", "validation", "catalog", "dataset", "schema"},
+        ["data_validator", "catalog_reconciler"],
+        ["schema_reviewer", "quality_auditor"],
+    ),
+)
 PluginHook = Callable[["GraphDesignRegistry"], None]
 FallbackBuilder = Callable[..., dict[str, Any]]
 NormalizationHook = Callable[[GraphDesignResult], GraphDesignResult]
@@ -37,11 +102,23 @@ def _normalize_architecture_id(value: str) -> str:
     return normalized
 
 
-def _normalize_string_list(values: Iterable[str] | None) -> list[str]:
+def _normalize_string_list(values: Any) -> list[str]:
     """Return an ordered, de-duplicated list of non-empty strings."""
 
+    if values is None:
+        raw_values: Iterable[Any] = []
+    elif isinstance(values, str):
+        raw_values = [values]
+    elif isinstance(values, Mapping):
+        raw_values = values.values()
+    else:
+        try:
+            raw_values = list(values)
+        except TypeError:
+            raw_values = [values]
+
     normalized_values: list[str] = []
-    for raw_value in values or []:
+    for raw_value in raw_values:
         normalized = str(raw_value or "").strip()
         if normalized and normalized not in normalized_values:
             normalized_values.append(normalized)
@@ -58,6 +135,94 @@ def _normalize_mapping(values: Mapping[str, Any] | None) -> dict[str, str]:
         if key:
             normalized[key] = value
     return normalized
+
+
+def _constraint_text(constraints: Iterable[Constraint] | None) -> str:
+    """Return joined user-facing constraint text for deterministic fallbacks."""
+
+    return " ".join(str(getattr(constraint, "value", constraint) or "") for constraint in constraints or [])
+
+
+def _slug_token(value: str) -> str:
+    """Return a short snake-case token suitable for node ids."""
+
+    token = re.sub(r"[^a-z0-9]+", "_", value.lower()).strip("_")
+    return re.sub(r"_+", "_", token)
+
+
+def _domain_terms_from_constraints(constraints: Iterable[Constraint] | None) -> list[str]:
+    """Extract compact request-domain terms without live model calls."""
+
+    text = _constraint_text(constraints)
+    terms: list[str] = []
+    for raw_token in re.findall(r"[A-Za-z][A-Za-z0-9_-]{2,}", text):
+        token = _slug_token(raw_token)
+        if (
+            not token
+            or token in _DOMAIN_STOPWORDS
+            or token.isdigit()
+            or token in terms
+        ):
+            continue
+        terms.append(token)
+        if len(terms) >= 6:
+            break
+    return terms
+
+
+def _domain_roles_from_terms(domain_terms: list[str]) -> tuple[list[str], list[str]]:
+    """Return direct and team role node ids for a request domain."""
+
+    term_set = set(domain_terms)
+    for preset_terms, direct_roles, team_roles in _DOMAIN_ROLE_PRESETS:
+        if term_set & preset_terms:
+            return list(direct_roles), list(team_roles)
+
+    if not domain_terms:
+        return [], []
+
+    primary = domain_terms[0]
+    secondary = domain_terms[1] if len(domain_terms) > 1 else primary
+    return [f"{primary}_analyst", f"{secondary}_reviewer"], [
+        f"{primary}_planner",
+        f"{secondary}_qa",
+    ]
+
+
+def _domain_profile(
+    constraints: Iterable[Constraint] | None,
+) -> tuple[list[str], list[str], list[str]]:
+    """Return domain terms plus direct/team roles for deterministic fallbacks."""
+
+    domain_terms = _domain_terms_from_constraints(constraints)
+    direct_roles, team_roles = _domain_roles_from_terms(domain_terms)
+    return domain_terms, direct_roles, team_roles
+
+
+def domain_terms_for_constraints(constraints: Iterable[Constraint] | None) -> list[str]:
+    """Return deterministic request-domain terms for graph metadata."""
+
+    return _domain_terms_from_constraints(constraints)
+
+
+def _node(
+    name: str,
+    purpose: str,
+    *,
+    role: str | None = None,
+    domain_terms: list[str] | None = None,
+    required_tools: list[str] | None = None,
+) -> dict[str, Any]:
+    """Build a normalized node payload with optional graph-spec metadata."""
+
+    payload: dict[str, Any] = {"name": name, "purpose": purpose}
+    if role:
+        payload["role"] = role
+    if domain_terms:
+        payload["domain_terms"] = domain_terms
+    if required_tools:
+        payload["required_tools"] = required_tools
+    return payload
 
 
 def _mermaid_id(value: str) -> str:
@@ -108,39 +273,50 @@ def _issue(
     )
 
 
-def _build_router_fallback(*_args, **_kwargs) -> dict[str, Any]:
+def _build_router_fallback(*_args, **kwargs) -> dict[str, Any]:
     """Return the deterministic fallback router design."""
 
+    domain_terms, direct_roles, _team_roles = _domain_profile(kwargs.get("constraints"))
+    specialist_roles = direct_roles or ["specialist_1", "specialist_2"]
+    branch_map = {role: role for role in specialist_roles}
     return {
         "state_schema": {
             "messages": "List of messages",
             "route": "Selected route",
+            "route_reasoning": "Reason for the selected route",
+            "route_history": "Ordered route decisions made by the router",
             "results": "Outputs grouped by direct specialist",
             "final_output": "Final synthesized answer",
         },
         "nodes": [
-            {"name": "router", "purpose": "Route the request to the best specialist"},
-            {
-                "name": "specialist_1",
-                "purpose": "Handle the first specialist pathway directly",
-            },
-            {
-                "name": "specialist_2",
-                "purpose": "Handle the second specialist pathway directly",
-            },
+            _node(
+                "router",
+                "Route the request to the best domain specialist",
+                role="router",
+                domain_terms=domain_terms,
+            ),
+            *[
+                _node(
+                    role,
+                    f"Handle {role.replace('_', ' ')} work directly",
+                    role="direct_specialist",
+                    domain_terms=domain_terms,
+                )
+                for role in specialist_roles
+            ],
         ],
         "edges": [],
         "conditional_edges": [
             {
                 "from": "router",
                 "condition": "Dispatch by selected route",
-                "branches": {
-                    "specialist_1": "specialist_1",
-                    "specialist_2": "specialist_2",
-                },
+                "branches": branch_map,
+                "routing_mechanism": "conditional_edge",
             }
         ],
+        "domain_terms": domain_terms,
         "entry_point": "router",
+        "compiled_graph_variable": "graph",
         "checkpointing": False,
     }
 
@@ -150,21 +326,26 @@ def _build_supervisor_fallback(
     coordinator_name: str,
     worker_names: list[str],
     state_schema: Mapping[str, str],
+    domain_terms: list[str] | None = None,
 ) -> dict[str, Any]:
     """Return a deterministic coordinator-plus-workers design."""
 
     return {
         "state_schema": dict(state_schema),
         "nodes": [
-            {
-                "name": coordinator_name,
-                "purpose": "Coordinate worker delegation and synthesis",
-            },
+            _node(
+                coordinator_name,
+                "Coordinate worker delegation and synthesis",
+                role="coordinator",
+                domain_terms=domain_terms,
+            ),
             *[
-                {
-                    "name": worker_name,
-                    "purpose": f"{worker_name.title()} specialist worker",
-                }
+                _node(
+                    worker_name,
+                    f"{worker_name.replace('_', ' ').title()} specialist worker",
+                    role="worker",
+                    domain_terms=domain_terms,
+                )
                 for worker_name in worker_names
             ],
         ],
@@ -177,19 +358,24 @@ def _build_supervisor_fallback(
                     **{worker_name: worker_name for worker_name in worker_names},
                     "FINISH": "END",
                 },
+                "routing_mechanism": "conditional_edge",
             }
         ],
+        "domain_terms": domain_terms or [],
         "entry_point": coordinator_name,
+        "compiled_graph_variable": "graph",
         "checkpointing": True,
     }
 
 
-def _build_subagents_fallback(*_args, **_kwargs) -> dict[str, Any]:
+def _build_subagents_fallback(*_args, **kwargs) -> dict[str, Any]:
     """Return the deterministic fallback subagents design."""
 
+    domain_terms, _direct_roles, team_roles = _domain_profile(kwargs.get("constraints"))
+    worker_names = team_roles or ["planner", "executor", "critic"]
     return _build_supervisor_fallback(
         coordinator_name="supervisor",
-        worker_names=["planner", "executor", "critic"],
+        worker_names=worker_names,
         state_schema={
             "messages": "List of messages",
             "next_agent": "Next worker to call",
@@ -198,15 +384,18 @@ def _build_subagents_fallback(*_args, **_kwargs) -> dict[str, Any]:
             "dispatch_log": "History of dispatched workers",
             "iterations": "Current supervisor iteration count",
         },
+        domain_terms=domain_terms,
     )
 
 
-def _build_autoagent_fallback(*_args, **_kwargs) -> dict[str, Any]:
+def _build_autoagent_fallback(*_args, **kwargs) -> dict[str, Any]:
     """Return the deterministic fallback autoagent design."""
 
+    domain_terms, _direct_roles, team_roles = _domain_profile(kwargs.get("constraints"))
+    worker_names = team_roles or ["planner", "executor", "critic"]
     return _build_supervisor_fallback(
         coordinator_name="coordinator",
-        worker_names=["planner", "executor", "critic"],
+        worker_names=worker_names,
         state_schema={
             "messages": "List of messages",
             "next_agent": "Next worker to call",
@@ -215,12 +404,14 @@ def _build_autoagent_fallback(*_args, **_kwargs) -> dict[str, Any]:
             "dispatch_log": "History of dispatched workers",
             "iterations": "Current coordinator iteration count",
         },
+        domain_terms=domain_terms,
     )
 
 
-def _build_deepagents_fallback(*_args, **_kwargs) -> dict[str, Any]:
+def _build_deepagents_fallback(*_args, **kwargs) -> dict[str, Any]:
     """Return the deterministic fallback Deep Agents design."""
 
+    domain_terms, _direct_roles, _team_roles = _domain_profile(kwargs.get("constraints"))
     return {
         "state_schema": {
             "messages": "List of messages",
@@ -231,13 +422,15 @@ def _build_deepagents_fallback(*_args, **_kwargs) -> dict[str, Any]:
             "deepagents_available": "Whether the optional deepagents SDK was invoked",
         },
         "nodes": [
-            {
-                "name": "deep_agent",
-                "purpose": (
+            _node(
+                "deep_agent",
+                (
                     "Run the optional Deep Agents harness or a deterministic "
                     "fallback when dependencies or credentials are unavailable"
                 ),
-            },
+                role="deep_agent",
+                domain_terms=domain_terms,
+            ),
         ],
         "edges": [],
         "conditional_edges": [
@@ -245,16 +438,22 @@ def _build_deepagents_fallback(*_args, **_kwargs) -> dict[str, Any]:
                 "from": "deep_agent",
                 "condition": "Finish once the Deep Agents harness returns a final response",
                 "branches": {"complete": "END"},
+                "routing_mechanism": "conditional_edge",
             }
         ],
+        "domain_terms": domain_terms,
         "entry_point": "deep_agent",
+        "compiled_graph_variable": "graph",
         "checkpointing": True,
     }
 
 
-def _build_hybrid_fallback(*_args, **_kwargs) -> dict[str, Any]:
+def _build_hybrid_fallback(*_args, **kwargs) -> dict[str, Any]:
     """Return the deterministic fallback hybrid design."""
 
+    domain_terms, direct_roles, team_roles = _domain_profile(kwargs.get("constraints"))
+    direct_roles = direct_roles[:1] or ["specialist_1"]
+    team_roles = team_roles[:2] or ["researcher", "reviewer"]
     return {
         "state_schema": {
             "messages": "List of messages",
@@ -268,56 +467,71 @@ def _build_hybrid_fallback(*_args, **_kwargs) -> dict[str, Any]:
             "final_output": "Final synthesized answer",
         },
         "nodes": [
-            {
-                "name": "router",
-                "purpose": "Route to a direct specialist or the supervisor-led team path",
-            },
-            {
-                "name": "specialist_1",
-                "purpose": "Handle direct specialist work without team coordination",
-            },
-            {
-                "name": "supervisor",
-                "purpose": "Coordinate the worker team when deeper collaboration is needed",
-            },
-            {
-                "name": "researcher",
-                "purpose": "Gather supporting facts and intermediate context",
-            },
-            {
-                "name": "reviewer",
-                "purpose": "Review worker output before the final synthesis",
-            },
-            {
-                "name": "finish",
-                "purpose": "Synthesize final results from both direct and team branches",
-            },
+            _node(
+                "router",
+                "Route to a direct specialist or the supervisor-led team path",
+                role="router",
+                domain_terms=domain_terms,
+            ),
+            *[
+                _node(
+                    role,
+                    f"Handle {role.replace('_', ' ')} work without team coordination",
+                    role="direct_specialist",
+                    domain_terms=domain_terms,
+                )
+                for role in direct_roles
+            ],
+            _node(
+                "supervisor",
+                "Coordinate the worker team when deeper collaboration is needed",
+                role="coordinator",
+                domain_terms=domain_terms,
+            ),
+            *[
+                _node(
+                    role,
+                    f"Handle {role.replace('_', ' ')} work on the worker team",
+                    role="worker",
+                    domain_terms=domain_terms,
+                )
+                for role in team_roles
+            ],
+            _node(
+                "finish",
+                "Synthesize final results from both direct and team branches",
+                role="synthesizer",
+                domain_terms=domain_terms,
+            ),
         ],
         "edges": [
-            {"from": "specialist_1", "to": "finish"},
-            {"from": "researcher", "to": "supervisor"},
-            {"from": "reviewer", "to": "supervisor"},
+            *[{"from": role, "to": "finish"} for role in direct_roles],
+            *[{"from": role, "to": "supervisor"} for role in team_roles],
         ],
         "conditional_edges": [
             {
                 "from": "router",
                 "condition": "Route to a direct specialist or the worker team",
                 "branches": {
-                    "specialist_1": "specialist_1",
+                    **{role: role for role in direct_roles},
                     "team_path": "supervisor",
                 },
+                "routing_mechanism": "conditional_edge",
             },
             {
                 "from": "supervisor",
                 "condition": "Route to the next worker or finish after synthesis",
                 "branches": {
-                    "researcher": "researcher",
-                    "reviewer": "reviewer",
+                    **{role: role for role in team_roles},
                     "FINISH": "finish",
                 },
+                "routing_mechanism": "conditional_edge",
+                "guarded_cycle": True,
             },
         ],
+        "domain_terms": domain_terms,
         "entry_point": "router",
+        "compiled_graph_variable": "graph",
         "checkpointing": True,
     }
 
@@ -410,17 +624,31 @@ def normalize_graph_design(
         )
     else:
         state_schema = _normalize_mapping(payload.get("state_schema"))
-        nodes = [
-            GraphNodeSpec(
-                name=str(node.get("name", "")).strip(),
-                purpose=str(
-                    node.get("purpose", "")
-                    or f"Handle {str(node.get('name', '')).strip()} work."
-                ).strip(),
+        nodes = []
+        for node in list(payload.get("nodes") or []):
+            if not isinstance(node, Mapping):
+                continue
+            node_name = str(node.get("name", "")).strip()
+            if not node_name:
+                continue
+            nodes.append(
+                GraphNodeSpec.model_validate(
+                    {
+                        **dict(node),
+                        "name": node_name,
+                        "purpose": str(
+                            node.get("purpose", "")
+                            or f"Handle {node_name} work."
+                        ).strip(),
+                        "domain_terms": _normalize_string_list(
+                            node.get("domain_terms")
+                        ),
+                        "required_tools": _normalize_string_list(
+                            node.get("required_tools")
+                        ),
+                    }
+                )
             )
-            for node in list(payload.get("nodes") or [])
-            if str(node.get("name", "")).strip()
-        ]
         edges = [
             GraphEdgeSpec.model_validate(edge)
             for edge in list(payload.get("edges") or [])
@@ -429,13 +657,42 @@ def normalize_graph_design(
             GraphConditionalEdgeSpec.model_validate(edge)
             for edge in list(payload.get("conditional_edges") or [])
         ]
+        command_routes = [
+            GraphCommandRouteSpec.model_validate(
+                {
+                    **dict(route),
+                    "destinations": _normalize_string_list(route.get("destinations")),
+                    "update_fields": _normalize_string_list(route.get("update_fields")),
+                }
+            )
+            for route in list(payload.get("command_routes") or [])
+            if isinstance(route, Mapping)
+        ]
+        tool_reachability = [
+            GraphToolReachabilitySpec.model_validate(reachability)
+            for reachability in list(payload.get("tool_reachability") or [])
+            if isinstance(reachability, Mapping)
+        ]
+        domain_terms = _normalize_string_list(payload.get("domain_terms"))
+        if not domain_terms:
+            for node in nodes:
+                for domain_term in node.domain_terms:
+                    if domain_term not in domain_terms:
+                        domain_terms.append(domain_term)
         result = GraphDesignResult(
             architecture_type=_normalize_architecture_id(architecture_type),
             state_schema=state_schema,
             nodes=nodes,
             edges=edges,
             conditional_edges=conditional_edges,
+            command_routes=command_routes,
+            tool_reachability=tool_reachability,
+            domain_terms=domain_terms,
             entry_point=str(payload.get("entry_point", "")).strip(),
+            compiled_graph_variable=str(
+                payload.get("compiled_graph_variable") or "graph"
+            ).strip()
+            or "graph",
             checkpointing=bool(payload.get("checkpointing", False)),
         )
 
@@ -447,7 +704,11 @@ def normalize_graph_design(
     )
 
 
-def _adjacency_map(result: GraphDesignResult) -> dict[str, set[str]]:
+def _adjacency_map(
+    result: GraphDesignResult,
+    *,
+    include_guarded_cycles: bool = True,
+) -> dict[str, set[str]]:
     """Return adjacency among real node ids, excluding END targets."""
 
     adjacency: dict[str, set[str]] = {node.name: set() for node in result.nodes}
@@ -458,8 +719,18 @@ def _adjacency_map(result: GraphDesignResult) -> dict[str, set[str]]:
         if conditional_edge.source not in adjacency:
             continue
         for target in conditional_edge.branches.values():
+            if conditional_edge.guarded_cycle is True and not include_guarded_cycles:
+                continue
             if target not in END_TARGETS and target in adjacency:
                 adjacency[conditional_edge.source].add(target)
+    for command_route in result.command_routes:
+        if command_route.source not in adjacency:
+            continue
+        for target in command_route.destinations:
+            if command_route.guarded_cycle is True and not include_guarded_cycles:
+                continue
+            if target not in END_TARGETS and target in adjacency:
+                adjacency[command_route.source].add(target)
     return adjacency
 
 
@@ -495,9 +766,18 @@ def terminal_nodes_for(result: GraphDesignResult) -> list[str]:
         for conditional_edge in result.conditional_edges
         if any(target in END_TARGETS for target in conditional_edge.branches.values())
     }
+    command_end_sources = {
+        command_route.source
+        for command_route in result.command_routes
+        if any(target in END_TARGETS for target in command_route.destinations)
+    }
     terminal_nodes: list[str] = []
     for node in result.nodes:
-        if not adjacency.get(node.name) or node.name in conditional_end_sources:
+        if (
+            not adjacency.get(node.name)
+            or node.name in conditional_end_sources
+            or node.name in command_end_sources
+        ):
             if node.name not in terminal_nodes:
                 terminal_nodes.append(node.name)
     return terminal_nodes
@@ -608,7 +888,30 @@ def validate_graph_design(
             elif target in incoming_counts:
                 incoming_counts[target] += 1
 
-    adjacency = _adjacency_map(result)
+    for command_route in result.command_routes:
+        if command_route.source not in node_id_set:
+            issues.append(
+                _issue(
+                    "unknown_command_source",
+                    f"Unknown Command route source '{command_route.source}'.",
+                    nodes=[command_route.source],
+                )
+            )
+        for target in command_route.destinations:
+            if target not in END_TARGETS and target not in node_id_set:
+                issues.append(
+                    _issue(
+                        "unknown_command_target",
+                        (
+                            f"Unknown Command route target '{target}' from "
+                            f"'{command_route.source}'."
+                        ),
+                        nodes=[command_route.source, target],
+                    )
+                )
+            elif target in incoming_counts:
+                incoming_counts[target] += 1
+
     reachable = _reachable_nodes(result)
     for node in result.nodes:
         if node.name == result.entry_point:
@@ -643,7 +946,8 @@ def validate_graph_design(
             )
         )
 
-    if not registration.cycles_allowed and _detect_cycle(adjacency):
+    cycle_adjacency = _adjacency_map(result, include_guarded_cycles=False)
+    if not registration.cycles_allowed and _detect_cycle(cycle_adjacency):
         issues.append(
             _issue(
                 "cycle_detected",
@@ -694,6 +998,13 @@ def build_graph_exports(
             mermaid_lines.append(
                 f'    {_mermaid_id(conditional_edge.source)} -- "{_mermaid_label(branch_label)}" --> {target_id}'
             )
+    for command_route in result.command_routes:
+        for target in command_route.destinations:
+            target_id = "END" if target in END_TARGETS else _mermaid_id(target)
+            label = _mermaid_label(command_route.condition or "Command")
+            mermaid_lines.append(
+                f'    {_mermaid_id(command_route.source)} -. "{label}" .-> {target_id}'
+            )
     mermaid_lines.append("    END([END])")
 
     schema = {
@@ -706,6 +1017,12 @@ def build_graph_exports(
         "conditional_edges": [
             edge.model_dump(by_alias=True) for edge in result.conditional_edges
         ],
+        "command_routes": [route.model_dump() for route in result.command_routes],
+        "tool_reachability": [
+            reachability.model_dump() for reachability in result.tool_reachability
+        ],
+        "domain_terms": list(result.domain_terms),
+        "compiled_graph_variable": result.compiled_graph_variable,
         "entry_point": result.entry_point,
         "checkpointing": result.checkpointing,
         "terminal_nodes": terminal_nodes_for(result),

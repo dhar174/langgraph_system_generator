@@ -215,9 +215,8 @@ def _qa_repair_feedback_from_reports(
         warnings.append("A repair rollback preserved the previous notebook snapshot.")
     for warning in extra_warnings or []:
         warning_text = str(warning or "").strip()
-        if (
-            not unresolved_failures
-            and warning_text.startswith("No safe deterministic repair matched")
+        if not unresolved_failures and warning_text.startswith(
+            "No safe deterministic repair matched"
         ):
             continue
         if warning_text and warning_text not in warnings:
@@ -373,23 +372,67 @@ def _build_generation_context_pack(state: GeneratorState) -> GenerationContextPa
     supported_architectures = ARCHITECTURE_REGISTRY.supported_architecture_types()
     docs_snippets: List[Dict[str, Any]] = []
 
+    source_precedence = [
+        "langchain-docs-local",
+        "context7",
+        "cached_repo_docs",
+        "rag_index",
+    ]
+    source_counts: Dict[str, int] = {source: 0 for source in source_precedence}
+
+    def _source_kind(payload: Dict[str, Any]) -> str:
+        explicit_kind = str(payload.get("source_kind") or "").strip().lower()
+        if explicit_kind in source_precedence:
+            return explicit_kind
+        source_metadata = payload.get("source_metadata")
+        if isinstance(source_metadata, dict):
+            metadata_kind = (
+                str(source_metadata.get("source_kind") or "").strip().lower()
+            )
+            if metadata_kind in source_precedence:
+                return metadata_kind
+        normalized = str(payload.get("source") or "").lower()
+        if normalized.startswith(("context7:", "context7/")):
+            return "context7"
+        if normalized.startswith(
+            (
+                "langchain-docs-local:",
+                "langchain-docs-mcp:",
+                "docs-langchain:",
+            )
+        ):
+            return "langchain-docs-local"
+        if normalized.startswith(("cached_repo_docs:", "cache:", "cached:")):
+            return "cached_repo_docs"
+        return "rag_index"
+
     for snippet in docs_context[:6]:
         payload = (
             snippet.model_dump()
             if hasattr(snippet, "model_dump")
-            else dict(snippet)
-            if isinstance(snippet, dict)
-            else {
-                "content": str(getattr(snippet, "content", "")),
-                "source": str(getattr(snippet, "source", "")),
-                "relevance_score": getattr(snippet, "relevance_score", 0.0),
-                "heading": getattr(snippet, "heading", None),
-            }
+            else (
+                dict(snippet)
+                if isinstance(snippet, dict)
+                else {
+                    "content": str(getattr(snippet, "content", "")),
+                    "source": str(getattr(snippet, "source", "")),
+                    "relevance_score": getattr(snippet, "relevance_score", 0.0),
+                    "heading": getattr(snippet, "heading", None),
+                }
+            )
         )
         content = str(payload.get("content", ""))
+        source_kind = _source_kind(payload)
+        source_counts[source_kind] = source_counts.get(source_kind, 0) + 1
         docs_snippets.append(
             {
                 "source": payload.get("source"),
+                "source_kind": source_kind,
+                "source_precedence_rank": (
+                    source_precedence.index(source_kind)
+                    if source_kind in source_precedence
+                    else len(source_precedence)
+                ),
                 "heading": payload.get("heading"),
                 "relevance_score": payload.get("relevance_score", 0.0),
                 "excerpt": content[:600],
@@ -451,6 +494,14 @@ def _build_generation_context_pack(state: GeneratorState) -> GenerationContextPa
             "runtime_smoke_test",
         ],
         docs_snippets=docs_snippets,
+        source_summary={
+            "source_precedence": source_precedence,
+            "docs_snippet_count": len(docs_snippets),
+            "source_counts": {
+                key: value for key, value in source_counts.items() if value
+            },
+            "docs_live_required": False,
+        },
         fallback_used=not bool(docs_snippets),
         warnings=(
             [
@@ -799,7 +850,9 @@ async def runtime_qa_node(state: GeneratorState) -> Dict[str, Any]:
                 },
             )
         else:
-            smoke_passed, smoke_message = await asyncio.to_thread(run_notebook_smoke_test)
+            smoke_passed, smoke_message = await asyncio.to_thread(
+                run_notebook_smoke_test
+            )
             runtime_unavailable = smoke_message.lower().startswith(
                 RUNTIME_UNAVAILABLE_PREFIX
             )
@@ -823,7 +876,9 @@ async def runtime_qa_node(state: GeneratorState) -> Dict[str, Any]:
                     severity="info" if passed else "error",
                     category="runtime",
                     repairable=False,
-                    suggestions=[] if passed else _runtime_qa_suggestions(smoke_message),
+                    suggestions=(
+                        [] if passed else _runtime_qa_suggestions(smoke_message)
+                    ),
                 ),
                 stage="runtime",
                 attempt=attempt,
@@ -1008,16 +1063,12 @@ async def package_outputs_node(state: GeneratorState) -> Dict[str, Any]:
         "notebook_dependency_plan": (
             notebook_dependency_plan.model_dump()
             if hasattr(notebook_dependency_plan, "model_dump")
-            else (
-                notebook_dependency_plan or NotebookDependencyPlan().model_dump()
-            )
+            else (notebook_dependency_plan or NotebookDependencyPlan().model_dump())
         ),
         "qa_repair_feedback": (
             qa_repair_feedback.model_dump()
             if hasattr(qa_repair_feedback, "model_dump")
-            else (
-                qa_repair_feedback or QARepairFeedback().model_dump()
-            )
+            else (qa_repair_feedback or QARepairFeedback().model_dump())
         ),
         "qa_reports": [serialize_qa_report(report) for report in qa_reports],
         "qa_summary": qa_summary,

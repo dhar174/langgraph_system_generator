@@ -54,7 +54,7 @@ Use this skill when you need to:
 **PowerShell (Windows):**
 ```powershell
 # Prefer ImageMagick on PATH
-$magick = (Get-Command magick -ErrorAction SilentlyContinue)?.Source
+$magick = (Get-Command magick -ErrorAction SilentlyContinue).Source
 
 # Fallback: common install pattern under Program Files
 if (-not $magick) {
@@ -190,7 +190,7 @@ done
 #### Pattern: Store ImageMagick Path
 
 ```powershell
-$magick = (Get-Command magick -ErrorAction SilentlyContinue)?.Source
+$magick = (Get-Command magick -ErrorAction SilentlyContinue).Source
 ```
 
 #### Pattern: Get Dimensions as Variables
