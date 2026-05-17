@@ -18,6 +18,7 @@ env:
   REGION: ${{ vars.GCP_REGION }}
   SERVICE: ${{ vars.GCP_CLOUD_RUN_SERVICE }}
   ARTIFACT_REGISTRY_REPOSITORY: ${{ vars.GCP_ARTIFACT_REGISTRY_REPOSITORY }}
+  OPENAI_API_KEY_SECRET: ${{ vars.GCP_OPENAI_API_KEY_SECRET }}
 
 jobs:
   deploy:
@@ -36,11 +37,12 @@ jobs:
           GCP_REGION: ${{ vars.GCP_REGION }}
           GCP_CLOUD_RUN_SERVICE: ${{ vars.GCP_CLOUD_RUN_SERVICE }}
           GCP_ARTIFACT_REGISTRY_REPOSITORY: ${{ vars.GCP_ARTIFACT_REGISTRY_REPOSITORY }}
+          GCP_OPENAI_API_KEY_SECRET: ${{ vars.GCP_OPENAI_API_KEY_SECRET }}
           GCP_WORKLOAD_IDENTITY_PROVIDER_CONFIGURED: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER != '' }}
           GCP_SERVICE_ACCOUNT_CONFIGURED: ${{ secrets.GCP_SERVICE_ACCOUNT != '' }}
         run: |
           set -euo pipefail
-          for value in GCP_PROJECT_ID GCP_REGION GCP_CLOUD_RUN_SERVICE GCP_ARTIFACT_REGISTRY_REPOSITORY; do
+          for value in GCP_PROJECT_ID GCP_REGION GCP_CLOUD_RUN_SERVICE GCP_ARTIFACT_REGISTRY_REPOSITORY GCP_OPENAI_API_KEY_SECRET; do
             if [ -z "${!value:-}" ]; then
               echo "::error::Missing required GitHub configuration: $value"
               exit 1
@@ -89,6 +91,9 @@ jobs:
           service: ${{ env.SERVICE }}
           region: ${{ env.REGION }}
           image: ${{ env.IMAGE }}
+          secrets: |-
+            OPENAI_API_KEY=${{ env.OPENAI_API_KEY_SECRET }}:latest
+          secrets_update_strategy: merge
           flags: --port=8000
 
       - name: Show service URL

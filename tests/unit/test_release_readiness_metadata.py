@@ -51,6 +51,20 @@ def test_package_includes_web_ui_static_assets() -> None:
     assert package_data["langgraph_system_generator.api"] == ["static/*"]
 
 
+def test_cloud_run_workflow_mounts_openai_key_from_secret_manager() -> None:
+    workflow = _read(".github/workflows/deploy-cloud-run.yml")
+
+    assert "OPENAI_API_KEY_SECRET: ${{ vars.GCP_OPENAI_API_KEY_SECRET }}" in workflow
+    assert "GCP_OPENAI_API_KEY_SECRET: ${{ vars.GCP_OPENAI_API_KEY_SECRET }}" in workflow
+    assert (
+        "GCP_PROJECT_ID GCP_REGION GCP_CLOUD_RUN_SERVICE "
+        "GCP_ARTIFACT_REGISTRY_REPOSITORY GCP_OPENAI_API_KEY_SECRET"
+    ) in workflow
+    assert "OPENAI_API_KEY=${{ env.OPENAI_API_KEY_SECRET }}:latest" in workflow
+    assert "secrets_update_strategy: merge" in workflow
+    assert "secrets.OPENAI_API_KEY" not in workflow
+
+
 def test_public_docs_no_longer_describe_release_as_alpha() -> None:
     checked_paths = [
         "README.md",

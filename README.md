@@ -271,6 +271,8 @@ Add these **Repository Variables** in GitHub:
 - `GCP_REGION`: Cloud Run + Artifact Registry region (for example `us-central1`).
 - `GCP_CLOUD_RUN_SERVICE`: Cloud Run service name to deploy.
 - `GCP_ARTIFACT_REGISTRY_REPOSITORY`: Artifact Registry Docker repository name.
+- `GCP_OPENAI_API_KEY_SECRET`: Secret Manager secret name to mount as
+  `OPENAI_API_KEY` for live mode, for example `OPENAI_API_KEY`.
 
 ### 2) Configure GitHub repository secrets
 
@@ -289,6 +291,14 @@ At minimum, grant roles needed to push images and deploy Cloud Run:
 - Artifact Registry write access
 - Cloud Run admin/developer access
 - Service account user (for the Cloud Run runtime service account if needed)
+- Secret Manager Secret Accessor on the configured OpenAI key secret for the
+  deploy identity and Cloud Run runtime service account.
+
+Live mode in Cloud Run reads `OPENAI_API_KEY` from Google Secret Manager at
+container startup. The workflow mounts the configured
+`GCP_OPENAI_API_KEY_SECRET` as the runtime environment variable
+`OPENAI_API_KEY`; it does not use the GitHub repository secret named
+`OPENAI_API_KEY` for Cloud Run runtime credentials.
 
 ### 4) Trigger deployment
 
