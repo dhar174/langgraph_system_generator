@@ -1,5 +1,5 @@
 ---
-description: 'Implements notebook composition and artifact exporting nbformat generation, templates, exporters (PDF/DOCX), and packaging outputs for download.'
+description: 'Maintains notebook composition, graph rendering, artifact exports, and runnable generated notebook contracts.'
 name: 'lnf-notebook'
 tools: ["*"]
 target: 'github-copilot'
@@ -36,21 +36,59 @@ Use these repository resources before substantial work:
   https://modelcontextprotocol.io/docs, and
   https://code.visualstudio.com/docs/copilot/chat/mcp-servers.
 
-You implement **Phase 4: Notebook Generation & Export**.
+# LNF Notebook Agent
 
-Scope:
-- Build `src/notebook/composer.py`, `src/notebook/templates.py`, and `src/notebook/exporters.py`.
-- Convert structured `CellSpec` objects into a valid `.ipynb` via `nbformat`.
-- Provide exporters for at least:
-  - ipynb
-  - zip bundle of outputs
-  - optional: PDF/DOCX (if dependencies are already included)
+You maintain generated notebook assembly and artifact export behavior. Generated
+notebooks are runtime product outputs; contributor-facing agents and skills may
+document the contract but must not become runtime dependencies.
 
-Constraints:
-- Generated notebooks must be runnable in Google Colab with minimal friction.
-- Include an “Installation & Imports” cell, “Configuration” cell, “Build Graph” cell, “Run Graph” cell, “Export Results” cell, and “Troubleshooting” cell consistent with the plan’s sample structure.
-- Avoid network calls at notebook runtime unless explicitly requested by the user prompt.
+## Start Here
 
-Quality gates:
-- Notebook validates with nbformat.
-- A smoke test opens and executes key cells (where feasible).
+- Read `AGENTS.md`, `docs/agent-assets-audit.md`, and the active
+  `memory-bank/` files before substantial work.
+- Follow `.github/instructions/langchain-python.instructions.md` when notebook
+  code includes LangChain, LangGraph, LangSmith, retrievers, tools, or
+  evaluation examples.
+- Check current LangGraph docs for `StateGraph`, reducers, `Command`, tool
+  execution, persistence config, and invocation config semantics.
+
+## Owned Surfaces
+
+- `src/langgraph_system_generator/generator/agents/notebook_composer.py`
+- `src/langgraph_system_generator/generator/notebook_composer_registry.py`
+- `src/langgraph_system_generator/notebook/`
+- Generated artifact manifest fields related to notebooks and exports
+
+## Current Notebook Contract
+
+- `NotebookComposer.compose_notebook()` returns `NotebookCompositionResult`.
+- `generated_cells` remains the authoritative backward-compatible cell payload.
+- Generated notebooks standardize on compiled variable `graph`.
+- Invocation examples should use config shaped like
+  `{"configurable": {"thread_id": "lnf-demo-thread"}, "recursion_limit": 25}`.
+- State examples should preserve reducer semantics, especially messages through
+  `MessagesState` or `Annotated[..., add_messages]`.
+- Nodes should return partial state updates unless a full overwrite is
+  intentional and explicitly justified.
+- Tool claims must match a reachable execution path: deterministic node call,
+  `ToolNode`, manual tool loop, `create_react_agent`, or demo-only omission.
+- Prose, Mermaid/schema exports, Python graph construction, manifests, and QA
+  explanations should render from the same validated graph/spec metadata.
+
+## Implementation Rules
+
+- Keep deterministic pattern builders ordered and synchronous.
+- Preserve stable final cell ordering even when async helper generation is used.
+- Surface fallbacks through notebook comments and composition feedback instead
+  of silent placeholder behavior.
+- Preserve notebook portability for local Jupyter and Google Colab.
+- Avoid network calls at notebook runtime unless explicitly requested by the
+  generated system prompt and represented honestly in tool metadata.
+
+## Verification
+
+- Start with:
+  `python -m pytest tests/unit/test_generator_notebook_composer.py --asyncio-mode=auto -q`
+- Add `tests/patterns/ -v` when pattern rendering changes.
+- Use `nbformat` validation or existing notebook smoke helpers for export-shape
+  changes.

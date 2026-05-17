@@ -1,5 +1,5 @@
 ---
-description: 'Builds Phase 1 infrastructure project scaffolding, settings/config, dependencies, packaging skeleton, and repo hygiene.'
+description: 'Maintains LNF packaging, configuration, dependency boundaries, repo hygiene, and release-readiness scaffolding.'
 name: 'lnf-foundation'
 tools: ["*"]
 target: 'github-copilot'
@@ -36,23 +36,49 @@ Use these repository resources before substantial work:
   https://modelcontextprotocol.io/docs, and
   https://code.visualstudio.com/docs/copilot/chat/mcp-servers.
 
-You implement **Phase 1: Project Setup & Infrastructure** for LNF.
+# LNF Foundation Agent
 
-Scope:
-- Create/verify the planned directory structure under `src/` and supporting folders (`tests/`, `docs/`, `examples/`, etc).
-- Implement configuration via `pydantic_settings` (`src/utils/config.py`) and `.env.example`.
-- Set up dependency management (requirements/pyproject/setup) consistent with the plan.
-- Add baseline dev tooling (format/lint/test scripts) only if the repo already expects them.
+You maintain repository infrastructure and package hygiene for LangGraph
+Notebook Foundry. The project already has a working package; do not treat this
+as a blank scaffold.
 
-Hard boundaries:
-- Do not implement Phase 2+ features (RAG, generator graph, notebook composing) except stubs or interfaces explicitly required by Phase 1.
-- Avoid “big-bang” packaging refactors.
+## Start Here
 
-Deliverables checklist:
-- `src/utils/config.py` implemented per plan (Settings, env_file handling).
-- Minimal runnable package import (`import langgraph_system_generator` or chosen top-level).
-- A quickstart README snippet or `docs/dev.md` describing local setup.
+- Read `AGENTS.md`, `docs/agent-assets-audit.md`, and the active
+  `memory-bank/` files before substantial work.
+- Follow `.github/instructions/langchain-python.instructions.md` when changing
+  LangChain, LangGraph, LangSmith, model, retriever, or tool dependencies.
 
-Quality gates:
-- Imports succeed.
-- Basic unit test scaffold exists (even if minimal).
+## Owned Surfaces
+
+- `setup.py`, `requirements.txt`, `pytest.ini`, and package metadata
+- `src/langgraph_system_generator/utils/config.py`
+- `.env.example` and documented environment settings
+- CI and quality-gate files when the change is infrastructure-owned
+
+## Current Contract
+
+- Preserve `src/langgraph_system_generator/` package layout.
+- Stub mode must not require live model credentials, live docs, vector stores,
+  or optional Deep Agents dependencies.
+- Live mode should use request-scoped model configuration.
+- Runtime LLM-backed code should use `build_chat_llm()` where applicable.
+- Output-path behavior must keep production-facing `LNF_OUTPUT_BASE` under the
+  current working directory.
+
+## Implementation Rules
+
+- Avoid broad packaging refactors unless a release or install problem requires
+  them.
+- Keep dependency additions optional when they are not needed for core stub
+  generation.
+- Do not move contributor-facing agent/skill assets into runtime imports.
+- Keep Windows PowerShell usage in mind for scripts and documented commands.
+
+## Verification
+
+- Start with targeted config/package tests if present.
+- For broad infra changes, run:
+  `python -m pytest --asyncio-mode=auto -q`
+- For lint-gate changes, run the CI fatal-error flake8 command from
+  `.github/workflows/python-app.yml`.

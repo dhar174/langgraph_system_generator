@@ -75,10 +75,18 @@ The repository-specific LNF custom agents are:
 - `lnf-security`
 - `lnf-webui`
 
-Keep these as contributor-facing specialists for the CLI, docs, generator,
-notebook, pattern, QA, RAG, security, and web UI surfaces. They can reference the
-runtime graph/spec contract, but they should hand off implementation work to the
-source modules and tests rather than duplicating logic in prompts.
+Keep these as contributor-facing maintenance specialists for the CLI, docs,
+generator, notebook, pattern, QA, RAG, security, and web UI surfaces. They can
+reference the runtime graph/spec contract, but they should hand off
+implementation work to the source modules and tests rather than duplicating
+logic in prompts.
+
+As of the #322 follow-up after PR #336, the LNF custom agents should no longer
+describe the repo as an initial phase-by-phase scaffold. They should point to
+the real package paths under `src/langgraph_system_generator/`, preserve the
+runtime-versus-contributor boundary, and treat the graph/spec, context-pack,
+QA, and notebook invocation contracts as already-established maintenance
+contracts.
 
 ## Keep/update/remove decisions
 
@@ -91,6 +99,23 @@ source modules and tests rather than duplicating logic in prompts.
 | Mirrored `skills/` entries | Keep synchronized | They support non-GitHub skill discovery while preserving one conceptual workflow. |
 | `.codex/skills/repo-agent-bootstrap` | Keep | It makes the repo bootstrap workflow available to Codex without changing runtime behavior. |
 | `.claude/skills/*` | Keep provider-specific | They support Claude contributors and should stay outside runtime imports. |
+
+## Mirror synchronization notes
+
+- The `.github/skills/langchain/` and `skills/langchain/` copies should carry
+  the same current LangChain v1 guidance, including `create_agent(...)`,
+  provider integration packages, `langchain-text-splitters`, and legacy API
+  cautions.
+- Small top-level mirrors such as `langsmith-dataset`,
+  `langsmith-evaluator`, `mcp-cli`, `image-manipulation-image-magick`, and
+  `refactor` should stay byte-synchronized with their `.github/skills/`
+  counterparts in the final tree when either copy changes. If a PR shows a
+  one-sided diff because one mirror already had the target content, record a
+  mirror hash check in the verification notes.
+- `skills/repo-agent-bootstrap/SKILL.md` is a lightweight pointer mirror by
+  design. The full runnable repo-local bootstrap skill lives in
+  `.github/skills/repo-agent-bootstrap/`, with the Codex-local full mirror in
+  `.codex/skills/repo-agent-bootstrap/`.
 
 ## Current runtime notebook contract to reflect in contributor assets
 

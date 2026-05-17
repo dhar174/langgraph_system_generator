@@ -59,7 +59,7 @@ EOF
 cat args.json | mcp-cli server/tool
 
 # Find all TypeScript files and read the first one
-mcp-cli filesystem/search_files '{"path": "src/", "pattern": "*.ts"}' --json | jq -r '.content[0].text' | head -1 | xargs -I {} mcp-cli filesystem/read_file '{"path": "{}"}'
+mcp-cli filesystem/search_files '{"path": "src/", "pattern": "*.ts"}' --json | jq -r '.content[0].text' | head -1 | xargs -I {} sh -c 'mcp-cli filesystem/read_file "{\"path\": \"{}\"}"'
 ```
 
 ## Options
