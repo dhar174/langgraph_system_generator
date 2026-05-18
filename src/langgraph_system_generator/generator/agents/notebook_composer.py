@@ -1349,10 +1349,10 @@ def {safe_node_identifier}_node(state: WorkflowState) -> WorkflowState:
         }
         if normalized_name in terminal_names:
             return True
+        if normalized_name in {"finish", "end", "__end__"}:
+            return True
         terminal_roles = {"synthesizer", "terminal", "finalizer", "finish", "final"}
-        return normalized_name in {"finish", "end", "__end__"} and (
-            not role or role in terminal_roles
-        )
+        return bool(role and role in terminal_roles)
 
     @staticmethod
     def _split_hybrid_nodes(

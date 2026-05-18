@@ -1350,7 +1350,6 @@ async def test_compose_notebook_hybrid_terminal_finish_is_not_duplicated(
         workflow_design={
             "architecture_type": "hybrid",
             "state_schema": {},
-            "terminal_nodes": ["finish"],
             "nodes": [
                 {"name": "router", "purpose": "Route requests", "role": "router"},
                 {
@@ -1376,7 +1375,7 @@ async def test_compose_notebook_hybrid_terminal_finish_is_not_duplicated(
                 {
                     "name": "finish",
                     "purpose": "Synthesize final results",
-                    "role": "synthesizer",
+                    "role": "direct_specialist",
                 },
             ],
         },
