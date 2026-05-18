@@ -66,6 +66,20 @@ def test_cloud_run_workflow_mounts_openai_key_from_secret_manager() -> None:
     assert "secrets.OPENAI_API_KEY" not in workflow
 
 
+def test_cloud_run_workflow_smoke_checks_private_service_after_deploy() -> None:
+    workflow = _read(".github/workflows/deploy-cloud-run.yml")
+
+    deploy_index = workflow.index("- name: Deploy to Cloud Run")
+    health_index = workflow.index("- name: Verify Cloud Run health")
+    show_url_index = workflow.index("- name: Show service URL")
+
+    assert deploy_index < health_index < show_url_index
+    assert 'gcloud run services proxy "${SERVICE}"' in workflow
+    assert '"http://127.0.0.1:8080/health"' in workflow
+    assert "curl --fail --silent --show-error" in workflow
+    assert '"status"[[:space:]]*:[[:space:]]*"ok"' in workflow
+
+
 def test_cloud_run_requirements_include_live_runtime_qa_dependencies() -> None:
     requirements = _read("requirements.txt")
 

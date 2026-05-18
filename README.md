@@ -289,6 +289,13 @@ Add these **Repository Variables** in GitHub:
 - `GCP_OPENAI_API_KEY_SECRET`: Secret Manager secret name to mount as
   `OPENAI_API_KEY` for live mode, for example `OPENAI_API_KEY`.
 
+`GCP_OPENAI_API_KEY_SECRET` is a required deployment variable. The workflow
+fails during configuration validation when it is missing, even if a specific
+deployment will only use stub mode, because the production Cloud Run service is
+intended to support both stub and live generation without a separate redeploy.
+Use a Secret Manager secret with the expected name instead of a GitHub
+`OPENAI_API_KEY` secret.
+
 ### 2) Configure GitHub repository secrets
 
 Add these **Repository Secrets** in GitHub:
@@ -339,7 +346,10 @@ The workflow builds and pushes:
 
 `$GCP_REGION-docker.pkg.dev/$GCP_PROJECT_ID/$GCP_ARTIFACT_REGISTRY_REPOSITORY/langgraph-system-generator:$GITHUB_SHA`
 
-Then it deploys that image to `GCP_CLOUD_RUN_SERVICE`.
+Then it deploys that image to `GCP_CLOUD_RUN_SERVICE` and performs an
+authenticated `/health` smoke check through `gcloud run services proxy`. A
+failed health check fails the GitHub Actions job so operators have an obvious
+signal that the deployed revision needs investigation or rollback.
 
 ## Colab Usage
 
