@@ -1333,13 +1333,39 @@ def {safe_node_identifier}_node(state: WorkflowState) -> WorkflowState:
 {chr(10).join(update_lines)}"""
 
     @staticmethod
+    def _is_pattern_terminal_node(
+        node: Dict[str, Any],
+        workflow_design: Dict[str, Any] | None = None,
+    ) -> bool:
+        """Return whether a graph node is a terminal handled by pattern templates."""
+
+        name = str(node.get("name", "")).strip()
+        normalized_name = name.lower()
+        role = str(node.get("role", "")).strip().lower()
+        terminal_names = {
+            str(value).strip().lower()
+            for value in (workflow_design or {}).get("terminal_nodes", [])
+            if str(value).strip()
+        }
+        if normalized_name in terminal_names:
+            return True
+        terminal_roles = {"synthesizer", "terminal", "finalizer", "finish", "final"}
+        return normalized_name in {"finish", "end", "__end__"} and (
+            not role or role in terminal_roles
+        )
+
+    @staticmethod
     def _split_hybrid_nodes(
         nodes: List[Dict[str, Any]],
+        workflow_design: Dict[str, Any] | None = None,
     ) -> tuple[List[str], Dict[str, str], List[str], Dict[str, str]]:
         """Split hybrid nodes into direct-specialist and team-worker groups."""
 
         non_router_nodes = [
-            node for node in nodes if node.get("name") not in {"router", "supervisor"}
+            node
+            for node in nodes
+            if node.get("name") not in {"router", "supervisor"}
+            and not NotebookComposer._is_pattern_terminal_node(node, workflow_design)
         ]
         direct_role_names = {"direct", "direct_specialist", "specialist"}
         worker_role_names = {
@@ -1442,7 +1468,10 @@ def {safe_node_identifier}_node(state: WorkflowState) -> WorkflowState:
         if architecture_type == "router":
             # Extract routes from nodes
             routes = [
-                node.get("name") for node in nodes if node.get("name") != "router"
+                node.get("name")
+                for node in nodes
+                if node.get("name") != "router"
+                and not self._is_pattern_terminal_node(node, workflow_design)
             ]
 
             # Generate router node
@@ -1455,7 +1484,9 @@ def {safe_node_identifier}_node(state: WorkflowState) -> WorkflowState:
 
             # Generate route handler nodes
             for node in nodes:
-                if node.get("name") != "router":
+                if node.get("name") != "router" and not self._is_pattern_terminal_node(
+                    node, workflow_design
+                ):
                     route_code = RouterPattern.generate_route_node_code(
                         node.get("name"),
                         node.get("purpose", f"Handle {node.get('name')} requests"),
@@ -1468,12 +1499,16 @@ def {safe_node_identifier}_node(state: WorkflowState) -> WorkflowState:
         elif architecture_type == "subagents":
             # Extract subagents (excluding supervisor)
             subagents = [
-                node.get("name") for node in nodes if node.get("name") != "supervisor"
+                node.get("name")
+                for node in nodes
+                if node.get("name") != "supervisor"
+                and not self._is_pattern_terminal_node(node, workflow_design)
             ]
             subagent_descriptions = {
                 node.get("name"): node.get("purpose", "")
                 for node in nodes
                 if node.get("name") != "supervisor"
+                and not self._is_pattern_terminal_node(node, workflow_design)
             }
 
             # Generate supervisor node
@@ -1486,7 +1521,9 @@ def {safe_node_identifier}_node(state: WorkflowState) -> WorkflowState:
 
             # Generate subagent nodes
             for node in nodes:
-                if node.get("name") != "supervisor":
+                if node.get("name") != "supervisor" and not self._is_pattern_terminal_node(
+                    node, workflow_design
+                ):
                     subagent_code = SubagentsPattern.generate_subagent_code(
                         node.get("name"),
                         node.get("purpose", f"{node.get('name')} specialist"),
@@ -1503,7 +1540,7 @@ def {safe_node_identifier}_node(state: WorkflowState) -> WorkflowState:
                 direct_descriptions,
                 team_workers,
                 worker_descriptions,
-            ) = self._split_hybrid_nodes(nodes)
+            ) = self._split_hybrid_nodes(nodes, workflow_design)
 
             router_code = HybridPattern.generate_router_node_code(
                 direct_specialists,
@@ -1552,11 +1589,13 @@ def {safe_node_identifier}_node(state: WorkflowState) -> WorkflowState:
                 node.get("name")
                 for node in nodes
                 if node.get("name") not in {"coordinator", "supervisor"}
+                and not self._is_pattern_terminal_node(node, workflow_design)
             ]
             worker_descriptions = {
                 node.get("name"): node.get("purpose", "")
                 for node in nodes
                 if node.get("name") not in {"coordinator", "supervisor"}
+                and not self._is_pattern_terminal_node(node, workflow_design)
             }
 
             coordinator_code = AutoAgentPattern.generate_coordinator_code(
@@ -1567,7 +1606,10 @@ def {safe_node_identifier}_node(state: WorkflowState) -> WorkflowState:
             )
 
             for node in nodes:
-                if node.get("name") not in {"coordinator", "supervisor"}:
+                if node.get("name") not in {
+                    "coordinator",
+                    "supervisor",
+                } and not self._is_pattern_terminal_node(node, workflow_design):
                     worker_code = AutoAgentPattern.generate_worker_code(
                         node.get("name"),
                         node.get("purpose", f"{node.get('name')} worker"),
@@ -1675,19 +1717,27 @@ def {safe_node_identifier}_node(state: WorkflowState) -> WorkflowState:
         nodes = workflow_design.get("nodes", [])
         if architecture_type == "router":
             routes = [
-                node.get("name") for node in nodes if node.get("name") != "router"
+                node.get("name")
+                for node in nodes
+                if node.get("name") != "router"
+                and not self._is_pattern_terminal_node(node, workflow_design)
             ]
             graph_code = RouterPattern.generate_graph_code(routes)
         elif architecture_type == "subagents":
             subagents = [
-                node.get("name") for node in nodes if node.get("name") != "supervisor"
+                node.get("name")
+                for node in nodes
+                if node.get("name") != "supervisor"
+                and not self._is_pattern_terminal_node(node, workflow_design)
             ]
             graph_code = SubagentsPattern.generate_graph_code(
                 subagents,
                 max_iterations=max_iterations,
             )
         elif architecture_type == "hybrid":
-            direct_specialists, _, team_workers, _ = self._split_hybrid_nodes(nodes)
+            direct_specialists, _, team_workers, _ = self._split_hybrid_nodes(
+                nodes, workflow_design
+            )
             graph_code = HybridPattern.generate_graph_code(
                 direct_specialists,
                 team_workers,
@@ -1698,6 +1748,7 @@ def {safe_node_identifier}_node(state: WorkflowState) -> WorkflowState:
                 node.get("name")
                 for node in nodes
                 if node.get("name") not in {"coordinator", "supervisor"}
+                and not self._is_pattern_terminal_node(node, workflow_design)
             ]
             graph_code = AutoAgentPattern.generate_graph_code(
                 workers,

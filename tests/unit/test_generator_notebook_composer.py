@@ -1332,6 +1332,75 @@ async def test_compose_notebook_hybrid_sparse_nodes_keep_defaults_aligned(
 
 
 @pytest.mark.asyncio
+async def test_compose_notebook_hybrid_terminal_finish_is_not_duplicated(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """Pattern templates own terminal finish nodes even when graph specs expose them."""
+
+    monkeypatch.setattr(composer_module, "ChatOpenAI", DummyLLM)
+    composer = composer_module.NotebookComposer()
+
+    composition = await composer.compose_notebook(
+        notebook_plan=NotebookPlan(
+            title="Hybrid With Terminal Finish",
+            sections=["Setup", "Workflow", "Execution"],
+            patterns_used=["hybrid"],
+            architecture_type="hybrid",
+        ),
+        workflow_design={
+            "architecture_type": "hybrid",
+            "state_schema": {},
+            "terminal_nodes": ["finish"],
+            "nodes": [
+                {"name": "router", "purpose": "Route requests", "role": "router"},
+                {
+                    "name": "gender_setup",
+                    "purpose": "Collect the selected character gender",
+                    "role": "direct_specialist",
+                },
+                {
+                    "name": "supervisor",
+                    "purpose": "Coordinate response checks",
+                    "role": "coordinator",
+                },
+                {
+                    "name": "anachronism_verifier",
+                    "purpose": "Check for future knowledge",
+                    "role": "worker",
+                },
+                {
+                    "name": "believability_verifier",
+                    "purpose": "Check period-appropriate realism",
+                    "role": "worker",
+                },
+                {
+                    "name": "finish",
+                    "purpose": "Synthesize final results",
+                    "role": "synthesizer",
+                },
+            ],
+        },
+        tools=[],
+        architecture={
+            "architecture_type": "hybrid",
+            "justification": "Live-style hybrid design.",
+        },
+    )
+
+    code = "\n\n".join(
+        cell.content for cell in composition.cells if cell.cell_type == "code"
+    )
+
+    assert code.count("def finish_node") == 1
+    assert code.count('workflow.add_node("finish", finish_node)') == 1
+    assert 'workflow.add_node("gender_setup", gender_setup_node)' in code
+    assert 'workflow.add_node("anachronism_verifier", anachronism_verifier_node)' in code
+    assert 'workflow.add_node("believability_verifier", believability_verifier_node)' in code
+    assert 'workflow.add_edge("finish", "finish")' not in code
+    ast.parse(code)
+
+
+@pytest.mark.asyncio
 async def test_compose_notebook_normalizes_mixed_case_architecture_type(
     monkeypatch: pytest.MonkeyPatch,
 ):
