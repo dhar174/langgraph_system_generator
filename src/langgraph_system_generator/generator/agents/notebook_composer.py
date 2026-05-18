@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ast
 import asyncio
 import inspect
 import json
@@ -893,6 +894,13 @@ Generate the complete Python function implementation."""
                     ),
                     feedback=feedback,
                 )
+            syntax_error = self._python_syntax_error(generated_code)
+            if syntax_error is not None:
+                return self._generate_tool_fallback(
+                    tool,
+                    reason=f"LLM tool generation returned invalid Python: {syntax_error}.",
+                    feedback=feedback,
+                )
 
             # Add header comment
             header = f"""# Tool: {tool_name}
@@ -1165,6 +1173,14 @@ Generate the complete Python function implementation."""
                     reason=(
                         "LLM node generation returned placeholder or incomplete code."
                     ),
+                    feedback=feedback,
+                )
+            syntax_error = self._python_syntax_error(generated_code)
+            if syntax_error is not None:
+                return self._generate_node_fallback(
+                    node,
+                    workflow_design,
+                    reason=f"LLM node generation returned invalid Python: {syntax_error}.",
                     feedback=feedback,
                 )
 
@@ -1974,6 +1990,17 @@ print(final_state)"""
         if normalized.endswith("```"):
             normalized = normalized[:-3]
         return normalized.strip()
+
+    @staticmethod
+    def _python_syntax_error(content: str) -> str | None:
+        """Return a compact syntax error for generated Python, if parsing fails."""
+
+        try:
+            ast.parse(content)
+        except SyntaxError as exc:
+            location = f"line {exc.lineno}" if exc.lineno is not None else "unknown line"
+            return f"{exc.msg} at {location}"
+        return None
 
     @staticmethod
     def _is_meaningful_tool_code(content: str) -> bool:

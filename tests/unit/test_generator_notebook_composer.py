@@ -144,6 +144,25 @@ class DelayedEmptyLLM(DummyLLM):
         return self.invoke("")
 
 
+class InvalidPythonLLM(DummyLLM):
+    """LLM stub that returns meaningful-looking but invalid Python code."""
+
+    async def ainvoke(self, messages, *args, **kwargs):
+        user_content = getattr(messages[-1], "content", "")
+        if "Tool Name:" in user_content:
+            return self.invoke(
+                "def schema_validator(value):\n"
+                "    modern_markers = ['internet']\n"
+                "    18th_century_markers = ['thee']\n"
+                "    return value"
+            )
+        return self.invoke(
+            "def historical_check_node(state: WorkflowState) -> WorkflowState:\n"
+            "    18th_century_markers = ['thee']\n"
+            "    return {'messages': state.get('messages', [])}"
+        )
+
+
 def test_notebook_composer_registry_includes_builtin_architectures():
     registry = get_notebook_composer_registry().clone()
 
@@ -1540,6 +1559,59 @@ async def test_generate_node_implementation_records_visible_fallback_warning(
     assert fallback_code.startswith("# WARNING: Deterministic fallback generated")
     assert feedback.fallback_used is True
     assert feedback.fallback_events[0].kind == "node"
+
+
+@pytest.mark.asyncio
+async def test_generate_tool_implementation_rejects_invalid_python_and_falls_back(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    monkeypatch.setattr(composer_module, "ChatOpenAI", InvalidPythonLLM)
+    composer = composer_module.NotebookComposer()
+    feedback = composer_module.NotebookCompositionFeedback()
+
+    tool_code = await composer._generate_tool_implementation(
+        {
+            "name": "Schema Validator",
+            "purpose": "Validate 18th century commoner chatbot outputs.",
+            "category": "validation",
+        },
+        feedback=feedback,
+    )
+
+    assert tool_code.startswith("# WARNING: Deterministic fallback generated")
+    assert "18th_century_markers" not in tool_code
+    compile(tool_code, "<tool_code>", "exec")
+    assert feedback.fallback_used is True
+    assert feedback.fallback_events[0].kind == "tool"
+    assert "invalid Python" in feedback.fallback_events[0].reason
+
+
+@pytest.mark.asyncio
+async def test_generate_node_implementation_rejects_invalid_python_and_falls_back(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    monkeypatch.setattr(composer_module, "ChatOpenAI", InvalidPythonLLM)
+    composer = composer_module.NotebookComposer()
+    feedback = composer_module.NotebookCompositionFeedback()
+
+    node_code = await composer._generate_node_implementation(
+        {"name": "historical check", "purpose": "Check 18th century realism."},
+        {
+            "architecture_type": "custom",
+            "state_schema": {"messages": "Conversation messages"},
+            "nodes": [
+                {"name": "historical check", "purpose": "Check 18th century realism."}
+            ],
+        },
+        feedback=feedback,
+    )
+
+    assert node_code.startswith("# WARNING: Deterministic fallback generated")
+    assert "18th_century_markers" not in node_code
+    compile(node_code, "<node_code>", "exec")
+    assert feedback.fallback_used is True
+    assert feedback.fallback_events[0].kind == "node"
+    assert "invalid Python" in feedback.fallback_events[0].reason
 
 
 def test_tool_fallback_sanitizes_identifier_and_compiles(
