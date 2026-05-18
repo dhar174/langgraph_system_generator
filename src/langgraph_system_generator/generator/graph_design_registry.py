@@ -669,7 +669,17 @@ def normalize_graph_design(
             if isinstance(route, Mapping)
         ]
         tool_reachability = [
-            GraphToolReachabilitySpec.model_validate(reachability)
+            GraphToolReachabilitySpec.model_validate(
+                {
+                    **dict(reachability),
+                    "execution_path": (
+                        "demo_only"
+                        if reachability.get("execution_path")
+                        == "omitted_demo_only"
+                        else reachability.get("execution_path")
+                    ),
+                }
+            )
             for reachability in list(payload.get("tool_reachability") or [])
             if isinstance(reachability, Mapping)
         ]

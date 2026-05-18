@@ -66,6 +66,13 @@ def test_cloud_run_workflow_mounts_openai_key_from_secret_manager() -> None:
     assert "secrets.OPENAI_API_KEY" not in workflow
 
 
+def test_cloud_run_requirements_include_live_runtime_qa_dependencies() -> None:
+    requirements = _read("requirements.txt")
+
+    for dependency in ("jupyter_client", "nbclient", "ipykernel"):
+        assert dependency in requirements
+
+
 def test_public_docs_no_longer_describe_release_as_alpha() -> None:
     checked_paths = [
         "README.md",

@@ -124,7 +124,7 @@ class GraphDesigner:
                 '  "tool_reachability": [\n'
                 "    {\n"
                 '      "tool_id": "tool_name",\n'
-                '      "execution_path": "deterministic_node|tool_node|manual_loop|create_react_agent|omitted_demo_only",\n'
+                '      "execution_path": "deterministic_node|tool_node|manual_loop|create_react_agent|demo_only|omitted",\n'
                 '      "node": "node_name",\n'
                 '      "rationale": "How the graph can execute this tool, or why it is intentionally omitted"\n'
                 "    }\n"
