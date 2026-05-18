@@ -347,9 +347,10 @@ The workflow builds and pushes:
 `$GCP_REGION-docker.pkg.dev/$GCP_PROJECT_ID/$GCP_ARTIFACT_REGISTRY_REPOSITORY/langgraph-system-generator:$GITHUB_SHA`
 
 Then it deploys that image to `GCP_CLOUD_RUN_SERVICE` and performs an
-authenticated `/health` smoke check through `gcloud run services proxy`. A
-failed health check fails the GitHub Actions job so operators have an obvious
-signal that the deployed revision needs investigation or rollback.
+authenticated `/health` smoke check against the deployed Cloud Run URL using a
+Google identity token with the service URL as its audience. A failed health
+check fails the GitHub Actions job so operators have an obvious signal that the
+deployed revision needs investigation or rollback.
 
 ## Colab Usage
 
