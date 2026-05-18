@@ -258,6 +258,21 @@ classDiagram
   }
 ```
 
+Current web UI model presets under **Advanced Options → Model** are:
+
+- `gpt-5.5`
+- `gpt-5.4`
+- `gpt-5.4-mini`
+- `gpt-5.4-nano`
+- `gpt-5.2`
+- `gpt-5.2-chat-latest`
+- `gpt-5.1`
+- `gpt-5-mini`
+- `gpt-5-nano`
+
+The API accepts `model` as a string so these IDs can also be supplied directly
+in API requests.
+
 ## Deploy to Google Cloud Run
 
 This repository includes `.github/workflows/deploy-cloud-run.yml` to deploy the
