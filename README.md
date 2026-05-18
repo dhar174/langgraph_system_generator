@@ -258,6 +258,99 @@ classDiagram
   }
 ```
 
+Current web UI model presets under **Advanced Options → Model** are:
+
+- `gpt-5.5`
+- `gpt-5.4`
+- `gpt-5.4-mini`
+- `gpt-5.4-nano`
+- `gpt-5.2`
+- `gpt-5.2-chat-latest`
+- `gpt-5.1`
+- `gpt-5-mini`
+- `gpt-5-nano`
+
+The API accepts `model` as a string so these IDs can also be supplied directly
+in API requests.
+
+## Deploy to Google Cloud Run
+
+This repository includes `.github/workflows/deploy-cloud-run.yml` to deploy the
+containerized FastAPI app to Google Cloud Run on every push to `main`.
+
+### 1) Configure GitHub repository variables
+
+Add these **Repository Variables** in GitHub:
+
+- `GCP_PROJECT_ID`: Your Google Cloud project ID.
+- `GCP_REGION`: Cloud Run + Artifact Registry region (for example `us-central1`).
+- `GCP_CLOUD_RUN_SERVICE`: Cloud Run service name to deploy.
+- `GCP_ARTIFACT_REGISTRY_REPOSITORY`: Artifact Registry Docker repository name.
+- `GCP_OPENAI_API_KEY_SECRET`: Secret Manager secret name to mount as
+  `OPENAI_API_KEY` for live mode, for example `OPENAI_API_KEY`.
+
+`GCP_OPENAI_API_KEY_SECRET` is a required deployment variable. The workflow
+fails during configuration validation when it is missing, even if a specific
+deployment will only use stub mode, because the production Cloud Run service is
+intended to support both stub and live generation without a separate redeploy.
+Use a Secret Manager secret with the expected name instead of a GitHub
+`OPENAI_API_KEY` secret.
+
+### 2) Configure GitHub repository secrets
+
+Add these **Repository Secrets** in GitHub:
+
+- `GCP_WORKLOAD_IDENTITY_PROVIDER`: Full Workload Identity Provider resource,
+  for example:
+  `projects/123456789/locations/global/workloadIdentityPools/github/providers/my-provider`
+- `GCP_SERVICE_ACCOUNT`: Service account email used by GitHub Actions, for
+  example `github-actions-deployer@my-project.iam.gserviceaccount.com`
+
+### 3) Grant the service account required IAM roles
+
+At minimum, grant roles needed to push images and deploy Cloud Run:
+
+- Artifact Registry write access
+- Cloud Run admin/developer access
+- Service account user (for the Cloud Run runtime service account if needed)
+- Secret Manager Secret Accessor on the configured OpenAI key secret for the
+  deploy identity and Cloud Run runtime service account.
+
+Live mode in Cloud Run reads `OPENAI_API_KEY` from Google Secret Manager at
+container startup. The workflow mounts the configured
+`GCP_OPENAI_API_KEY_SECRET` as the runtime environment variable
+`OPENAI_API_KEY`; it does not use the GitHub repository secret named
+`OPENAI_API_KEY` for Cloud Run runtime credentials.
+
+The deployment workflow sets the Cloud Run memory limit to `2Gi`. Live
+generation can exceed the Cloud Run default of `512Mi` while loading the app,
+running model-backed generation, and packaging notebook artifacts.
+
+### 4) Trigger deployment
+
+- Push to `main` (automatic), or
+- Run the **Deploy to Cloud Run** workflow manually from GitHub Actions.
+
+### 5) Configure GitHub Actions environment protections (optional)
+
+The deploy job targets the GitHub Actions environment `production`.
+
+- If `production` has protection rules (required reviewers or wait timers),
+  deployments pause until those checks are satisfied.
+- If you want fully automatic deploys on push to `main`, keep `production`
+  protections disabled or configured to auto-allow your workflow path.
+
+Review or adjust this in **Settings → Environments → production**.
+
+The workflow builds and pushes:
+
+`$GCP_REGION-docker.pkg.dev/$GCP_PROJECT_ID/$GCP_ARTIFACT_REGISTRY_REPOSITORY/langgraph-system-generator:$GITHUB_SHA`
+
+Then it deploys that image to `GCP_CLOUD_RUN_SERVICE` and performs an
+authenticated `/health` smoke check through `gcloud run services proxy`. A
+failed health check fails the GitHub Actions job so operators have an obvious
+signal that the deployed revision needs investigation or rollback.
+
 ## Colab Usage
 
 Generated notebooks are intended to run in local Jupyter and Google Colab.

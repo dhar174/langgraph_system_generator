@@ -144,6 +144,25 @@ class DelayedEmptyLLM(DummyLLM):
         return self.invoke("")
 
 
+class InvalidPythonLLM(DummyLLM):
+    """LLM stub that returns meaningful-looking but invalid Python code."""
+
+    async def ainvoke(self, messages, *args, **kwargs):
+        user_content = getattr(messages[-1], "content", "")
+        if "Tool Name:" in user_content:
+            return self.invoke(
+                "def schema_validator(value):\n"
+                "    modern_markers = ['internet']\n"
+                "    18th_century_markers = ['thee']\n"
+                "    return value"
+            )
+        return self.invoke(
+            "def historical_check_node(state: WorkflowState) -> WorkflowState:\n"
+            "    18th_century_markers = ['thee']\n"
+            "    return {'messages': state.get('messages', [])}"
+        )
+
+
 def test_notebook_composer_registry_includes_builtin_architectures():
     registry = get_notebook_composer_registry().clone()
 
@@ -1313,6 +1332,236 @@ async def test_compose_notebook_hybrid_sparse_nodes_keep_defaults_aligned(
 
 
 @pytest.mark.asyncio
+async def test_compose_notebook_hybrid_terminal_finish_is_not_duplicated(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """Pattern templates own terminal finish nodes even when graph specs expose them."""
+
+    monkeypatch.setattr(composer_module, "ChatOpenAI", DummyLLM)
+    composer = composer_module.NotebookComposer()
+
+    composition = await composer.compose_notebook(
+        notebook_plan=NotebookPlan(
+            title="Hybrid With Terminal Finish",
+            sections=["Setup", "Workflow", "Execution"],
+            patterns_used=["hybrid"],
+            architecture_type="hybrid",
+        ),
+        workflow_design={
+            "architecture_type": "hybrid",
+            "state_schema": {},
+            "nodes": [
+                {"name": "router", "purpose": "Route requests", "role": "router"},
+                {
+                    "name": "gender_setup",
+                    "purpose": "Collect the selected character gender",
+                    "role": "direct_specialist",
+                },
+                {
+                    "name": "supervisor",
+                    "purpose": "Coordinate response checks",
+                    "role": "coordinator",
+                },
+                {
+                    "name": "anachronism_verifier",
+                    "purpose": "Check for future knowledge",
+                    "role": "worker",
+                },
+                {
+                    "name": "believability_verifier",
+                    "purpose": "Check period-appropriate realism",
+                    "role": "worker",
+                },
+                {
+                    "name": "finish",
+                    "purpose": "Synthesize final results",
+                    "role": "direct_specialist",
+                },
+            ],
+        },
+        tools=[],
+        architecture={
+            "architecture_type": "hybrid",
+            "justification": "Live-style hybrid design.",
+        },
+    )
+
+    code = "\n\n".join(
+        cell.content for cell in composition.cells if cell.cell_type == "code"
+    )
+
+    assert code.count("def finish_node") == 1
+    assert code.count('workflow.add_node("finish", finish_node)') == 1
+    assert 'workflow.add_node("gender_setup", gender_setup_node)' in code
+    assert 'workflow.add_node("anachronism_verifier", anachronism_verifier_node)' in code
+    assert 'workflow.add_node("believability_verifier", believability_verifier_node)' in code
+    assert 'workflow.add_edge("finish", "finish")' not in code
+    ast.parse(code)
+
+
+def test_pattern_terminal_detection_handles_nulls_and_allows_end_node():
+    """Only pattern-owned terminal labels should be filtered by name."""
+
+    assert composer_module.NotebookComposer._is_pattern_terminal_node(
+        {"name": "finish", "role": "direct_specialist"},
+        {"terminal_nodes": None},
+    )
+    assert not composer_module.NotebookComposer._is_pattern_terminal_node(
+        {"name": "end", "role": "direct_specialist"},
+        {"terminal_nodes": None},
+    )
+    assert composer_module.NotebookComposer._is_pattern_terminal_node(
+        {"name": "archive", "role": "direct_specialist"},
+        {"terminal_nodes": ["archive"]},
+    )
+
+
+@pytest.mark.asyncio
+async def test_compose_notebook_router_terminal_only_generates_default_route(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """Router pattern fallbacks must define the same route used by graph wiring."""
+
+    monkeypatch.setattr(composer_module, "ChatOpenAI", DummyLLM)
+    composer = composer_module.NotebookComposer()
+
+    composition = await composer.compose_notebook(
+        notebook_plan=NotebookPlan(
+            title="Router With Only Terminal",
+            sections=["Setup", "Workflow", "Execution"],
+            patterns_used=["router"],
+            architecture_type="router",
+        ),
+        workflow_design={
+            "architecture_type": "router",
+            "terminal_nodes": None,
+            "state_schema": {},
+            "nodes": [
+                {"name": "router", "purpose": "Route requests", "role": "router"},
+                {
+                    "name": "finish",
+                    "purpose": "Synthesize final results",
+                    "role": "terminal",
+                },
+            ],
+        },
+        tools=[],
+        architecture={
+            "architecture_type": "router",
+            "justification": "Terminal-only router design.",
+        },
+    )
+
+    code = "\n\n".join(
+        cell.content for cell in composition.cells if cell.cell_type == "code"
+    )
+
+    assert "def default_node" in code
+    assert 'workflow.add_node("default", default_node)' in code
+    assert 'workflow.add_node("finish", finish_node)' not in code
+    ast.parse(code)
+
+
+@pytest.mark.asyncio
+async def test_compose_notebook_subagents_terminal_only_generates_worker(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """Subagent fallbacks must emit the worker node referenced by the graph."""
+
+    monkeypatch.setattr(composer_module, "ChatOpenAI", DummyLLM)
+    composer = composer_module.NotebookComposer()
+
+    composition = await composer.compose_notebook(
+        notebook_plan=NotebookPlan(
+            title="Subagents With Only Terminal",
+            sections=["Setup", "Workflow", "Execution"],
+            patterns_used=["subagents"],
+            architecture_type="subagents",
+        ),
+        workflow_design={
+            "architecture_type": "subagents",
+            "terminal_nodes": None,
+            "state_schema": {},
+            "nodes": [
+                {
+                    "name": "supervisor",
+                    "purpose": "Coordinate agents",
+                    "role": "supervisor",
+                },
+                {
+                    "name": "finish",
+                    "purpose": "Synthesize final results",
+                    "role": "terminal",
+                },
+            ],
+        },
+        tools=[],
+        architecture={
+            "architecture_type": "subagents",
+            "justification": "Terminal-only subagent design.",
+        },
+    )
+
+    code = "\n\n".join(
+        cell.content for cell in composition.cells if cell.cell_type == "code"
+    )
+
+    assert "def worker_node" in code
+    assert 'workflow.add_node("worker", worker_node)' in code
+    assert code.count("def finish_node") == 1
+    ast.parse(code)
+
+
+@pytest.mark.asyncio
+async def test_compose_notebook_autoagent_terminal_only_generates_worker(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """Autoagent fallback workers must match the worker graph route."""
+
+    monkeypatch.setattr(composer_module, "ChatOpenAI", DummyLLM)
+    composer = composer_module.NotebookComposer()
+
+    composition = await composer.compose_notebook(
+        notebook_plan=NotebookPlan(
+            title="Autoagent With Only Terminal",
+            sections=["Setup", "Workflow", "Execution"],
+            patterns_used=["autoagent"],
+            architecture_type="autoagent",
+        ),
+        workflow_design={
+            "architecture_type": "autoagent",
+            "terminal_nodes": None,
+            "state_schema": {},
+            "nodes": [
+                {
+                    "name": "coordinator",
+                    "purpose": "Coordinate agents",
+                    "role": "coordinator",
+                },
+                {
+                    "name": "finish",
+                    "purpose": "Synthesize final results",
+                    "role": "terminal",
+                },
+            ],
+        },
+        tools=[],
+        architecture={
+            "architecture_type": "autoagent",
+            "justification": "Terminal-only autoagent design.",
+        },
+    )
+
+    code = "\n\n".join(
+        cell.content for cell in composition.cells if cell.cell_type == "code"
+    )
+
+    assert "def worker_node" in code
+    assert 'workflow.add_node("worker", worker_node)' in code
+    ast.parse(code)
+
+
+@pytest.mark.asyncio
 async def test_compose_notebook_normalizes_mixed_case_architecture_type(
     monkeypatch: pytest.MonkeyPatch,
 ):
@@ -1540,6 +1789,59 @@ async def test_generate_node_implementation_records_visible_fallback_warning(
     assert fallback_code.startswith("# WARNING: Deterministic fallback generated")
     assert feedback.fallback_used is True
     assert feedback.fallback_events[0].kind == "node"
+
+
+@pytest.mark.asyncio
+async def test_generate_tool_implementation_rejects_invalid_python_and_falls_back(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    monkeypatch.setattr(composer_module, "ChatOpenAI", InvalidPythonLLM)
+    composer = composer_module.NotebookComposer()
+    feedback = composer_module.NotebookCompositionFeedback()
+
+    tool_code = await composer._generate_tool_implementation(
+        {
+            "name": "Schema Validator",
+            "purpose": "Validate 18th century commoner chatbot outputs.",
+            "category": "validation",
+        },
+        feedback=feedback,
+    )
+
+    assert tool_code.startswith("# WARNING: Deterministic fallback generated")
+    assert "18th_century_markers" not in tool_code
+    compile(tool_code, "<tool_code>", "exec")
+    assert feedback.fallback_used is True
+    assert feedback.fallback_events[0].kind == "tool"
+    assert "invalid Python" in feedback.fallback_events[0].reason
+
+
+@pytest.mark.asyncio
+async def test_generate_node_implementation_rejects_invalid_python_and_falls_back(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    monkeypatch.setattr(composer_module, "ChatOpenAI", InvalidPythonLLM)
+    composer = composer_module.NotebookComposer()
+    feedback = composer_module.NotebookCompositionFeedback()
+
+    node_code = await composer._generate_node_implementation(
+        {"name": "historical check", "purpose": "Check 18th century realism."},
+        {
+            "architecture_type": "custom",
+            "state_schema": {"messages": "Conversation messages"},
+            "nodes": [
+                {"name": "historical check", "purpose": "Check 18th century realism."}
+            ],
+        },
+        feedback=feedback,
+    )
+
+    assert node_code.startswith("# WARNING: Deterministic fallback generated")
+    assert "18th_century_markers" not in node_code
+    compile(node_code, "<node_code>", "exec")
+    assert feedback.fallback_used is True
+    assert feedback.fallback_events[0].kind == "node"
+    assert "invalid Python" in feedback.fallback_events[0].reason
 
 
 def test_tool_fallback_sanitizes_identifier_and_compiles(

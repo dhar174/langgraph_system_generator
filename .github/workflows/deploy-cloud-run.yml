@@ -1,0 +1,135 @@
+name: Deploy to Cloud Run
+
+on:
+  push:
+    branches: ["main"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: deploy-cloud-run-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
+  REGION: ${{ vars.GCP_REGION }}
+  SERVICE: ${{ vars.GCP_CLOUD_RUN_SERVICE }}
+  ARTIFACT_REGISTRY_REPOSITORY: ${{ vars.GCP_ARTIFACT_REGISTRY_REPOSITORY }}
+  OPENAI_API_KEY_SECRET: ${{ vars.GCP_OPENAI_API_KEY_SECRET }}
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: production
+
+    steps:
+      - name: Checkout repository
+        # actions/checkout v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+
+      - name: Validate required configuration
+        shell: bash
+        env:
+          GCP_PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
+          GCP_REGION: ${{ vars.GCP_REGION }}
+          GCP_CLOUD_RUN_SERVICE: ${{ vars.GCP_CLOUD_RUN_SERVICE }}
+          GCP_ARTIFACT_REGISTRY_REPOSITORY: ${{ vars.GCP_ARTIFACT_REGISTRY_REPOSITORY }}
+          GCP_OPENAI_API_KEY_SECRET: ${{ vars.GCP_OPENAI_API_KEY_SECRET }}
+          GCP_WORKLOAD_IDENTITY_PROVIDER_CONFIGURED: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER != '' }}
+          GCP_SERVICE_ACCOUNT_CONFIGURED: ${{ secrets.GCP_SERVICE_ACCOUNT != '' }}
+        run: |
+          set -euo pipefail
+          for value in GCP_PROJECT_ID GCP_REGION GCP_CLOUD_RUN_SERVICE GCP_ARTIFACT_REGISTRY_REPOSITORY GCP_OPENAI_API_KEY_SECRET; do
+            if [ -z "${!value:-}" ]; then
+              echo "::error::Missing required GitHub configuration: $value"
+              exit 1
+            fi
+          done
+          if [ "$GCP_WORKLOAD_IDENTITY_PROVIDER_CONFIGURED" != "true" ]; then
+            echo "::error::Missing required GitHub configuration: GCP_WORKLOAD_IDENTITY_PROVIDER"
+            exit 1
+          fi
+          if [ "$GCP_SERVICE_ACCOUNT_CONFIGURED" != "true" ]; then
+            echo "::error::Missing required GitHub configuration: GCP_SERVICE_ACCOUNT"
+            exit 1
+          fi
+
+      - name: Authenticate to Google Cloud
+        # google-github-actions/auth v2
+        uses: google-github-actions/auth@c200f3691d83b41bf9bbd8638997a462592937ed
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+
+      - name: Set up gcloud
+        # google-github-actions/setup-gcloud v2
+        uses: google-github-actions/setup-gcloud@e427ad8a34f8676edf47cf7d7925499adf3eb74f
+        with:
+          project_id: ${{ env.PROJECT_ID }}
+
+      - name: Configure Docker for Artifact Registry
+        run: |
+          gcloud auth configure-docker "${{ env.REGION }}-docker.pkg.dev"
+
+      - name: Build and push image
+        env:
+          IMAGE: ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.ARTIFACT_REGISTRY_REPOSITORY }}/langgraph-system-generator:${{ github.sha }}
+        run: |
+          set -euo pipefail
+          docker build -t "$IMAGE" .
+          docker push "$IMAGE"
+          echo "IMAGE=$IMAGE" >> "$GITHUB_ENV"
+
+      - name: Deploy to Cloud Run
+        id: deploy
+        # google-github-actions/deploy-cloudrun v2
+        uses: google-github-actions/deploy-cloudrun@251330ba9a8a34bfbc1622895f42e1d53fd14522
+        with:
+          service: ${{ env.SERVICE }}
+          region: ${{ env.REGION }}
+          image: ${{ env.IMAGE }}
+          secrets: |-
+            OPENAI_API_KEY=${{ env.OPENAI_API_KEY_SECRET }}:latest
+          secrets_update_strategy: merge
+          flags: --port=8000 --memory=2Gi
+
+      - name: Verify Cloud Run health
+        shell: bash
+        run: |
+          set -euo pipefail
+          gcloud run services proxy "${SERVICE}" \
+            --project "${PROJECT_ID}" \
+            --region "${REGION}" \
+            --port 8080 &
+          proxy_pid=$!
+
+          cleanup() {
+            kill "$proxy_pid" 2>/dev/null || true
+            wait "$proxy_pid" 2>/dev/null || true
+          }
+          trap cleanup EXIT
+
+          for attempt in {1..30}; do
+            if curl --fail --silent --show-error --max-time 5 \
+              "http://127.0.0.1:8080/health" > /tmp/cloud-run-health.json; then
+              if grep -Eq '"status"[[:space:]]*:[[:space:]]*"ok"' /tmp/cloud-run-health.json; then
+                echo "Cloud Run health check passed."
+                exit 0
+              fi
+              echo "::error::Cloud Run /health did not report status ok"
+              cat /tmp/cloud-run-health.json
+              exit 1
+            fi
+            echo "Waiting for Cloud Run health check, attempt ${attempt}/30..."
+            sleep 5
+          done
+
+          echo "::error::Cloud Run /health did not respond successfully"
+          exit 1
+
+      - name: Show service URL
+        run: |
+          echo "Cloud Run URL here: ${{ steps.deploy.outputs.url }}"

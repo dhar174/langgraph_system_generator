@@ -44,6 +44,49 @@ def test_package_metadata_is_ready_for_1_0_release() -> None:
     assert '__version__ = "1.0.0"' in init_version
 
 
+def test_package_includes_web_ui_static_assets() -> None:
+    keywords = _setup_call_keywords()
+
+    package_data = ast.literal_eval(keywords["package_data"])
+    assert package_data["langgraph_system_generator.api"] == ["static/*"]
+
+
+def test_cloud_run_workflow_mounts_openai_key_from_secret_manager() -> None:
+    workflow = _read(".github/workflows/deploy-cloud-run.yml")
+
+    assert "OPENAI_API_KEY_SECRET: ${{ vars.GCP_OPENAI_API_KEY_SECRET }}" in workflow
+    assert "GCP_OPENAI_API_KEY_SECRET: ${{ vars.GCP_OPENAI_API_KEY_SECRET }}" in workflow
+    assert (
+        "GCP_PROJECT_ID GCP_REGION GCP_CLOUD_RUN_SERVICE "
+        "GCP_ARTIFACT_REGISTRY_REPOSITORY GCP_OPENAI_API_KEY_SECRET"
+    ) in workflow
+    assert "OPENAI_API_KEY=${{ env.OPENAI_API_KEY_SECRET }}:latest" in workflow
+    assert "secrets_update_strategy: merge" in workflow
+    assert "flags: --port=8000 --memory=2Gi" in workflow
+    assert "secrets.OPENAI_API_KEY" not in workflow
+
+
+def test_cloud_run_workflow_smoke_checks_private_service_after_deploy() -> None:
+    workflow = _read(".github/workflows/deploy-cloud-run.yml")
+
+    deploy_index = workflow.index("- name: Deploy to Cloud Run")
+    health_index = workflow.index("- name: Verify Cloud Run health")
+    show_url_index = workflow.index("- name: Show service URL")
+
+    assert deploy_index < health_index < show_url_index
+    assert 'gcloud run services proxy "${SERVICE}"' in workflow
+    assert '"http://127.0.0.1:8080/health"' in workflow
+    assert "curl --fail --silent --show-error" in workflow
+    assert '"status"[[:space:]]*:[[:space:]]*"ok"' in workflow
+
+
+def test_cloud_run_requirements_include_live_runtime_qa_dependencies() -> None:
+    requirements = _read("requirements.txt")
+
+    for dependency in ("jupyter_client", "nbclient", "ipykernel"):
+        assert dependency in requirements
+
+
 def test_public_docs_no_longer_describe_release_as_alpha() -> None:
     checked_paths = [
         "README.md",
