@@ -124,6 +124,14 @@ class NotebookComposer:
             "previous_quality_score",
         },
     }
+    _PATTERN_TERMINAL_NAMES = {"finish", "__end__"}
+    _PATTERN_TERMINAL_ROLES = {
+        "synthesizer",
+        "terminal",
+        "finalizer",
+        "finish",
+        "final",
+    }
 
     def __init__(
         self,
@@ -1344,15 +1352,94 @@ def {safe_node_identifier}_node(state: WorkflowState) -> WorkflowState:
         role = str(node.get("role", "")).strip().lower()
         terminal_names = {
             str(value).strip().lower()
-            for value in (workflow_design or {}).get("terminal_nodes", [])
+            for value in (workflow_design or {}).get("terminal_nodes") or []
             if str(value).strip()
         }
         if normalized_name in terminal_names:
             return True
-        if normalized_name in {"finish", "end", "__end__"}:
+        if normalized_name in NotebookComposer._PATTERN_TERMINAL_NAMES:
             return True
-        terminal_roles = {"synthesizer", "terminal", "finalizer", "finish", "final"}
-        return bool(role and role in terminal_roles)
+        return bool(role and role in NotebookComposer._PATTERN_TERMINAL_ROLES)
+
+    @classmethod
+    def _router_route_specs(
+        cls,
+        nodes: List[Dict[str, Any]],
+        workflow_design: Dict[str, Any] | None = None,
+    ) -> list[tuple[str, str]]:
+        """Return route labels and descriptions for router pattern cells."""
+
+        specs: list[tuple[str, str]] = []
+        seen: set[str] = set()
+        for node in nodes:
+            name = str(node.get("name") or "").strip()
+            if not name or name == "router":
+                continue
+            if cls._is_pattern_terminal_node(node, workflow_design):
+                continue
+            if name in seen:
+                continue
+            seen.add(name)
+            purpose = str(
+                node.get("purpose") or f"Handle {name} requests"
+            ).strip()
+            specs.append((name, purpose or f"Handle {name} requests"))
+
+        if specs:
+            return specs
+        return [("default", "Handle the default routed request.")]
+
+    @classmethod
+    def _subagent_specs(
+        cls,
+        nodes: List[Dict[str, Any]],
+        workflow_design: Dict[str, Any] | None = None,
+    ) -> list[tuple[str, str]]:
+        """Return subagent labels and descriptions for supervisor pattern cells."""
+
+        specs: list[tuple[str, str]] = []
+        seen: set[str] = set()
+        for node in nodes:
+            name = str(node.get("name") or "").strip()
+            if not name or name == "supervisor":
+                continue
+            if cls._is_pattern_terminal_node(node, workflow_design):
+                continue
+            if name in seen:
+                continue
+            seen.add(name)
+            purpose = str(node.get("purpose") or f"{name} specialist").strip()
+            specs.append((name, purpose or f"{name} specialist"))
+
+        if specs:
+            return specs
+        return [("worker", "General worker specialist.")]
+
+    @classmethod
+    def _autoagent_worker_specs(
+        cls,
+        nodes: List[Dict[str, Any]],
+        workflow_design: Dict[str, Any] | None = None,
+    ) -> list[tuple[str, str]]:
+        """Return worker labels and descriptions for autoagent pattern cells."""
+
+        specs: list[tuple[str, str]] = []
+        seen: set[str] = set()
+        for node in nodes:
+            name = str(node.get("name") or "").strip()
+            if not name or name in {"coordinator", "supervisor"}:
+                continue
+            if cls._is_pattern_terminal_node(node, workflow_design):
+                continue
+            if name in seen:
+                continue
+            seen.add(name)
+            purpose = str(node.get("purpose") or f"{name} worker").strip()
+            specs.append((name, purpose or f"{name} worker"))
+
+        if specs:
+            return specs
+        return [("worker", "General worker specialist.")]
 
     @staticmethod
     def _split_hybrid_nodes(
@@ -1466,13 +1553,8 @@ def {safe_node_identifier}_node(state: WorkflowState) -> WorkflowState:
         model_config = self.model_config
 
         if architecture_type == "router":
-            # Extract routes from nodes
-            routes = [
-                node.get("name")
-                for node in nodes
-                if node.get("name") != "router"
-                and not self._is_pattern_terminal_node(node, workflow_design)
-            ]
+            route_specs = self._router_route_specs(nodes, workflow_design)
+            routes = [name for name, _ in route_specs]
 
             # Generate router node
             router_code = RouterPattern.generate_router_node_code(
@@ -1483,33 +1565,20 @@ def {safe_node_identifier}_node(state: WorkflowState) -> WorkflowState:
             )
 
             # Generate route handler nodes
-            for node in nodes:
-                if node.get("name") != "router" and not self._is_pattern_terminal_node(
-                    node, workflow_design
-                ):
-                    route_code = RouterPattern.generate_route_node_code(
-                        node.get("name"),
-                        node.get("purpose", f"Handle {node.get('name')} requests"),
-                        model_config=model_config,
-                    )
-                    cells.append(
-                        CellSpec(cell_type="code", content=route_code, section="nodes")
-                    )
+            for route_name, route_purpose in route_specs:
+                route_code = RouterPattern.generate_route_node_code(
+                    route_name,
+                    route_purpose,
+                    model_config=model_config,
+                )
+                cells.append(
+                    CellSpec(cell_type="code", content=route_code, section="nodes")
+                )
 
         elif architecture_type == "subagents":
-            # Extract subagents (excluding supervisor)
-            subagents = [
-                node.get("name")
-                for node in nodes
-                if node.get("name") != "supervisor"
-                and not self._is_pattern_terminal_node(node, workflow_design)
-            ]
-            subagent_descriptions = {
-                node.get("name"): node.get("purpose", "")
-                for node in nodes
-                if node.get("name") != "supervisor"
-                and not self._is_pattern_terminal_node(node, workflow_design)
-            }
+            subagent_specs = self._subagent_specs(nodes, workflow_design)
+            subagents = [name for name, _ in subagent_specs]
+            subagent_descriptions = dict(subagent_specs)
 
             # Generate supervisor node
             supervisor_code = SubagentsPattern.generate_supervisor_code(
@@ -1520,20 +1589,15 @@ def {safe_node_identifier}_node(state: WorkflowState) -> WorkflowState:
             )
 
             # Generate subagent nodes
-            for node in nodes:
-                if node.get("name") != "supervisor" and not self._is_pattern_terminal_node(
-                    node, workflow_design
-                ):
-                    subagent_code = SubagentsPattern.generate_subagent_code(
-                        node.get("name"),
-                        node.get("purpose", f"{node.get('name')} specialist"),
-                        model_config=model_config,
-                    )
-                    cells.append(
-                        CellSpec(
-                            cell_type="code", content=subagent_code, section="nodes"
-                        )
-                    )
+            for subagent_name, subagent_purpose in subagent_specs:
+                subagent_code = SubagentsPattern.generate_subagent_code(
+                    subagent_name,
+                    subagent_purpose,
+                    model_config=model_config,
+                )
+                cells.append(
+                    CellSpec(cell_type="code", content=subagent_code, section="nodes")
+                )
         elif architecture_type == "hybrid":
             (
                 direct_specialists,
@@ -1585,18 +1649,9 @@ def {safe_node_identifier}_node(state: WorkflowState) -> WorkflowState:
                     CellSpec(cell_type="code", content=worker_code, section="nodes")
                 )
         elif architecture_type == "autoagent":
-            workers = [
-                node.get("name")
-                for node in nodes
-                if node.get("name") not in {"coordinator", "supervisor"}
-                and not self._is_pattern_terminal_node(node, workflow_design)
-            ]
-            worker_descriptions = {
-                node.get("name"): node.get("purpose", "")
-                for node in nodes
-                if node.get("name") not in {"coordinator", "supervisor"}
-                and not self._is_pattern_terminal_node(node, workflow_design)
-            }
+            worker_specs = self._autoagent_worker_specs(nodes, workflow_design)
+            workers = [name for name, _ in worker_specs]
+            worker_descriptions = dict(worker_specs)
 
             coordinator_code = AutoAgentPattern.generate_coordinator_code(
                 workers, worker_descriptions, model_config=model_config
@@ -1605,19 +1660,15 @@ def {safe_node_identifier}_node(state: WorkflowState) -> WorkflowState:
                 CellSpec(cell_type="code", content=coordinator_code, section="nodes")
             )
 
-            for node in nodes:
-                if node.get("name") not in {
-                    "coordinator",
-                    "supervisor",
-                } and not self._is_pattern_terminal_node(node, workflow_design):
-                    worker_code = AutoAgentPattern.generate_worker_code(
-                        node.get("name"),
-                        node.get("purpose", f"{node.get('name')} worker"),
-                        model_config=model_config,
-                    )
-                    cells.append(
-                        CellSpec(cell_type="code", content=worker_code, section="nodes")
-                    )
+            for worker_name, worker_purpose in worker_specs:
+                worker_code = AutoAgentPattern.generate_worker_code(
+                    worker_name,
+                    worker_purpose,
+                    model_config=model_config,
+                )
+                cells.append(
+                    CellSpec(cell_type="code", content=worker_code, section="nodes")
+                )
 
         elif architecture_type == "deepagents":
             subagents = [
@@ -1717,18 +1768,12 @@ def {safe_node_identifier}_node(state: WorkflowState) -> WorkflowState:
         nodes = workflow_design.get("nodes", [])
         if architecture_type == "router":
             routes = [
-                node.get("name")
-                for node in nodes
-                if node.get("name") != "router"
-                and not self._is_pattern_terminal_node(node, workflow_design)
+                name for name, _ in self._router_route_specs(nodes, workflow_design)
             ]
             graph_code = RouterPattern.generate_graph_code(routes)
         elif architecture_type == "subagents":
             subagents = [
-                node.get("name")
-                for node in nodes
-                if node.get("name") != "supervisor"
-                and not self._is_pattern_terminal_node(node, workflow_design)
+                name for name, _ in self._subagent_specs(nodes, workflow_design)
             ]
             graph_code = SubagentsPattern.generate_graph_code(
                 subagents,
@@ -1745,10 +1790,7 @@ def {safe_node_identifier}_node(state: WorkflowState) -> WorkflowState:
             )
         elif architecture_type == "autoagent":
             workers = [
-                node.get("name")
-                for node in nodes
-                if node.get("name") not in {"coordinator", "supervisor"}
-                and not self._is_pattern_terminal_node(node, workflow_design)
+                name for name, _ in self._autoagent_worker_specs(nodes, workflow_design)
             ]
             graph_code = AutoAgentPattern.generate_graph_code(
                 workers,

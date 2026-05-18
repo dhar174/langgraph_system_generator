@@ -1399,6 +1399,168 @@ async def test_compose_notebook_hybrid_terminal_finish_is_not_duplicated(
     ast.parse(code)
 
 
+def test_pattern_terminal_detection_handles_nulls_and_allows_end_node():
+    """Only pattern-owned terminal labels should be filtered by name."""
+
+    assert composer_module.NotebookComposer._is_pattern_terminal_node(
+        {"name": "finish", "role": "direct_specialist"},
+        {"terminal_nodes": None},
+    )
+    assert not composer_module.NotebookComposer._is_pattern_terminal_node(
+        {"name": "end", "role": "direct_specialist"},
+        {"terminal_nodes": None},
+    )
+    assert composer_module.NotebookComposer._is_pattern_terminal_node(
+        {"name": "archive", "role": "direct_specialist"},
+        {"terminal_nodes": ["archive"]},
+    )
+
+
+@pytest.mark.asyncio
+async def test_compose_notebook_router_terminal_only_generates_default_route(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """Router pattern fallbacks must define the same route used by graph wiring."""
+
+    monkeypatch.setattr(composer_module, "ChatOpenAI", DummyLLM)
+    composer = composer_module.NotebookComposer()
+
+    composition = await composer.compose_notebook(
+        notebook_plan=NotebookPlan(
+            title="Router With Only Terminal",
+            sections=["Setup", "Workflow", "Execution"],
+            patterns_used=["router"],
+            architecture_type="router",
+        ),
+        workflow_design={
+            "architecture_type": "router",
+            "terminal_nodes": None,
+            "state_schema": {},
+            "nodes": [
+                {"name": "router", "purpose": "Route requests", "role": "router"},
+                {
+                    "name": "finish",
+                    "purpose": "Synthesize final results",
+                    "role": "terminal",
+                },
+            ],
+        },
+        tools=[],
+        architecture={
+            "architecture_type": "router",
+            "justification": "Terminal-only router design.",
+        },
+    )
+
+    code = "\n\n".join(
+        cell.content for cell in composition.cells if cell.cell_type == "code"
+    )
+
+    assert "def default_node" in code
+    assert 'workflow.add_node("default", default_node)' in code
+    assert 'workflow.add_node("finish", finish_node)' not in code
+    ast.parse(code)
+
+
+@pytest.mark.asyncio
+async def test_compose_notebook_subagents_terminal_only_generates_worker(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """Subagent fallbacks must emit the worker node referenced by the graph."""
+
+    monkeypatch.setattr(composer_module, "ChatOpenAI", DummyLLM)
+    composer = composer_module.NotebookComposer()
+
+    composition = await composer.compose_notebook(
+        notebook_plan=NotebookPlan(
+            title="Subagents With Only Terminal",
+            sections=["Setup", "Workflow", "Execution"],
+            patterns_used=["subagents"],
+            architecture_type="subagents",
+        ),
+        workflow_design={
+            "architecture_type": "subagents",
+            "terminal_nodes": None,
+            "state_schema": {},
+            "nodes": [
+                {
+                    "name": "supervisor",
+                    "purpose": "Coordinate agents",
+                    "role": "supervisor",
+                },
+                {
+                    "name": "finish",
+                    "purpose": "Synthesize final results",
+                    "role": "terminal",
+                },
+            ],
+        },
+        tools=[],
+        architecture={
+            "architecture_type": "subagents",
+            "justification": "Terminal-only subagent design.",
+        },
+    )
+
+    code = "\n\n".join(
+        cell.content for cell in composition.cells if cell.cell_type == "code"
+    )
+
+    assert "def worker_node" in code
+    assert 'workflow.add_node("worker", worker_node)' in code
+    assert code.count("def finish_node") == 1
+    ast.parse(code)
+
+
+@pytest.mark.asyncio
+async def test_compose_notebook_autoagent_terminal_only_generates_worker(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """Autoagent fallback workers must match the worker graph route."""
+
+    monkeypatch.setattr(composer_module, "ChatOpenAI", DummyLLM)
+    composer = composer_module.NotebookComposer()
+
+    composition = await composer.compose_notebook(
+        notebook_plan=NotebookPlan(
+            title="Autoagent With Only Terminal",
+            sections=["Setup", "Workflow", "Execution"],
+            patterns_used=["autoagent"],
+            architecture_type="autoagent",
+        ),
+        workflow_design={
+            "architecture_type": "autoagent",
+            "terminal_nodes": None,
+            "state_schema": {},
+            "nodes": [
+                {
+                    "name": "coordinator",
+                    "purpose": "Coordinate agents",
+                    "role": "coordinator",
+                },
+                {
+                    "name": "finish",
+                    "purpose": "Synthesize final results",
+                    "role": "terminal",
+                },
+            ],
+        },
+        tools=[],
+        architecture={
+            "architecture_type": "autoagent",
+            "justification": "Terminal-only autoagent design.",
+        },
+    )
+
+    code = "\n\n".join(
+        cell.content for cell in composition.cells if cell.cell_type == "code"
+    )
+
+    assert "def worker_node" in code
+    assert 'workflow.add_node("worker", worker_node)' in code
+    ast.parse(code)
+
+
 @pytest.mark.asyncio
 async def test_compose_notebook_normalizes_mixed_case_architecture_type(
     monkeypatch: pytest.MonkeyPatch,
