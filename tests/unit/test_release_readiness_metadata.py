@@ -62,6 +62,7 @@ def test_cloud_run_workflow_mounts_openai_key_from_secret_manager() -> None:
     ) in workflow
     assert "OPENAI_API_KEY=${{ env.OPENAI_API_KEY_SECRET }}:latest" in workflow
     assert "secrets_update_strategy: merge" in workflow
+    assert "flags: --port=8000 --memory=2Gi" in workflow
     assert "secrets.OPENAI_API_KEY" not in workflow
 
 

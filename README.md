@@ -300,6 +300,10 @@ container startup. The workflow mounts the configured
 `OPENAI_API_KEY`; it does not use the GitHub repository secret named
 `OPENAI_API_KEY` for Cloud Run runtime credentials.
 
+The deployment workflow sets the Cloud Run memory limit to `2Gi`. Live
+generation can exceed the Cloud Run default of `512Mi` while loading the app,
+running model-backed generation, and packaging notebook artifacts.
+
 ### 4) Trigger deployment
 
 - Push to `main` (automatic), or
