@@ -91,6 +91,44 @@ def test_validate_json_structure_valid(tmp_notebook_path: Path, valid_notebook):
     assert report.category == "serialization"
 
 
+def test_validate_notebook_accepts_in_memory_notebook(valid_notebook, monkeypatch):
+    """In-memory validation should not require loading a notebook from disk."""
+
+    def fail_disk_load(*_args, **_kwargs):
+        raise AssertionError("disk-backed notebook loading should not be used")
+
+    validator = NotebookValidator()
+    monkeypatch.setattr(validator, "_load_notebook", fail_disk_load)
+
+    reports = validator.validate_notebook(valid_notebook, source="<unit-test>")
+
+    assert reports
+    assert all(report.passed for report in reports)
+    assert _report_by_name(reports, "JSON Validity").evidence["path"] == "<unit-test>"
+
+
+def test_validate_all_loads_path_once(
+    tmp_notebook_path: Path, valid_notebook, monkeypatch
+):
+    """Path-backed full validation should reuse the loaded notebook object."""
+
+    _write_notebook(tmp_notebook_path, valid_notebook)
+    validator = NotebookValidator()
+    original_load = validator._load_notebook
+    calls = []
+
+    def counted_load(path):
+        calls.append(path)
+        return original_load(path)
+
+    monkeypatch.setattr(validator, "_load_notebook", counted_load)
+
+    reports = validator.validate_all(tmp_notebook_path)
+
+    assert _report_by_name(reports, "JSON Validity").passed is True
+    assert len(calls) == 1
+
+
 def test_validate_json_structure_missing_file(tmp_path: Path):
     report = NotebookValidator().validate_json_structure(tmp_path / "missing.ipynb")
 

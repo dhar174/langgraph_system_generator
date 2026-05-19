@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import operator
+import json
 from typing import Annotated, Any, Dict, List, Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -18,6 +18,59 @@ DEFAULT_REQUIREMENTS_CONSTRAINT_TYPES = (
     "runtime",
     "environment",
 )
+MAX_CONSTRAINTS = 50
+MAX_DOCS_CONTEXT = 50
+MAX_QA_HISTORY = 100
+
+
+def _state_item_key(item: Any) -> str:
+    """Return a stable best-effort key for de-duplicating accumulated state."""
+
+    if hasattr(item, "model_dump"):
+        payload = item.model_dump(mode="json")
+    elif isinstance(item, dict):
+        payload = item
+    else:
+        payload = repr(item)
+    return json.dumps(payload, sort_keys=True, default=str)
+
+
+def _bounded_latest_unique(left: List[Any], right: List[Any], limit: int) -> List[Any]:
+    """Merge two state lists, keeping the latest unique items within the cap."""
+
+    combined = [*(left or []), *(right or [])]
+    if not combined:
+        return []
+
+    seen: set[str] = set()
+    latest_unique_reversed: List[Any] = []
+    for item in reversed(combined):
+        key = _state_item_key(item)
+        if key in seen:
+            continue
+        seen.add(key)
+        latest_unique_reversed.append(item)
+
+    latest_unique = list(reversed(latest_unique_reversed))
+    return latest_unique[-limit:]
+
+
+def bounded_constraints_reducer(
+    left: List["Constraint"],
+    right: List["Constraint"],
+) -> List["Constraint"]:
+    """Accumulate constraints without unbounded growth across graph retries."""
+
+    return _bounded_latest_unique(left, right, MAX_CONSTRAINTS)
+
+
+def bounded_docs_context_reducer(
+    left: List["DocSnippet"],
+    right: List["DocSnippet"],
+) -> List["DocSnippet"]:
+    """Accumulate retrieved snippets without unbounded growth across retries."""
+
+    return _bounded_latest_unique(left, right, MAX_DOCS_CONTEXT)
 
 
 def normalize_constraint_type(value: str) -> str:
@@ -774,7 +827,7 @@ class GeneratorState(TypedDict):
     uploaded_files: Optional[List[str]]
 
     # Extracted requirements
-    constraints: Annotated[List[Constraint], operator.add]
+    constraints: Annotated[List[Constraint], bounded_constraints_reducer]
     requirements_feedback: RequirementsFeedback
     architecture_feedback: ArchitectureFeedback
     graph_design_feedback: GraphDesignFeedback
@@ -782,7 +835,7 @@ class GeneratorState(TypedDict):
     selected_patterns: Dict[str, Any]
 
     # RAG context
-    docs_context: Annotated[List[DocSnippet], operator.add]
+    docs_context: Annotated[List[DocSnippet], bounded_docs_context_reducer]
     generation_context_pack: GenerationContextPack
 
     # Planning
