@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ast
 import asyncio
 import inspect
 import json
@@ -122,6 +123,14 @@ class NotebookComposer:
             "human_feedback_handler",
             "previous_quality_score",
         },
+    }
+    _PATTERN_TERMINAL_NAMES = {"finish", "__end__"}
+    _PATTERN_TERMINAL_ROLES = {
+        "synthesizer",
+        "terminal",
+        "finalizer",
+        "finish",
+        "final",
     }
 
     def __init__(
@@ -893,6 +902,13 @@ Generate the complete Python function implementation."""
                     ),
                     feedback=feedback,
                 )
+            syntax_error = self._python_syntax_error(generated_code)
+            if syntax_error is not None:
+                return self._generate_tool_fallback(
+                    tool,
+                    reason=f"LLM tool generation returned invalid Python: {syntax_error}.",
+                    feedback=feedback,
+                )
 
             # Add header comment
             header = f"""# Tool: {tool_name}
@@ -1167,6 +1183,14 @@ Generate the complete Python function implementation."""
                     ),
                     feedback=feedback,
                 )
+            syntax_error = self._python_syntax_error(generated_code)
+            if syntax_error is not None:
+                return self._generate_node_fallback(
+                    node,
+                    workflow_design,
+                    reason=f"LLM node generation returned invalid Python: {syntax_error}.",
+                    feedback=feedback,
+                )
 
             return generated_code
 
@@ -1317,13 +1341,118 @@ def {safe_node_identifier}_node(state: WorkflowState) -> WorkflowState:
 {chr(10).join(update_lines)}"""
 
     @staticmethod
+    def _is_pattern_terminal_node(
+        node: Dict[str, Any],
+        workflow_design: Dict[str, Any] | None = None,
+    ) -> bool:
+        """Return whether a graph node is a terminal handled by pattern templates."""
+
+        name = str(node.get("name", "")).strip()
+        normalized_name = name.lower()
+        role = str(node.get("role", "")).strip().lower()
+        terminal_names = {
+            str(value).strip().lower()
+            for value in (workflow_design or {}).get("terminal_nodes") or []
+            if str(value).strip()
+        }
+        if normalized_name in terminal_names:
+            return True
+        if normalized_name in NotebookComposer._PATTERN_TERMINAL_NAMES:
+            return True
+        return bool(role and role in NotebookComposer._PATTERN_TERMINAL_ROLES)
+
+    @classmethod
+    def _router_route_specs(
+        cls,
+        nodes: List[Dict[str, Any]],
+        workflow_design: Dict[str, Any] | None = None,
+    ) -> list[tuple[str, str]]:
+        """Return route labels and descriptions for router pattern cells."""
+
+        specs: list[tuple[str, str]] = []
+        seen: set[str] = set()
+        for node in nodes:
+            name = str(node.get("name") or "").strip()
+            if not name or name == "router":
+                continue
+            if cls._is_pattern_terminal_node(node, workflow_design):
+                continue
+            if name in seen:
+                continue
+            seen.add(name)
+            purpose = str(
+                node.get("purpose") or f"Handle {name} requests"
+            ).strip()
+            specs.append((name, purpose or f"Handle {name} requests"))
+
+        if specs:
+            return specs
+        return [("default", "Handle the default routed request.")]
+
+    @classmethod
+    def _subagent_specs(
+        cls,
+        nodes: List[Dict[str, Any]],
+        workflow_design: Dict[str, Any] | None = None,
+    ) -> list[tuple[str, str]]:
+        """Return subagent labels and descriptions for supervisor pattern cells."""
+
+        specs: list[tuple[str, str]] = []
+        seen: set[str] = set()
+        for node in nodes:
+            name = str(node.get("name") or "").strip()
+            if not name or name == "supervisor":
+                continue
+            if cls._is_pattern_terminal_node(node, workflow_design):
+                continue
+            if name in seen:
+                continue
+            seen.add(name)
+            purpose = str(node.get("purpose") or f"{name} specialist").strip()
+            specs.append((name, purpose or f"{name} specialist"))
+
+        if specs:
+            return specs
+        return [("worker", "General worker specialist.")]
+
+    @classmethod
+    def _autoagent_worker_specs(
+        cls,
+        nodes: List[Dict[str, Any]],
+        workflow_design: Dict[str, Any] | None = None,
+    ) -> list[tuple[str, str]]:
+        """Return worker labels and descriptions for autoagent pattern cells."""
+
+        specs: list[tuple[str, str]] = []
+        seen: set[str] = set()
+        for node in nodes:
+            name = str(node.get("name") or "").strip()
+            if not name or name in {"coordinator", "supervisor"}:
+                continue
+            if cls._is_pattern_terminal_node(node, workflow_design):
+                continue
+            if name in seen:
+                continue
+            seen.add(name)
+            purpose = str(node.get("purpose") or f"{name} worker").strip()
+            specs.append((name, purpose or f"{name} worker"))
+
+        if specs:
+            return specs
+        return [("worker", "General worker specialist.")]
+
+    @staticmethod
     def _split_hybrid_nodes(
         nodes: List[Dict[str, Any]],
+        workflow_design: Dict[str, Any] | None = None,
     ) -> tuple[List[str], Dict[str, str], List[str], Dict[str, str]]:
         """Split hybrid nodes into direct-specialist and team-worker groups."""
 
         non_router_nodes = [
-            node for node in nodes if node.get("name") not in {"router", "supervisor"}
+            node
+            for node in nodes
+            if node.get("name") not in {"router", "supervisor"}
+            and not NotebookComposer._is_pattern_terminal_node(node, workflow_design)
         ]
         direct_role_names = {"direct", "direct_specialist", "specialist"}
         worker_role_names = {
@@ -1424,10 +1553,8 @@ def {safe_node_identifier}_node(state: WorkflowState) -> WorkflowState:
         model_config = self.model_config
 
         if architecture_type == "router":
-            # Extract routes from nodes
-            routes = [
-                node.get("name") for node in nodes if node.get("name") != "router"
-            ]
+            route_specs = self._router_route_specs(nodes, workflow_design)
+            routes = [name for name, _ in route_specs]
 
             # Generate router node
             router_code = RouterPattern.generate_router_node_code(
@@ -1438,27 +1565,20 @@ def {safe_node_identifier}_node(state: WorkflowState) -> WorkflowState:
             )
 
             # Generate route handler nodes
-            for node in nodes:
-                if node.get("name") != "router":
-                    route_code = RouterPattern.generate_route_node_code(
-                        node.get("name"),
-                        node.get("purpose", f"Handle {node.get('name')} requests"),
-                        model_config=model_config,
-                    )
-                    cells.append(
-                        CellSpec(cell_type="code", content=route_code, section="nodes")
-                    )
+            for route_name, route_purpose in route_specs:
+                route_code = RouterPattern.generate_route_node_code(
+                    route_name,
+                    route_purpose,
+                    model_config=model_config,
+                )
+                cells.append(
+                    CellSpec(cell_type="code", content=route_code, section="nodes")
+                )
 
         elif architecture_type == "subagents":
-            # Extract subagents (excluding supervisor)
-            subagents = [
-                node.get("name") for node in nodes if node.get("name") != "supervisor"
-            ]
-            subagent_descriptions = {
-                node.get("name"): node.get("purpose", "")
-                for node in nodes
-                if node.get("name") != "supervisor"
-            }
+            subagent_specs = self._subagent_specs(nodes, workflow_design)
+            subagents = [name for name, _ in subagent_specs]
+            subagent_descriptions = dict(subagent_specs)
 
             # Generate supervisor node
             supervisor_code = SubagentsPattern.generate_supervisor_code(
@@ -1469,25 +1589,22 @@ def {safe_node_identifier}_node(state: WorkflowState) -> WorkflowState:
             )
 
             # Generate subagent nodes
-            for node in nodes:
-                if node.get("name") != "supervisor":
-                    subagent_code = SubagentsPattern.generate_subagent_code(
-                        node.get("name"),
-                        node.get("purpose", f"{node.get('name')} specialist"),
-                        model_config=model_config,
-                    )
-                    cells.append(
-                        CellSpec(
-                            cell_type="code", content=subagent_code, section="nodes"
-                        )
-                    )
+            for subagent_name, subagent_purpose in subagent_specs:
+                subagent_code = SubagentsPattern.generate_subagent_code(
+                    subagent_name,
+                    subagent_purpose,
+                    model_config=model_config,
+                )
+                cells.append(
+                    CellSpec(cell_type="code", content=subagent_code, section="nodes")
+                )
         elif architecture_type == "hybrid":
             (
                 direct_specialists,
                 direct_descriptions,
                 team_workers,
                 worker_descriptions,
-            ) = self._split_hybrid_nodes(nodes)
+            ) = self._split_hybrid_nodes(nodes, workflow_design)
 
             router_code = HybridPattern.generate_router_node_code(
                 direct_specialists,
@@ -1532,16 +1649,9 @@ def {safe_node_identifier}_node(state: WorkflowState) -> WorkflowState:
                     CellSpec(cell_type="code", content=worker_code, section="nodes")
                 )
         elif architecture_type == "autoagent":
-            workers = [
-                node.get("name")
-                for node in nodes
-                if node.get("name") not in {"coordinator", "supervisor"}
-            ]
-            worker_descriptions = {
-                node.get("name"): node.get("purpose", "")
-                for node in nodes
-                if node.get("name") not in {"coordinator", "supervisor"}
-            }
+            worker_specs = self._autoagent_worker_specs(nodes, workflow_design)
+            workers = [name for name, _ in worker_specs]
+            worker_descriptions = dict(worker_specs)
 
             coordinator_code = AutoAgentPattern.generate_coordinator_code(
                 workers, worker_descriptions, model_config=model_config
@@ -1550,16 +1660,15 @@ def {safe_node_identifier}_node(state: WorkflowState) -> WorkflowState:
                 CellSpec(cell_type="code", content=coordinator_code, section="nodes")
             )
 
-            for node in nodes:
-                if node.get("name") not in {"coordinator", "supervisor"}:
-                    worker_code = AutoAgentPattern.generate_worker_code(
-                        node.get("name"),
-                        node.get("purpose", f"{node.get('name')} worker"),
-                        model_config=model_config,
-                    )
-                    cells.append(
-                        CellSpec(cell_type="code", content=worker_code, section="nodes")
-                    )
+            for worker_name, worker_purpose in worker_specs:
+                worker_code = AutoAgentPattern.generate_worker_code(
+                    worker_name,
+                    worker_purpose,
+                    model_config=model_config,
+                )
+                cells.append(
+                    CellSpec(cell_type="code", content=worker_code, section="nodes")
+                )
 
         elif architecture_type == "deepagents":
             subagents = [
@@ -1659,19 +1768,21 @@ def {safe_node_identifier}_node(state: WorkflowState) -> WorkflowState:
         nodes = workflow_design.get("nodes", [])
         if architecture_type == "router":
             routes = [
-                node.get("name") for node in nodes if node.get("name") != "router"
+                name for name, _ in self._router_route_specs(nodes, workflow_design)
             ]
             graph_code = RouterPattern.generate_graph_code(routes)
         elif architecture_type == "subagents":
             subagents = [
-                node.get("name") for node in nodes if node.get("name") != "supervisor"
+                name for name, _ in self._subagent_specs(nodes, workflow_design)
             ]
             graph_code = SubagentsPattern.generate_graph_code(
                 subagents,
                 max_iterations=max_iterations,
             )
         elif architecture_type == "hybrid":
-            direct_specialists, _, team_workers, _ = self._split_hybrid_nodes(nodes)
+            direct_specialists, _, team_workers, _ = self._split_hybrid_nodes(
+                nodes, workflow_design
+            )
             graph_code = HybridPattern.generate_graph_code(
                 direct_specialists,
                 team_workers,
@@ -1679,9 +1790,7 @@ def {safe_node_identifier}_node(state: WorkflowState) -> WorkflowState:
             )
         elif architecture_type == "autoagent":
             workers = [
-                node.get("name")
-                for node in nodes
-                if node.get("name") not in {"coordinator", "supervisor"}
+                name for name, _ in self._autoagent_worker_specs(nodes, workflow_design)
             ]
             graph_code = AutoAgentPattern.generate_graph_code(
                 workers,
@@ -1974,6 +2083,17 @@ print(final_state)"""
         if normalized.endswith("```"):
             normalized = normalized[:-3]
         return normalized.strip()
+
+    @staticmethod
+    def _python_syntax_error(content: str) -> str | None:
+        """Return a compact syntax error for generated Python, if parsing fails."""
+
+        try:
+            ast.parse(content)
+        except SyntaxError as exc:
+            location = f"line {exc.lineno}" if exc.lineno is not None else "unknown line"
+            return f"{exc.msg} at {location}"
+        return None
 
     @staticmethod
     def _is_meaningful_tool_code(content: str) -> bool:

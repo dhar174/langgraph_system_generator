@@ -59,6 +59,9 @@ setup(
     long_description_content_type="text/markdown",
     package_dir={"": "src"},
     packages=find_packages(where="src"),
+    package_data={
+        "langgraph_system_generator.api": ["static/*"],
+    },
     install_requires=CORE_DEPENDENCIES,
     extras_require={
         "api": API_DEPENDENCIES,

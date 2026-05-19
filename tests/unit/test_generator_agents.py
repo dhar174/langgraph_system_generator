@@ -1112,6 +1112,49 @@ async def test_graph_designer_returns_typed_result_with_exports(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_graph_designer_normalizes_legacy_omitted_demo_only_path(monkeypatch):
+    """Legacy live output should not force fallback for a retired reachability value."""
+
+    payload = """
+    {
+      "state_schema": {"messages": "Conversation state"},
+      "nodes": [
+        {"name": "router", "purpose": "Route requests", "role": "router"}
+      ],
+      "edges": [],
+      "conditional_edges": [],
+      "command_routes": [],
+      "tool_reachability": [
+        {
+          "tool_id": "demo_tool",
+          "execution_path": "omitted_demo_only",
+          "node": "router",
+          "rationale": "Demo-only helper omitted from execution."
+        }
+      ],
+      "domain_terms": ["support"],
+      "entry_point": "router",
+      "compiled_graph_variable": "graph",
+      "checkpointing": false
+    }
+    """
+    monkeypatch.setattr(graph_designer, "ChatOpenAI", make_stub_llm(payload))
+
+    designer = graph_designer.GraphDesigner()
+    result = await designer.design_workflow(
+        {
+            "architecture_type": "router",
+            "justification": "Routing is sufficient.",
+            "selected_patterns": {"primary": "router", "secondary": []},
+        },
+        [Constraint(type="goal", value="Build a support router workflow", priority=5)],
+    )
+
+    assert result.feedback.fallback_used is False
+    assert result.tool_reachability[0].execution_path == "demo_only"
+
+
+@pytest.mark.asyncio
 async def test_graph_designer_prompt_requests_canonical_contract_fields(monkeypatch):
     """Live GraphDesigner prompt should ask for every canonical graph contract field."""
 
@@ -1158,6 +1201,13 @@ async def test_graph_designer_prompt_requests_canonical_contract_fields(monkeypa
         "compiled_graph_variable",
     ]:
         assert field_name in system_prompt
+
+    reachability_schema = (
+        '"execution_path": '
+        '"deterministic_node|tool_node|manual_loop|create_react_agent|demo_only|omitted"'
+    )
+    assert reachability_schema in system_prompt
+    assert "omitted_demo_only" not in system_prompt
 
 
 @pytest.mark.asyncio

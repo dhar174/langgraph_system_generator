@@ -1,8 +1,8 @@
 # TASK002 - 1.0 Release Readiness Implementation
 
-**Status:** In Progress
+**Status:** Complete
 **Added:** 2026-05-04
-**Updated:** 2026-05-04
+**Updated:** 2026-05-19
 
 ## Original Request
 
@@ -32,7 +32,7 @@ test-first.
 
 ## Progress Tracking
 
-**Overall Status:** In Progress - 90%
+**Overall Status:** Complete - 100%
 
 ### Subtasks
 
@@ -44,7 +44,7 @@ test-first.
 | 2.4 | Add release metadata and diagram workflow fix | Complete | 2026-05-04 | Version, classifier, license, changelog, and workflow token updated. |
 | 2.5 | Add local release evaluation gate | Complete | 2026-05-04 | Dataset and `scripts/run_release_eval.py` added; targeted test passes. |
 | 2.6 | Triage stale issues with evidence | Complete | 2026-05-04 | Closed stale completed and duplicate issues; kept true residuals open with audit comments. |
-| 2.7 | Run final verification and open PR | In Progress | 2026-05-04 | Full pytest and flake8 fatal-error gate pass; publication pending. |
+| 2.7 | Run final verification and open PR | Complete | 2026-05-19 | Release work merged, #256/#258 closed, and `v1.0.0` published. |
 
 ## Progress Log
 
@@ -67,3 +67,10 @@ test-first.
   tests/patterns -v`, `python -m pytest tests/integration -q`, full `python -m
   pytest --asyncio-mode=auto` (625 passed, 4 skipped), CI fatal-error flake8,
   opt-in packaging smokes, and the local release evaluation gate.
+
+### 2026-05-19
+
+- Confirmed the 1.0 release-readiness work is merged into `main`.
+- Confirmed #256 and #258 are closed and the `v1.0.0` GitHub release exists.
+- Updated MemoryBank status so future sessions treat release-readiness as a
+  completed baseline, not an active branch.

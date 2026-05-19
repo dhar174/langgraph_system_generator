@@ -63,6 +63,21 @@ def test_advanced_options_html_structure():
     assert "OpenAI" in optgroup_labels, "Missing OpenAI optgroup"
     assert "Custom" in optgroup_labels, "Missing Custom optgroup"
 
+    model_options = {
+        option.get("value"): option.get_text(" ", strip=True)
+        for option in model_select.find_all("option")
+    }
+    expected_openai_models = {
+        "gpt-5.5": "GPT-5.5 (Latest flagship)",
+        "gpt-5.4": "GPT-5.4 (Current balanced)",
+        "gpt-5.4-mini": "GPT-5.4 Mini (Current cost-effective)",
+        "gpt-5.4-nano": "GPT-5.4 Nano (Current fastest)",
+        "gpt-5.2": "GPT-5.2 (Previous flagship)",
+        "gpt-5.2-chat-latest": "GPT-5.2 Chat Latest",
+    }
+    for value, label in expected_openai_models.items():
+        assert model_options.get(value) == label, f"Missing current model option: {value}"
+
     max_tokens_input = soup.find(id="maxTokens")
     assert max_tokens_input is not None, "Missing maxTokens input"
     assert max_tokens_input.get("step") == "1", (
