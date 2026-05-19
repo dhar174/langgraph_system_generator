@@ -15,6 +15,7 @@ from langgraph_system_generator.generator.agents import (
 )
 from langgraph_system_generator.generator.nodes import (
     _clear_docs_retriever_cache,
+    _drop_docs_retriever_cache_entry,
     _upsert_qa_repair_summary_cell,
     architecture_selection_node,
     bounded_qa_history,
@@ -452,6 +453,38 @@ async def test_rag_and_architecture_nodes_reuse_cached_docs_retriever(monkeypatc
 
     assert counts == {"manager": 1, "retriever": 1}
     assert get_cached_docs_retriever() is get_cached_docs_retriever()
+    _clear_docs_retriever_cache()
+
+
+def test_drop_docs_retriever_cache_entry_preserves_other_paths(monkeypatch):
+    """A path-scoped failure should not evict unrelated cached retrievers."""
+
+    _clear_docs_retriever_cache()
+
+    class DummyManager:
+        def __init__(self, *_args, **_kwargs):
+            pass
+
+    class DummyRetriever:
+        def __init__(self, _manager):
+            pass
+
+    monkeypatch.setattr(
+        "langgraph_system_generator.generator.nodes.VectorStoreManager",
+        DummyManager,
+    )
+    monkeypatch.setattr(
+        "langgraph_system_generator.generator.nodes.DocsRetriever",
+        DummyRetriever,
+    )
+
+    failing_retriever = get_cached_docs_retriever("cache-a")
+    healthy_retriever = get_cached_docs_retriever("cache-b")
+
+    _drop_docs_retriever_cache_entry("cache-a")
+
+    assert get_cached_docs_retriever("cache-b") is healthy_retriever
+    assert get_cached_docs_retriever("cache-a") is not failing_retriever
     _clear_docs_retriever_cache()
 
 

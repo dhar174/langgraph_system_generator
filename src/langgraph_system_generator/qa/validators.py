@@ -1940,88 +1940,101 @@ class NotebookValidator:
                 },
             )
 
-    def validate_json_structure(self, notebook_path: str | Path) -> QAReport:
-        """Check that notebook JSON is valid and can be loaded."""
+    def _load_and_validate_notebook_json(
+        self,
+        notebook_path: str | Path,
+    ) -> tuple[QAReport, NotebookNode | None]:
+        """Load a notebook once and validate its nbformat structure."""
 
         try:
             path = Path(notebook_path)
             if not path.exists():
-                return QAReport(
+                return (
+                    QAReport(
+                        check_name="JSON Validity",
+                        passed=False,
+                        message=f"Notebook file not found: {notebook_path}",
+                        rule_id="json_structure",
+                        severity="error",
+                        category="serialization",
+                        repairable=False,
+                        suggestions=[
+                            "Ensure the notebook was generated and saved correctly."
+                        ],
+                        evidence={"path": str(path)},
+                    ),
+                    None,
+                )
+
+            notebook = self._load_notebook(path)
+            json_report = self._validate_loaded_notebook_json(notebook, path)
+            return json_report, notebook if json_report.passed else None
+        except (json.JSONDecodeError, nbformat.reader.NotJSONError) as exc:
+            return (
+                QAReport(
                     check_name="JSON Validity",
                     passed=False,
-                    message=f"Notebook file not found: {notebook_path}",
+                    message=f"Invalid JSON: {exc}",
                     rule_id="json_structure",
                     severity="error",
                     category="serialization",
                     repairable=False,
                     suggestions=[
-                        "Ensure the notebook was generated and saved correctly."
+                        "Check for malformed JSON syntax in the notebook file.",
+                        "Ensure the file is encoded as UTF-8 and fully written.",
                     ],
-                    evidence={"path": str(path)},
-                )
-
-            notebook = self._load_notebook(path)
-            return self._validate_loaded_notebook_json(notebook, path)
-        except (json.JSONDecodeError, nbformat.reader.NotJSONError) as exc:
-            return QAReport(
-                check_name="JSON Validity",
-                passed=False,
-                message=f"Invalid JSON: {exc}",
-                rule_id="json_structure",
-                severity="error",
-                category="serialization",
-                repairable=False,
-                suggestions=[
-                    "Check for malformed JSON syntax in the notebook file.",
-                    "Ensure the file is encoded as UTF-8 and fully written.",
-                ],
-                evidence={"error_type": "json", "message": str(exc)},
+                    evidence={"error_type": "json", "message": str(exc)},
+                ),
+                None,
             )
         except nbformat.ValidationError as exc:
-            return QAReport(
-                check_name="JSON Validity",
-                passed=False,
-                message=f"Invalid notebook structure: {exc}",
-                rule_id="json_structure",
-                severity="error",
-                category="serialization",
-                repairable=False,
-                suggestions=[
-                    "Verify all required notebook fields and cell metadata are present.",
-                ],
-                evidence={
-                    "path": str(notebook_path),
-                    "error_type": "nbformat",
-                    "message": str(exc),
-                },
+            return (
+                QAReport(
+                    check_name="JSON Validity",
+                    passed=False,
+                    message=f"Invalid notebook structure: {exc}",
+                    rule_id="json_structure",
+                    severity="error",
+                    category="serialization",
+                    repairable=False,
+                    suggestions=[
+                        "Verify all required notebook fields and cell metadata are present.",
+                    ],
+                    evidence={
+                        "path": str(notebook_path),
+                        "error_type": "nbformat",
+                        "message": str(exc),
+                    },
+                ),
+                None,
             )
         except Exception as exc:
-            return QAReport(
-                check_name="JSON Validity",
-                passed=False,
-                message=f"Error reading notebook: {exc}",
-                rule_id="json_structure",
-                severity="error",
-                category="serialization",
-                repairable=False,
-                suggestions=["Check file permissions and notebook path resolution."],
-                evidence={"error_type": type(exc).__name__, "message": str(exc)},
+            return (
+                QAReport(
+                    check_name="JSON Validity",
+                    passed=False,
+                    message=f"Error reading notebook: {exc}",
+                    rule_id="json_structure",
+                    severity="error",
+                    category="serialization",
+                    repairable=False,
+                    suggestions=[
+                        "Check file permissions and notebook path resolution."
+                    ],
+                    evidence={"error_type": type(exc).__name__, "message": str(exc)},
+                ),
+                None,
             )
 
-    def validate_notebook(
+    def _validate_notebook_rules(
         self,
         notebook: NotebookNode,
-        source: str = "<memory>",
+        source: str | Path,
+        json_report: QAReport,
     ) -> List[QAReport]:
-        """Run all validation checks against an already-loaded notebook."""
+        """Run registry-backed rules after JSON structure has already passed."""
 
-        reports: List[QAReport] = []
-        json_report = self._validate_loaded_notebook_json(notebook, source)
-        reports.append(json_report)
-
-        if not json_report.passed:
-            return reports
-
+        reports: List[QAReport] = [json_report]
         context = NotebookValidationContext.from_notebook(source, notebook)
         syntax_report: QAReport | None = None
         for rule in self.registry.rules():
@@ -2041,6 +2054,25 @@ class NotebookValidator:
                 reports.append(report)
 
         return reports
+
+    def validate_json_structure(self, notebook_path: str | Path) -> QAReport:
+        """Check that notebook JSON is valid and can be loaded."""
+
+        json_report, _ = self._load_and_validate_notebook_json(notebook_path)
+        return json_report
+
+    def validate_notebook(
+        self,
+        notebook: NotebookNode,
+        source: str = "<memory>",
+    ) -> List[QAReport]:
+        """Run all validation checks against an already-loaded notebook."""
+
+        json_report = self._validate_loaded_notebook_json(notebook, source)
+        if not json_report.passed:
+            return [json_report]
+
+        return self._validate_notebook_rules(notebook, source, json_report)
 
     def check_no_placeholders(self, notebook_path: str | Path) -> QAReport:
         """Ensure no placeholder text remains in the notebook."""
@@ -2176,12 +2208,12 @@ class NotebookValidator:
     def validate_all(self, notebook_path: str | Path) -> List[QAReport]:
         """Run all validation checks on a notebook."""
 
-        json_report = self.validate_json_structure(notebook_path)
-        if not json_report.passed:
+        json_report, notebook = self._load_and_validate_notebook_json(notebook_path)
+        if not json_report.passed or notebook is None:
             return [json_report]
 
-        notebook = self._load_notebook(notebook_path)
-        reports = self.validate_notebook(notebook, source=str(notebook_path))
-        if reports:
-            reports[0] = json_report
-        return reports
+        return self._validate_notebook_rules(
+            notebook,
+            source=str(notebook_path),
+            json_report=json_report,
+        )

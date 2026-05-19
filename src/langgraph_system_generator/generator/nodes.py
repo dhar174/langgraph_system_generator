@@ -131,19 +131,17 @@ def _qa_history_from_state(state: GeneratorState) -> List[QAReport]:
     return list(state.get("qa_reports") or [])
 
 
-def _qa_history_key(report: QAReport) -> str:
+def _qa_history_key(report: QAReport) -> tuple[Any, ...]:
     """Return a stable key for QA history de-duplication."""
 
-    return "|".join(
-        [
-            str(report.rule_id),
-            str(report.check_name),
-            str(report.stage),
-            str(report.attempt),
-            str(report.severity),
-            str(report.passed),
-            str(report.message),
-        ]
+    return (
+        report.rule_id,
+        report.check_name,
+        report.stage,
+        report.attempt,
+        report.severity,
+        report.passed,
+        report.message,
     )
 
 
@@ -231,6 +229,16 @@ def _clear_docs_retriever_cache() -> None:
 
     with _DOCS_RETRIEVER_CACHE_LOCK:
         _DOCS_RETRIEVER_CACHE.clear()
+
+
+def _drop_docs_retriever_cache_entry(
+    vector_store_path: str | Path | None = None,
+) -> None:
+    """Remove one docs retriever cache entry after a path-scoped failure."""
+
+    cache_key = _docs_retriever_cache_key(vector_store_path)
+    with _DOCS_RETRIEVER_CACHE_LOCK:
+        _DOCS_RETRIEVER_CACHE.pop(cache_key, None)
 
 
 def _retrieve_docs_for_prompt(prompt: str) -> List[Dict[str, Any]]:
@@ -470,7 +478,7 @@ async def rag_retrieval_node(state: GeneratorState) -> Dict[str, Any]:
         return {"docs_context": docs}
     except Exception as e:
         logger.warning("RAG retrieval failed: %s", e)
-        _clear_docs_retriever_cache()
+        _drop_docs_retriever_cache_entry()
         # If RAG fails, continue without docs
         return {"docs_context": []}
 

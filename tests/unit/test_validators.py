@@ -107,6 +107,28 @@ def test_validate_notebook_accepts_in_memory_notebook(valid_notebook, monkeypatc
     assert _report_by_name(reports, "JSON Validity").evidence["path"] == "<unit-test>"
 
 
+def test_validate_all_loads_path_once(
+    tmp_notebook_path: Path, valid_notebook, monkeypatch
+):
+    """Path-backed full validation should reuse the loaded notebook object."""
+
+    _write_notebook(tmp_notebook_path, valid_notebook)
+    validator = NotebookValidator()
+    original_load = validator._load_notebook
+    calls = []
+
+    def counted_load(path):
+        calls.append(path)
+        return original_load(path)
+
+    monkeypatch.setattr(validator, "_load_notebook", counted_load)
+
+    reports = validator.validate_all(tmp_notebook_path)
+
+    assert _report_by_name(reports, "JSON Validity").passed is True
+    assert len(calls) == 1
+
+
 def test_validate_json_structure_missing_file(tmp_path: Path):
     report = NotebookValidator().validate_json_structure(tmp_path / "missing.ipynb")
 
