@@ -98,23 +98,26 @@ jobs:
 
       - name: Verify Cloud Run health
         shell: bash
+        env:
+          SERVICE_URL: ${{ steps.deploy.outputs.url }}
         run: |
           set -euo pipefail
-          gcloud run services proxy "${SERVICE}" \
-            --project "${PROJECT_ID}" \
-            --region "${REGION}" \
-            --port 8080 &
-          proxy_pid=$!
-
-          cleanup() {
-            kill "$proxy_pid" 2>/dev/null || true
-            wait "$proxy_pid" 2>/dev/null || true
-          }
-          trap cleanup EXIT
+          if [ -z "${SERVICE_URL:-}" ]; then
+            echo "::error::Deploy step did not return a Cloud Run service URL"
+            exit 1
+          fi
 
           for attempt in {1..30}; do
-            if curl --fail --silent --show-error --max-time 5 \
-              "http://127.0.0.1:8080/health" > /tmp/cloud-run-health.json; then
+            identity_token="$(gcloud auth print-identity-token --audiences="${SERVICE_URL}")"
+            http_status="$(
+              curl --fail --silent --show-error --max-time 10 \
+                --output /tmp/cloud-run-health.json \
+                --write-out "%{http_code}" \
+                --header "Authorization: Bearer ${identity_token}" \
+                "${SERVICE_URL}/health" || true
+            )"
+
+            if [ "$http_status" = "200" ]; then
               if grep -Eq '"status"[[:space:]]*:[[:space:]]*"ok"' /tmp/cloud-run-health.json; then
                 echo "Cloud Run health check passed."
                 exit 0
@@ -123,7 +126,12 @@ jobs:
               cat /tmp/cloud-run-health.json
               exit 1
             fi
-            echo "Waiting for Cloud Run health check, attempt ${attempt}/30..."
+
+            echo "Cloud Run /health returned HTTP ${http_status:-000}; waiting, attempt ${attempt}/30..."
+            if [ -s /tmp/cloud-run-health.json ]; then
+              head -c 500 /tmp/cloud-run-health.json
+              echo
+            fi
             sleep 5
           done
 
