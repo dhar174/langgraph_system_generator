@@ -348,9 +348,10 @@ The workflow builds and pushes:
 
 Then it deploys that image to `GCP_CLOUD_RUN_SERVICE` and performs an
 authenticated `/health` smoke check against the deployed Cloud Run URL using a
-Google identity token with the service URL as its audience. A failed health
-check fails the GitHub Actions job so operators have an obvious signal that the
-deployed revision needs investigation or rollback.
+Google identity token minted by `google-github-actions/auth` with the service
+URL as its audience. A failed health check fails the GitHub Actions job so
+operators have an obvious signal that the deployed revision needs investigation
+or rollback.
 
 ## Colab Usage
 

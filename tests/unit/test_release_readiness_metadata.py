@@ -70,18 +70,21 @@ def test_cloud_run_workflow_smoke_checks_private_service_after_deploy() -> None:
     workflow = _read(".github/workflows/deploy-cloud-run.yml")
 
     deploy_index = workflow.index("- name: Deploy to Cloud Run")
+    token_index = workflow.index("- name: Mint Cloud Run health identity token")
     health_index = workflow.index("- name: Verify Cloud Run health")
     show_url_index = workflow.index("- name: Show service URL")
 
-    assert deploy_index < health_index < show_url_index
+    assert deploy_index < token_index < health_index < show_url_index
     assert "SERVICE_URL" in workflow
     assert "steps.deploy.outputs.url" in workflow
-    assert "gcloud auth print-identity-token" in workflow
-    assert "--audiences=" in workflow
+    assert "token_format: id_token" in workflow
+    assert "id_token_audience" in workflow
+    assert "steps.health-auth.outputs.id_token" in workflow
     assert "Authorization: Bearer" in workflow
     assert "/health" in workflow
     assert "--fail" in workflow
     assert "gcloud run services proxy" not in workflow
+    assert "gcloud auth print-identity-token" not in workflow
     assert '"status"[[:space:]]*:[[:space:]]*"ok"' in workflow
 
 
