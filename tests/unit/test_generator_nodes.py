@@ -8,7 +8,7 @@ from langgraph_system_generator.generator.agents.requirements_analyst import (
     RequirementsAnalyst,
 )
 from langgraph_system_generator.generator.nodes import (
-    _clear_docs_retriever_cache,
+    _reset_docs_retriever_cache_for_tests,
     intake_node,
     notebook_assembly_node,
     rag_retrieval_node,
@@ -32,9 +32,9 @@ from langgraph_system_generator.generator.state import (
 
 @pytest.fixture(autouse=True)
 def clear_docs_retriever_cache():
-    _clear_docs_retriever_cache()
+    _reset_docs_retriever_cache_for_tests()
     yield
-    _clear_docs_retriever_cache()
+    _reset_docs_retriever_cache_for_tests()
 
 
 @pytest.mark.asyncio

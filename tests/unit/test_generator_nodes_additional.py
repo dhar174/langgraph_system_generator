@@ -14,7 +14,7 @@ from langgraph_system_generator.generator.agents import (
     toolchain_engineer,
 )
 from langgraph_system_generator.generator.nodes import (
-    _clear_docs_retriever_cache,
+    _reset_docs_retriever_cache_for_tests,
     _drop_docs_retriever_cache_entry,
     _upsert_qa_repair_summary_cell,
     architecture_selection_node,
@@ -66,9 +66,9 @@ class DummyResponse:
 
 @pytest.fixture(autouse=True)
 def clear_docs_retriever_cache():
-    _clear_docs_retriever_cache()
+    _reset_docs_retriever_cache_for_tests()
     yield
-    _clear_docs_retriever_cache()
+    _reset_docs_retriever_cache_for_tests()
 
 
 def test_bounded_state_reducers_cap_and_preserve_latest_items():
@@ -377,7 +377,7 @@ async def test_context_pack_node_falls_back_to_static_repo_facts_without_docs():
 async def test_rag_retrieval_node_offloads_blocking_retrieval(monkeypatch):
     """RAG retrieval should run synchronous vector-store work in a worker thread."""
 
-    _clear_docs_retriever_cache()
+    _reset_docs_retriever_cache_for_tests()
     to_thread_calls = []
 
     class DummyManager:
@@ -411,14 +411,14 @@ async def test_rag_retrieval_node_offloads_blocking_retrieval(monkeypatch):
     await rag_retrieval_node({"user_prompt": "Find docs"})
 
     assert "_retrieve_docs_for_prompt" in to_thread_calls
-    _clear_docs_retriever_cache()
+    _reset_docs_retriever_cache_for_tests()
 
 
 @pytest.mark.asyncio
 async def test_rag_and_architecture_nodes_reuse_cached_docs_retriever(monkeypatch):
     """RAG and architecture selection should not reload the vector store separately."""
 
-    _clear_docs_retriever_cache()
+    _reset_docs_retriever_cache_for_tests()
     counts = {"manager": 0, "retriever": 0}
 
     class DummyManager:
@@ -453,13 +453,13 @@ async def test_rag_and_architecture_nodes_reuse_cached_docs_retriever(monkeypatc
 
     assert counts == {"manager": 1, "retriever": 1}
     assert get_cached_docs_retriever() is get_cached_docs_retriever()
-    _clear_docs_retriever_cache()
+    _reset_docs_retriever_cache_for_tests()
 
 
 def test_drop_docs_retriever_cache_entry_preserves_other_paths(monkeypatch):
     """A path-scoped failure should not evict unrelated cached retrievers."""
 
-    _clear_docs_retriever_cache()
+    _reset_docs_retriever_cache_for_tests()
 
     class DummyManager:
         def __init__(self, *_args, **_kwargs):
@@ -485,7 +485,7 @@ def test_drop_docs_retriever_cache_entry_preserves_other_paths(monkeypatch):
 
     assert get_cached_docs_retriever("cache-b") is healthy_retriever
     assert get_cached_docs_retriever("cache-a") is not failing_retriever
-    _clear_docs_retriever_cache()
+    _reset_docs_retriever_cache_for_tests()
 
 
 @pytest.mark.asyncio

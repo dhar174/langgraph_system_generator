@@ -224,8 +224,8 @@ def get_cached_docs_retriever(
         return retriever
 
 
-def _clear_docs_retriever_cache() -> None:
-    """Clear all process-local docs retriever cache entries."""
+def _reset_docs_retriever_cache_for_tests() -> None:
+    """Clear all process-local docs retriever cache entries for test isolation."""
 
     with _DOCS_RETRIEVER_CACHE_LOCK:
         _DOCS_RETRIEVER_CACHE.clear()
