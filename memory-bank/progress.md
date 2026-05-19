@@ -19,23 +19,34 @@
 - The local 1.0 release evaluation gate validates deterministic architecture
   selection, graph design, notebook composition, QA/repair, and example
   inventory surfaces without requiring LangSmith upload.
-- The release-readiness branch has a green full local verification baseline:
+- The release-readiness branch had a green full local verification baseline:
   `python -m pytest --asyncio-mode=auto` reports 625 passed and 4 skipped, and
   the CI fatal-error flake8 gate reports 0 findings.
 - Stale completed release-plan issues were closed with evidence, reducing the
   open issue inventory from 49 to 26 while keeping true residual items open.
+- The `v1.0.0` release is published, and #256 plus #258 are closed.
+- Contributor-facing LNF custom agents and mirrored skills now align with the
+  finalized runtime notebook contract from PR #336 through the merged #337
+  follow-up.
+- Google Cloud Run deployment is present through GitHub Actions OIDC, Artifact
+  Registry, private Cloud Run, Secret Manager-backed `OPENAI_API_KEY`, `2Gi`
+  memory sizing, and an authenticated `/health` smoke check.
+- Live Cloud Run notebook generation was debugged through PR #338, which added
+  the missing notebook runtime dependencies and hardened generated notebook
+  fallbacks for the live QA path.
 
 ## What Is Still Incomplete
 
 - Experimental Deep Agents support is opt-in through `agent_type="deepagents"`
   and keeps the optional SDK out of core imports.
-- The 1.0 release is not tagged yet; #258 should close through the release PR
-  merge, and #256 remains the canonical tracker until `v1.0.0` is published.
+- Production Cloud Run deployment uses an authenticated health-check path. The
+  deploy job mints a Cloud Run ID token through `google-github-actions/auth`
+  with the deployed service URL as the token audience.
 
 ## Current Status
 
-- The package metadata in `setup.py` now uses the 1.0.0 Production/Stable
-  release baseline on the release-readiness branch.
+- The package metadata in `setup.py` uses the 1.0.0 Production/Stable release
+  baseline on `main`, and `v1.0.0` is published.
 - The repository already contains substantial scaffolding for CLI, API, RAG,
   notebook export, QA/repair, registry-backed planning, and pattern generation
   workflows.
@@ -46,13 +57,11 @@
   instead of stale phase-by-phase scaffold work.
 - Repository architecture diagrams are discoverable through public docs,
   contributor guidance, and MemoryBank context.
-- Release metadata now includes a root MIT license, changelog, and 1.0.0 package
-  version/classifier updates on the release-readiness branch.
-- A follow-up `Create diagram` hotfix branch checks `GH_PAT` before checkout,
-  uses that token for checkout and pull-request creation, and skips cleanly
-  with a notice when the secret is unavailable.
-- The same hotfix branch aligns the reusable CodeQL matrix with the active
-  ruleset-required contexts: `actions`, `javascript-typescript`, and `python`.
+- Release metadata includes a root MIT license, changelog, and 1.0.0 package
+  version/classifier updates on `main`.
+- The Cloud Run deploy workflow builds and pushes the container image, deploys
+  the private service, mounts `OPENAI_API_KEY` from Secret Manager, and checks
+  `/health` after deployment.
 
 ## Known Issues and Limitations
 
@@ -68,5 +77,7 @@
 - Router fallback/general routing (#60), iterative requirements refinement
   (#202), and the remaining CYOA notebook cell issues are tracked as residual
   follow-up work rather than closed stale items.
-- The `Create diagram` workflow must pass on `main` after the authentication
-  hotfix merges before the `v1.0.0` release is tagged.
+- The Cloud Run workflow's private-service health check is sensitive to token
+  minting details in GitHub Actions WIF. Do not use `gcloud auth
+  print-identity-token --audiences=...` for this workflow's health token; the
+  ID token is minted through `google-github-actions/auth` instead.

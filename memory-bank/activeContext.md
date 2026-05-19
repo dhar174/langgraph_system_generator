@@ -7,9 +7,12 @@
 - Current documentation work includes the docs-owned
   `docs/diagrams/repo-architecture-visualizer/2026-04-30/` bundle for
   package/module/env relationship snapshots.
-- Current release work is preparing the 1.0.0 readiness branch with packaging
-  smoke tests, release metadata, local LangGraph evaluation gates, and workflow
-  cleanup before opening the final release PR.
+- Current release work is now post-1.0 maintenance: `v1.0.0` is published,
+  the release-readiness tracker is closed, and follow-up work should be scoped
+  to concrete quality, deployment, or runtime-generation issues.
+- Current deployment work centers on the private Google Cloud Run service,
+  which is deployed by GitHub Actions through Workload Identity Federation and
+  Google Secret Manager rather than long-lived service account keys.
 
 ## Recent Changes Reflected in the Codebase
 
@@ -37,16 +40,27 @@
   agents.
 - `docs/diagrams/README.md` now indexes both the hand-maintained generator
   stage/state map and the generated repo architecture visualizer bundle.
-- The 1.0 readiness branch adds a root MIT license, changelog, stable package
-  metadata, isolated install smoke tests, and `scripts/run_release_eval.py` for
-  local-only release evaluation.
+- The 1.0 release work landed with a root MIT license, changelog, stable
+  package metadata, isolated install smoke tests, and
+  `scripts/run_release_eval.py` for local-only release evaluation.
 - Release-readiness issue triage closed stale completed RequirementsAnalyst,
-  pattern/example, cross-cutting, and duplicate CYOA items; remaining open
-  issues are explicit post-1.0/residual work unless #258 is still waiting for
-  the release PR merge.
-- After PR #305 merged, the `Create diagram` workflow still failed while
-  creating the automation PR because checkout did not persist the configured
-  `GH_PAT` credentials for later git fetch/push operations.
+  pattern/example, cross-cutting, and duplicate CYOA items; #256 and #258 are
+  closed and the `v1.0.0` release is published.
+- PR #337 closed the contributor-facing agent/skill alignment lane by updating
+  LNF custom agents and mirrored skills to match the finalized runtime notebook
+  contract without blending contributor assets into runtime product agents.
+- PR #338 fixed live Cloud Run notebook-generation QA failures by restoring the
+  container notebook runtime stack and hardening generated notebook fallbacks.
+- PR #323 added the Cloud Run deployment workflow: pinned GitHub Actions, OIDC
+  authentication, Artifact Registry image push, private Cloud Run deployment,
+  Secret Manager-backed `OPENAI_API_KEY`, `2Gi` memory sizing, and release
+  readiness tests for the deployment contract.
+- PR #339 corrected the first private-service health-check failure by replacing
+  the CI-local Cloud Run proxy with a direct authenticated health request. The
+  follow-up deployment check mints the Cloud Run ID token through
+  `google-github-actions/auth` with `id_token_audience` set to the deployed
+  service URL; `gcloud auth print-identity-token --audiences=...` was not valid
+  for the GitHub Actions WIF account type used here.
 - The active default-branch ruleset requires CodeQL contexts for `actions`,
   `javascript-typescript`, and `python`; the reusable CodeQL workflow must keep
   that matrix aligned or otherwise green PR checks can still remain unmergeable.
@@ -62,11 +76,13 @@
   maintenance specialists for the current codebase rather than initial
   phase-by-phase builders, and mirrored LangChain/LangSmith skills should stay
   synchronized where they are true mirrors.
-- Keep the 1.0 release tracker (#256) aligned with packaging, workflow,
-  evaluation, metadata, issue-triage, and PR progress until the `v1.0.0`
-  release is published.
-- Land the follow-up `Create diagram` authentication hotfix and verify the next
-  `main` workflow run is green before tagging `v1.0.0`.
+- Keep Cloud Run deployment changes isolated from runtime generation changes
+  unless a live service failure proves the runtime code is involved.
+- Verify the next `main` Cloud Run deployment after health-check changes,
+  especially the authenticated `/health` step, before treating production
+  deployment as fully settled.
+- Keep post-1.0 issue work tied to explicit follow-up issues rather than
+  reopening completed release-readiness or runtime-notebook-contract lanes.
 - Keep maintainer visualization docs aligned when generator stages, package
   boundaries, module relationships, or environment-variable usage changes.
 - Preserve parity between CLI-driven, API-driven, and web-driven artifact
@@ -94,6 +110,10 @@
 - The local release evaluation gate defaults to no upload; LangSmith can remain
   a separate explicit release-candidate comparison step when credentials are
   available.
-- The current release-readiness branch verification baseline is `python -m
-  pytest --asyncio-mode=auto` with 625 passing tests and 4 skipped tests, plus
-  the CI fatal-error flake8 gate.
+- Cloud Run live mode gets `OPENAI_API_KEY` from Google Secret Manager at
+  runtime; GitHub repository secrets are only used for deployment plumbing.
+- Cloud Run deploys with `2Gi` memory because live generation and artifact
+  packaging exceeded the default `512Mi` limit during live testing.
+- The release-readiness verification baseline was `python -m pytest
+  --asyncio-mode=auto` with 625 passing tests and 4 skipped tests, plus the CI
+  fatal-error flake8 gate.

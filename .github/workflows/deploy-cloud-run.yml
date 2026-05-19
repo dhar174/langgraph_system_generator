@@ -96,24 +96,38 @@ jobs:
           secrets_update_strategy: merge
           flags: --port=8000 --memory=2Gi
 
+      - name: Mint Cloud Run health identity token
+        id: health-auth
+        # google-github-actions/auth v2
+        uses: google-github-actions/auth@c200f3691d83b41bf9bbd8638997a462592937ed
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+          token_format: id_token
+          id_token_audience: ${{ steps.deploy.outputs.url }}
+
       - name: Verify Cloud Run health
         shell: bash
         env:
           SERVICE_URL: ${{ steps.deploy.outputs.url }}
+          IDENTITY_TOKEN: ${{ steps.health-auth.outputs.id_token }}
         run: |
           set -euo pipefail
           if [ -z "${SERVICE_URL:-}" ]; then
             echo "::error::Deploy step did not return a Cloud Run service URL"
             exit 1
           fi
+          if [ -z "${IDENTITY_TOKEN:-}" ]; then
+            echo "::error::Cloud Run health identity token was not minted"
+            exit 1
+          fi
 
           for attempt in {1..30}; do
-            identity_token="$(gcloud auth print-identity-token --audiences="${SERVICE_URL}")"
             http_status="$(
               curl --fail --silent --show-error --max-time 10 \
                 --output /tmp/cloud-run-health.json \
                 --write-out "%{http_code}" \
-                --header "Authorization: Bearer ${identity_token}" \
+                --header "Authorization: Bearer ${IDENTITY_TOKEN}" \
                 "${SERVICE_URL}/health" || true
             )"
 
