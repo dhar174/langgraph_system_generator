@@ -14,8 +14,12 @@ from langgraph_system_generator.generator.agents import (
     toolchain_engineer,
 )
 from langgraph_system_generator.generator.nodes import (
+    _clear_docs_retriever_cache,
+    _upsert_qa_repair_summary_cell,
     architecture_selection_node,
+    bounded_qa_history,
     context_pack_node,
+    get_cached_docs_retriever,
     graph_design_node,
     intake_node,
     notebook_assembly_node,
@@ -40,6 +44,8 @@ from langgraph_system_generator.generator.state import (
     QAReport,
     QARepairFeedback,
     ToolPlanningFeedback,
+    bounded_constraints_reducer,
+    bounded_docs_context_reducer,
 )
 from langgraph_system_generator.qa.registry import RepairRoutineRegistration
 from langgraph_system_generator.qa.validators import (
@@ -55,6 +61,70 @@ class DummyResponse:
 
     def __init__(self, content: str):
         self.content = content
+
+
+@pytest.fixture(autouse=True)
+def clear_docs_retriever_cache():
+    _clear_docs_retriever_cache()
+    yield
+    _clear_docs_retriever_cache()
+
+
+def test_bounded_state_reducers_cap_and_preserve_latest_items():
+    """Accumulating list state should stay bounded and keep the newest evidence."""
+
+    constraints = [
+        Constraint(type="goal", value=f"goal-{index}", priority=1)
+        for index in range(55)
+    ]
+    docs = [
+        DocSnippet(
+            content=f"doc-{index}", source=f"source-{index}", relevance_score=0.1
+        )
+        for index in range(55)
+    ]
+    history = [
+        QAReport(check_name=f"Report {index}", passed=True, message="ok")
+        for index in range(105)
+    ]
+
+    bounded_constraints = bounded_constraints_reducer([], constraints)
+    bounded_docs = bounded_docs_context_reducer([], docs)
+    bounded_history = bounded_qa_history([], history)
+
+    assert len(bounded_constraints) == 50
+    assert bounded_constraints[0].value == "goal-5"
+    assert bounded_constraints[-1].value == "goal-54"
+    assert len(bounded_docs) == 50
+    assert bounded_docs[0].content == "doc-5"
+    assert bounded_docs[-1].content == "doc-54"
+    assert len(bounded_history) == 100
+    assert bounded_history[0].check_name == "Report 5"
+    assert bounded_history[-1].check_name == "Report 104"
+
+
+def test_bounded_qa_history_preserves_current_attempt_blockers():
+    """Current-attempt failures should survive pruning even when older history is long."""
+
+    older = [
+        QAReport(check_name=f"Old {index}", passed=True, message="ok", attempt=0)
+        for index in range(100)
+    ]
+    blockers = [
+        QAReport(
+            check_name=f"Blocking {index}",
+            passed=False,
+            message="still failing",
+            severity="error",
+            attempt=3,
+        )
+        for index in range(5)
+    ]
+
+    bounded = bounded_qa_history(older, blockers, limit=100)
+
+    assert len(bounded) == 100
+    assert all(report in bounded for report in blockers)
 
 
 def make_stub_llm(content: str):
@@ -300,6 +370,89 @@ async def test_context_pack_node_falls_back_to_static_repo_facts_without_docs():
     assert pack.warnings
     assert "invocation_config" in pack.qa_gates
     assert pack.source_summary["docs_live_required"] is False
+
+
+@pytest.mark.asyncio
+async def test_rag_retrieval_node_offloads_blocking_retrieval(monkeypatch):
+    """RAG retrieval should run synchronous vector-store work in a worker thread."""
+
+    _clear_docs_retriever_cache()
+    to_thread_calls = []
+
+    class DummyManager:
+        def __init__(self, *_args, **_kwargs):
+            pass
+
+    class DummyRetriever:
+        def __init__(self, _manager):
+            pass
+
+        def retrieve(self, *_args, **_kwargs):
+            return []
+
+    async def fake_to_thread(func, *args, **kwargs):
+        to_thread_calls.append(getattr(func, "__name__", repr(func)))
+        return func(*args, **kwargs)
+
+    monkeypatch.setattr(
+        "langgraph_system_generator.generator.nodes.VectorStoreManager",
+        DummyManager,
+    )
+    monkeypatch.setattr(
+        "langgraph_system_generator.generator.nodes.DocsRetriever",
+        DummyRetriever,
+    )
+    monkeypatch.setattr(
+        "langgraph_system_generator.generator.nodes.asyncio.to_thread",
+        fake_to_thread,
+    )
+
+    await rag_retrieval_node({"user_prompt": "Find docs"})
+
+    assert "_retrieve_docs_for_prompt" in to_thread_calls
+    _clear_docs_retriever_cache()
+
+
+@pytest.mark.asyncio
+async def test_rag_and_architecture_nodes_reuse_cached_docs_retriever(monkeypatch):
+    """RAG and architecture selection should not reload the vector store separately."""
+
+    _clear_docs_retriever_cache()
+    counts = {"manager": 0, "retriever": 0}
+
+    class DummyManager:
+        def __init__(self, *_args, **_kwargs):
+            counts["manager"] += 1
+
+    class DummyRetriever:
+        def __init__(self, _manager):
+            counts["retriever"] += 1
+
+        def retrieve(self, *_args, **_kwargs):
+            return []
+
+    monkeypatch.setattr(
+        "langgraph_system_generator.generator.nodes.VectorStoreManager",
+        DummyManager,
+    )
+    monkeypatch.setattr(
+        "langgraph_system_generator.generator.nodes.DocsRetriever",
+        DummyRetriever,
+    )
+    monkeypatch.setattr(
+        architecture_selector,
+        "ChatOpenAI",
+        make_stub_llm(
+            '{"architecture_type":"router","patterns":null,"justification":"Because"}'
+        ),
+    )
+
+    await rag_retrieval_node({"user_prompt": "Find docs"})
+    await architecture_selection_node({"constraints": [], "docs_context": []})
+
+    assert counts == {"manager": 1, "retriever": 1}
+    assert get_cached_docs_retriever() is get_cached_docs_retriever()
+    _clear_docs_retriever_cache()
 
 
 @pytest.mark.asyncio
@@ -599,7 +752,7 @@ async def test_static_qa_node_appends_reports(monkeypatch):
     new_reports = [QAReport(check_name="New", passed=True, message="fine")]
 
     monkeypatch.setattr(
-        "langgraph_system_generator.generator.nodes.NotebookValidator.validate_all",
+        "langgraph_system_generator.generator.nodes.NotebookValidator.validate_notebook",
         lambda *_args, **_kwargs: new_reports,
     )
 
@@ -619,6 +772,50 @@ async def test_static_qa_node_appends_reports(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_static_qa_node_validates_in_memory_and_offloads(monkeypatch):
+    """Static QA should validate the in-memory notebook through a worker thread."""
+
+    new_reports = [QAReport(check_name="New", passed=True, message="fine")]
+    to_thread_calls = []
+
+    def fail_write(*_args, **_kwargs):
+        raise AssertionError("static QA should not write a temporary notebook")
+
+    def validate_notebook(_self, _notebook, source="<memory>"):
+        assert source == "<memory>"
+        return new_reports
+
+    async def fake_to_thread(func, *args, **kwargs):
+        to_thread_calls.append(getattr(func, "__name__", repr(func)))
+        return func(*args, **kwargs)
+
+    monkeypatch.setattr(
+        "langgraph_system_generator.generator.nodes.NotebookFileComposer.write",
+        fail_write,
+    )
+    monkeypatch.setattr(
+        "langgraph_system_generator.generator.nodes.NotebookValidator.validate_notebook",
+        validate_notebook,
+    )
+    monkeypatch.setattr(
+        "langgraph_system_generator.generator.nodes.asyncio.to_thread",
+        fake_to_thread,
+    )
+
+    result = await static_qa_node(
+        {
+            "generated_cells": [CellSpec(cell_type="markdown", content="Hi")],
+            "qa_reports": [],
+            "qa_history": [],
+            "repair_attempts": 0,
+        }
+    )
+
+    assert result["qa_reports"][0].check_name == "New"
+    assert "validate_notebook" in to_thread_calls
+
+
+@pytest.mark.asyncio
 async def test_static_qa_node_surfaces_blocking_feedback(monkeypatch):
     blocking_report = QAReport(
         check_name="Python Syntax",
@@ -632,7 +829,7 @@ async def test_static_qa_node_surfaces_blocking_feedback(monkeypatch):
     )
 
     monkeypatch.setattr(
-        "langgraph_system_generator.generator.nodes.NotebookValidator.validate_all",
+        "langgraph_system_generator.generator.nodes.NotebookValidator.validate_notebook",
         lambda *_args, **_kwargs: [blocking_report],
     )
 
@@ -669,7 +866,7 @@ async def test_static_qa_node_surfaces_non_blocking_feedback(monkeypatch):
     )
 
     monkeypatch.setattr(
-        "langgraph_system_generator.generator.nodes.NotebookValidator.validate_all",
+        "langgraph_system_generator.generator.nodes.NotebookValidator.validate_notebook",
         lambda *_args, **_kwargs: [advisory_report],
     )
 
@@ -882,6 +1079,34 @@ async def test_runtime_qa_node_reports_actual_failure(monkeypatch):
     assert report.evidence["execution"]["execution_scope"] == "trusted_smoke_test"
 
 
+def test_upsert_qa_repair_summary_cell_keeps_unchanged_cell_objects():
+    """Updating the summary cell should not deep-copy every unchanged cell."""
+
+    original = CellSpec(
+        cell_type="code",
+        content="print('keep me')",
+        metadata={"section": "execution"},
+        section="execution",
+    )
+    stale_summary = CellSpec(
+        cell_type="markdown",
+        content="old summary",
+        metadata={"kind": "qa_repair_summary"},
+        section="qa_repair_summary",
+    )
+
+    result = _upsert_qa_repair_summary_cell(
+        [original, stale_summary],
+        QARepairFeedback(repair_attempts=1),
+        status="applied",
+    )
+
+    assert result[0] is original
+    assert len(result) == 2
+    assert result[-1].section == "qa_repair_summary"
+    assert result[-1] is not stale_summary
+
+
 @pytest.mark.asyncio
 async def test_repair_node_success_refreshes_cells_and_appends_history(monkeypatch):
     initial_cells = [CellSpec(cell_type="markdown", content="Hi", metadata={})]
@@ -946,6 +1171,53 @@ async def test_repair_node_success_refreshes_cells_and_appends_history(monkeypat
     assert result["repair_attempts"] == 2
     assert result["qa_repair_feedback"].repair_attempts == 2
     assert result["qa_repair_feedback"].unrepaired_failures == []
+
+
+@pytest.mark.asyncio
+async def test_repair_node_offloads_repair_engine(monkeypatch):
+    """Repair work should run through asyncio.to_thread from async graph nodes."""
+
+    initial_cells = [CellSpec(cell_type="markdown", content="Hi", metadata={})]
+    to_thread_calls = []
+
+    async def fake_to_thread(func, *args, **kwargs):
+        to_thread_calls.append(getattr(func, "__name__", repr(func)))
+        return func(*args, **kwargs)
+
+    monkeypatch.setattr(
+        "langgraph_system_generator.generator.nodes.asyncio.to_thread",
+        fake_to_thread,
+    )
+
+    def repair_cells(*_args, **_kwargs):
+        return RepairOutcome(
+            status="skipped",
+            cells=initial_cells,
+            qa_reports=[],
+            attempted_fixes=[],
+            persisted=False,
+            message="No repair matched.",
+            validation_summary={"accepted": False},
+        )
+
+    monkeypatch.setattr(
+        "langgraph_system_generator.generator.nodes.NotebookRepairAgent.repair_cells",
+        repair_cells,
+    )
+
+    result = await repair_node(
+        {
+            "generated_cells": initial_cells,
+            "qa_reports": [
+                QAReport(check_name="Runtime Check", passed=False, message="boom")
+            ],
+            "qa_history": [],
+            "repair_attempts": 0,
+        }
+    )
+
+    assert result["repair_attempts"] == 1
+    assert "repair_cells" in to_thread_calls
 
 
 @pytest.mark.asyncio

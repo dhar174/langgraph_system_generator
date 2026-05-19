@@ -5,7 +5,6 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
-from tempfile import TemporaryDirectory
 from typing import Any, Dict, List, Sequence
 
 import nbformat
@@ -616,11 +615,8 @@ class NotebookRepairAgent:
     def _validate_cells(self, cells: Sequence[CellSpec]) -> List[QAReport]:
         """Validate cells using the shared notebook validator."""
 
-        with TemporaryDirectory() as temp_dir:
-            notebook = self.notebook_builder.build_notebook(cells)
-            notebook_path = Path(temp_dir) / "repaired.ipynb"
-            self.notebook_builder.write(notebook, notebook_path)
-            return self.validator.validate_all(notebook_path)
+        notebook = self.notebook_builder.build_notebook(cells)
+        return self.validator.validate_notebook(notebook, source="<repair>")
 
     def _clone_cells(self, cells: Sequence[CellSpec]) -> List[CellSpec]:
         """Clone cell specs so repair attempts do not mutate caller-owned state."""

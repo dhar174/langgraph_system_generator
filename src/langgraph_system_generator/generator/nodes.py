@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from pathlib import Path
-from tempfile import TemporaryDirectory
+from threading import Lock
 from typing import Any, Dict, List
 
 import nbformat
@@ -28,6 +28,7 @@ from langgraph_system_generator.generator.state import (
     GenerationContextPack,
     GraphDesignFeedback,
     GraphExportBundle,
+    MAX_QA_HISTORY,
     NotebookCompositionFeedback,
     NotebookDependencyPlan,
     NotebookPlan,
@@ -61,6 +62,8 @@ logger = logging.getLogger(__name__)
 RUNTIME_UNAVAILABLE_PREFIX = "runtime validation unavailable"
 TRUSTED_SMOKE_TEST_SCOPE = "trusted_smoke_test"
 ARCHITECTURE_REGISTRY = get_default_architecture_registry()
+_DOCS_RETRIEVER_CACHE: Dict[str, DocsRetriever] = {}
+_DOCS_RETRIEVER_CACHE_LOCK = Lock()
 
 
 def _resolve_model_config(state: GeneratorState):
@@ -126,6 +129,115 @@ def _qa_history_from_state(state: GeneratorState) -> List[QAReport]:
     if "qa_history" in state and state.get("qa_history") is not None:
         return list(state.get("qa_history") or [])
     return list(state.get("qa_reports") or [])
+
+
+def _qa_history_key(report: QAReport) -> str:
+    """Return a stable key for QA history de-duplication."""
+
+    return "|".join(
+        [
+            str(report.rule_id),
+            str(report.check_name),
+            str(report.stage),
+            str(report.attempt),
+            str(report.severity),
+            str(report.passed),
+            str(report.message),
+        ]
+    )
+
+
+def bounded_qa_history(
+    existing: List[QAReport],
+    new_reports: List[QAReport],
+    *,
+    limit: int = MAX_QA_HISTORY,
+) -> List[QAReport]:
+    """Merge QA history while preserving current-attempt blocking failures."""
+
+    combined = [*(existing or []), *(new_reports or [])]
+    if limit <= 0 or not combined:
+        return []
+
+    latest_by_key: Dict[str, tuple[int, QAReport]] = {}
+    for index, report in enumerate(combined):
+        latest_by_key[_qa_history_key(report)] = (index, report)
+
+    deduped = [
+        entry[1] for entry in sorted(latest_by_key.values(), key=lambda item: item[0])
+    ]
+    if len(deduped) <= limit:
+        return deduped
+
+    attempts = [report.attempt for report in deduped if isinstance(report.attempt, int)]
+    current_attempt = max(attempts) if attempts else None
+    pinned_keys: set[str] = set()
+    if current_attempt is not None:
+        pinned_keys = {
+            _qa_history_key(report)
+            for report in deduped
+            if report.attempt == current_attempt
+            and not report.passed
+            and report.severity == "error"
+        }
+
+    latest_slice = deduped[-limit:]
+    selected_keys = {_qa_history_key(report) for report in latest_slice}
+    missing_pinned = [key for key in pinned_keys if key not in selected_keys]
+    if not missing_pinned:
+        return latest_slice
+
+    missing_pinned_set = set(missing_pinned)
+    pinned_reports = [
+        report for report in deduped if _qa_history_key(report) in missing_pinned_set
+    ][-limit:]
+    available_slots = max(limit - len(pinned_reports), 0)
+    filler = [
+        report
+        for report in reversed(deduped)
+        if _qa_history_key(report) not in missing_pinned_set
+    ][:available_slots]
+    selected = [*pinned_reports, *reversed(filler)]
+    return sorted(
+        selected,
+        key=lambda report: latest_by_key[_qa_history_key(report)][0],
+    )
+
+
+def _docs_retriever_cache_key(vector_store_path: str | Path | None = None) -> str:
+    """Normalize the vector-store path used for retriever cache identity."""
+
+    configured_path = vector_store_path or settings.vector_store_path
+    return str(Path(configured_path).expanduser().resolve())
+
+
+def get_cached_docs_retriever(
+    vector_store_path: str | Path | None = None,
+) -> DocsRetriever:
+    """Return a process-local docs retriever for the configured vector store."""
+
+    cache_key = _docs_retriever_cache_key(vector_store_path)
+    with _DOCS_RETRIEVER_CACHE_LOCK:
+        retriever = _DOCS_RETRIEVER_CACHE.get(cache_key)
+        if retriever is None:
+            vector_store_manager = VectorStoreManager(cache_key)
+            retriever = DocsRetriever(vector_store_manager)
+            _DOCS_RETRIEVER_CACHE[cache_key] = retriever
+        return retriever
+
+
+def _clear_docs_retriever_cache() -> None:
+    """Clear the process-local docs retriever cache for tests."""
+
+    with _DOCS_RETRIEVER_CACHE_LOCK:
+        _DOCS_RETRIEVER_CACHE.clear()
+
+
+def _retrieve_docs_for_prompt(prompt: str) -> List[Dict[str, Any]]:
+    """Retrieve docs for a prompt using the shared cached retriever."""
+
+    retriever = get_cached_docs_retriever()
+    return retriever.retrieve(prompt, k=10)
 
 
 def _qa_repair_feedback_from_state(state: GeneratorState) -> QARepairFeedback:
@@ -294,7 +406,7 @@ def _upsert_qa_repair_summary_cell(
     """Replace any existing QA repair summary cell with the latest summary."""
 
     retained_cells = [
-        cell.model_copy(deep=True)
+        cell
         for cell in cells
         if cell.section != "qa_repair_summary"
         and cell.metadata.get("kind") != "qa_repair_summary"
@@ -339,11 +451,10 @@ async def rag_retrieval_node(state: GeneratorState) -> Dict[str, Any]:
         Updated state with retrieved documentation
     """
     try:
-        vector_store_manager = VectorStoreManager(settings.vector_store_path)
-        retriever = DocsRetriever(vector_store_manager)
-
-        # Retrieve general docs based on user prompt
-        snippets = retriever.retrieve(state["user_prompt"], k=10)
+        snippets = await asyncio.to_thread(
+            _retrieve_docs_for_prompt,
+            state["user_prompt"],
+        )
 
         # Convert to DocSnippet format
         docs = [
@@ -359,6 +470,7 @@ async def rag_retrieval_node(state: GeneratorState) -> Dict[str, Any]:
         return {"docs_context": docs}
     except Exception as e:
         logger.warning("RAG retrieval failed: %s", e)
+        _clear_docs_retriever_cache()
         # If RAG fails, continue without docs
         return {"docs_context": []}
 
@@ -549,8 +661,7 @@ async def architecture_selection_node(state: GeneratorState) -> Dict[str, Any]:
         }
 
     try:
-        vector_store_manager = VectorStoreManager(settings.vector_store_path)
-        retriever = DocsRetriever(vector_store_manager)
+        retriever = await asyncio.to_thread(get_cached_docs_retriever)
     except Exception as e:
         logger.warning(
             "Failed to load vector store for architecture selection: %s",
@@ -752,30 +863,20 @@ async def static_qa_node(state: GeneratorState) -> Dict[str, Any]:
     validator = NotebookValidator()
 
     cells = state.get("generated_cells", [])
-    with TemporaryDirectory() as temp_dir:
-        notebook = notebook_builder.build_notebook(cells)
-        notebook_path = Path(temp_dir) / "generated.ipynb"
-        notebook_builder.write(notebook, notebook_path)
-
-        # Log temp path for debugging failed validations
-        logger.debug(f"Running validation on temporary notebook: {notebook_path}")
-
-        reports = validator.validate_all(notebook_path)
-
-        # If validation fails, log details for debugging
-        if any(not r.passed for r in reports):
-            logger.info(
-                "Validation failed for temporary notebook at %s "
-                "(stored in a TemporaryDirectory that will be removed after this step).",
-                notebook_path,
-            )
+    notebook = notebook_builder.build_notebook(cells)
+    reports = await asyncio.to_thread(
+        validator.validate_notebook,
+        notebook,
+    )
+    if any(not r.passed for r in reports):
+        logger.info("Validation failed for generated in-memory notebook.")
 
     annotated_reports = _stamp_reports(
         reports,
         stage="static",
         attempt=int(state.get("repair_attempts", 0)),
     )
-    qa_history = [*_qa_history_from_state(state), *annotated_reports]
+    qa_history = bounded_qa_history(_qa_history_from_state(state), annotated_reports)
     qa_repair_feedback = _qa_repair_feedback_from_reports(
         annotated_reports,
         repair_attempts=int(state.get("repair_attempts", 0)),
@@ -894,7 +995,7 @@ async def runtime_qa_node(state: GeneratorState) -> Dict[str, Any]:
             )
 
     combined_reports = [*existing_reports, report]
-    qa_history = [*_qa_history_from_state(state), report]
+    qa_history = bounded_qa_history(_qa_history_from_state(state), [report])
     qa_repair_feedback = _qa_repair_feedback_from_reports(
         combined_reports,
         repair_attempts=attempt,
@@ -921,7 +1022,12 @@ async def repair_node(state: GeneratorState) -> Dict[str, Any]:
     cells = state.get("generated_cells", [])
     qa_reports = list(state.get("qa_reports", []))
     attempt = int(state.get("repair_attempts", 0))
-    outcome = repair_agent.repair_cells(cells, qa_reports, attempt=attempt)
+    outcome = await asyncio.to_thread(
+        repair_agent.repair_cells,
+        cells,
+        qa_reports,
+        attempt=attempt,
+    )
 
     normalized_reports = _stamp_reports(
         outcome.qa_reports,
@@ -978,7 +1084,9 @@ async def repair_node(state: GeneratorState) -> Dict[str, Any]:
     return {
         "generated_cells": regenerated_cells,
         "qa_reports": normalized_reports,
-        "qa_history": [*_qa_history_from_state(state), repair_summary],
+        "qa_history": bounded_qa_history(
+            _qa_history_from_state(state), [repair_summary]
+        ),
         "repair_attempts": attempt + 1,
         "qa_repair_feedback": qa_repair_feedback,
     }
