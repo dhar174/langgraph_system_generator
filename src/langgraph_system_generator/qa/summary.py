@@ -20,10 +20,12 @@ def serialize_qa_report(report: QAReport | dict[str, Any]) -> dict[str, Any]:
         "message": str(getattr(report, "message", "")),
         "rule_id": str(getattr(report, "rule_id", "qa_report")),
         "severity": str(getattr(report, "severity", "info")),
+        "category": str(getattr(report, "category", "general")),
         "suggestions": list(getattr(report, "suggestions", []) or []),
         "repairable": bool(getattr(report, "repairable", False)),
         "stage": getattr(report, "stage", None),
         "attempt": getattr(report, "attempt", None),
+        "evidence": dict(getattr(report, "evidence", {}) or {}),
     }
 
 
@@ -95,4 +97,77 @@ def build_qa_summary(reports: Iterable[QAReport | dict[str, Any]]) -> dict[str, 
         "artifacts_usable": counts["blocking"] == 0,
         "counts": counts,
         "findings": findings,
+        "validation_scope": _build_validation_scope(serialized_reports),
+    }
+
+
+def _build_validation_scope(reports: list[dict[str, Any]]) -> dict[str, list[str]]:
+    """Describe what QA reports prove and what remains outside their scope."""
+
+    validated: list[str] = []
+    not_validated: list[str] = []
+    notes: list[str] = []
+
+    if not reports:
+        not_validated.append("No QA reports were recorded for this run.")
+        return {
+            "validated": validated,
+            "not_validated": not_validated,
+            "notes": notes,
+        }
+
+    stages = {str(report.get("stage") or "").lower() for report in reports}
+    rule_ids = {str(report.get("rule_id") or "") for report in reports}
+
+    if "static" in stages:
+        validated.append(
+            "Static QA checked the generated notebook cells covered by qa_reports."
+        )
+
+    runtime_reports = [
+        report
+        for report in reports
+        if str(report.get("stage") or "").lower() == "runtime"
+        or str(report.get("category") or "").lower() == "runtime"
+    ]
+
+    def _execution_scope(report: dict[str, Any]) -> str | None:
+        evidence = report.get("evidence")
+        if not isinstance(evidence, dict):
+            return None
+        scope = evidence.get("execution_scope")
+        if isinstance(scope, str):
+            return scope
+        execution = evidence.get("execution")
+        if isinstance(execution, dict):
+            nested_scope = execution.get("execution_scope")
+            if isinstance(nested_scope, str):
+                return nested_scope
+        return None
+
+    smoke_only = any(
+        report.get("rule_id") == "runtime_smoke_test"
+        and _execution_scope(report) == "trusted_smoke_test"
+        for report in runtime_reports
+    )
+
+    if smoke_only:
+        validated.append(
+            "Runtime QA validated that the Python/Jupyter environment can execute a trusted smoke notebook."
+        )
+        not_validated.append(
+            "Runtime QA did not execute the full generated notebook or verify prompt-specific behavior."
+        )
+    elif runtime_reports:
+        validated.append(
+            "Runtime QA is limited to the runtime checks reported in qa_reports."
+        )
+
+    if rule_ids - {"runtime_smoke_test"}:
+        notes.append("See qa_reports for rule-level findings and evidence.")
+
+    return {
+        "validated": validated,
+        "not_validated": not_validated,
+        "notes": notes,
     }
