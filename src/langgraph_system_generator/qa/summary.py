@@ -130,10 +130,24 @@ def _build_validation_scope(reports: list[dict[str, Any]]) -> dict[str, list[str
         if str(report.get("stage") or "").lower() == "runtime"
         or str(report.get("category") or "").lower() == "runtime"
     ]
+
+    def _execution_scope(report: dict[str, Any]) -> str | None:
+        evidence = report.get("evidence")
+        if not isinstance(evidence, dict):
+            return None
+        scope = evidence.get("execution_scope")
+        if isinstance(scope, str):
+            return scope
+        execution = evidence.get("execution")
+        if isinstance(execution, dict):
+            nested_scope = execution.get("execution_scope")
+            if isinstance(nested_scope, str):
+                return nested_scope
+        return None
+
     smoke_only = any(
         report.get("rule_id") == "runtime_smoke_test"
-        and (report.get("evidence") or {}).get("execution_scope")
-        == "trusted_smoke_test"
+        and _execution_scope(report) == "trusted_smoke_test"
         for report in runtime_reports
     )
 

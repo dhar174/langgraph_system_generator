@@ -18,6 +18,7 @@ from time import perf_counter
 from typing import Any, Dict, List, Literal, TypedDict
 from urllib.parse import quote
 
+import langgraph_system_generator.constants as constants_module
 from langgraph_system_generator.generator.state import (
     ArchitectureFeedback,
     build_constraint_type_registry,
@@ -259,13 +260,39 @@ def _relative_path_or_none(path: Path, base: Path) -> str | None:
 def _resolve_path_within_base(
     path: str | os.PathLike[str], base: Path
 ) -> tuple[Path | None, str | None]:
-    base_resolved = base.resolve()
-    candidate = Path(path).resolve()
+    base_resolved = Path(os.path.realpath(os.fspath(base)))
+    raw_path = os.fspath(path)
+    if not raw_path:
+        return None, None
+    candidate_source = Path(raw_path)
+
+    if candidate_source.is_absolute():
+        candidate = Path(os.path.realpath(raw_path))
+    else:
+        normalized = os.path.normpath(raw_path)
+        if normalized in ("", "."):
+            return None, None
+        if normalized.startswith("..") or f"{os.sep}.." in normalized:
+            return None, None
+        candidate = Path(
+            os.path.realpath(os.path.join(os.fspath(base_resolved), normalized))
+        )
     try:
-        candidate.relative_to(base_resolved)
+        if (
+            os.path.commonpath([os.fspath(base_resolved), os.fspath(candidate)])
+            != os.fspath(base_resolved)
+        ):
+            return None, None
     except ValueError:
         return None, None
-    return candidate, str(candidate.relative_to(base_resolved))
+    try:
+        relative = os.path.relpath(
+            os.fspath(candidate),
+            os.fspath(base_resolved),
+        )
+    except ValueError:
+        return None, None
+    return candidate, relative
 
 
 def _artifact_path_entry(
@@ -290,20 +317,48 @@ def _artifact_path_entry(
             "size_bytes": None,
         }
 
-    exists = resolved.is_file()
+    output_dir_real = os.path.realpath(os.fspath(output_dir))
+    resolved_real = os.path.realpath(os.fspath(resolved))
+    try:
+        if os.path.commonpath([output_dir_real, resolved_real]) != output_dir_real:
+            return {
+                "name": name,
+                "format": format_name,
+                "manifest_key": manifest_key,
+                "availability": "standalone",
+                "path_type": "invalid",
+                "path": str(path),
+                "relative_path": None,
+                "exists": False,
+                "size_bytes": None,
+            }
+    except ValueError:
+        return {
+            "name": name,
+            "format": format_name,
+            "manifest_key": manifest_key,
+            "availability": "standalone",
+            "path_type": "invalid",
+            "path": str(path),
+            "relative_path": None,
+            "exists": False,
+            "size_bytes": None,
+        }
+
+    exists = os.path.isfile(resolved_real)
     entry: dict[str, Any] = {
         "name": name,
         "format": format_name,
         "manifest_key": manifest_key,
         "availability": "standalone",
         "path_type": "server_local",
-        "path": str(resolved),
+        "path": resolved_real,
         "relative_path": relative_path,
         "exists": exists,
-        "size_bytes": resolved.stat().st_size if exists else None,
+        "size_bytes": os.path.getsize(resolved_real) if exists else None,
     }
     if exists:
-        entry["api_download_path"] = f"/artifacts?path={quote(str(resolved), safe='')}"
+        entry["api_download_path"] = f"/artifacts?path={quote(resolved_real, safe='')}"
     return entry
 
 
@@ -331,27 +386,38 @@ def _build_artifact_contract(
     zip_path_value = manifest.get("zip_path")
     if zip_path_value:
         resolved_zip_path, _ = _resolve_path_within_base(zip_path_value, output_dir)
-        if resolved_zip_path and resolved_zip_path.is_file():
-            with zipfile.ZipFile(resolved_zip_path, "r") as zf:
-                for member in zf.infolist():
-                    source_entry = standalone_by_filename.get(member.filename)
-                    source_exists = bool(source_entry and source_entry.get("exists"))
-                    zip_members.append(
-                        {
-                            "name": member.filename,
-                            "availability": (
-                                "standalone_and_bundle" if source_exists else "bundle_only"
-                            ),
-                            "source_manifest_key": (
-                                source_entry.get("manifest_key") if source_entry else None
-                            ),
-                            "source_path": (
-                                source_entry.get("path") if source_entry else None
-                            ),
-                            "source_exists": source_exists,
-                            "size_bytes": member.file_size,
-                        }
-                    )
+        if resolved_zip_path:
+            output_dir_real = os.path.realpath(os.fspath(output_dir))
+            resolved_zip_real = os.path.realpath(os.fspath(resolved_zip_path))
+            if (
+                os.path.commonpath([output_dir_real, resolved_zip_real])
+                == output_dir_real
+                and os.path.isfile(resolved_zip_real)
+            ):
+                with zipfile.ZipFile(resolved_zip_real, "r") as zf:
+                    for member in zf.infolist():
+                        source_entry = standalone_by_filename.get(member.filename)
+                        source_exists = bool(source_entry and source_entry.get("exists"))
+                        zip_members.append(
+                            {
+                                "name": member.filename,
+                                "availability": (
+                                    "standalone_and_bundle"
+                                    if source_exists
+                                    else "bundle_only"
+                                ),
+                                "source_manifest_key": (
+                                    source_entry.get("manifest_key")
+                                    if source_entry
+                                    else None
+                                ),
+                                "source_path": (
+                                    source_entry.get("path") if source_entry else None
+                                ),
+                                "source_exists": source_exists,
+                                "size_bytes": member.file_size,
+                            }
+                        )
 
     return {
         "version": 1,
@@ -360,7 +426,7 @@ def _build_artifact_contract(
             "filesystem paths under output_dir. API clients should use "
             "api_download_path for downloadable standalone artifacts."
         ),
-        "output_dir": str(output_dir.resolve()),
+        "output_dir": os.path.realpath(os.fspath(output_dir)),
         "standalone_files": standalone_files,
         "zip_members": zip_members,
     }
@@ -1438,15 +1504,37 @@ async def generate_artifacts(
     )
 
     tracker = _PhaseTracker(progress_callback)
-    base_output = settings.base_output_dir.resolve()
-    target = (base_output / Path(output_dir)).resolve()
+    base_output = Path(
+        os.path.realpath(os.fspath(constants_module._compute_base_output()))
+    )
+    base_output_real = os.path.realpath(os.fspath(base_output))
+    requested_output = os.fspath(output_dir)
+    requested_path = Path(requested_output)
+    if requested_path.is_absolute():
+        target_real = os.path.realpath(requested_output)
+    else:
+        normalized_requested = os.path.normpath(requested_output)
+        if normalized_requested in ("", "."):
+            target_real = base_output_real
+        else:
+            if normalized_requested.startswith("..") or f"{os.sep}.." in normalized_requested:
+                raise ValueError(
+                    "output_dir must reside within the configured base output directory."
+                )
+            target_real = os.path.realpath(
+                os.path.join(base_output_real, normalized_requested)
+            )
     try:
-        target.relative_to(base_output)
+        if os.path.commonpath([base_output_real, target_real]) != base_output_real:
+            raise ValueError(
+                "output_dir must reside within the configured base output directory."
+            )
     except ValueError as exc:
         raise ValueError(
             "output_dir must reside within the configured base output directory."
         ) from exc
-    target.mkdir(parents=True, exist_ok=True)
+    os.makedirs(target_real, exist_ok=True)
+    target = Path(target_real)
 
     tracker.start("init", "Initializing generation...", percentage=5)
     tracker.finish(
