@@ -12,10 +12,13 @@ from datetime import datetime, timezone
 import json
 import logging
 import os
+import zipfile
 from pathlib import Path
 from time import perf_counter
 from typing import Any, Dict, List, Literal, TypedDict
+from urllib.parse import quote
 
+import langgraph_system_generator.constants as constants_module
 from langgraph_system_generator.generator.state import (
     ArchitectureFeedback,
     build_constraint_type_registry,
@@ -50,7 +53,10 @@ from langgraph_system_generator.utils.generation_options import (
     normalize_agent_type,
     resolve_architecture_type,
 )
-from langgraph_system_generator.utils.logging_utils import configure_logging, LOG_LEVEL_CHOICES
+from langgraph_system_generator.utils.logging_utils import (
+    configure_logging,
+    LOG_LEVEL_CHOICES,
+)
 from langgraph_system_generator.utils.optional_deps import (
     OptionalDependencyError,
     require_optional_module,
@@ -104,7 +110,11 @@ def _build_cli_context_pack(
             "supported_architecture_types": get_default_architecture_registry().supported_architecture_types(),
             "default_architecture": "router",
             "experimental_architectures": ["deepagents"],
-            **({"selected_architecture": architecture_type} if architecture_type else {}),
+            **(
+                {"selected_architecture": architecture_type}
+                if architecture_type
+                else {}
+            ),
         },
         notebook_contract={
             "canonical_sections": [
@@ -226,6 +236,200 @@ def _serialize(obj: Any) -> Any:
 
 def _write_json(path: Path, payload: Any) -> None:
     path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+
+
+_ARTIFACT_PATH_KEYS: tuple[tuple[str, str, str], ...] = (
+    ("plan_path", "notebook_plan", "json"),
+    ("cells_path", "generated_cells", "json"),
+    ("notebook_path", "notebook", "ipynb"),
+    ("html_path", "notebook_html", "html"),
+    ("markdown_path", "notebook_markdown", "markdown"),
+    ("docx_path", "notebook_docx", "docx"),
+    ("pdf_path", "notebook_pdf", "pdf"),
+    ("zip_path", "notebook_bundle", "zip"),
+)
+
+
+def _relative_path_or_none(path: Path, base: Path) -> str | None:
+    try:
+        return str(path.resolve().relative_to(base.resolve()))
+    except ValueError:
+        return None
+
+
+def _resolve_path_within_base(
+    path: str | os.PathLike[str], base: Path
+) -> tuple[Path | None, str | None]:
+    base_resolved = Path(os.path.realpath(os.fspath(base)))
+    raw_path = os.fspath(path)
+    if not raw_path:
+        return None, None
+    candidate_source = Path(raw_path)
+
+    if candidate_source.is_absolute():
+        candidate = Path(os.path.realpath(raw_path))
+    else:
+        normalized = os.path.normpath(raw_path)
+        if normalized in ("", "."):
+            return None, None
+        if normalized.startswith("..") or f"{os.sep}.." in normalized:
+            return None, None
+        candidate = Path(
+            os.path.realpath(os.path.join(os.fspath(base_resolved), normalized))
+        )
+    try:
+        if (
+            os.path.commonpath([os.fspath(base_resolved), os.fspath(candidate)])
+            != os.fspath(base_resolved)
+        ):
+            return None, None
+    except ValueError:
+        return None, None
+    try:
+        relative = os.path.relpath(
+            os.fspath(candidate),
+            os.fspath(base_resolved),
+        )
+    except ValueError:
+        return None, None
+    return candidate, relative
+
+
+def _artifact_path_entry(
+    *,
+    manifest_key: str,
+    name: str,
+    format_name: str,
+    path: str | os.PathLike[str],
+    output_dir: Path,
+) -> dict[str, Any]:
+    resolved, relative_path = _resolve_path_within_base(path, output_dir)
+    if resolved is None:
+        return {
+            "name": name,
+            "format": format_name,
+            "manifest_key": manifest_key,
+            "availability": "standalone",
+            "path_type": "invalid",
+            "path": str(path),
+            "relative_path": None,
+            "exists": False,
+            "size_bytes": None,
+        }
+
+    output_dir_real = os.path.realpath(os.fspath(output_dir))
+    resolved_real = os.path.realpath(os.fspath(resolved))
+    try:
+        if os.path.commonpath([output_dir_real, resolved_real]) != output_dir_real:
+            return {
+                "name": name,
+                "format": format_name,
+                "manifest_key": manifest_key,
+                "availability": "standalone",
+                "path_type": "invalid",
+                "path": str(path),
+                "relative_path": None,
+                "exists": False,
+                "size_bytes": None,
+            }
+    except ValueError:
+        return {
+            "name": name,
+            "format": format_name,
+            "manifest_key": manifest_key,
+            "availability": "standalone",
+            "path_type": "invalid",
+            "path": str(path),
+            "relative_path": None,
+            "exists": False,
+            "size_bytes": None,
+        }
+
+    exists = os.path.isfile(resolved_real)
+    entry: dict[str, Any] = {
+        "name": name,
+        "format": format_name,
+        "manifest_key": manifest_key,
+        "availability": "standalone",
+        "path_type": "server_local",
+        "path": resolved_real,
+        "relative_path": relative_path,
+        "exists": exists,
+        "size_bytes": os.path.getsize(resolved_real) if exists else None,
+    }
+    if exists:
+        entry["api_download_path"] = f"/artifacts?path={quote(resolved_real, safe='')}"
+    return entry
+
+
+def _build_artifact_contract(
+    manifest: dict[str, Any], output_dir: Path
+) -> dict[str, Any]:
+    """Describe artifact availability without relying on ambiguous path keys."""
+
+    standalone_files = [
+        _artifact_path_entry(
+            manifest_key=manifest_key,
+            name=name,
+            format_name=format_name,
+            path=manifest[manifest_key],
+            output_dir=output_dir,
+        )
+        for manifest_key, name, format_name in _ARTIFACT_PATH_KEYS
+        if manifest.get(manifest_key)
+    ]
+    standalone_by_filename = {
+        Path(entry["path"]).name: entry for entry in standalone_files
+    }
+
+    zip_members: list[dict[str, Any]] = []
+    zip_path_value = manifest.get("zip_path")
+    if zip_path_value:
+        resolved_zip_path, _ = _resolve_path_within_base(zip_path_value, output_dir)
+        if resolved_zip_path:
+            output_dir_real = os.path.realpath(os.fspath(output_dir))
+            resolved_zip_real = os.path.realpath(os.fspath(resolved_zip_path))
+            if (
+                os.path.commonpath([output_dir_real, resolved_zip_real])
+                == output_dir_real
+                and os.path.isfile(resolved_zip_real)
+            ):
+                with zipfile.ZipFile(resolved_zip_real, "r") as zf:
+                    for member in zf.infolist():
+                        source_entry = standalone_by_filename.get(member.filename)
+                        source_exists = bool(source_entry and source_entry.get("exists"))
+                        zip_members.append(
+                            {
+                                "name": member.filename,
+                                "availability": (
+                                    "standalone_and_bundle"
+                                    if source_exists
+                                    else "bundle_only"
+                                ),
+                                "source_manifest_key": (
+                                    source_entry.get("manifest_key")
+                                    if source_entry
+                                    else None
+                                ),
+                                "source_path": (
+                                    source_entry.get("path") if source_entry else None
+                                ),
+                                "source_exists": source_exists,
+                                "size_bytes": member.file_size,
+                            }
+                        )
+
+    return {
+        "version": 1,
+        "path_semantics": (
+            "Legacy *_path fields and standalone_files.path values are server-local "
+            "filesystem paths under output_dir. API clients should use "
+            "api_download_path for downloadable standalone artifacts."
+        ),
+        "output_dir": os.path.realpath(os.fspath(output_dir)),
+        "standalone_files": standalone_files,
+        "zip_members": zip_members,
+    }
 
 
 def _utc_now_iso() -> str:
@@ -416,9 +620,11 @@ def _notebook_composition_warning_entries(
         {
             "code": "notebook_composition_fallback",
             "phase": "notebook_assembly",
-            "message": advisory_warnings[0]
-            if advisory_warnings
-            else "Notebook composition used deterministic fallback content.",
+            "message": (
+                advisory_warnings[0]
+                if advisory_warnings
+                else "Notebook composition used deterministic fallback content."
+            ),
             "warnings": advisory_warnings,
             "fallback_events": fallback_events,
         }
@@ -498,7 +704,9 @@ def _qa_repair_warning_entries(
 
     feedback = feedback if isinstance(feedback, dict) else {}
     reports = reports if isinstance(reports, list) else []
-    qa_summary = qa_summary if isinstance(qa_summary, dict) else build_qa_summary(reports)
+    qa_summary = (
+        qa_summary if isinstance(qa_summary, dict) else build_qa_summary(reports)
+    )
     counts = qa_summary.get("counts") or {}
     findings = list(qa_summary.get("findings") or [])
 
@@ -671,7 +879,9 @@ class _PhaseTracker:
         status: str = "completed",
         details: Dict[str, Any] | None = None,
     ) -> Dict[str, Any]:
-        timer_start, started_at = self._active.pop(phase, (perf_counter(), _utc_now_iso()))
+        timer_start, started_at = self._active.pop(
+            phase, (perf_counter(), _utc_now_iso())
+        )
         duration_ms = int((perf_counter() - timer_start) * 1000)
         finished_at = _utc_now_iso()
         entry = {
@@ -785,7 +995,9 @@ def _build_stub_result(prompt: str, agent_type: str | None = None) -> Dict[str, 
     normalized_agent_type = normalize_agent_type(agent_type)
     if normalized_agent_type in SUPPORTED_AGENT_TYPES:
         architecture_type = normalized_agent_type
-        _, secondary_patterns = architecture_registry.normalize_patterns(architecture_type)
+        _, secondary_patterns = architecture_registry.normalize_patterns(
+            architecture_type
+        )
         justification = (
             f"{normalized_agent_type.title()} pattern selected from the requested "
             "agent_type override."
@@ -799,7 +1011,9 @@ def _build_stub_result(prompt: str, agent_type: str | None = None) -> Dict[str, 
         )
     else:
         architecture_type, justification = _infer_stub_architecture(prompt)
-        _, secondary_patterns = architecture_registry.normalize_patterns(architecture_type)
+        _, secondary_patterns = architecture_registry.normalize_patterns(
+            architecture_type
+        )
         architecture_feedback = ArchitectureFeedback(
             confidence=0.45,
             tradeoffs=[
@@ -1290,8 +1504,37 @@ async def generate_artifacts(
     )
 
     tracker = _PhaseTracker(progress_callback)
-    target = Path(output_dir)
-    target.mkdir(parents=True, exist_ok=True)
+    base_output = Path(
+        os.path.realpath(os.fspath(constants_module._compute_base_output()))
+    )
+    base_output_real = os.path.realpath(os.fspath(base_output))
+    requested_output = os.fspath(output_dir)
+    requested_path = Path(requested_output)
+    if requested_path.is_absolute():
+        target_real = os.path.realpath(requested_output)
+    else:
+        normalized_requested = os.path.normpath(requested_output)
+        if normalized_requested in ("", "."):
+            target_real = base_output_real
+        else:
+            if normalized_requested.startswith("..") or f"{os.sep}.." in normalized_requested:
+                raise ValueError(
+                    "output_dir must reside within the configured base output directory."
+                )
+            target_real = os.path.realpath(
+                os.path.join(base_output_real, normalized_requested)
+            )
+    try:
+        if os.path.commonpath([base_output_real, target_real]) != base_output_real:
+            raise ValueError(
+                "output_dir must reside within the configured base output directory."
+            )
+    except ValueError as exc:
+        raise ValueError(
+            "output_dir must reside within the configured base output directory."
+        ) from exc
+    os.makedirs(target_real, exist_ok=True)
+    target = Path(target_real)
 
     tracker.start("init", "Initializing generation...", percentage=5)
     tracker.finish(
@@ -1360,7 +1603,9 @@ async def generate_artifacts(
         "prompt": prompt,
         "mode": mode,
         "architecture_type": architecture_type,
-        "cell_count": len(serialized.get("generated_cells", []) or []),
+        "cell_count": 0,
+        "cell_count_source": "no_notebook",
+        "generated_cell_spec_count": len(serialized.get("generated_cells", []) or []),
         "plan_title": plan_title,
         "requirements_feedback": requirements_feedback,
         "architecture_feedback": architecture_feedback,
@@ -1422,11 +1667,17 @@ async def generate_artifacts(
         cell_specs = [CellSpec(**cell) for cell in cells]
         composer = NotebookComposer(colab_friendly=True)
         notebook = composer.build_notebook(cell_specs, ensure_minimum_sections=True)
+        manifest["cell_count"] = len(notebook.cells)
+        manifest["cell_count_source"] = "serialized_notebook"
+        manifest["generated_cell_spec_count"] = len(cell_specs)
         tracker.finish(
             "compose",
             "Notebook composed successfully.",
             percentage=70,
-            details={"cell_count": len(cell_specs)},
+            details={
+                "generated_cell_spec_count": len(cell_specs),
+                "serialized_notebook_cell_count": len(notebook.cells),
+            },
         )
 
         exporter = NotebookExporter()
@@ -1626,6 +1877,7 @@ async def generate_artifacts(
     tracker.start("finalize", "Finalizing artifacts...", percentage=98)
     tracker.finish("finalize", "Artifacts finalized.", percentage=100)
     manifest["phase_summary"] = list(tracker.summary)
+    manifest["artifact_contract"] = _build_artifact_contract(manifest, target)
     manifest_path = target / "manifest.json"
     _write_json(manifest_path, manifest)
 
