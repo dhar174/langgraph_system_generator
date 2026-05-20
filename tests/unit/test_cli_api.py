@@ -797,7 +797,9 @@ async def test_generate_artifacts_describes_runtime_smoke_test_scope(
                 "stage": "runtime",
                 "attempt": 0,
                 "evidence": {
-                    "execution_scope": "trusted_smoke_test",
+                    "execution": {
+                        "execution_scope": "trusted_smoke_test",
+                    },
                     "message": "runtime smoke notebook passed",
                 },
             }

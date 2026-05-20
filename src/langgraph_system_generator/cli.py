@@ -256,6 +256,18 @@ def _relative_path_or_none(path: Path, base: Path) -> str | None:
         return None
 
 
+def _resolve_path_within_base(
+    path: str | os.PathLike[str], base: Path
+) -> tuple[Path | None, str | None]:
+    base_resolved = base.resolve()
+    candidate = Path(path).resolve()
+    try:
+        candidate.relative_to(base_resolved)
+    except ValueError:
+        return None, None
+    return candidate, str(candidate.relative_to(base_resolved))
+
+
 def _artifact_path_entry(
     *,
     manifest_key: str,
@@ -264,7 +276,20 @@ def _artifact_path_entry(
     path: str | os.PathLike[str],
     output_dir: Path,
 ) -> dict[str, Any]:
-    resolved = Path(path).resolve()
+    resolved, relative_path = _resolve_path_within_base(path, output_dir)
+    if resolved is None:
+        return {
+            "name": name,
+            "format": format_name,
+            "manifest_key": manifest_key,
+            "availability": "standalone",
+            "path_type": "invalid",
+            "path": str(path),
+            "relative_path": None,
+            "exists": False,
+            "size_bytes": None,
+        }
+
     exists = resolved.is_file()
     entry: dict[str, Any] = {
         "name": name,
@@ -273,7 +298,7 @@ def _artifact_path_entry(
         "availability": "standalone",
         "path_type": "server_local",
         "path": str(resolved),
-        "relative_path": _relative_path_or_none(resolved, output_dir),
+        "relative_path": relative_path,
         "exists": exists,
         "size_bytes": resolved.stat().st_size if exists else None,
     }
@@ -304,27 +329,29 @@ def _build_artifact_contract(
 
     zip_members: list[dict[str, Any]] = []
     zip_path_value = manifest.get("zip_path")
-    if zip_path_value and Path(zip_path_value).is_file():
-        with zipfile.ZipFile(zip_path_value, "r") as zf:
-            for member in zf.infolist():
-                source_entry = standalone_by_filename.get(member.filename)
-                source_exists = bool(source_entry and source_entry.get("exists"))
-                zip_members.append(
-                    {
-                        "name": member.filename,
-                        "availability": (
-                            "standalone_and_bundle" if source_exists else "bundle_only"
-                        ),
-                        "source_manifest_key": (
-                            source_entry.get("manifest_key") if source_entry else None
-                        ),
-                        "source_path": (
-                            source_entry.get("path") if source_entry else None
-                        ),
-                        "source_exists": source_exists,
-                        "size_bytes": member.file_size,
-                    }
-                )
+    if zip_path_value:
+        resolved_zip_path, _ = _resolve_path_within_base(zip_path_value, output_dir)
+        if resolved_zip_path and resolved_zip_path.is_file():
+            with zipfile.ZipFile(resolved_zip_path, "r") as zf:
+                for member in zf.infolist():
+                    source_entry = standalone_by_filename.get(member.filename)
+                    source_exists = bool(source_entry and source_entry.get("exists"))
+                    zip_members.append(
+                        {
+                            "name": member.filename,
+                            "availability": (
+                                "standalone_and_bundle" if source_exists else "bundle_only"
+                            ),
+                            "source_manifest_key": (
+                                source_entry.get("manifest_key") if source_entry else None
+                            ),
+                            "source_path": (
+                                source_entry.get("path") if source_entry else None
+                            ),
+                            "source_exists": source_exists,
+                            "size_bytes": member.file_size,
+                        }
+                    )
 
     return {
         "version": 1,
@@ -1411,7 +1438,14 @@ async def generate_artifacts(
     )
 
     tracker = _PhaseTracker(progress_callback)
-    target = Path(output_dir)
+    base_output = settings.base_output_dir.resolve()
+    target = (base_output / Path(output_dir)).resolve()
+    try:
+        target.relative_to(base_output)
+    except ValueError as exc:
+        raise ValueError(
+            "output_dir must reside within the configured base output directory."
+        ) from exc
     target.mkdir(parents=True, exist_ok=True)
 
     tracker.start("init", "Initializing generation...", percentage=5)
