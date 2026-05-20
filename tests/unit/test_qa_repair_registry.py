@@ -136,6 +136,7 @@ def test_default_registry_contains_builtin_validators_and_repairs():
         "langgraph_topology",
         "state_reducer_semantics",
         "tool_reachability",
+        "chatbot_notebook_contract",
         "domain_architecture_alignment",
         "invocation_config",
     ]

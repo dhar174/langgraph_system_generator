@@ -127,8 +127,9 @@ Contributor guidance should now describe generated notebooks as using:
 - explicit reducer semantics for accumulated fields, especially messages
 - partial state updates from graph nodes instead of full-state overwrites
 - tool claims that match a reachable execution path: deterministic node call,
-  `ToolNode`, manual tool loop, `create_react_agent`, or intentionally
-  omitted/demo-only
+  `ToolNode`, manual tool loop, `create_agent`, or intentionally
+  omitted/demo-only; `create_react_agent` is legacy compatibility and should
+  not be the default for new generated notebooks
 - invocation examples using `graph` and config shaped like
   `{"configurable": {"thread_id": "lnf-demo-thread"}, "recursion_limit": 25}`
 - source metadata from `GenerationContextPack` so manifests, notebooks, and QA

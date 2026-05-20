@@ -1204,9 +1204,11 @@ async def test_graph_designer_prompt_requests_canonical_contract_fields(monkeypa
 
     reachability_schema = (
         '"execution_path": '
-        '"deterministic_node|tool_node|manual_loop|create_react_agent|demo_only|omitted"'
+        '"deterministic_node|tool_node|manual_loop|create_agent|create_react_agent|demo_only|omitted"'
     )
     assert reachability_schema in system_prompt
+    assert "prefer langchain.agents.create_agent" in system_prompt
+    assert "legacy compatibility" in system_prompt
     assert "omitted_demo_only" not in system_prompt
 
 
