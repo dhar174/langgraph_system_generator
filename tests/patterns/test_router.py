@@ -31,8 +31,8 @@ class TestRouterPatternCodeGeneration:
 
         assert "class WorkflowState(TypedDict, total=False):" in code
         assert "custom_field: str  # Custom data field" in code
-        assert "counter: str  # Iteration count" in code
-        assert "metadata: str  # Additional metadata" in code
+        assert "counter: int  # Iteration count" in code
+        assert "metadata: Dict[str, object]  # Additional metadata" in code
 
     def test_generate_state_code_with_empty_additional_fields(self):
         """Test state generation with empty dict for additional fields."""

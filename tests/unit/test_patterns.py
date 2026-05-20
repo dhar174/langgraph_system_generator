@@ -137,7 +137,7 @@ class TestSubagentsPattern:
         assert '"reviewer"' in code
         assert '"FINISH"' in code
         assert "with_structured_output" in code
-        assert "make_llm(" in code
+        assert "ChatOpenAI(" in code
         assert "dispatch_log" in code
         assert "MAX_ITERATIONS" in code
 
@@ -150,7 +150,7 @@ class TestSubagentsPattern:
 
         assert "def supervisor_node(state: WorkflowState)" in code
         assert "with_structured_output" not in code
-        assert "make_llm(" in code
+        assert "ChatOpenAI(" in code
         assert "dispatch_log" in code
         assert "MAX_ITERATIONS" in code
 
@@ -209,7 +209,7 @@ class TestSubagentsPattern:
             model_config=config,
         )
 
-        assert "make_llm(" in code
+        assert "ChatOpenAI(" in code
 
     def test_generate_complete_example(self):
         """Test complete example generation."""
@@ -594,8 +594,8 @@ class TestRouterPatternEdgeCases:
 
         config = ModelConfig(model="gpt-4")
         code = RouterPattern.generate_router_node_code(["search"], model_config=config)
-        assert "make_llm(" in code
-        assert "model='gpt-4'" not in code
+        assert "ChatOpenAI(" in code
+        assert "model='gpt-4'" in code
 
     def test_generate_route_node_with_complex_purpose(self):
         """Test route node generation with multi-line purpose."""
@@ -838,7 +838,7 @@ class TestPatternModelConfig:
         code = RouterPattern.generate_router_node_code(["search"], model_config=config)
 
         assert "def router_node(state: WorkflowState, window_size: int = 5)" in code
-        assert "make_llm(" in code
+        assert "ChatOpenAI(" in code
         # Router always uses temperature=0 for deterministic routing
         assert "temperature=0" in code
 
@@ -852,7 +852,7 @@ class TestPatternModelConfig:
         )
 
         assert "def search_node(state: WorkflowState)" in code
-        assert "make_llm(" in code
+        assert "ChatOpenAI(" in code
         assert "temperature=0.8" in code
 
     def test_router_pattern_uses_default_config_when_none(self):
@@ -860,7 +860,7 @@ class TestPatternModelConfig:
         code = RouterPattern.generate_router_node_code(["search"])
 
         assert "def router_node(state: WorkflowState, window_size: int = 5)" in code
-        assert "make_llm(" in code
+        assert "ChatOpenAI(" in code
         assert "temperature=" in code
 
     def test_subagents_pattern_accepts_model_config(self):
@@ -873,7 +873,7 @@ class TestPatternModelConfig:
         )
 
         assert "def researcher_node(state: WorkflowState)" in code
-        assert "make_llm(" in code
+        assert "ChatOpenAI(" in code
         assert "temperature=0.9" in code
 
     def test_subagents_supervisor_uses_temperature_zero(self):
@@ -886,7 +886,7 @@ class TestPatternModelConfig:
         )
 
         assert "def supervisor_node(state: WorkflowState)" in code
-        assert "make_llm(" in code
+        assert "ChatOpenAI(" in code
         # Supervisor should use temperature=0 for deterministic routing
         assert "temperature=0" in code
 
@@ -922,7 +922,7 @@ class TestPatternModelConfig:
         code = CritiqueLoopPattern.generate_generation_node_code(model_config=config)
 
         assert "def generate_node(state: WorkflowState)" in code
-        assert "make_llm(" in code
+        assert "ChatOpenAI(" in code
         assert "temperature=0.6" in code
 
     def test_critique_loop_critique_uses_temperature_zero(self):
@@ -933,7 +933,7 @@ class TestPatternModelConfig:
         code = CritiqueLoopPattern.generate_critique_node_code(model_config=config)
 
         assert "def critique_node(state: WorkflowState)" in code
-        assert "make_llm(" in code
+        assert "ChatOpenAI(" in code
         # Critique should use temperature=0 for consistent evaluation
         assert "temperature=0" in code
 
@@ -945,33 +945,33 @@ class TestPatternModelConfig:
         code = CritiqueLoopPattern.generate_revise_node_code(model_config=config)
 
         assert "def revise_node(state: WorkflowState)" in code
-        assert "make_llm(" in code
+        assert "ChatOpenAI(" in code
         assert "temperature=0.7" in code
 
     def test_all_patterns_preserve_gpt_5_mini_default(self):
         """Test all patterns preserve gpt-5-mini as default model."""
         # Router pattern
         router_code = RouterPattern.generate_router_node_code(["search"])
-        assert "make_llm(" in router_code
+        assert "ChatOpenAI(" in router_code
 
         # Subagents pattern
         supervisor_code = SubagentsPattern.generate_supervisor_code(["researcher"])
-        assert "make_llm(" in supervisor_code
+        assert "ChatOpenAI(" in supervisor_code
 
         subagent_code = SubagentsPattern.generate_subagent_code(
             "researcher", "Researcher"
         )
-        assert "make_llm(" in subagent_code
+        assert "ChatOpenAI(" in subagent_code
 
         # Critique loop pattern
         generate_code = CritiqueLoopPattern.generate_generation_node_code()
-        assert "make_llm(" in generate_code
+        assert "ChatOpenAI(" in generate_code
 
         critique_code = CritiqueLoopPattern.generate_critique_node_code()
-        assert "make_llm(" in critique_code
+        assert "ChatOpenAI(" in critique_code
 
         revise_code = CritiqueLoopPattern.generate_revise_node_code()
-        assert "make_llm(" in revise_code
+        assert "ChatOpenAI(" in revise_code
 
     def test_complete_examples_accept_model_config(self):
         """Test complete example generators accept model config."""
@@ -983,7 +983,7 @@ class TestPatternModelConfig:
         router_example = RouterPattern.generate_complete_example(
             ["search"], model_config=config
         )
-        assert "make_llm(" in router_example
+        assert "ChatOpenAI(" in router_example
         # Router uses temperature=0 for deterministic routing
         assert "temperature=0" in router_example
 
@@ -991,13 +991,13 @@ class TestPatternModelConfig:
         subagents_example = SubagentsPattern.generate_complete_example(
             ["researcher"], model_config=config
         )
-        assert "make_llm(" in subagents_example
+        assert "ChatOpenAI(" in subagents_example
 
         # Critique loop pattern
         critique_example = CritiqueLoopPattern.generate_complete_example(
             model_config=config
         )
-        assert "make_llm(" in critique_example
+        assert "ChatOpenAI(" in critique_example
 
     def test_patterns_support_api_base_parameter(self):
         """Test patterns include api_base in generated code when provided."""
@@ -1086,7 +1086,7 @@ def test_router_pattern_emits_typed_state_and_command_routing():
     assert "temperature=0" in router_code
 
     assert "Perform grounded retrieval." in route_code
-    assert "make_llm(" in route_code
+    assert "ChatOpenAI(" in route_code
     assert "temperature=0.4" in route_code
 
     assert "InMemorySaver" in graph_code
@@ -1119,7 +1119,7 @@ def test_subagents_pattern_emits_supervisor_command_flow_and_finish_node():
     assert "Command" in supervisor_code
     assert "with_structured_output" in supervisor_code
     assert "MAX_ITERATIONS" in supervisor_code
-    assert "make_llm(" in supervisor_code
+    assert "ChatOpenAI(" in supervisor_code
     assert "max_tokens=1200" in supervisor_code
     assert "temperature=0" in supervisor_code
 
@@ -1160,7 +1160,7 @@ def test_critique_loop_pattern_emits_structured_judging_and_finalize_path():
     assert "CritiqueAssessment" in critique_code
     assert "with_structured_output" in critique_code
     assert "previous_quality_score" in critique_code
-    assert "make_llm(" in critique_code
+    assert "ChatOpenAI(" in critique_code
     assert "max_tokens=800" in critique_code
     assert "temperature=0" in critique_code
 
