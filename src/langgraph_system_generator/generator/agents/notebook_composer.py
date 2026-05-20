@@ -1662,7 +1662,9 @@ def {safe_node_identifier}_node(state: WorkflowState) -> WorkflowState:
 
             # Generate router node
             router_code = RouterPattern.generate_router_node_code(
-                routes, model_config=model_config
+                routes,
+                model_config=model_config,
+                use_notebook_helper=True,
             )
             cells.append(
                 CellSpec(cell_type="code", content=router_code, section="nodes")
@@ -1674,6 +1676,7 @@ def {safe_node_identifier}_node(state: WorkflowState) -> WorkflowState:
                     route_name,
                     route_purpose,
                     model_config=model_config,
+                    use_notebook_helper=True,
                 )
                 cells.append(
                     CellSpec(cell_type="code", content=route_code, section="nodes")
@@ -1686,7 +1689,10 @@ def {safe_node_identifier}_node(state: WorkflowState) -> WorkflowState:
 
             # Generate supervisor node
             supervisor_code = SubagentsPattern.generate_supervisor_code(
-                subagents, subagent_descriptions, model_config=model_config
+                subagents,
+                subagent_descriptions,
+                model_config=model_config,
+                use_notebook_helper=True,
             )
             cells.append(
                 CellSpec(cell_type="code", content=supervisor_code, section="nodes")
@@ -1698,6 +1704,7 @@ def {safe_node_identifier}_node(state: WorkflowState) -> WorkflowState:
                     subagent_name,
                     subagent_purpose,
                     model_config=model_config,
+                    use_notebook_helper=True,
                 )
                 cells.append(
                     CellSpec(cell_type="code", content=subagent_code, section="nodes")
@@ -1713,6 +1720,7 @@ def {safe_node_identifier}_node(state: WorkflowState) -> WorkflowState:
             router_code = HybridPattern.generate_router_node_code(
                 direct_specialists,
                 model_config=model_config,
+                use_notebook_helper=True,
             )
             cells.append(
                 CellSpec(cell_type="code", content=router_code, section="nodes")
@@ -1726,6 +1734,7 @@ def {safe_node_identifier}_node(state: WorkflowState) -> WorkflowState:
                         f"Handle {specialist} requests directly.",
                     ),
                     model_config=model_config,
+                    use_notebook_helper=True,
                 )
                 cells.append(
                     CellSpec(cell_type="code", content=specialist_code, section="nodes")
@@ -1735,6 +1744,7 @@ def {safe_node_identifier}_node(state: WorkflowState) -> WorkflowState:
                 team_workers,
                 worker_descriptions,
                 model_config=model_config,
+                use_notebook_helper=True,
             )
             cells.append(
                 CellSpec(cell_type="code", content=supervisor_code, section="nodes")
@@ -1748,6 +1758,7 @@ def {safe_node_identifier}_node(state: WorkflowState) -> WorkflowState:
                         f"{worker} specialist for the worker team.",
                     ),
                     model_config=model_config,
+                    use_notebook_helper=True,
                 )
                 cells.append(
                     CellSpec(cell_type="code", content=worker_code, section="nodes")
@@ -1758,7 +1769,10 @@ def {safe_node_identifier}_node(state: WorkflowState) -> WorkflowState:
             worker_descriptions = dict(worker_specs)
 
             coordinator_code = AutoAgentPattern.generate_coordinator_code(
-                workers, worker_descriptions, model_config=model_config
+                workers,
+                worker_descriptions,
+                model_config=model_config,
+                use_notebook_helper=True,
             )
             cells.append(
                 CellSpec(cell_type="code", content=coordinator_code, section="nodes")
@@ -1769,6 +1783,7 @@ def {safe_node_identifier}_node(state: WorkflowState) -> WorkflowState:
                     worker_name,
                     worker_purpose,
                     model_config=model_config,
+                    use_notebook_helper=True,
                 )
                 cells.append(
                     CellSpec(cell_type="code", content=worker_code, section="nodes")
@@ -1816,21 +1831,24 @@ def {safe_node_identifier}_node(state: WorkflowState) -> WorkflowState:
         elif architecture_type == "critique_loop":
             # Generate critique loop nodes
             generate_code = CritiqueLoopPattern.generate_generation_node_code(
-                model_config=model_config
+                model_config=model_config,
+                use_notebook_helper=True,
             )
             cells.append(
                 CellSpec(cell_type="code", content=generate_code, section="nodes")
             )
 
             critique_code = CritiqueLoopPattern.generate_critique_node_code(
-                model_config=model_config
+                model_config=model_config,
+                use_notebook_helper=True,
             )
             cells.append(
                 CellSpec(cell_type="code", content=critique_code, section="nodes")
             )
 
             revise_code = CritiqueLoopPattern.generate_revise_node_code(
-                model_config=model_config
+                model_config=model_config,
+                use_notebook_helper=True,
             )
             cells.append(
                 CellSpec(cell_type="code", content=revise_code, section="nodes")

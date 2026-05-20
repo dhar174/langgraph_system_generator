@@ -15,13 +15,10 @@ def test_build_llm_init_excludes_optional_params_when_missing():
 
 
 def test_build_llm_init_includes_base_url_only_when_passed():
-    """API base stays on the generated ChatOpenAI call when provided."""
+    """API base is not embedded in reusable pattern output."""
     result = build_llm_init("gpt-5-mini", 0.3, api_base="https://example.com")
 
-    assert result == (
-        "ChatOpenAI(model='gpt-5-mini', temperature=0.3, "
-        "base_url='https://example.com')"
-    )
+    assert result == "ChatOpenAI(model='gpt-5-mini', temperature=0.3)"
     assert "max_tokens" not in result
 
 

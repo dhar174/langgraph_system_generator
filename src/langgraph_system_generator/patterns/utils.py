@@ -23,8 +23,6 @@ def build_llm_init(
         return f"make_llm({', '.join(params)})"
 
     params = [f"model={model!r}", f"temperature={temperature}"]
-    if api_base:
-        params.append(f"base_url={api_base!r}")
     if max_tokens:
         params.append(f"max_tokens={max_tokens}")
     return f"ChatOpenAI({', '.join(params)})"

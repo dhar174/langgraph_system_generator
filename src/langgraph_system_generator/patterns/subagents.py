@@ -58,6 +58,7 @@ class WorkflowState(TypedDict, total=False):
         subagent_descriptions: Optional[Dict[str, str]] = None,
         model_config: Optional[Union[ModelConfig, dict]] = None,
         use_structured_output: bool = True,
+        use_notebook_helper: bool = False,
     ) -> str:
         """Generate a supervisor node that routes with ``Command``."""
         if model_config is None:
@@ -90,6 +91,7 @@ class WorkflowState(TypedDict, total=False):
             0,
             config.api_base,
             config.max_tokens,
+            use_notebook_helper=use_notebook_helper,
         )
 
         if use_structured_output:
@@ -226,6 +228,7 @@ def supervisor_node(state: WorkflowState) -> Command[Literal[{goto_literals}]]:
         agent_description: str,
         model_config: Optional[Union[ModelConfig, dict]] = None,
         include_tools: bool = False,
+        use_notebook_helper: bool = False,
     ) -> str:
         """Generate a specialist node implementation."""
         if model_config is None:
@@ -240,6 +243,7 @@ def supervisor_node(state: WorkflowState) -> Command[Literal[{goto_literals}]]:
             config.temperature,
             config.api_base,
             config.max_tokens,
+            use_notebook_helper=use_notebook_helper,
         )
         node_name = sanitize_identifier(agent_name)
 

@@ -113,6 +113,7 @@ class WorkflowState(MessagesState):
     def generate_generation_node_code(
         task_description: str = "Generate an initial draft for the request.",
         model_config: Optional[Union[ModelConfig, dict]] = None,
+        use_notebook_helper: bool = False,
     ) -> str:
         """Generate the initial draft node."""
         if model_config is None:
@@ -127,6 +128,7 @@ class WorkflowState(MessagesState):
             config.temperature,
             config.api_base,
             config.max_tokens,
+            use_notebook_helper=use_notebook_helper,
         )
         safe_task_description = CritiqueLoopPattern._quote_string(task_description)
 
@@ -167,6 +169,7 @@ Return a polished draft that can be reviewed and revised."""
         model_config: Optional[Union[ModelConfig, dict]] = None,
         use_structured_output: bool = True,
         feedback_source: str = "automated",
+        use_notebook_helper: bool = False,
     ) -> str:
         """Generate code for critique/review node."""
         if feedback_source not in {"automated", "human"}:
@@ -270,6 +273,7 @@ Criteria Reviewed:
             0,
             config.api_base,
             config.max_tokens,
+            use_notebook_helper=use_notebook_helper,
         )
 
         if use_structured_output:
@@ -381,6 +385,7 @@ def critique_node(state: WorkflowState) -> dict:
     @staticmethod
     def generate_revise_node_code(
         model_config: Optional[Union[ModelConfig, dict]] = None,
+        use_notebook_helper: bool = False,
     ) -> str:
         """Generate the revision node."""
         if model_config is None:
@@ -395,6 +400,7 @@ def critique_node(state: WorkflowState) -> dict:
             config.temperature,
             config.api_base,
             config.max_tokens,
+            use_notebook_helper=use_notebook_helper,
         )
         return textwrap.dedent(
             f'''from langchain_core.messages import AIMessage, HumanMessage, SystemMessage

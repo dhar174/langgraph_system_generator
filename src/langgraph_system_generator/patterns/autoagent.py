@@ -22,6 +22,7 @@ class AutoAgentPattern:
         worker_descriptions: Optional[Dict[str, str]] = None,
         model_config: Optional[Union[ModelConfig, dict]] = None,
         use_structured_output: bool = True,
+        use_notebook_helper: bool = False,
     ) -> str:
         """Generate the coordinator node implementation."""
         return SubagentsPattern.generate_supervisor_code(
@@ -29,6 +30,7 @@ class AutoAgentPattern:
             subagent_descriptions=worker_descriptions,
             model_config=model_config,
             use_structured_output=use_structured_output,
+            use_notebook_helper=use_notebook_helper,
         )
 
     @staticmethod
@@ -37,6 +39,7 @@ class AutoAgentPattern:
         worker_description: str,
         model_config: Optional[Union[ModelConfig, dict]] = None,
         include_tools: bool = False,
+        use_notebook_helper: bool = False,
     ) -> str:
         """Generate a worker node implementation."""
         return SubagentsPattern.generate_subagent_code(
@@ -44,6 +47,7 @@ class AutoAgentPattern:
             agent_description=worker_description,
             model_config=model_config,
             include_tools=include_tools,
+            use_notebook_helper=use_notebook_helper,
         )
 
     @staticmethod
