@@ -2230,7 +2230,7 @@ def _chat_input(user_text: str, character_gender: str | None = None) -> dict:
     if character_gender:
         payload["selected_gender"] = character_gender
         payload["gender_pending"] = False
-        payload["persona_profile"] = f"{{character_gender}} 18th century commoner"
+        payload["persona_profile"] = f"A helpful {{character_gender}} assistant"
     return payload
 
 

@@ -12,12 +12,22 @@ def build_llm_init(
     temperature: float,
     api_base: Optional[str] = None,
     max_tokens: Optional[int] = None,
+    *,
+    use_notebook_helper: bool = False,
 ) -> str:
-    """Build a ChatOpenAI initialization expression."""
-    params = [f"temperature={temperature}"]
+    """Build an LLM initialization expression for pattern or notebook contexts."""
+    if use_notebook_helper:
+        params = [f"temperature={temperature}"]
+        if max_tokens:
+            params.append(f"max_tokens={max_tokens}")
+        return f"make_llm({', '.join(params)})"
+
+    params = [f"model={model!r}", f"temperature={temperature}"]
+    if api_base:
+        params.append(f"base_url={api_base!r}")
     if max_tokens:
         params.append(f"max_tokens={max_tokens}")
-    return f"make_llm({', '.join(params)})"
+    return f"ChatOpenAI({', '.join(params)})"
 
 
 def sanitize_identifier(value: str) -> str:
