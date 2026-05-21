@@ -83,7 +83,7 @@ class TrackingLLM(DummyLLM):
             )
         elif node_match:
             label = node_match.group(1).strip()
-            safe_identifier = composer_module.NotebookComposer._safe_identifier(
+            safe_identifier = composer_module.NotebookComposer._safe_node_identifier(
                 label, "node"
             )
             content = (
@@ -1431,12 +1431,13 @@ async def test_compose_notebook_hybrid_sparse_nodes_keep_defaults_aligned(
     )
 
     assert "def specialist_1_node" in node_source
-    assert "def researcher_node" in node_source
-    assert "def reviewer_node" in node_source
+    assert "def worker_node" in node_source
+    assert "def researcher_node" not in node_source
+    assert "def reviewer_node" not in node_source
     assert 'workflow.add_node("specialist_1", specialist_1_node)' in graph_code
-    assert 'workflow.add_node("researcher", researcher_node)' in graph_code
-    assert 'workflow.add_node("reviewer", reviewer_node)' in graph_code
+    assert 'workflow.add_node("worker", worker_node)' in graph_code
     assert 'workflow.add_edge("specialist_1", "finish")' in graph_code
+    assert 'workflow.add_edge("worker", "supervisor")' in graph_code
 
 
 @pytest.mark.asyncio
@@ -2022,7 +2023,7 @@ def test_node_fallback_sanitizes_identifier_and_compiles(
         {},
     )
 
-    assert "def _9_node_name_raise_SystemExit_node" in fallback_code
+    assert "def _9_node_name_raise_systemexit_node" in fallback_code
     assert '9 node name";\nraise SystemExit' not in fallback_code
     assert '\\"\\"\\"' in fallback_code
     compile(fallback_code, "<node_fallback>", "exec")
@@ -2117,7 +2118,7 @@ def test_graph_fallback_lowers_command_routes_to_conditional_edges(
 
     assert "_command_route_from_planner_0_path_map" in graph_code
     assert '"reviewer": "reviewer"' in graph_code
-    assert '"__end__": END' in graph_code
+    assert '"END": END' in graph_code
     assert 'state.get("next_agent")' in graph_code
     assert (
         'workflow.add_conditional_edges("planner", _command_route_from_planner_0, '
@@ -2161,7 +2162,7 @@ async def test_compose_notebook_renders_canonical_hybrid_graph_contract(
         "command_routes": [
             {
                 "source": "revision_specialist",
-                "destinations": ["historical_verifier"],
+                "destinations": ["historical_verifier", "END"],
                 "update_fields": ["route", "revision_notes"],
             }
         ],
@@ -2210,10 +2211,15 @@ async def test_compose_notebook_renders_canonical_hybrid_graph_contract(
     )
     assert '"revise": "revision_specialist"' in graph_code
     assert '"approved": "finish"' in graph_code
+    assert '"END": END' in graph_code
+    assert '"__end__": END' not in graph_code
     assert 'workflow.add_conditional_edges("revision_specialist"' in graph_code
     assert 'workflow.add_edge("persona_specialist", "finish")' not in graph_code
     assert "researcher" not in graph_code
     assert "reviewer" not in graph_code
+    assert "def finish_node" in graph_code
+    assert 'state.get("task_results", {})' in graph_code
+    assert 'state.get("results", {})' in graph_code
     compile(graph_code, "<canonical_graph_contract>", "exec")
     metadata_schema = graph_cells[-1].metadata["canonical_graph_schema"]
     assert metadata_schema["command_routes"] == canonical_schema["command_routes"]
@@ -2221,6 +2227,76 @@ async def test_compose_notebook_renders_canonical_hybrid_graph_contract(
         {"from": "router", "to": "persona_specialist"},
         {"from": "persona_specialist", "to": "historical_verifier"},
     ]
+
+
+@pytest.mark.asyncio
+async def test_compose_notebook_custom_canonical_graph_uses_lowercase_refs_and_single_finish(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """Custom canonical graph cells should not add a second structural finish node."""
+
+    TrackingLLM.reset()
+    monkeypatch.setattr(composer_module, "ChatOpenAI", TrackingLLM)
+    composer = composer_module.NotebookComposer()
+    canonical_schema = {
+        "architecture_type": "custom",
+        "nodes": [
+            {"name": "Search Agent", "purpose": "Search documents"},
+            {"name": "finish", "purpose": "Finalize the answer"},
+        ],
+        "edges": [{"from": "Search Agent", "to": "finish"}],
+        "command_routes": [
+            {
+                "source": "Search Agent",
+                "destinations": ["finish", "END"],
+                "update_fields": ["next_agent"],
+            }
+        ],
+        "entry_point": "Search Agent",
+        "terminal_nodes": ["finish"],
+        "compiled_graph_variable": "graph",
+        "checkpointing": True,
+    }
+
+    composition = await composer.compose_notebook(
+        notebook_plan=NotebookPlan(
+            title="Custom Canonical Graph",
+            sections=["Setup", "Workflow", "Execution"],
+            patterns_used=["custom"],
+            architecture_type="custom",
+        ),
+        workflow_design={
+            "architecture_type": "custom",
+            "state_schema": {"messages": "Conversation state"},
+            "nodes": canonical_schema["nodes"],
+            "graph_exports": {
+                "mermaid": "flowchart TD",
+                "schema": canonical_schema,
+            },
+        },
+        tools=[],
+        architecture={
+            "architecture_type": "custom",
+            "justification": "Custom canonical topology test.",
+        },
+    )
+
+    code = "\n\n".join(
+        cell.content for cell in composition.cells if cell.cell_type == "code"
+    )
+    graph_code = next(
+        cell.content
+        for cell in composition.cells
+        if cell.section == "graph" and cell.cell_type == "code"
+    )
+
+    assert code.count("def finish_node") == 1
+    assert 'workflow.add_node("Search Agent", search_agent_node)' in graph_code
+    assert "def _route_from_search_agent_0" in graph_code
+    assert '"END": END' in graph_code
+    assert "Search_Agent_node" not in graph_code
+    assert "_route_from_Search_Agent" not in graph_code
+    compile(graph_code, "<custom_canonical_graph_contract>", "exec")
 
 
 def test_split_hybrid_nodes_uses_role_metadata_for_worker_membership():

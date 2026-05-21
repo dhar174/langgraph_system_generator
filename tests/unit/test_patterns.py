@@ -287,6 +287,13 @@ class TestHybridPattern:
         assert 'workflow.add_node("finish", finish_node)' in code
         assert 'workflow.add_edge("finish", END)' in code
         assert 'workflow.add_node("specialist_1", specialist_1_node)' in code
+        assert 'workflow.add_node("worker", worker_node)' in code
+        assert 'workflow.add_edge("worker", "supervisor")' in code
+        supervisor_code = HybridPattern.generate_supervisor_code([])
+        assert '"worker": "worker"' in supervisor_code
+        assert 'Command[Literal["worker", "finish"]]' in supervisor_code
+        assert "researcher" not in code
+        assert "reviewer" not in code
 
 
 class TestDeepAgentsPattern:

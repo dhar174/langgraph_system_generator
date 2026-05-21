@@ -176,6 +176,12 @@ class NotebookComposer:
                 slug = "_identifier"
         return slug
 
+    @classmethod
+    def _safe_node_identifier(cls, value: Any, fallback: str) -> str:
+        """Return the lowercase function identifier used for generated graph nodes."""
+
+        return cls._safe_identifier(value, fallback).lower()
+
     def _state_schema_extensions(
         self,
         architecture_type: str,
@@ -1212,7 +1218,7 @@ Generate the complete Python function implementation."""
         """
         node_name = node.get("name", "unknown")
         node_purpose = node.get("purpose", "")
-        safe_node_identifier = self._safe_identifier(node_name, "unknown")
+        safe_node_identifier = self._safe_node_identifier(node_name, "unknown")
         state_schema = workflow_design.get("state_schema", {})
         function_signature = (
             f"def {safe_node_identifier}_node(state: WorkflowState) -> WorkflowState"
@@ -1314,7 +1320,7 @@ Generate the complete Python function implementation."""
         node_name = node.get("name", "unknown")
         node_purpose = node.get("purpose", "")
         architecture_type = workflow_design.get("architecture_type", "")
-        safe_node_identifier = self._safe_identifier(node_name, "unknown")
+        safe_node_identifier = self._safe_node_identifier(node_name, "unknown")
         safe_node_name = self._normalize_inline_text(node_name, "unknown node")
         safe_node_purpose = self._normalize_docstring_text(
             node_purpose,
@@ -1602,13 +1608,8 @@ def {safe_node_identifier}_node(state: WorkflowState) -> WorkflowState:
         team_workers = [
             worker for worker in team_workers if worker not in direct_specialists
         ]
-        if len(team_workers) < 2:
-            fallback_workers = [
-                name
-                for name in ["researcher", "reviewer"]
-                if name not in direct_specialists and name not in team_workers
-            ]
-            team_workers.extend(fallback_workers[: 2 - len(team_workers)])
+        if not team_workers and "worker" not in direct_specialists:
+            team_workers.append("worker")
 
         direct_descriptions = {
             str(node.get("name")): str(node.get("purpose", ""))
@@ -2058,28 +2059,25 @@ def {safe_node_identifier}_node(state: WorkflowState) -> WorkflowState:
 
         def _branch_key(value: Any) -> str:
             normalized = str(value or "").strip()
-            return "__end__" if normalized in {"END", "__end__"} else normalized
+            return "END" if normalized in {"END", "__end__"} else normalized
 
         def _branch_target(value: Any) -> str:
             normalized = str(value or "").strip()
             return "END" if normalized in {"END", "__end__"} else json.dumps(normalized)
 
         node_additions = "\n".join(
-            f"workflow.add_node({json.dumps(node_name)}, {self._safe_identifier(node_name, 'node')}_node)"
+            f"workflow.add_node({json.dumps(node_name)}, {self._safe_node_identifier(node_name, 'node')}_node)"
             for node_name in node_names
         )
-        structural_node_definitions = ""
-        if "finish" in node_names:
-            structural_node_definitions = '''
-
-def finish_node(state: WorkflowState) -> dict:
-    """Finalize canonical graph output without changing unrelated state."""
-    if state.get("final_output"):
-        return {}
-    messages = state.get("messages", [])
-    last_message = messages[-1].content if messages else ""
-    return {"final_output": last_message}
-'''
+        architecture_type = str(
+            schema.get("architecture_type")
+            or workflow_design.get("architecture_type")
+            or ""
+        ).strip()
+        structural_node_definitions = self._canonical_finish_node_definition(
+            architecture_type,
+            node_names,
+        )
 
         direct_edge_pairs: list[tuple[str, str]] = []
         for edge in schema.get("edges", []) or []:
@@ -2176,7 +2174,7 @@ def finish_node(state: WorkflowState) -> dict:
             ]
             if not path_entries:
                 continue
-            route_name = f"_route_from_{self._safe_identifier(source, 'node')}_{index}"
+            route_name = f"_route_from_{self._safe_node_identifier(source, 'node')}_{index}"
             path_map = "{" + ", ".join(path_entries) + "}"
             field_names = spec["field_names"]
             field_tuple = ", ".join(json.dumps(field) for field in field_names)
@@ -2247,6 +2245,52 @@ workflow = StateGraph(WorkflowState)
 # Compile graph with the canonical variable name.
 {compiled_graph_variable} = workflow.compile(checkpointer={checkpointer_name})"""
 
+    @staticmethod
+    def _canonical_finish_node_definition(
+        architecture_type: str,
+        node_names: list[str],
+    ) -> str:
+        """Return architecture-owned finish node logic for canonical graph cells."""
+
+        if "finish" not in node_names:
+            return ""
+        if architecture_type in {"subagents", "autoagent"}:
+            return '''
+
+def finish_node(state: WorkflowState) -> dict:
+    """Synthesize a final answer from the accumulated specialist outputs."""
+    results = state.get("task_results", {})
+    if results:
+        final_output = "\\n\\n".join(
+            f"## {agent}\\n{output}" for agent, output in results.items()
+        )
+    else:
+        final_output = "No specialist results were produced."
+    return {
+        "final_output": final_output,
+        "messages": [],
+    }
+'''
+        if architecture_type == "hybrid":
+            return '''
+
+def finish_node(state: WorkflowState) -> dict:
+    """Merge direct specialist and worker-team outputs into a final answer."""
+    direct_results = state.get("results", {})
+    team_results = state.get("task_results", {})
+    sections = []
+    for agent, output in direct_results.items():
+        sections.append(f"## {agent}\\n{output}")
+    for agent, output in team_results.items():
+        sections.append(f"## {agent}\\n{output}")
+    final_output = "\\n\\n".join(sections) if sections else "No workflow results were produced."
+    return {
+        "final_output": final_output,
+        "messages": [],
+    }
+'''
+        return ""
+
     def _generate_graph_fallback(self, workflow_design: Dict[str, Any]) -> str:
         """Generate fallback graph construction code.
 
@@ -2283,7 +2327,7 @@ workflow = StateGraph(WorkflowState)
         node_bindings = [
             (
                 json.dumps(str(node.get("name", "unknown"))),
-                self._safe_identifier(node.get("name", "unknown"), "unknown"),
+                self._safe_node_identifier(node.get("name", "unknown"), "unknown"),
             )
             for node in nodes
         ]
@@ -2308,21 +2352,16 @@ workflow = StateGraph(WorkflowState)
             conditional_blocks = []
             for ce in conditional_edges:
                 source = ce.get("from", "node")
-                # Produce a valid Python identifier: replace every non-alphanumeric
-                # character with '_' and ensure the result doesn't start with a digit.
-                source_slug = re.sub(r"[^a-zA-Z0-9]", "_", source)
-                if source_slug and source_slug[0].isdigit():
-                    source_slug = "_" + source_slug
-                source_slug = source_slug or "node"
+                source_slug = self._safe_node_identifier(source, "node")
                 function_name = f"_route_from_{source_slug}"
                 # Serialize source safely for use inside a string literal in the
                 # generated code (handles quotes, backslashes, newlines, etc.).
                 safe_source = json.dumps(source)
                 conditional_blocks.append(
                     f"""def {function_name}(state: WorkflowState) -> str:
-    return "__end__"
+    return "END"
 
-workflow.add_conditional_edges({safe_source}, {function_name}, {{"__end__": END}})"""
+workflow.add_conditional_edges({safe_source}, {function_name}, {{"END": END}})"""
                 )
             conditional_code = "\n\n# Add conditional edges\n" + "\n\n".join(
                 conditional_blocks
@@ -2343,8 +2382,8 @@ workflow.add_conditional_edges({safe_source}, {function_name}, {{"__end__": END}
                 route_keys: list[str] = []
                 for destination in destinations:
                     if destination in {"END", "__end__"}:
-                        route_key = "__end__"
-                        path_items.append('"__end__": END')
+                        route_key = "END"
+                        path_items.append('"END": END')
                     else:
                         route_key = destination
                         path_items.append(
@@ -2355,7 +2394,7 @@ workflow.add_conditional_edges({safe_source}, {function_name}, {{"__end__": END}
                     continue
                 path_map_literal = "{" + ", ".join(path_items) + "}"
                 default_route = json.dumps(route_keys[0])
-                source_slug = self._safe_identifier(source, "node")
+                source_slug = self._safe_node_identifier(source, "node")
                 function_name = f"_command_route_from_{source_slug}_{index}"
                 path_map_name = f"{function_name}_path_map"
                 field_checks = "\n".join(
