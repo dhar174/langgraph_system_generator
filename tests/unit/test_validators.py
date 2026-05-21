@@ -785,6 +785,42 @@ workflow.add_node("router", router_node)
     assert "copy_state" not in report.evidence["writer_map"].get("route", [])
 
 
+def test_state_reducer_semantics_rule_flags_declared_memory_field_without_writer(
+    tmp_notebook_path: Path,
+):
+    notebook = new_notebook()
+    notebook.cells.append(
+        new_code_cell(
+            """from langgraph.graph import MessagesState, StateGraph
+
+class WorkflowState(MessagesState):
+    memory_summary: str
+    persona_profile: dict
+    final_response: str
+
+def persona_node(state: WorkflowState) -> dict:
+    updates = {}
+    updates["persona_profile"] = {"name": "demo"}
+    updates["final_response"] = "Good day."
+    return updates
+
+workflow = StateGraph(WorkflowState)
+workflow.add_node("persona", persona_node)
+""",
+            metadata={"section": "state"},
+        )
+    )
+    _write_notebook(tmp_notebook_path, notebook)
+
+    reports = NotebookValidator().validate_all(tmp_notebook_path)
+    report = _report_by_name(reports, "State Reducer Semantics")
+    issue_codes = {issue["code"] for issue in report.evidence["issues"]}
+
+    assert report.passed is False
+    assert "declared_memory_field_without_writer" in issue_codes
+    assert report.evidence["writer_map"]["persona_profile"] == ["persona_node"]
+
+
 def test_tool_reachability_rule_flags_unbound_placeholder_tools(
     tmp_notebook_path: Path,
 ):
@@ -972,6 +1008,74 @@ workflow.add_node("specialist_1", specialist_1_node)
     assert report.evidence["generic_nodes"]
 
 
+def test_domain_architecture_alignment_rule_prioritizes_chatbot_domain_cues(
+    tmp_notebook_path: Path,
+):
+    notebook = new_notebook()
+    notebook.cells.extend(
+        [
+            new_markdown_cell(
+                "18th century chatbot persona workflow with schema validation notes."
+            ),
+            new_code_cell(
+                """from langgraph.graph import StateGraph
+
+def persona_node(state):
+    return {"final_response": "Good day."}
+
+workflow = StateGraph(dict)
+workflow.add_node("persona", persona_node)
+""",
+                metadata={"section": "graph"},
+            ),
+        ]
+    )
+    _write_notebook(tmp_notebook_path, notebook)
+
+    report = DomainArchitectureAlignmentRule().validate(
+        NotebookValidator()._context_from_path(tmp_notebook_path)
+    )
+
+    assert report is not None
+    assert report.passed is True
+    assert {"chatbot", "historical", "persona"}.issubset(
+        set(report.evidence["matched_domains"])
+    )
+    assert "data" not in report.evidence["matched_domains"]
+
+
+def test_domain_architecture_alignment_rule_rejects_generic_chatbot_workers(
+    tmp_notebook_path: Path,
+):
+    notebook = new_notebook()
+    notebook.cells.extend(
+        [
+            new_markdown_cell("18th century chatbot persona with memory."),
+            new_code_cell(
+                """from langgraph.graph import StateGraph
+
+def data_processor_node(state):
+    return {"final_response": "processed"}
+
+workflow = StateGraph(dict)
+workflow.add_node("data_processor", data_processor_node)
+""",
+                metadata={"section": "graph"},
+            ),
+        ]
+    )
+    _write_notebook(tmp_notebook_path, notebook)
+
+    report = DomainArchitectureAlignmentRule().validate(
+        NotebookValidator()._context_from_path(tmp_notebook_path)
+    )
+
+    assert report is not None
+    assert report.passed is False
+    assert "chatbot" in report.evidence["matched_domains"]
+    assert report.evidence["generic_nodes"][0]["identifier"] == "data_processor"
+
+
 def test_tool_reachability_rule_requires_executor_for_bound_tools(
     tmp_notebook_path: Path,
 ):
@@ -1039,6 +1143,7 @@ def lookup_context(query: str) -> str:
 
 tools = [lookup_context]
 tool_node = ToolNode(tools, handle_tool_errors=True)
+workflow.add_node("tools", tool_node)
 """,
             metadata={"section": "tools"},
         )
@@ -1049,6 +1154,36 @@ tool_node = ToolNode(tools, handle_tool_errors=True)
     report = _report_by_name(reports, "Tool Reachability")
 
     assert report.passed is True
+
+
+def test_tool_reachability_rule_rejects_unwired_tool_node_executor(
+    tmp_notebook_path: Path,
+):
+    notebook = new_notebook()
+    notebook.cells.append(
+        new_code_cell(
+            """from langchain_core.tools import tool
+from langgraph.prebuilt import ToolNode
+
+@tool
+def lookup_context(query: str) -> str:
+    \"\"\"Lookup context.\"\"\"
+    return query
+
+tools = [lookup_context]
+tool_node = ToolNode(tools, handle_tool_errors=True)
+""",
+            metadata={"section": "tools"},
+        )
+    )
+    _write_notebook(tmp_notebook_path, notebook)
+
+    reports = NotebookValidator().validate_all(tmp_notebook_path)
+    report = _report_by_name(reports, "Tool Reachability")
+    issue_codes = {issue["code"] for issue in report.evidence["advisories"]}
+
+    assert report.passed is False
+    assert "unwired_tool_node_executor" in issue_codes
 
 
 def test_tool_reachability_rule_accepts_create_agent_executor(
@@ -1162,15 +1297,17 @@ THREAD_ID = "lnf-demo-thread"
 CHARACTER_GENDER = None
 MAX_ITERATIONS = 3
 SHOW_UPDATES = False
+RUN_INTERACTIVE_LOOP = False
 
 workflow = StateGraph(dict)
-memory = InMemorySaver()
-graph = workflow.compile(checkpointer=memory)
+checkpointer = InMemorySaver()
+graph = workflow.compile(checkpointer=checkpointer)
 
 needs_revision = False
 historical_risk_notes = ""
 realism_notes = ""
 revision_instructions = ""
+revision_count = 0
 
 def select_character_gender(value: str | None = CHARACTER_GENDER) -> str:
     return value or "female"
@@ -1193,6 +1330,9 @@ def run_chat_loop() -> None:
         if user_input.lower() in {"quit", "exit", "q"}:
             break
         chat_once(user_input)
+
+if RUN_INTERACTIVE_LOOP:
+    run_chat_loop()
 """,
                 metadata={"section": "execution"},
             ),
@@ -1226,15 +1366,17 @@ THREAD_ID = "lnf-demo-thread"
 CHARACTER_GENDER = None
 MAX_ITERATIONS = 3
 SHOW_UPDATES = False
+RUN_INTERACTIVE_LOOP = False
 
 workflow = StateGraph(dict)
-memory = InMemorySaver()
-graph = workflow.compile(checkpointer=memory)
+checkpointer = InMemorySaver()
+graph = workflow.compile(checkpointer=checkpointer)
 
 needs_revision = False
 historical_risk_notes = ""
 realism_notes = ""
 revision_instructions = ""
+revision_count = 0
 
 def select_character_gender(value: str | None = CHARACTER_GENDER) -> str:
     return value or "female"
@@ -1263,6 +1405,9 @@ def run_chat_loop() -> None:
         if user_input.lower() in {"quit", "exit", "q"}:
             break
         chat_once(user_input)
+
+if RUN_INTERACTIVE_LOOP:
+    run_chat_loop()
 """,
                 metadata={"section": "execution"},
             ),
@@ -1276,6 +1421,152 @@ def run_chat_loop() -> None:
 
     assert report is not None
     assert report.passed is True
+
+
+def test_chatbot_contract_rule_flags_blocking_default_interactive_loop(
+    tmp_notebook_path: Path,
+):
+    notebook = new_notebook()
+    notebook.cells.extend(
+        [
+            new_markdown_cell(
+                "Interactive chatbot character with male/female persona, memory, verification, and revision."
+            ),
+            new_code_cell(
+                """from langchain_core.messages import HumanMessage
+from langgraph.graph import StateGraph
+from langgraph.checkpoint.memory import InMemorySaver
+
+THREAD_ID = "lnf-demo-thread"
+CHARACTER_GENDER = None
+MAX_ITERATIONS = 3
+SHOW_UPDATES = False
+
+workflow = StateGraph(dict)
+checkpointer = InMemorySaver()
+graph = workflow.compile(checkpointer=checkpointer)
+
+needs_revision = False
+revision_instructions = ""
+revision_count = 0
+
+def select_character_gender(value: str | None = CHARACTER_GENDER) -> str:
+    return value or "female"
+
+def chat_once(user_text: str, *, thread_id: str = THREAD_ID) -> dict:
+    config = {"configurable": {"thread_id": thread_id}, "recursion_limit": 25}
+    latest_state = {}
+    for state in graph.stream(
+        {"messages": [HumanMessage(content=user_text)]},
+        config,
+        stream_mode="values",
+    ):
+        latest_state = state
+    final_state = graph.get_state(config).values
+    return final_state or latest_state
+
+def run_chat_loop() -> None:
+    select_character_gender()
+    while True:
+        user_input = input("Enter next message (or type 'quit' to exit): ")
+        if user_input.lower() in {"quit", "exit", "q"}:
+            break
+        chat_once(user_input)
+
+run_chat_loop()
+""",
+                metadata={"section": "execution"},
+            ),
+        ]
+    )
+    _write_notebook(tmp_notebook_path, notebook)
+
+    report = ChatbotNotebookContractRule().validate(
+        NotebookValidator()._context_from_path(tmp_notebook_path)
+    )
+    issue_codes = {issue["code"] for issue in report.evidence["issues"]}
+
+    assert report is not None
+    assert report.passed is False
+    assert "blocking_default_chat_loop" in issue_codes
+
+
+def test_chatbot_contract_rule_flags_terminal_verifier_reviser_prose_nodes(
+    tmp_notebook_path: Path,
+):
+    notebook = new_notebook()
+    notebook.cells.extend(
+        [
+            new_markdown_cell(
+                "Interactive chatbot with historical verifier and reviser."
+            ),
+            new_code_cell(
+                """from langchain_core.messages import HumanMessage
+from langgraph.graph import END, StateGraph
+from langgraph.checkpoint.memory import InMemorySaver
+
+THREAD_ID = "lnf-demo-thread"
+CHARACTER_GENDER = None
+MAX_ITERATIONS = 3
+RUN_INTERACTIVE_LOOP = False
+needs_revision = False
+historical_risk_notes = ""
+realism_notes = ""
+revision_instructions = ""
+revision_count = 0
+
+def select_character_gender(value: str | None = CHARACTER_GENDER) -> str:
+    return value or "female"
+
+def historical_verifier_node(state):
+    return {"needs_revision": False, "revision_instructions": ""}
+
+def revision_specialist_node(state):
+    return {"revision_count": state.get("revision_count", 0) + 1}
+
+def chat_once(user_text: str, *, thread_id: str = THREAD_ID) -> dict:
+    config = {"configurable": {"thread_id": thread_id}, "recursion_limit": 25}
+    latest_state = {}
+    for state in graph.stream(
+        {"messages": [HumanMessage(content=user_text)]},
+        config,
+        stream_mode="values",
+    ):
+        latest_state = state
+    final_state = graph.get_state(config).values
+    return final_state or latest_state
+
+def run_chat_loop() -> None:
+    while True:
+        user_input = input("Enter next message (or type 'quit' to exit): ")
+        if user_input.lower() in {"quit", "exit", "q"}:
+            break
+        chat_once(user_input)
+
+workflow = StateGraph(dict)
+workflow.add_node("historical_verifier", historical_verifier_node)
+workflow.add_node("revision_specialist", revision_specialist_node)
+workflow.add_edge("historical_verifier", END)
+checkpointer = InMemorySaver()
+graph = workflow.compile(checkpointer=checkpointer)
+
+if RUN_INTERACTIVE_LOOP:
+    run_chat_loop()
+""",
+                metadata={"section": "graph"},
+            ),
+        ]
+    )
+    _write_notebook(tmp_notebook_path, notebook)
+
+    report = ChatbotNotebookContractRule().validate(
+        NotebookValidator()._context_from_path(tmp_notebook_path)
+    )
+    issue_codes = {issue["code"] for issue in report.evidence["issues"]}
+
+    assert report is not None
+    assert report.passed is False
+    assert "missing_executable_verifier_loop" in issue_codes
 
 
 def test_invocation_config_rule_requires_thread_id_and_recursion_limit(

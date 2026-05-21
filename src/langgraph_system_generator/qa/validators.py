@@ -1081,9 +1081,7 @@ class LangGraphTopologyRule(QAValidationRule):
             if not source or not target:
                 continue
             if not edge.get("conditional"):
-                edge_pairs[(source, target)] = (
-                    edge_pairs.get((source, target), 0) + 1
-                )
+                edge_pairs[(source, target)] = edge_pairs.get((source, target), 0) + 1
             if (
                 source == target
                 and not _is_graph_boundary_symbol(target)
@@ -1592,6 +1590,20 @@ class StateReducerSemanticsRule(QAValidationRule):
                         for key in _dict_string_keys(keyword.value):
                             writer_map.setdefault(key, set()).add(function_name)
 
+        def _record_update_keys(function_name: str, keys: set[str]) -> None:
+            for key in keys:
+                writer_map.setdefault(key, set()).add(function_name)
+
+        def _subscript_string_key(target: ast.AST) -> tuple[str, str] | None:
+            if not isinstance(target, ast.Subscript) or not isinstance(
+                target.value, ast.Name
+            ):
+                return None
+            key = _literal_string(target.slice)
+            if not key:
+                return None
+            return target.value.id, key
+
         def _registered_node_function_names() -> set[str]:
             node_functions: set[str] = set()
             for call in ast.walk(tree):
@@ -1618,7 +1630,27 @@ class StateReducerSemanticsRule(QAValidationRule):
                 continue
             has_state_arg = bool(node.args.args and node.args.args[0].arg == "state")
             is_registered_node = node.name in registered_node_functions
+            local_update_keys: dict[str, set[str]] = {}
             for statement in ast.walk(node):
+                if isinstance(statement, ast.Assign):
+                    for target in statement.targets:
+                        if isinstance(target, ast.Name) and isinstance(
+                            statement.value, (ast.Dict, ast.Call)
+                        ):
+                            local_update_keys.setdefault(target.id, set())
+                        subscript_key = _subscript_string_key(target)
+                        if subscript_key:
+                            variable_name, key = subscript_key
+                            local_update_keys.setdefault(variable_name, set()).add(key)
+                elif isinstance(statement, ast.AnnAssign):
+                    if isinstance(statement.target, ast.Name) and isinstance(
+                        statement.value, (ast.Dict, ast.Call)
+                    ):
+                        local_update_keys.setdefault(statement.target.id, set())
+                    subscript_key = _subscript_string_key(statement.target)
+                    if subscript_key:
+                        variable_name, key = subscript_key
+                        local_update_keys.setdefault(variable_name, set()).add(key)
                 if isinstance(statement, ast.Return):
                     if (
                         is_registered_node
@@ -1640,6 +1672,22 @@ class StateReducerSemanticsRule(QAValidationRule):
                         )
                     if not registered_node_functions or is_registered_node:
                         _record_return_keys(node.name, statement.value)
+                        if isinstance(statement.value, ast.Name):
+                            _record_update_keys(
+                                node.name,
+                                local_update_keys.get(statement.value.id, set()),
+                            )
+                        if isinstance(statement.value, ast.Call) and _call_name(
+                            statement.value.func
+                        ).endswith("Command"):
+                            for keyword in statement.value.keywords:
+                                if keyword.arg == "update" and isinstance(
+                                    keyword.value, ast.Name
+                                ):
+                                    _record_update_keys(
+                                        node.name,
+                                        local_update_keys.get(keyword.value.id, set()),
+                                    )
 
         for field_name, writers in sorted(writer_map.items()):
             field = state_fields.get(field_name)
@@ -1662,6 +1710,32 @@ class StateReducerSemanticsRule(QAValidationRule):
                         "writers": sorted(writers),
                     }
                 )
+
+        memory_field_markers = {
+            "memory",
+            "memories",
+            "persona",
+            "profile",
+            "conversation_history",
+            "turn_count",
+        }
+        for field_name, field in sorted(state_fields.items()):
+            lowered_name = field_name.lower()
+            if field_name == "messages" or field_name in writer_map:
+                continue
+            if not any(marker in lowered_name for marker in memory_field_markers):
+                continue
+            issues.append(
+                {
+                    "code": "declared_memory_field_without_writer",
+                    "message": (
+                        f"State field '{field_name}' is declared for memory/persona "
+                        "behavior but no registered node writes it."
+                    ),
+                    "field": field_name,
+                    **context.resolve_line(field.get("line")),
+                }
+            )
 
         if issues:
             return self.failed_report(
@@ -1731,14 +1805,19 @@ class ToolReachabilityRule(QAValidationRule):
         reachable_tools: set[str] = set()
         bound_tools: set[str] = set()
         list_assignments: dict[str, set[str]] = {}
+        tool_node_tools: dict[str, set[str]] = {}
+        registered_tool_node_vars: set[str] = set()
+        unwired_tool_node_tools: set[str] = set()
         advisories: list[dict[str, object]] = []
 
         for node in ast.walk(tree):
             if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 decorators = {
-                    _call_name(decorator.func)
-                    if isinstance(decorator, ast.Call)
-                    else _call_name(decorator)
+                    (
+                        _call_name(decorator.func)
+                        if isinstance(decorator, ast.Call)
+                        else _call_name(decorator)
+                    )
                     for decorator in node.decorator_list
                 }
                 docstring = ast.get_docstring(node) or ""
@@ -1821,8 +1900,68 @@ class ToolReachabilityRule(QAValidationRule):
 
         declared_tool_names: set[str] = set()
         for assignment_name, assigned_names in list_assignments.items():
-            if assignment_name.lower() in {"tool", "tools", "tool_list", "available_tools"}:
+            if assignment_name.lower() in {
+                "tool",
+                "tools",
+                "tool_list",
+                "available_tools",
+            }:
                 declared_tool_names.update(assigned_names)
+
+        def _tool_names_from_value(value: ast.AST | None) -> set[str]:
+            if isinstance(value, ast.Name):
+                return set(list_assignments.get(value.id, set()))
+            if isinstance(value, ast.List):
+                return {
+                    name
+                    for name in (_call_name(element) for element in value.elts)
+                    if name
+                }
+            return set()
+
+        def _tool_names_from_tool_node_call(call: ast.Call) -> set[str]:
+            names: set[str] = set()
+            for argument in call.args[:1]:
+                names.update(_tool_names_from_value(argument))
+            tools_keyword = _keyword_value(call, "tools")
+            if tools_keyword is not None:
+                names.update(_tool_names_from_value(tools_keyword))
+            return names
+
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Assign):
+                continue
+            if not (
+                isinstance(node.value, ast.Call)
+                and _call_name(node.value.func).endswith("ToolNode")
+            ):
+                continue
+            tool_names = _tool_names_from_tool_node_call(node.value)
+            for target in node.targets:
+                for target_name in _target_names(target):
+                    tool_node_tools[target_name] = set(tool_names)
+
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            if not _call_name(node.func).endswith(".add_node"):
+                continue
+            node_callable = node.args[1] if len(node.args) >= 2 else None
+            if (
+                isinstance(node_callable, ast.Name)
+                and node_callable.id in tool_node_tools
+            ):
+                registered_tool_node_vars.add(node_callable.id)
+            elif isinstance(node_callable, ast.Call) and _call_name(
+                node_callable.func
+            ).endswith("ToolNode"):
+                reachable_tools.update(_tool_names_from_tool_node_call(node_callable))
+
+        for variable_name, tool_names in tool_node_tools.items():
+            if variable_name in registered_tool_node_vars:
+                reachable_tools.update(tool_names)
+            else:
+                unwired_tool_node_tools.update(tool_names)
 
         for node in ast.walk(tree):
             if not isinstance(node, ast.Call):
@@ -1864,10 +2003,7 @@ class ToolReachabilityRule(QAValidationRule):
                     }
                 )
             elif call_name.endswith("ToolNode"):
-                tool_args.extend(node.args[:1])
-                tools_keyword = _keyword_value(node, "tools")
-                if tools_keyword is not None:
-                    tool_args.append(tools_keyword)
+                continue
             elif call_name in tool_functions:
                 reachable_tools.add(call_name)
             elif call_name.rsplit(".", 1)[0] in tool_functions and call_name.endswith(
@@ -1905,17 +2041,25 @@ class ToolReachabilityRule(QAValidationRule):
         for tool_name in sorted(tool_functions):
             if tool_name not in reachable_tools:
                 code = (
-                    "bound_tool_without_executor"
-                    if tool_name in bound_tools
-                    else "unreachable_tool"
+                    "unwired_tool_node_executor"
+                    if tool_name in unwired_tool_node_tools
+                    else (
+                        "bound_tool_without_executor"
+                        if tool_name in bound_tools
+                        else "unreachable_tool"
+                    )
                 )
                 advisories.append(
                     {
                         "code": code,
                         "message": (
-                            f"Tool '{tool_name}' is bound to a model but not executed by a ToolNode/manual loop."
-                            if code == "bound_tool_without_executor"
-                            else f"Tool '{tool_name}' is defined but not called or passed to a documented tool execution pattern."
+                            f"Tool '{tool_name}' is passed to a ToolNode that is never registered in the graph."
+                            if code == "unwired_tool_node_executor"
+                            else (
+                                f"Tool '{tool_name}' is bound to a model but not executed by a ToolNode/manual loop."
+                                if code == "bound_tool_without_executor"
+                                else f"Tool '{tool_name}' is defined but not called or passed to a documented tool execution pattern."
+                            )
                         ),
                         "tool": tool_name,
                     }
@@ -2000,6 +2144,9 @@ class ChatbotNotebookContractRule(QAValidationRule):
         has_thread_id = "thread_id" in lowered and "THREAD_ID" in content
         has_bad_update_carryover = "current_state = step" in content
         has_second_initial_invoke = "graph.invoke(initial_state" in content
+        has_unconditional_chat_loop = bool(
+            re.search(r"(?m)^\s*run_chat_loop\(\)\s*$", content)
+        )
 
         if not has_chat_loop or not has_input_loop:
             issues.append(
@@ -2043,9 +2190,22 @@ class ChatbotNotebookContractRule(QAValidationRule):
                     "message": "Execution should not rerun initial_state after streaming.",
                 }
             )
+        if has_unconditional_chat_loop and "if RUN_INTERACTIVE_LOOP" not in content:
+            issues.append(
+                {
+                    "code": "blocking_default_chat_loop",
+                    "message": "Top-to-bottom chatbot notebooks should not enter an input loop unless RUN_INTERACTIVE_LOOP is enabled.",
+                }
+            )
 
-        if all(cue in lowered for cue in ("male", "female")) or "selected_gender" in lowered:
-            if "def select_character_gender" not in content or "CHARACTER_GENDER" not in content:
+        if (
+            all(cue in lowered for cue in ("male", "female"))
+            or "selected_gender" in lowered
+        ):
+            if (
+                "def select_character_gender" not in content
+                or "CHARACTER_GENDER" not in content
+            ):
                 issues.append(
                     {
                         "code": "missing_character_gate",
@@ -2054,13 +2214,41 @@ class ChatbotNotebookContractRule(QAValidationRule):
                 )
 
         if any(cue in lowered for cue in self.MEMORY_CUES):
-            if "InMemorySaver" not in content or "checkpointer=memory" not in content:
+            if "InMemorySaver" not in content or "compile(checkpointer=" not in content:
                 issues.append(
                     {
                         "code": "missing_short_term_memory",
                         "message": "Memory-oriented chat notebooks should compile with a checkpointer.",
                     }
                 )
+            memory_write_fields = {
+                "memory_summary",
+                "persona_profile",
+                "character_profile",
+                "turn_count",
+            }
+            for field_name in sorted(memory_write_fields):
+                if field_name not in content:
+                    continue
+                writes_field = any(
+                    pattern in content
+                    for pattern in (
+                        f'updates["{field_name}"]',
+                        f"updates['{field_name}']",
+                        f'payload["{field_name}"]',
+                        f"payload['{field_name}']",
+                        f'"{field_name}":',
+                        f"'{field_name}':",
+                    )
+                )
+                if not writes_field:
+                    issues.append(
+                        {
+                            "code": "declared_memory_field_without_writer",
+                            "message": f"Memory/persona field '{field_name}' is referenced but no generated node/input path writes it.",
+                            "field": field_name,
+                        }
+                    )
 
         if any(cue in lowered for cue in self.VERIFIER_CUES):
             verifier_fields = {
@@ -2069,7 +2257,9 @@ class ChatbotNotebookContractRule(QAValidationRule):
                 "realism_notes",
                 "revision_instructions",
             }
-            if not verifier_fields & set(re.findall(r"[A-Za-z_][A-Za-z0-9_]*", content)):
+            if not verifier_fields & set(
+                re.findall(r"[A-Za-z_][A-Za-z0-9_]*", content)
+            ):
                 issues.append(
                     {
                         "code": "missing_structured_verifier_state",
@@ -2081,6 +2271,36 @@ class ChatbotNotebookContractRule(QAValidationRule):
                     {
                         "code": "missing_bounded_revision",
                         "message": "Verifier/reviser loops should include a bounded retry or iteration cap.",
+                    }
+                )
+            has_revision_route = (
+                "add_conditional_edges" in content
+                and "revise" in lowered
+                and ("revision" in lowered or "reviser" in lowered)
+            ) or "Command(" in content
+            terminal_verifier = bool(
+                re.search(
+                    r"add_edge\(\s*[\"'][^\"']*verif[^\"']*[\"']\s*,\s*(END|[\"']END[\"'])",
+                    content,
+                )
+            )
+            has_verifier_node = bool(
+                re.search(r"def\s+\w*verif\w*_node", lowered)
+                or re.search(r"add_node\(\s*[\"'][^\"']*verif", lowered)
+            )
+            has_reviser_node = bool(
+                re.search(r"def\s+\w*revis\w*_node", lowered)
+                or re.search(r"add_node\(\s*[\"'][^\"']*revis", lowered)
+            )
+            if (
+                has_verifier_node
+                and has_reviser_node
+                and (terminal_verifier or not has_revision_route)
+            ):
+                issues.append(
+                    {
+                        "code": "missing_executable_verifier_loop",
+                        "message": "Verifier/reviser notebooks should route failed drafts to a reviser before accepting or ending.",
                     }
                 )
 
@@ -2110,6 +2330,9 @@ class DomainArchitectureAlignmentRule(QAValidationRule):
     repairable = False
 
     DOMAIN_CUES = {
+        "chatbot": {"chatbot", "chat", "conversation", "turn", "message"},
+        "historical": {"historical", "century", "commoner", "anachronism", "period"},
+        "persona": {"persona", "character", "male", "female", "gender", "roleplay"},
         "museum": {"museum", "artifact", "catalog", "archive", "collection"},
         "incident": {"incident", "outage", "sre", "remediation", "alert"},
         "support": {"support", "customer", "ticket", "escalation", "case"},
@@ -2117,6 +2340,9 @@ class DomainArchitectureAlignmentRule(QAValidationRule):
         "data": {"data", "dataset", "schema", "validation", "catalog"},
     }
     HIGH_SIGNAL_CUES = {
+        "chatbot": {"chatbot", "turn-taking"},
+        "historical": {"historical", "century", "commoner", "anachronism"},
+        "persona": {"persona", "character"},
         "museum": {"museum", "artifact"},
         "incident": {"incident", "outage", "remediation"},
         "support": {"ticket", "escalation"},
@@ -2126,6 +2352,11 @@ class DomainArchitectureAlignmentRule(QAValidationRule):
     GENERIC_NODE_PATTERN = re.compile(
         r"^(specialist|worker|agent|subagent|node|default)_?\d*$"
     )
+    OFF_DOMAIN_CHATBOT_FALLBACK_NODES = {
+        "data_processor",
+        "schema_validator",
+        "researcher",
+    }
 
     def validate(self, context: NotebookValidationContext) -> Optional[QAReport]:
         content = "\n".join(_cell_source(cell) for cell in context.notebook.cells)
@@ -2137,6 +2368,12 @@ class DomainArchitectureAlignmentRule(QAValidationRule):
             if len(content_tokens & cues) >= 2
             or bool(content_tokens & self.HIGH_SIGNAL_CUES.get(domain, set()))
         )
+        if {"chatbot", "historical", "persona"} & set(matched_domains):
+            strong_data_terms = {"dataset", "database", "analytics", "tabular"}
+            if not content_tokens & strong_data_terms:
+                matched_domains = [
+                    domain for domain in matched_domains if domain != "data"
+                ]
         if not matched_domains:
             return self.passed_report(
                 "No strong domain-specific cues required architecture-name alignment.",
@@ -2159,20 +2396,32 @@ class DomainArchitectureAlignmentRule(QAValidationRule):
 
         for node in ast.walk(tree):
             if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                location = context.resolve_line(getattr(node, "lineno", None))
+                if location.get("cell_section") == "tools":
+                    continue
                 function_name = node.name.removesuffix("_node")
-                if self.GENERIC_NODE_PATTERN.match(function_name):
+                if self.GENERIC_NODE_PATTERN.match(function_name) or (
+                    function_name in self.OFF_DOMAIN_CHATBOT_FALLBACK_NODES
+                    and {"chatbot", "historical", "persona"} & set(matched_domains)
+                ):
                     generic_nodes.append(
                         {
                             "identifier": function_name,
                             "kind": "function",
-                            **context.resolve_line(getattr(node, "lineno", None)),
+                            **location,
                         }
                     )
             elif isinstance(node, ast.Call) and _call_name(node.func).endswith(
                 ".add_node"
             ):
                 node_name = _literal_string(node.args[0]) if node.args else None
-                if node_name and self.GENERIC_NODE_PATTERN.match(node_name):
+                if node_name and (
+                    self.GENERIC_NODE_PATTERN.match(node_name)
+                    or (
+                        node_name in self.OFF_DOMAIN_CHATBOT_FALLBACK_NODES
+                        and {"chatbot", "historical", "persona"} & set(matched_domains)
+                    )
+                ):
                     generic_nodes.append(
                         {
                             "identifier": node_name,

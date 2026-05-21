@@ -17,7 +17,9 @@ from langgraph_system_generator.generator.state import (
 from langgraph_system_generator.utils.config import settings
 
 NotebookSectionResult = list[CellSpec] | Awaitable[list[CellSpec]]
-NotebookSectionBuilder = Callable[[Any, "NotebookComposerContext"], NotebookSectionResult]
+NotebookSectionBuilder = Callable[
+    [Any, "NotebookComposerContext"], NotebookSectionResult
+]
 PluginHook = Callable[["NotebookComposerRegistry"], None]
 
 
@@ -52,7 +54,9 @@ def _normalize_string_list(values: Sequence[str] | None) -> list[str]:
     return normalized_values
 
 
-def _normalize_hook_mapping(values: Mapping[str, Sequence[str]] | None) -> dict[str, list[str]]:
+def _normalize_hook_mapping(
+    values: Mapping[str, Sequence[str]] | None,
+) -> dict[str, list[str]]:
     """Return normalized per-section hook mappings."""
 
     normalized: dict[str, list[str]] = {}
@@ -123,7 +127,16 @@ class NotebookComposerRegistry:
     def __init__(self, *, default_section_order: Sequence[str] | None = None):
         self.default_section_order = _normalize_string_list(
             default_section_order
-            or ["intro", "install", "config", "state", "tools", "nodes", "graph", "execution"]
+            or [
+                "intro",
+                "install",
+                "config",
+                "state",
+                "tools",
+                "nodes",
+                "graph",
+                "execution",
+            ]
         )
         self._builders: dict[str, NotebookSectionBuilder] = {}
         self._architectures: dict[str, NotebookComposerArchitectureRegistration] = {}
@@ -131,7 +144,9 @@ class NotebookComposerRegistry:
     def clone(self) -> "NotebookComposerRegistry":
         """Return a shallow clone suitable for per-composer customization."""
 
-        cloned = NotebookComposerRegistry(default_section_order=self.default_section_order)
+        cloned = NotebookComposerRegistry(
+            default_section_order=self.default_section_order
+        )
         cloned._builders = dict(self._builders)
         cloned._architectures = {
             architecture_id: NotebookComposerArchitectureRegistration(
@@ -158,7 +173,9 @@ class NotebookComposerRegistry:
     ) -> None:
         """Register or replace a named section builder."""
 
-        normalized_name = _normalize_builder_name(builder_name, field_name="builder_name")
+        normalized_name = _normalize_builder_name(
+            builder_name, field_name="builder_name"
+        )
         self._builders[normalized_name] = builder
 
     def register(
@@ -268,7 +285,9 @@ class NotebookComposerRegistry:
         return builders
 
 
-def _build_intro_section(composer: Any, context: NotebookComposerContext) -> list[CellSpec]:
+def _build_intro_section(
+    composer: Any, context: NotebookComposerContext
+) -> list[CellSpec]:
     return composer._create_intro_cells(
         context.notebook_plan,
         context.architecture.get("justification"),
@@ -288,7 +307,9 @@ def _build_config_section(
     return composer._create_config_cells(context.dependency_plan, context.feedback)
 
 
-def _build_state_section(composer: Any, context: NotebookComposerContext) -> list[CellSpec]:
+def _build_state_section(
+    composer: Any, context: NotebookComposerContext
+) -> list[CellSpec]:
     return composer._create_state_cells(context.workflow_design)
 
 
@@ -306,7 +327,11 @@ async def _build_tools_section(
     ]
     if not runnable_tools:
         return warning_cells
-    tool_cells = await composer._create_tool_cells(runnable_tools, context.feedback)
+    tool_cells = await composer._create_tool_cells(
+        runnable_tools,
+        context.feedback,
+        workflow_design=context.workflow_design,
+    )
     return [*warning_cells, *tool_cells]
 
 
@@ -318,6 +343,7 @@ async def _build_nodes_section(
         context.workflow_design,
         context.feedback,
         tools=context.tools,
+        notebook_plan=context.notebook_plan,
     )
 
 
@@ -325,6 +351,13 @@ async def _build_router_nodes_section(
     composer: Any,
     context: NotebookComposerContext,
 ) -> list[CellSpec]:
+    if composer._is_chatbot_workflow(context.workflow_design, context.notebook_plan):
+        return await composer._create_node_cells(
+            context.workflow_design,
+            context.feedback,
+            tools=context.tools,
+            notebook_plan=context.notebook_plan,
+        )
     return composer._create_pattern_node_cells(
         context.workflow_design.get("nodes", []),
         "router",
@@ -337,6 +370,13 @@ async def _build_subagents_nodes_section(
     composer: Any,
     context: NotebookComposerContext,
 ) -> list[CellSpec]:
+    if composer._is_chatbot_workflow(context.workflow_design, context.notebook_plan):
+        return await composer._create_node_cells(
+            context.workflow_design,
+            context.feedback,
+            tools=context.tools,
+            notebook_plan=context.notebook_plan,
+        )
     return composer._create_pattern_node_cells(
         context.workflow_design.get("nodes", []),
         "subagents",
@@ -349,6 +389,13 @@ async def _build_hybrid_nodes_section(
     composer: Any,
     context: NotebookComposerContext,
 ) -> list[CellSpec]:
+    if composer._is_chatbot_workflow(context.workflow_design, context.notebook_plan):
+        return await composer._create_node_cells(
+            context.workflow_design,
+            context.feedback,
+            tools=context.tools,
+            notebook_plan=context.notebook_plan,
+        )
     return composer._create_pattern_node_cells(
         context.workflow_design.get("nodes", []),
         "hybrid",
@@ -361,6 +408,13 @@ async def _build_autoagent_nodes_section(
     composer: Any,
     context: NotebookComposerContext,
 ) -> list[CellSpec]:
+    if composer._is_chatbot_workflow(context.workflow_design, context.notebook_plan):
+        return await composer._create_node_cells(
+            context.workflow_design,
+            context.feedback,
+            tools=context.tools,
+            notebook_plan=context.notebook_plan,
+        )
     return composer._create_pattern_node_cells(
         context.workflow_design.get("nodes", []),
         "autoagent",
@@ -385,6 +439,13 @@ async def _build_critique_loop_nodes_section(
     composer: Any,
     context: NotebookComposerContext,
 ) -> list[CellSpec]:
+    if composer._is_chatbot_workflow(context.workflow_design, context.notebook_plan):
+        return await composer._create_node_cells(
+            context.workflow_design,
+            context.feedback,
+            tools=context.tools,
+            notebook_plan=context.notebook_plan,
+        )
     return composer._create_pattern_node_cells(
         context.workflow_design.get("nodes", []),
         "critique_loop",
@@ -393,7 +454,9 @@ async def _build_critique_loop_nodes_section(
     )
 
 
-def _build_graph_section(composer: Any, context: NotebookComposerContext) -> list[CellSpec]:
+def _build_graph_section(
+    composer: Any, context: NotebookComposerContext
+) -> list[CellSpec]:
     return composer._create_graph_cells(
         context.workflow_design,
         context.feedback.resolved_max_iterations or 1,

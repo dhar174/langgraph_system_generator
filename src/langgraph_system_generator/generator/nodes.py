@@ -46,6 +46,7 @@ from langgraph_system_generator.notebook.runtime import (
 from langgraph_system_generator.qa import NotebookRepairAgent, NotebookValidator
 from langgraph_system_generator.qa.summary import (
     build_qa_summary,
+    build_tool_contract_summary,
     serialize_qa_report,
 )
 from langgraph_system_generator.rag.embeddings import VectorStoreManager
@@ -1116,6 +1117,7 @@ async def package_outputs_node(state: GeneratorState) -> Dict[str, Any]:
     architecture_feedback = state.get("architecture_feedback")
     graph_design_feedback = state.get("graph_design_feedback")
     graph_exports = state.get("graph_exports")
+    tools_plan = state.get("tools_plan")
     tool_planning_feedback = state.get("tool_planning_feedback")
     notebook_composition_feedback = state.get("notebook_composition_feedback")
     notebook_dependency_plan = state.get("notebook_dependency_plan")
@@ -1161,6 +1163,11 @@ async def package_outputs_node(state: GeneratorState) -> Dict[str, Any]:
                 tool_planning_feedback
                 or ToolPlanningFeedback(available_tool_ids=[]).model_dump()
             )
+        ),
+        "tool_contract_summary": build_tool_contract_summary(
+            tools_plan,
+            graph_exports,
+            qa_reports,
         ),
         "generation_context_pack": (
             generation_context_pack.model_dump()

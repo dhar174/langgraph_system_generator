@@ -158,6 +158,19 @@ curl -X POST http://localhost:8000/generate \
         }
       ]
     },
+    "tool_contract_summary": {
+      "counts": {
+        "planned": 2,
+        "executable": 1,
+        "utility": 0,
+        "unsupported": 1
+      },
+      "source_precedence": [
+        "graph_exports.schema.tool_reachability",
+        "tools_plan",
+        "qa_reports.tool_reachability"
+      ]
+    },
     "qa_summary": {
       "validation_scope": {
         "validated": ["Static QA checked the generated notebook cells covered by qa_reports."],

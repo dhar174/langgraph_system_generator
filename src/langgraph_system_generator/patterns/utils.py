@@ -90,6 +90,9 @@ def infer_state_field_type(field_name: str, description: str = "") -> str:
     if lowered_name in list_markers or lowered_name.endswith(list_suffixes):
         return "Annotated[List[str], operator.add]"
 
+    if lowered_name.endswith(("_passed", "_pending", "_complete")):
+        return "bool"
+
     dict_markers = {
         "results",
         "task_results",
@@ -98,6 +101,7 @@ def infer_state_field_type(field_name: str, description: str = "") -> str:
         "metadata",
         "payload",
         "context",
+        "profile",
         "profile_data",
         "tool_outputs",
     }
@@ -120,9 +124,15 @@ def infer_state_field_type(field_name: str, description: str = "") -> str:
         "has_",
         "is_",
     }
-    if any(lowered_name == marker or lowered_name.startswith(marker) for marker in bool_markers):
+    if any(
+        lowered_name == marker or lowered_name.startswith(marker)
+        for marker in bool_markers
+    ):
         return "bool"
-    if any(lowered_name.endswith(f"_{marker}") for marker in {"passed", "pending", "complete"}):
+    if any(
+        lowered_name.endswith(f"_{marker}")
+        for marker in {"passed", "pending", "complete"}
+    ):
         return "bool"
 
     int_markers = {

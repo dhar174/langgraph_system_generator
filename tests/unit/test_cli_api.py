@@ -594,6 +594,43 @@ async def test_generate_artifacts_surfaces_tool_planning_feedback_as_warnings(
             "available_tool_ids": ["web_search", "http_client"],
             "warnings": ["Tool planning used heuristic fallback inference."],
         }
+        result["tools_plan"] = [
+            {
+                "tool_id": "web_search",
+                "name": "Web Search",
+                "category": "search",
+                "purpose": "Search current context.",
+                "configuration": {},
+                "packages": [],
+                "provider_env_vars": [],
+                "status": "ready",
+                "warnings": [],
+            },
+            {
+                "tool_id": "swarm_tool",
+                "name": "Swarm Tool",
+                "category": "external",
+                "purpose": "Unsupported suggested tool.",
+                "configuration": {},
+                "packages": [],
+                "provider_env_vars": [],
+                "status": "unsupported",
+                "warnings": [],
+            },
+        ]
+        result["graph_exports"] = {
+            "mermaid": "",
+            "schema": {
+                "tool_reachability": [
+                    {
+                        "tool_id": "web_search",
+                        "execution_path": "tool_node",
+                        "node": "tools",
+                        "rationale": "Executed by ToolNode.",
+                    }
+                ]
+            },
+        }
         return result
 
     monkeypatch.setattr(
@@ -615,6 +652,16 @@ async def test_generate_artifacts_surfaces_tool_planning_feedback_as_warnings(
     assert "tool_planning_environment" in warning_codes
     assert "tool_planning_dependency" in warning_codes
     assert artifacts["manifest"]["tool_planning_feedback"]["fallback_used"] is True
+    assert artifacts["manifest"]["tool_contract_summary"]["counts"] == {
+        "planned": 2,
+        "executable": 1,
+        "utility": 0,
+        "unsupported": 1,
+    }
+    assert (
+        artifacts["manifest"]["tool_contract_summary"]["executable_tools"][0]["tool_id"]
+        == "web_search"
+    )
 
 
 @pytest.mark.asyncio
