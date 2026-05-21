@@ -77,6 +77,9 @@ runtime product validation, not a contributor-facing review persona.
 - Register validation rules and deterministic repair routines through
   `src/langgraph_system_generator/qa/registry.py`.
 - Keep repair attempts bounded by `MAX_REPAIR_ATTEMPTS` / settings.
+- Keep QA history bounded while preserving current-attempt blocking failures.
+- Validate notebooks in memory first; path-based validation should remain a
+  compatibility wrapper.
 - Record rollback/no-op outcomes in QA history.
 - Prefer deterministic repairs over free-form rewrites in stub mode and CI.
 - Do not mark a tool safe from docstring wording alone; validate enforceable

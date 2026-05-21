@@ -78,8 +78,11 @@ Node functions live in `generator/nodes.py`. The graph is compiled by
 All nodes communicate through `GeneratorState` (a `TypedDict` in
 `generator/state.py`). Key behaviors:
 
-- `constraints` and `docs_context` use `operator.add` as their reducer — they
-  **accumulate** across node calls.
+- `constraints` and `docs_context` use named bounded reducers — they
+  **accumulate** latest unique values across node calls without unbounded
+  growth.
+- `qa_history` is appended through bounded node helpers that preserve
+  current-attempt blocking failures.
 - `generated_cells` has **no reducer** (intentional last-write-wins). The repair
   loop replaces cells wholesale; never append to it from a node.
 - `repair_attempts` counts loop iterations; the graph halts when it reaches

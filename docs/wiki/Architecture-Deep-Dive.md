@@ -417,7 +417,25 @@ Exports the notebook to various formats:
     "zip_path": "./output/system/notebook_bundle.zip",
     "manifest_path": "./output/system/manifest.json",
     "plan_path": "./output/system/notebook_plan.json",
-    "cells_path": "./output/system/generated_cells.json"
+    "cells_path": "./output/system/generated_cells.json",
+    "cell_count": 15,
+    "cell_count_source": "serialized_notebook",
+    "generated_cell_spec_count": 8,
+    "artifact_contract": {
+      "standalone_files": [
+        "./output/system/notebook.ipynb",
+        "./output/system/notebook.html",
+        "./output/system/manifest.json"
+      ],
+      "zip_members": [
+        "notebook.ipynb",
+        "notebook.html",
+        "manifest.json",
+        "notebook_plan.json",
+        "generated_cells.json"
+      ],
+      "path_semantics": "Legacy *_path fields are server-local filesystem paths under output_dir."
+    }
   },
   "generation_complete": true
 }
@@ -439,7 +457,7 @@ class GeneratorState(TypedDict):
     uploaded_files: Optional[List[str]]
     
     # Extracted requirements
-    constraints: Annotated[List[Constraint], operator.add]
+    constraints: Annotated[List[Constraint], bounded_constraints_reducer]
     requirements_feedback: RequirementsFeedback
     architecture_feedback: ArchitectureFeedback
     graph_design_feedback: GraphDesignFeedback
@@ -447,7 +465,7 @@ class GeneratorState(TypedDict):
     selected_patterns: Dict[str, Any]
     
     # RAG Retrieval
-    docs_context: Annotated[List[DocSnippet], operator.add]
+    docs_context: Annotated[List[DocSnippet], bounded_docs_context_reducer]
     
     # Planning
     notebook_plan: Optional[NotebookPlan]
@@ -482,7 +500,7 @@ class GeneratorState(TypedDict):
 ```
 
 **Key Features**:
-- **Annotated Lists**: Fields like `constraints` and `docs_context` use `operator.add` to append values across nodes
+- **Bounded Accumulation**: `constraints` and `docs_context` use named reducers that keep the latest unique entries within configured caps; QA nodes append `qa_history` through bounded helpers that preserve current-attempt blocking failures
 - **Advisory Intake Feedback**: `requirements_feedback` captures fallback, conflict, and missing-input guidance without replacing `constraints` as the downstream planning contract
 - **Advisory Graph Feedback**: `graph_design_feedback` captures validation and fallback details while `graph_exports` stores Mermaid/schema bundles for manifests and notebook overview cells
 - **Advisory Tool Feedback**: `tool_planning_feedback` records fallback, validation, environment, and dependency warnings while `tools_plan` remains the downstream list
@@ -687,6 +705,9 @@ Every generation produces a `manifest.json`:
   "prompt": "Create a customer support chatbot with routing",
   "mode": "stub",
   "architecture_type": "router",
+  "cell_count": 15,
+  "cell_count_source": "serialized_notebook",
+  "generated_cell_spec_count": 8,
   "graph_design_feedback": {
     "fallback_used": false,
     "validation_errors": [],
@@ -701,6 +722,26 @@ Every generation produces a `manifest.json`:
     }
   },
   "warnings": [],
+  "artifact_contract": {
+    "standalone_files": [
+      "./output/api/notebook.ipynb",
+      "./output/api/notebook.html",
+      "./output/api/manifest.json"
+    ],
+    "zip_members": [
+      "notebook.ipynb",
+      "notebook.html",
+      "manifest.json",
+      "notebook_plan.json",
+      "generated_cells.json"
+    ],
+    "path_semantics": "Legacy *_path fields are server-local filesystem paths under output_dir."
+  },
+  "qa_summary": {
+    "status": "passed",
+    "artifacts_usable": true,
+    "validation_scope": "static_notebook_validation"
+  },
   "export_results": {
     "ipynb": {"status": "completed", "path": "./notebook.ipynb"}
   },

@@ -16,6 +16,20 @@
 
 ## Recent Changes Reflected in the Codebase
 
+- PR #356 merged the runtime pipeline reliability cluster for issues #351-#355:
+  bounded state accumulation, in-memory notebook validation, reduced repair
+  copying, shared retriever caching, and async offloading. Those issues are now
+  closed as completed.
+- PR #358 closed #350 by making generated artifact manifests describe the
+  emitted notebook and files truthfully: `cell_count` comes from the serialized
+  notebook, raw generated cell specs have a separate count, `artifact_contract`
+  distinguishes standalone files from ZIP members, and QA summaries state
+  runtime smoke-test scope limits.
+- PR #357 merged a broad generated-chat notebook contract pass with chat-loop,
+  character-selection, executable-tool, verifier/reviser, memory, and generated
+  credential/config improvements. The child issues #344-#348 remain open and
+  should be re-triaged against the merged code before starting overlapping
+  implementation.
 - `memory-bank/systemPatterns.md` was updated to document the actual repo
   architecture instead of template bullets.
 - The API layer includes guarded output-path resolution and bounded async job
@@ -67,6 +81,12 @@
 
 ## Immediate Next Steps
 
+- Continue the generated-output quality wave from #342 with #343 first:
+  preserve canonical graph topology across executable notebook code,
+  Mermaid/schema exports, manifests, and QA.
+- Before implementing #344-#348, compare each issue's acceptance criteria
+  against merged PR #357 so follow-up branches close remaining gaps rather than
+  duplicating already-landed chat/runtime work.
 - Keep public docs, examples, and onboarding copy aligned with the current
   CLI/API contract.
 - Keep contributor-facing LangGraph/LangChain skills and LNF custom agents

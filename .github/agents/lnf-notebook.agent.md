@@ -71,7 +71,11 @@ document the contract but must not become runtime dependencies.
 - Nodes should return partial state updates unless a full overwrite is
   intentional and explicitly justified.
 - Tool claims must match a reachable execution path: deterministic node call,
-  `ToolNode`, manual tool loop, `create_react_agent`, or demo-only omission.
+  `ToolNode`, manual tool loop, `langchain.agents.create_agent`, or explicit
+  demo-only omission. Treat `create_react_agent` as legacy compatibility, not
+  the default for new generated notebooks.
+- Configuration cells should centralize `ChatOpenAI` construction through the
+  generated `make_llm(...)` helper and avoid hardcoded credentials.
 - Prose, Mermaid/schema exports, Python graph construction, manifests, and QA
   explanations should render from the same validated graph/spec metadata.
 

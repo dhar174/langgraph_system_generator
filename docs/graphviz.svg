@@ -176,10 +176,10 @@
 <text xml:space="preserve" text-anchor="start" x="3544.08" y="-285.5" font-family="Times,serif" font-size="14.00">architecture_justification : str</text>
 <text xml:space="preserve" text-anchor="start" x="3544.08" y="-268.7" font-family="Times,serif" font-size="14.00">architecture_type : Optional[str]</text>
 <text xml:space="preserve" text-anchor="start" x="3544.08" y="-251.9" font-family="Times,serif" font-size="14.00">artifacts_manifest : Dict[str, str]</text>
-<text xml:space="preserve" text-anchor="start" x="3544.08" y="-235.1" font-family="Times,serif" font-size="14.00">constraints : Annotated[List[Constraint], operator.add]</text>
-<text xml:space="preserve" text-anchor="start" x="3544.08" y="-218.3" font-family="Times,serif" font-size="14.00">docs_context : Annotated[List[DocSnippet], operator.add]</text>
+<text xml:space="preserve" text-anchor="start" x="3544.08" y="-235.1" font-family="Times,serif" font-size="14.00">constraints : Annotated[List[Constraint], bounded_constraints_reducer]</text>
+<text xml:space="preserve" text-anchor="start" x="3544.08" y="-218.3" font-family="Times,serif" font-size="14.00">docs_context : Annotated[List[DocSnippet], bounded_docs_context_reducer]</text>
 <text xml:space="preserve" text-anchor="start" x="3544.08" y="-201.5" font-family="Times,serif" font-size="14.00">error_message : Optional[str]</text>
-<text xml:space="preserve" text-anchor="start" x="3544.08" y="-184.7" font-family="Times,serif" font-size="14.00">generated_cells : Annotated[List[CellSpec], operator.add]</text>
+<text xml:space="preserve" text-anchor="start" x="3544.08" y="-184.7" font-family="Times,serif" font-size="14.00">generated_cells : List[CellSpec]</text>
 <text xml:space="preserve" text-anchor="start" x="3544.08" y="-167.9" font-family="Times,serif" font-size="14.00">generation_complete : bool</text>
 <text xml:space="preserve" text-anchor="start" x="3544.08" y="-151.1" font-family="Times,serif" font-size="14.00">notebook_plan : Optional[NotebookPlan]</text>
 <text xml:space="preserve" text-anchor="start" x="3544.08" y="-134.3" font-family="Times,serif" font-size="14.00">qa_reports : List[QAReport]</text>

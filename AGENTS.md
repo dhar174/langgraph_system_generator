@@ -111,14 +111,15 @@ That state is the integration contract between stages.
 
 Important patterns:
 
-- `constraints` and `docs_context` are accumulated lists.
+- `constraints` and `docs_context` are accumulated lists with bounded,
+  latest-unique reducers.
 - `requirements_feedback` is advisory metadata from intake. It should surface fallback/gap/conflict guidance without replacing `constraints` as the downstream source of truth.
 - `architecture_feedback` is advisory metadata from architecture selection. It should surface fallback, tradeoff, and validation guidance without replacing `architecture_type` or `selected_patterns` as the downstream contract.
 - `tools_plan` stays the backward-compatible downstream tool payload, while `tool_planning_feedback` carries fallback, environment, and dependency advisories for manifests and notebook warning surfaces.
 - `generated_cells` is authoritative for the current repair iteration and is
   replaced rather than concatenated.
 - `qa_reports` is the current QA snapshot for the active pass, while
-  `qa_history` preserves attempt-by-attempt QA and repair evidence.
+  `qa_history` preserves bounded attempt-by-attempt QA and repair evidence.
 - `repair_attempts` bounds retry behavior.
 - `artifacts_manifest` and `generation_complete` are the final packaging
   outputs expected by the CLI and API.

@@ -38,9 +38,10 @@ flowchart LR
 
 ## State Semantics
 
-- Merge/accumulate: `constraints`, `docs_context`.
+- Bounded latest-unique accumulation: `constraints`, `docs_context`.
 - Replace: `generated_cells`, `qa_reports`.
-- Append history: `qa_history`.
+- Bounded append history: `qa_history`, preserving current-attempt blocking
+  failures.
 - Advisory single-writer feedback: `requirements_feedback`,
   `architecture_feedback`, `graph_design_feedback`, `tool_planning_feedback`,
   `notebook_composition_feedback`, `notebook_dependency_plan`,

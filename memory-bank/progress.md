@@ -4,9 +4,21 @@
   generator-graph execution.
 - The FastAPI server exposes synchronous generation, async generation startup,
   health checks, static web UI serving, and SSE progress streaming.
+- Runtime pipeline reliability work from PR #356 is merged: accumulated
+  constraints, documentation context, and QA history are bounded; notebook
+  validation can run in memory; retriever construction is cached; and blocking
+  validation/retrieval/repair work is offloaded from async graph nodes.
 - Architecture selection, graph design, tool planning, notebook composition,
   and QA/repair now expose typed feedback and warning surfaces in manifests and
   API results.
+- Generated artifact manifests now distinguish final serialized notebook cell
+  counts from raw generated cell specs, expose an `artifact_contract` for
+  standalone files and ZIP members, and include QA validation-scope wording for
+  runtime smoke tests.
+- Generated chatbot notebooks now include stronger runtime affordances from PR
+  #357, including chat-loop execution helpers, character selection,
+  executable-tool wiring, verifier/reviser fallbacks, memory checks, and
+  centralized generated LLM configuration patterns.
 - Pattern generators and examples cover router, subagents, hybrid, autoagent,
   experimental deepagents, critique-revise, and advanced example-only workflows.
 - Notebook composition, dependency planning, runtime validation, deterministic
@@ -20,10 +32,15 @@
   selection, graph design, notebook composition, QA/repair, and example
   inventory surfaces without requiring LangSmith upload.
 - The release-readiness branch had a green full local verification baseline:
-  `python -m pytest --asyncio-mode=auto` reports 625 passed and 4 skipped, and
-  the CI fatal-error flake8 gate reports 0 findings.
-- Stale completed release-plan issues were closed with evidence, reducing the
-  open issue inventory from 49 to 26 while keeping true residual items open.
+  `python -m pytest --asyncio-mode=auto` reported 625 passed and 4 skipped, and
+  the CI fatal-error flake8 gate reported 0 findings.
+- The latest documented generated-output full-suite pass was
+  `pytest --asyncio-mode=auto -q` with 721 passed and 3 skipped on the #350
+  artifact-manifest branch. PR #357 additionally reported 609 unit tests
+  passing after generated-chat contract changes.
+- Stale completed release-plan issues were closed with evidence during the
+  release-readiness pass, reducing that older open issue inventory from 49 to
+  26 while keeping true residual items open.
 - The `v1.0.0` release is published, and #256 plus #258 are closed.
 - Contributor-facing LNF custom agents and mirrored skills now align with the
   finalized runtime notebook contract from PR #336 through the merged #337
@@ -42,6 +59,9 @@
 - Production Cloud Run deployment uses an authenticated health-check path. The
   deploy job mints a Cloud Run ID token through `google-github-actions/auth`
   with the deployed service URL as the token audience.
+- Generated-output quality epic #342 remains active. Issue #350 is closed, but
+  #343-#349 remain open; PR #357 may satisfy parts of #344-#348 and should be
+  checked before additional implementation.
 
 ## Current Status
 
@@ -62,6 +82,8 @@
 - The Cloud Run deploy workflow builds and pushes the container image, deploys
   the private service, mounts `OPENAI_API_KEY` from Secret Manager, and checks
   `/health` after deployment.
+- As of the 2026-05-20 issue refresh, the open issue count is 29. The next
+  generated-output branch target is #343 on a branch from synced `main`.
 
 ## Known Issues and Limitations
 
@@ -77,6 +99,9 @@
 - Router fallback/general routing (#60), iterative requirements refinement
   (#202), and the remaining CYOA notebook cell issues are tracked as residual
   follow-up work rather than closed stale items.
+- The canonical graph topology issue (#343) is still open and remains the next
+  Wave 3 implementation target before any further generated credential/config
+  hardening.
 - The Cloud Run workflow's private-service health check is sensitive to token
   minting details in GitHub Actions WIF. Do not use `gcloud auth
   print-identity-token --audiences=...` for this workflow's health token; the

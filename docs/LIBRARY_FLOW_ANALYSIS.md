@@ -153,7 +153,14 @@ The `GeneratorState` acts as the central data bus. Below is the mapping of how d
 | **workflow_design** | `Dict` | `graph_design` | `tooling_plan`, `notebook_assembly` |
 | **notebook_plan** | `NotebookPlan` | `graph_design` | `notebook_assembly`, `package_outputs` |
 | **tools_plan** | `List` | `tooling_plan` | `notebook_assembly` |
-| **generated_cells** | `List[CellSpec]` | `notebook_assembly` | `static_qa`, `runtime_qa`, `repair`, `package_outputs` |
-| **qa_reports** | `List[QAReport]` | `static_qa`, `runtime_qa` | `repair` (conditional edge logic) |
+| **generated_cells** | `List[CellSpec]` | `notebook_assembly` / accepted repair | `static_qa`, `runtime_qa`, `repair`, `package_outputs` |
+| **qa_reports** | `List[QAReport]` | `static_qa`, `runtime_qa`, `repair` | `repair` (conditional edge logic) |
+| **qa_history** | `List[QAReport]` | `static_qa`, `runtime_qa`, `repair` | `package_outputs` |
 | **repair_attempts** | `int` | `repair` | `repair` (conditional edge logic) |
-| **artifacts_manifest** | `Dict` | `package_outputs` | CLI (Export) |
+| **artifacts_manifest** | `Dict` | `package_outputs` | CLI/API export and download surfaces |
+
+`constraints` and `docs_context` use bounded latest-unique accumulation. QA
+history is also bounded while preserving current-attempt blocking failures.
+`generated_cells` is last-write-wins across repair iterations; packaging derives
+manifest cell counts from the serialized notebook and uses `artifact_contract`
+for standalone files versus ZIP members.

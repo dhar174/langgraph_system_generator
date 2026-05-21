@@ -190,7 +190,10 @@ The manifest includes advisory fields such as `requirements_feedback`,
 `tool_planning_feedback`, `generation_context_pack`,
 `notebook_composition_feedback`,
 `notebook_dependency_plan`, `qa_repair_feedback`, `qa_reports`, and
-`qa_summary`. These are response/output fields, not new request fields.
+`qa_summary`. It also distinguishes final serialized notebook cells from raw
+generated cell specs through `cell_count`, `cell_count_source`, and
+`generated_cell_spec_count`, and records file availability through
+`artifact_contract`. These are response/output fields, not new request fields.
 
 Use `manifest.json` as the primary summary for:
 
@@ -202,7 +205,8 @@ Use `manifest.json` as the primary summary for:
 - repair attempt history, QA findings, and next-step hints
 - exact QA advisory details, severity classification, and whether artifacts
   remain usable
-- artifact paths that can be downloaded through `GET /artifacts`
+- artifact paths and ZIP members, including which standalone paths can be
+  downloaded through `GET /artifacts`
 
 ## API And Web UI
 

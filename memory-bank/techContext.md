@@ -26,8 +26,10 @@
 - The local deterministic release evaluation script is
   `scripts/run_release_eval.py`; it writes a JSON report and defaults to
   no-upload behavior for CI/release PR use.
-- The current full release-readiness verification command is `python -m pytest
-  --asyncio-mode=auto`; the latest branch run reported 625 passed and 4 skipped.
+- The current full verification command is `python -m pytest
+  --asyncio-mode=auto`. The latest documented full run from the generated-output
+  artifact-manifest branch reported 721 passed and 3 skipped; targeted PR #357
+  unit verification reported 609 passed.
 - The CI fatal-error lint gate is `python -m flake8 . --count
   --select=E9,F63,F7,F82 --show-source --statistics`; the broader
   `--exit-zero` flake8 statistics command is informational and still reports

@@ -2,7 +2,7 @@
 
 ## In Progress
 
-- None
+- [TASK004 - Generated-output quality wave](TASK004-generated-output-quality-wave.md)
 
 ## Completed
 
@@ -17,7 +17,8 @@
   - `TASK001-repo-architecture-visualizer-docs-sync.md`
   - `TASK002-1-0-release-readiness.md`
   - `TASK003-cloud-run-deployment-live-qa.md`
+  - `TASK004-generated-output-quality-wave.md`
 - Task-level Memory Bank tracking has started with the documentation and
   visualization sync for the checked-in repo architecture bundle, the completed
-  1.0 release-readiness branch, and the active Cloud Run deployment hardening
-  lane.
+  1.0 release-readiness branch, the completed Cloud Run deployment hardening
+  lane, and the active generated-output quality wave under epic #342.

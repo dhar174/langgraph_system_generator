@@ -469,7 +469,7 @@ function showResult(data) {
     }
 
     if (manifest.cell_count) {
-        appendLabeledValue(resultWrapper, 'Generated Cells', String(manifest.cell_count));
+        appendLabeledValue(resultWrapper, 'Notebook Cells', String(manifest.cell_count));
     }
 
     if (data.output_dir) {
