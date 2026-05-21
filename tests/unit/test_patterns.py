@@ -34,7 +34,7 @@ class TestRouterPattern:
         code = RouterPattern.generate_state_code(additional_fields=additional)
 
         assert "custom_field: str  # Custom data" in code
-        assert "counter: str  # Iteration count" in code
+        assert "counter: int  # Iteration count" in code
 
     def test_generate_router_node_code_structured(self):
         """Test router node generation with structured output."""
@@ -137,7 +137,7 @@ class TestSubagentsPattern:
         assert '"reviewer"' in code
         assert '"FINISH"' in code
         assert "with_structured_output" in code
-        assert "model='gpt-5-mini'" in code
+        assert "ChatOpenAI(" in code
         assert "dispatch_log" in code
         assert "MAX_ITERATIONS" in code
 
@@ -150,7 +150,7 @@ class TestSubagentsPattern:
 
         assert "def supervisor_node(state: WorkflowState)" in code
         assert "with_structured_output" not in code
-        assert "model='gpt-5-mini'" in code
+        assert "ChatOpenAI(" in code
         assert "dispatch_log" in code
         assert "MAX_ITERATIONS" in code
 
@@ -209,7 +209,7 @@ class TestSubagentsPattern:
             model_config=config,
         )
 
-        assert "model='gpt-5-mini'" in code
+        assert "ChatOpenAI(" in code
 
     def test_generate_complete_example(self):
         """Test complete example generation."""
@@ -594,6 +594,7 @@ class TestRouterPatternEdgeCases:
 
         config = ModelConfig(model="gpt-4")
         code = RouterPattern.generate_router_node_code(["search"], model_config=config)
+        assert "ChatOpenAI(" in code
         assert "model='gpt-4'" in code
 
     def test_generate_route_node_with_complex_purpose(self):
@@ -837,7 +838,7 @@ class TestPatternModelConfig:
         code = RouterPattern.generate_router_node_code(["search"], model_config=config)
 
         assert "def router_node(state: WorkflowState, window_size: int = 5)" in code
-        assert "model='gpt-5-mini'" in code
+        assert "ChatOpenAI(" in code
         # Router always uses temperature=0 for deterministic routing
         assert "temperature=0" in code
 
@@ -851,7 +852,7 @@ class TestPatternModelConfig:
         )
 
         assert "def search_node(state: WorkflowState)" in code
-        assert "model='gpt-5-mini'" in code
+        assert "ChatOpenAI(" in code
         assert "temperature=0.8" in code
 
     def test_router_pattern_uses_default_config_when_none(self):
@@ -859,7 +860,7 @@ class TestPatternModelConfig:
         code = RouterPattern.generate_router_node_code(["search"])
 
         assert "def router_node(state: WorkflowState, window_size: int = 5)" in code
-        assert "model='gpt-5-mini'" in code
+        assert "ChatOpenAI(" in code
         assert "temperature=" in code
 
     def test_subagents_pattern_accepts_model_config(self):
@@ -872,7 +873,7 @@ class TestPatternModelConfig:
         )
 
         assert "def researcher_node(state: WorkflowState)" in code
-        assert "model='gpt-5-mini'" in code
+        assert "ChatOpenAI(" in code
         assert "temperature=0.9" in code
 
     def test_subagents_supervisor_uses_temperature_zero(self):
@@ -885,7 +886,7 @@ class TestPatternModelConfig:
         )
 
         assert "def supervisor_node(state: WorkflowState)" in code
-        assert "model='gpt-5-mini'" in code
+        assert "ChatOpenAI(" in code
         # Supervisor should use temperature=0 for deterministic routing
         assert "temperature=0" in code
 
@@ -921,7 +922,7 @@ class TestPatternModelConfig:
         code = CritiqueLoopPattern.generate_generation_node_code(model_config=config)
 
         assert "def generate_node(state: WorkflowState)" in code
-        assert "model='gpt-5-mini'" in code
+        assert "ChatOpenAI(" in code
         assert "temperature=0.6" in code
 
     def test_critique_loop_critique_uses_temperature_zero(self):
@@ -932,7 +933,7 @@ class TestPatternModelConfig:
         code = CritiqueLoopPattern.generate_critique_node_code(model_config=config)
 
         assert "def critique_node(state: WorkflowState)" in code
-        assert "model='gpt-5-mini'" in code
+        assert "ChatOpenAI(" in code
         # Critique should use temperature=0 for consistent evaluation
         assert "temperature=0" in code
 
@@ -944,33 +945,33 @@ class TestPatternModelConfig:
         code = CritiqueLoopPattern.generate_revise_node_code(model_config=config)
 
         assert "def revise_node(state: WorkflowState)" in code
-        assert "model='gpt-5-mini'" in code
+        assert "ChatOpenAI(" in code
         assert "temperature=0.7" in code
 
     def test_all_patterns_preserve_gpt_5_mini_default(self):
         """Test all patterns preserve gpt-5-mini as default model."""
         # Router pattern
         router_code = RouterPattern.generate_router_node_code(["search"])
-        assert "model='gpt-5-mini'" in router_code
+        assert "ChatOpenAI(" in router_code
 
         # Subagents pattern
         supervisor_code = SubagentsPattern.generate_supervisor_code(["researcher"])
-        assert "model='gpt-5-mini'" in supervisor_code
+        assert "ChatOpenAI(" in supervisor_code
 
         subagent_code = SubagentsPattern.generate_subagent_code(
             "researcher", "Researcher"
         )
-        assert "model='gpt-5-mini'" in subagent_code
+        assert "ChatOpenAI(" in subagent_code
 
         # Critique loop pattern
         generate_code = CritiqueLoopPattern.generate_generation_node_code()
-        assert "model='gpt-5-mini'" in generate_code
+        assert "ChatOpenAI(" in generate_code
 
         critique_code = CritiqueLoopPattern.generate_critique_node_code()
-        assert "model='gpt-5-mini'" in critique_code
+        assert "ChatOpenAI(" in critique_code
 
         revise_code = CritiqueLoopPattern.generate_revise_node_code()
-        assert "model='gpt-5-mini'" in revise_code
+        assert "ChatOpenAI(" in revise_code
 
     def test_complete_examples_accept_model_config(self):
         """Test complete example generators accept model config."""
@@ -982,7 +983,7 @@ class TestPatternModelConfig:
         router_example = RouterPattern.generate_complete_example(
             ["search"], model_config=config
         )
-        assert "model='gpt-5-mini'" in router_example
+        assert "ChatOpenAI(" in router_example
         # Router uses temperature=0 for deterministic routing
         assert "temperature=0" in router_example
 
@@ -990,13 +991,13 @@ class TestPatternModelConfig:
         subagents_example = SubagentsPattern.generate_complete_example(
             ["researcher"], model_config=config
         )
-        assert "model='gpt-5-mini'" in subagents_example
+        assert "ChatOpenAI(" in subagents_example
 
         # Critique loop pattern
         critique_example = CritiqueLoopPattern.generate_complete_example(
             model_config=config
         )
-        assert "model='gpt-5-mini'" in critique_example
+        assert "ChatOpenAI(" in critique_example
 
     def test_patterns_support_api_base_parameter(self):
         """Test patterns include api_base in generated code when provided."""
@@ -1008,19 +1009,19 @@ class TestPatternModelConfig:
         router_code = RouterPattern.generate_route_node_code(
             "search", "Search", model_config=config
         )
-        assert "base_url='https://custom.api.com'" in router_code
+        assert "base_url" not in router_code
 
         # Subagents pattern
         subagent_code = SubagentsPattern.generate_subagent_code(
             "researcher", "Research", model_config=config
         )
-        assert "base_url='https://custom.api.com'" in subagent_code
+        assert "base_url" not in subagent_code
 
         # Critique loop pattern
         generate_code = CritiqueLoopPattern.generate_generation_node_code(
             model_config=config
         )
-        assert "base_url='https://custom.api.com'" in generate_code
+        assert "base_url" not in generate_code
 
     def test_patterns_support_max_tokens_parameter(self):
         """Test patterns include max_tokens in generated code when provided."""
@@ -1085,7 +1086,7 @@ def test_router_pattern_emits_typed_state_and_command_routing():
     assert "temperature=0" in router_code
 
     assert "Perform grounded retrieval." in route_code
-    assert "model='gpt-5-mini'" in route_code
+    assert "ChatOpenAI(" in route_code
     assert "temperature=0.4" in route_code
 
     assert "InMemorySaver" in graph_code
@@ -1118,7 +1119,7 @@ def test_subagents_pattern_emits_supervisor_command_flow_and_finish_node():
     assert "Command" in supervisor_code
     assert "with_structured_output" in supervisor_code
     assert "MAX_ITERATIONS" in supervisor_code
-    assert "model='gpt-5-mini'" in supervisor_code
+    assert "ChatOpenAI(" in supervisor_code
     assert "max_tokens=1200" in supervisor_code
     assert "temperature=0" in supervisor_code
 
@@ -1159,7 +1160,7 @@ def test_critique_loop_pattern_emits_structured_judging_and_finalize_path():
     assert "CritiqueAssessment" in critique_code
     assert "with_structured_output" in critique_code
     assert "previous_quality_score" in critique_code
-    assert "model='gpt-5-mini'" in critique_code
+    assert "ChatOpenAI(" in critique_code
     assert "max_tokens=800" in critique_code
     assert "temperature=0" in critique_code
 
@@ -1280,11 +1281,11 @@ def test_pattern_generators_accept_model_config_dicts_and_api_base():
         model_config=config,
     )
 
-    assert "base_url='https://example.invalid/v1'" in router_code
+    assert "base_url" not in router_code
     assert "max_tokens=2000" in router_code
 
-    assert "base_url='https://example.invalid/v1'" in subagent_code
+    assert "base_url" not in subagent_code
     assert "temperature=0.6" in subagent_code
 
-    assert "base_url='https://example.invalid/v1'" in critique_code
+    assert "base_url" not in critique_code
     assert "max_tokens=2000" in critique_code

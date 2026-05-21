@@ -99,6 +99,9 @@ class GraphDesigner:
                 "8. entry_point: Starting node\n"
                 "9. compiled_graph_variable: Compiled graph variable name, normally graph\n"
                 "10. checkpointing: Whether to enable checkpointing\n\n"
+                "For generated tool execution paths, prefer ToolNode for custom StateGraph workflows. "
+                "When a prebuilt agent loop is the better fit, prefer langchain.agents.create_agent; "
+                "treat langgraph.prebuilt.create_react_agent as legacy compatibility, not the default for new designs.\n\n"
                 "Return a JSON object with this structure:\n"
                 "{\n"
                 '  "state_schema": {"field_name": "description"},\n'
@@ -124,7 +127,7 @@ class GraphDesigner:
                 '  "tool_reachability": [\n'
                 "    {\n"
                 '      "tool_id": "tool_name",\n'
-                '      "execution_path": "deterministic_node|tool_node|manual_loop|create_react_agent|demo_only|omitted",\n'
+                '      "execution_path": "deterministic_node|tool_node|manual_loop|create_agent|create_react_agent|demo_only|omitted",\n'
                 '      "node": "node_name",\n'
                 '      "rationale": "How the graph can execute this tool, or why it is intentionally omitted"\n'
                 "    }\n"

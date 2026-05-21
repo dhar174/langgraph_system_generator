@@ -67,6 +67,7 @@ class WorkflowState(TypedDict, total=False):
     def generate_router_node_code(
         direct_specialists: List[str],
         model_config: Optional[Union[ModelConfig, dict]] = None,
+        use_notebook_helper: bool = False,
     ) -> str:
         """Generate a router capable of choosing direct work or the team path."""
 
@@ -74,6 +75,7 @@ class WorkflowState(TypedDict, total=False):
         return RouterPattern.generate_router_node_code(
             routes=routes,
             model_config=model_config,
+            use_notebook_helper=use_notebook_helper,
         )
 
     @staticmethod
@@ -81,6 +83,7 @@ class WorkflowState(TypedDict, total=False):
         specialist_name: str,
         specialist_purpose: str,
         model_config: Optional[Union[ModelConfig, dict]] = None,
+        use_notebook_helper: bool = False,
     ) -> str:
         """Generate a direct specialist node implementation."""
 
@@ -88,6 +91,7 @@ class WorkflowState(TypedDict, total=False):
             specialist_name,
             specialist_purpose,
             model_config=model_config,
+            use_notebook_helper=use_notebook_helper,
         )
 
     @staticmethod
@@ -95,6 +99,7 @@ class WorkflowState(TypedDict, total=False):
         team_workers: List[str],
         worker_descriptions: Optional[Dict[str, str]] = None,
         model_config: Optional[Union[ModelConfig, dict]] = None,
+        use_notebook_helper: bool = False,
     ) -> str:
         """Generate the supervisor node for the worker-team branch."""
 
@@ -102,6 +107,7 @@ class WorkflowState(TypedDict, total=False):
             subagents=team_workers,
             subagent_descriptions=worker_descriptions,
             model_config=model_config,
+            use_notebook_helper=use_notebook_helper,
         )
 
     @staticmethod
@@ -109,6 +115,7 @@ class WorkflowState(TypedDict, total=False):
         worker_name: str,
         worker_description: str,
         model_config: Optional[Union[ModelConfig, dict]] = None,
+        use_notebook_helper: bool = False,
     ) -> str:
         """Generate a worker node implementation."""
 
@@ -116,6 +123,7 @@ class WorkflowState(TypedDict, total=False):
             agent_name=worker_name,
             agent_description=worker_description,
             model_config=model_config,
+            use_notebook_helper=use_notebook_helper,
         )
 
     @staticmethod

@@ -331,6 +331,7 @@ class GraphToolReachabilitySpec(BaseModel):
         "deterministic_node",
         "tool_node",
         "manual_loop",
+        "create_agent",
         "create_react_agent",
         "demo_only",
         "omitted",

@@ -1371,6 +1371,7 @@ class ToolReachabilityRule(QAValidationRule):
         if tree is None:
             return None
 
+        function_definitions: dict[str, dict[str, object]] = {}
         tool_functions: dict[str, dict[str, object]] = {}
         reachable_tools: set[str] = set()
         bound_tools: set[str] = set()
@@ -1380,9 +1381,17 @@ class ToolReachabilityRule(QAValidationRule):
         for node in ast.walk(tree):
             if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 decorators = {
-                    _call_name(decorator) for decorator in node.decorator_list
+                    _call_name(decorator.func)
+                    if isinstance(decorator, ast.Call)
+                    else _call_name(decorator)
+                    for decorator in node.decorator_list
                 }
                 docstring = ast.get_docstring(node) or ""
+                function_definitions[node.name] = {
+                    "name": node.name,
+                    "docstring": docstring,
+                    **context.resolve_line(getattr(node, "lineno", None)),
+                }
                 is_tool = "tool" in decorators or any(
                     decorator.endswith(".tool") for decorator in decorators
                 )
@@ -1455,6 +1464,11 @@ class ToolReachabilityRule(QAValidationRule):
                         for target_name in _target_names(target):
                             list_assignments[target_name] = names
 
+        declared_tool_names: set[str] = set()
+        for assignment_name, assigned_names in list_assignments.items():
+            if assignment_name.lower() in {"tool", "tools", "tool_list", "available_tools"}:
+                declared_tool_names.update(assigned_names)
+
         for node in ast.walk(tree):
             if not isinstance(node, ast.Call):
                 continue
@@ -1472,12 +1486,28 @@ class ToolReachabilityRule(QAValidationRule):
                             )
                             if name
                         )
+            elif call_name.endswith("create_agent"):
+                for keyword in node.keywords:
+                    if keyword.arg == "tools":
+                        tool_args.append(keyword.value)
+                if len(node.args) >= 2:
+                    tool_args.append(node.args[1])
             elif call_name.endswith("create_react_agent"):
                 for keyword in node.keywords:
                     if keyword.arg == "tools":
                         tool_args.append(keyword.value)
                 if len(node.args) >= 2:
                     tool_args.append(node.args[1])
+                advisories.append(
+                    {
+                        "code": "deprecated_create_react_agent",
+                        "message": (
+                            "create_react_agent is a legacy/deprecated prebuilt "
+                            "agent constructor; prefer langchain.agents.create_agent "
+                            "for new generated notebooks."
+                        ),
+                    }
+                )
             elif call_name.endswith("ToolNode"):
                 tool_args.extend(node.args[:1])
                 tools_keyword = _keyword_value(node, "tools")
@@ -1498,6 +1528,24 @@ class ToolReachabilityRule(QAValidationRule):
                         for name in (_call_name(element) for element in argument.elts)
                         if name
                     )
+                    declared_tool_names.update(
+                        name
+                        for name in (_call_name(element) for element in argument.elts)
+                        if name
+                    )
+
+        for tool_name in sorted(declared_tool_names):
+            if tool_name in function_definitions and tool_name not in tool_functions:
+                advisories.append(
+                    {
+                        "code": "undecorated_tool",
+                        "message": (
+                            f"Function '{tool_name}' is listed as a tool but is not "
+                            "decorated with @tool."
+                        ),
+                        "tool": tool_name,
+                    }
+                )
 
         for tool_name in sorted(tool_functions):
             if tool_name not in reachable_tools:
@@ -1523,6 +1571,7 @@ class ToolReachabilityRule(QAValidationRule):
                 "Tool reachability advisories detected.",
                 suggestions=[
                     "Bind generated tools with model.bind_tools(...) and execute returned tool calls, or pass tools into a documented LangGraph agent/tool node.",
+                    "For prebuilt agent loops, prefer langchain.agents.create_agent over deprecated create_react_agent.",
                     "Label placeholder tools honestly and keep broad external API tools deny-by-default.",
                 ],
                 evidence={
@@ -1536,10 +1585,163 @@ class ToolReachabilityRule(QAValidationRule):
         return self.passed_report(
             "Generated tools are either absent or reachable through a documented tool pattern.",
             evidence={
+                "declared_tool_names": sorted(declared_tool_names),
                 "tool_functions": tool_functions,
                 "reachable_tools": sorted(reachable_tools),
                 "bound_tools": sorted(bound_tools),
             },
+        )
+
+
+class ChatbotNotebookContractRule(QAValidationRule):
+    """Check that chatbot/persona notebooks expose the expected execution affordances."""
+
+    rule_id = "chatbot_notebook_contract"
+    check_name = "Chatbot Notebook Contract"
+    category = "prompt_faithfulness"
+    failure_severity = "warning"
+    repairable = False
+
+    CHATBOT_CUES = {
+        "chatbot",
+        "chat bot",
+        "interactive chat",
+        "chat loop",
+        "turn-taking",
+    }
+    CHARACTER_CUES = {"male", "female", "gender", "character", "persona"}
+    VERIFIER_CUES = {"verify", "verifier", "verification", "check", "realism", "revise"}
+    MEMORY_CUES = {"memory", "remember", "memories"}
+
+    def validate(self, context: NotebookValidationContext) -> Optional[QAReport]:
+        content = "\n".join(_cell_source(cell) for cell in context.notebook.cells)
+        lowered = content.lower()
+        if not any(cue in lowered for cue in self.CHATBOT_CUES):
+            return self.passed_report(
+                "No strong chatbot cues required an interactive chat contract.",
+                evidence={"matched_cues": []},
+            )
+
+        issues: list[dict[str, object]] = []
+        has_chat_loop = "def chat_once" in content and "def run_chat_loop" in content
+        has_input_loop = "input(" in content and all(
+            token in lowered for token in ("quit", "exit")
+        )
+        has_values_stream = (
+            'stream_mode="values"' in content
+            or "stream_mode='values'" in content
+            or (
+                "stream_mode" in content
+                and '"updates" if show_updates else "values"' in content
+                and "stream_mode=stream_mode" in content
+            )
+            or (
+                "stream_mode" in content
+                and "'updates' if show_updates else 'values'" in content
+                and "stream_mode=stream_mode" in content
+            )
+        )
+        has_state_read = ".get_state(config).values" in content
+        has_thread_id = "thread_id" in lowered and "THREAD_ID" in content
+        has_bad_update_carryover = "current_state = step" in content
+        has_second_initial_invoke = "graph.invoke(initial_state" in content
+
+        if not has_chat_loop or not has_input_loop:
+            issues.append(
+                {
+                    "code": "missing_chat_loop",
+                    "message": "Chatbot notebook does not expose chat_once/run_chat_loop with user input and quit handling.",
+                }
+            )
+        if not has_values_stream:
+            issues.append(
+                {
+                    "code": "missing_values_stream",
+                    "message": "Chatbot execution should stream user-facing state with stream_mode='values'.",
+                }
+            )
+        if not has_state_read:
+            issues.append(
+                {
+                    "code": "missing_get_state",
+                    "message": "Chatbot execution should read graph.get_state(config).values after streaming.",
+                }
+            )
+        if not has_thread_id:
+            issues.append(
+                {
+                    "code": "missing_thread_id",
+                    "message": "Chatbot execution should preserve a stable thread_id.",
+                }
+            )
+        if has_bad_update_carryover:
+            issues.append(
+                {
+                    "code": "stream_update_reused_as_state",
+                    "message": "Streamed updates should not be reused as the next turn's input state.",
+                }
+            )
+        if has_second_initial_invoke:
+            issues.append(
+                {
+                    "code": "initial_state_rerun",
+                    "message": "Execution should not rerun initial_state after streaming.",
+                }
+            )
+
+        if all(cue in lowered for cue in ("male", "female")) or "selected_gender" in lowered:
+            if "def select_character_gender" not in content or "CHARACTER_GENDER" not in content:
+                issues.append(
+                    {
+                        "code": "missing_character_gate",
+                        "message": "Character/persona notebook should gate the first chat turn on male/female selection.",
+                    }
+                )
+
+        if any(cue in lowered for cue in self.MEMORY_CUES):
+            if "InMemorySaver" not in content or "checkpointer=memory" not in content:
+                issues.append(
+                    {
+                        "code": "missing_short_term_memory",
+                        "message": "Memory-oriented chat notebooks should compile with a checkpointer.",
+                    }
+                )
+
+        if any(cue in lowered for cue in self.VERIFIER_CUES):
+            verifier_fields = {
+                "needs_revision",
+                "historical_risk_notes",
+                "realism_notes",
+                "revision_instructions",
+            }
+            if not verifier_fields & set(re.findall(r"[A-Za-z_][A-Za-z0-9_]*", content)):
+                issues.append(
+                    {
+                        "code": "missing_structured_verifier_state",
+                        "message": "Verifier/reviser workflows should expose structured pass/fail and revision fields.",
+                    }
+                )
+            if "revision" in lowered and "MAX_ITERATIONS" not in content:
+                issues.append(
+                    {
+                        "code": "missing_bounded_revision",
+                        "message": "Verifier/reviser loops should include a bounded retry or iteration cap.",
+                    }
+                )
+
+        if issues:
+            return self.failed_report(
+                "Chatbot notebook contract issues detected.",
+                suggestions=[
+                    "Generate chat_once/run_chat_loop with values streaming, stable thread_id, and graph.get_state(config).values.",
+                    "Gate character/persona prompts before the first turn and expose structured verifier/reviser state.",
+                ],
+                evidence={"issues": issues},
+            )
+
+        return self.passed_report(
+            "Chatbot notebook exposes an interactive, persistent execution contract.",
+            evidence={"issues": []},
         )
 
 

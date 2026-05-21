@@ -222,6 +222,107 @@ def test_state_cells_filter_pattern_base_state_fields(
 
 
 @pytest.mark.asyncio
+async def test_chatbot_notebook_emits_interactive_chat_contract(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    monkeypatch.setattr(composer_module, "ChatOpenAI", DummyLLM)
+    composer = composer_module.NotebookComposer()
+
+    composition = await composer.compose_notebook(
+        notebook_plan=NotebookPlan(
+            title="18th Century Commoner Chatbot",
+            sections=["Setup", "Workflow", "Interactive Chat"],
+            patterns_used=["hybrid", "chatbot"],
+            architecture_type="hybrid",
+        ),
+        workflow_design={
+            "architecture_type": "hybrid",
+            "state_schema": {
+                "messages": "Conversation messages",
+                "selected_gender": "Selected male or female character gender",
+                "gender_pending": "Whether the character selection is pending",
+                "turn_count": "Number of chat turns",
+                "retrieved_memories": "Conversation memories retrieved",
+                "historical_verification": "Structured historical check payload",
+                "needs_revision": "Whether the response must be revised",
+                "revision_history": "Revision history",
+                "final_response": "Final chatbot response",
+            },
+            "nodes": [
+                {"name": "router", "purpose": "Route chat turns"},
+                {"name": "persona", "purpose": "Play an 18th century character"},
+                {
+                    "name": "historical_verifier",
+                    "purpose": "Verify future knowledge and realism",
+                },
+                {"name": "reviser", "purpose": "Revise unsafe anachronisms"},
+            ],
+        },
+        tools=[],
+        architecture={"architecture_type": "hybrid", "justification": "Chat test."},
+    )
+
+    config_code = next(
+        cell.content
+        for cell in composition.cells
+        if cell.section == "config" and cell.cell_type == "code"
+    )
+    assert 'CHARACTER_GENDER = None' in config_code
+    assert 'THREAD_ID = "lnf-demo-thread"' in config_code
+    assert "SHOW_UPDATES = False" in config_code
+
+    state_code = next(
+        cell.content
+        for cell in composition.cells
+        if cell.section == "state" and cell.cell_type == "code"
+    )
+    assert "selected_gender: str" in state_code
+    assert "gender_pending: bool" in state_code
+    assert "turn_count: int" in state_code
+    assert "retrieved_memories: Annotated[List[str], operator.add]" in state_code
+    assert "historical_verification: Dict[str, object]" in state_code
+    assert "needs_revision: bool" in state_code
+    assert "revision_history: Annotated[List[str], operator.add]" in state_code
+
+    execution_code = next(
+        cell.content
+        for cell in composition.cells
+        if cell.section == "execution" and cell.cell_type == "code"
+    )
+    assert "def chat_once(" in execution_code
+    assert "def run_chat_loop(" in execution_code
+    assert "input(" in execution_code
+    assert "quit" in execution_code and "exit" in execution_code
+    assert 'stream_mode = "updates" if show_updates else "values"' in execution_code
+    assert "graph.get_state(config).values" in execution_code
+    assert "def select_character_gender" in execution_code
+    assert "current_state = step" not in execution_code
+    assert "graph.invoke(initial_state" not in execution_code
+    ast.parse(execution_code)
+
+
+def test_one_shot_execution_reads_state_without_rerunning_initial_state(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    monkeypatch.setattr(composer_module, "ChatOpenAI", DummyLLM)
+    composer = composer_module.NotebookComposer()
+
+    cells = composer._create_execution_cells(
+        {
+            "architecture_type": "router",
+            "state_schema": {"messages": "Conversation state"},
+            "nodes": [{"name": "router", "purpose": "Route requests"}],
+        }
+    )
+    execution_code = next(cell.content for cell in cells if cell.cell_type == "code")
+
+    assert 'stream_mode="values"' in execution_code
+    assert "graph.get_state(config).values" in execution_code
+    assert "graph.invoke(initial_state" not in execution_code
+    ast.parse(execution_code)
+
+
+@pytest.mark.asyncio
 async def test_notebook_composer_registry_plugins_can_inject_pre_section_cells(
     monkeypatch: pytest.MonkeyPatch,
 ):
@@ -531,9 +632,13 @@ async def test_compose_notebook_sanitizes_provider_env_vars_for_config_code(
         and "MODEL =" in cell.content
     ]
     assert config_cells
-    assert 'OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")' in config_cells[0]
+    assert 'OPENAI_API_KEY = _load_env_var("OPENAI_API_KEY")' in config_cells[0]
+    assert "from google.colab import userdata" in config_cells[0]
+    assert "from getpass import getpass" in config_cells[0]
+    assert "os.environ[name] = value" in config_cells[0]
+    assert "def make_llm(" in config_cells[0]
     assert (
-        'ENV_123_SERVICE_KEY = os.environ.get("ENV_123_SERVICE_KEY", "")'
+        'ENV_123_SERVICE_KEY = _load_env_var("ENV_123_SERVICE_KEY")'
         in config_cells[0]
     )
     ast.parse(config_cells[0])
@@ -738,9 +843,12 @@ async def test_compose_notebook_sections_and_packages(
     ]
     assert config_cells
     assert (
-        'OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")'
+        'OPENAI_API_KEY = _load_env_var("OPENAI_API_KEY")'
         in config_cells[0].content
     )
+    assert "from google.colab import userdata" in config_cells[0].content
+    assert "from getpass import getpass" in config_cells[0].content
+    assert "def make_llm(" in config_cells[0].content
     assert "ANTHROPIC_API_KEY" not in config_cells[0].content
     assert "MAX_ITERATIONS = 10" in config_cells[0].content
 
@@ -1817,6 +1925,34 @@ async def test_generate_tool_implementation_rejects_invalid_python_and_falls_bac
 
 
 @pytest.mark.asyncio
+async def test_tool_cells_emit_decorated_tools_and_tool_node(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    monkeypatch.setattr(composer_module, "ChatOpenAI", DummyLLM)
+    composer = composer_module.NotebookComposer()
+    feedback = composer_module.NotebookCompositionFeedback()
+
+    cells = await composer._create_tool_cells(
+        [
+            {
+                "name": "Context Lookup",
+                "purpose": "Lookup conversational context.",
+                "category": "validation",
+            }
+        ],
+        feedback,
+    )
+    tool_code = "\n\n".join(cell.content for cell in cells if cell.cell_type == "code")
+
+    assert "from langchain_core.tools import tool" in tool_code
+    assert "@tool" in tool_code
+    assert "TOOLS = [Context_Lookup]" in tool_code
+    assert "TOOLS_BY_NAME = {tool.name: tool for tool in TOOLS}" in tool_code
+    assert "ToolNode(TOOLS, handle_tool_errors=True)" in tool_code
+    ast.parse(tool_code)
+
+
+@pytest.mark.asyncio
 async def test_generate_node_implementation_rejects_invalid_python_and_falls_back(
     monkeypatch: pytest.MonkeyPatch,
 ):
@@ -1865,10 +2001,11 @@ def test_tool_fallback_sanitizes_identifier_and_compiles(
     assert fallback_code.splitlines()[0].startswith(
         "# WARNING: Deterministic fallback generated"
     )
+    assert "from langchain_core.tools import tool" in fallback_code
+    assert "@tool" in fallback_code
     compile(fallback_code, "<tool_fallback>", "exec")
     parsed = ast.parse(fallback_code)
-    assert len(parsed.body) == 1
-    assert isinstance(parsed.body[0], ast.FunctionDef)
+    assert any(isinstance(node, ast.FunctionDef) for node in parsed.body)
 
 
 def test_node_fallback_sanitizes_identifier_and_compiles(
@@ -1892,6 +2029,45 @@ def test_node_fallback_sanitizes_identifier_and_compiles(
     parsed = ast.parse(fallback_code)
     assert len(parsed.body) == 1
     assert isinstance(parsed.body[0], ast.FunctionDef)
+
+
+def test_verifier_and_reviser_fallbacks_emit_structured_revision_state(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    monkeypatch.setattr(composer_module, "ChatOpenAI", DummyLLM)
+    composer = composer_module.NotebookComposer()
+
+    workflow_design = {
+        "architecture_type": "custom",
+        "state_schema": {
+            "needs_revision": "Whether revision is required",
+            "historical_risk_notes": "Historical risk notes",
+            "realism_notes": "Realism notes",
+            "revision_instructions": "Instructions for reviser",
+            "revision_history": "Revision history",
+        },
+        "nodes": [
+            {"name": "historical_verifier", "purpose": "Verify anachronisms"},
+            {"name": "reviser", "purpose": "Revise failed outputs"},
+        ],
+    }
+
+    verifier_code = composer._generate_node_fallback(
+        {"name": "historical_verifier", "purpose": "Verify realism"},
+        workflow_design,
+    )
+    reviser_code = composer._generate_node_fallback(
+        {"name": "reviser", "purpose": "Revise failed outputs"},
+        workflow_design,
+    )
+
+    assert 'updates["needs_revision"] = False' in verifier_code
+    assert 'updates["historical_risk_notes"] = ""' in verifier_code
+    assert 'updates["realism_notes"] = ""' in verifier_code
+    assert 'updates["revision_instructions"] = ""' in verifier_code
+    assert 'updates["revision_history"] = revision_history' in reviser_code
+    compile(verifier_code, "<verifier_fallback>", "exec")
+    compile(reviser_code, "<reviser_fallback>", "exec")
 
 
 def test_graph_fallback_uses_sanitized_function_references(
@@ -2047,10 +2223,11 @@ async def test_pattern_nodes_use_request_scoped_model_config(
     node_cells = [cell for cell in cells if cell.section == "nodes"]
     assert node_cells
     assert any(
-        "ChatOpenAI(model='gpt-5.2', temperature=0.3, base_url='https://example.test/v1', max_tokens=2048)"
-        in cell.content
+        "make_llm(temperature=0" in cell.content
+        or "make_llm(temperature=0.3" in cell.content
         for cell in node_cells
     )
+    assert not any("ChatOpenAI(model=" in cell.content for cell in node_cells)
 
     config_code_cells = [
         cell for cell in cells if cell.section == "config" and cell.cell_type == "code"
@@ -2062,5 +2239,6 @@ async def test_pattern_nodes_use_request_scoped_model_config(
         for cell in config_code_cells
     )
     assert any("MAX_TOKENS = 2048" in cell.content for cell in config_code_cells)
+    assert any("def make_llm(" in cell.content for cell in config_code_cells)
     assert composition.feedback.resolved_model == "gpt-5.2"
     assert composition.feedback.resolved_api_base == "https://example.test/v1"

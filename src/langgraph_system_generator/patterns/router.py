@@ -57,6 +57,7 @@ class WorkflowState(TypedDict, total=False):
         routes: List[str],
         model_config: Optional[Union[ModelConfig, dict]] = None,
         use_structured_output: bool = True,
+        use_notebook_helper: bool = False,
     ) -> str:
         """Generate a router node that returns ``Command``."""
         if model_config is None:
@@ -77,6 +78,7 @@ class WorkflowState(TypedDict, total=False):
             0,
             config.api_base,
             config.max_tokens,
+            use_notebook_helper=use_notebook_helper,
         )
 
         if use_structured_output:
@@ -196,6 +198,7 @@ Route:""")
         route_name: str,
         route_purpose: str,
         model_config: Optional[Union[ModelConfig, dict]] = None,
+        use_notebook_helper: bool = False,
     ) -> str:
         """Generate a specialist node for a single route."""
         if model_config is None:
@@ -211,6 +214,7 @@ Route:""")
             config.temperature,
             config.api_base,
             config.max_tokens,
+            use_notebook_helper=use_notebook_helper,
         )
 
         return f'''from langchain_core.messages import AIMessage, SystemMessage

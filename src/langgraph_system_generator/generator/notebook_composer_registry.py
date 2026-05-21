@@ -470,7 +470,10 @@ def _build_execution_section(
     composer: Any,
     context: NotebookComposerContext,
 ) -> list[CellSpec]:
-    return composer._create_execution_cells(context.workflow_design)
+    return composer._create_execution_cells(
+        context.workflow_design,
+        notebook_plan=context.notebook_plan,
+    )
 
 
 def _load_plugin_modules(registry: NotebookComposerRegistry) -> None:

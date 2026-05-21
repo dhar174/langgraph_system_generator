@@ -39,7 +39,7 @@ def installation_and_imports(
         from langgraph.graph import END, START, MessagesState, StateGraph
         from langgraph.types import Command
         from langgraph.checkpoint.memory import InMemorySaver
-        from langgraph.prebuilt import create_react_agent
+        from langchain.agents import create_agent
         from langchain_openai import ChatOpenAI
         from langchain_core.messages import HumanMessage
         """).strip()
@@ -104,20 +104,18 @@ def build_graph_cells() -> List[CellSpec]:
         from langgraph.types import Command
         from langgraph.graph import END, START, MessagesState, StateGraph
         from langgraph.checkpoint.memory import InMemorySaver
-        from langgraph.prebuilt import create_react_agent
+        from langchain.agents import create_agent
         from langchain_core.messages import HumanMessage
-        from langchain_openai import ChatOpenAI
 
         # Define state using the built-in message reducer
         class WorkflowState(MessagesState):
             pass
 
-        # Configure a simple ReAct-style agent
-        llm = ChatOpenAI(model=MODEL, temperature=0)
-        router = create_react_agent(
-            llm,
+        # Configure a simple prebuilt agent loop
+        router = create_agent(
+            model=MODEL,
             tools=[],
-            prompt="You are a router that decides whether to hand off or answer directly.",
+            system_prompt="You are a router that decides whether to hand off or answer directly.",
         )
 
         def router_node(state: WorkflowState) -> Command:
