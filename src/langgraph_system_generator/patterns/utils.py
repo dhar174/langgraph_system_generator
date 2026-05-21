@@ -25,12 +25,12 @@ def build_llm_init(
     """
     if use_notebook_helper:
         params = [f"temperature={temperature}"]
-        if max_tokens:
+        if max_tokens is not None:
             params.append(f"max_tokens={max_tokens}")
         return f"make_llm({', '.join(params)})"
 
     params = [f"model={model!r}", f"temperature={temperature}"]
-    if max_tokens:
+    if max_tokens is not None:
         params.append(f"max_tokens={max_tokens}")
     if api_base:
         params.append(f"base_url={api_base!r}")

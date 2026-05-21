@@ -2299,6 +2299,36 @@ async def test_compose_notebook_custom_canonical_graph_uses_lowercase_refs_and_s
     compile(graph_code, "<custom_canonical_graph_contract>", "exec")
 
 
+def test_generate_canonical_graph_code_omits_checkpointer_when_disabled():
+    """Canonical notebook graph code should honor checkpointing=false."""
+
+    composer = composer_module.NotebookComposer()
+    schema = {
+        "architecture_type": "custom",
+        "nodes": [
+            {"name": "router", "purpose": "Route requests"},
+            {"name": "finish", "purpose": "Finalize"},
+        ],
+        "edges": [{"from": "router", "to": "finish"}],
+        "entry_point": "router",
+        "terminal_nodes": ["finish"],
+        "compiled_graph_variable": "compiled_graph",
+        "checkpointing": False,
+    }
+
+    graph_code = composer._generate_canonical_graph_code(
+        {"architecture_type": "custom"},
+        schema,
+    )
+
+    assert "from langgraph.checkpoint.memory import InMemorySaver" not in graph_code
+    assert "InMemorySaver()" not in graph_code
+    assert "checkpointer=" not in graph_code
+    assert "compiled_graph = workflow.compile()" in graph_code
+    assert "'checkpointing': False" in graph_code
+    compile(graph_code, "<canonical_graph_without_checkpointing>", "exec")
+
+
 def test_split_hybrid_nodes_uses_role_metadata_for_worker_membership():
     direct, direct_descriptions, workers, worker_descriptions = (
         composer_module.NotebookComposer._split_hybrid_nodes(

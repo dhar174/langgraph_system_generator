@@ -2220,17 +2220,30 @@ workflow.add_conditional_edges({json.dumps(source)}, {route_name}, {path_map})""
         )
         route_code = "\n\n".join(route_blocks)
         schema_literal = repr(schema)
-        checkpointer_name = "checkpointer" if schema.get("checkpointing", True) else "memory"
+        checkpointing_enabled = bool(schema.get("checkpointing", True))
+        checkpoint_import = (
+            "from langgraph.checkpoint.memory import InMemorySaver\n"
+            if checkpointing_enabled
+            else ""
+        )
+        checkpoint_setup = (
+            "checkpointer = InMemorySaver()\n" if checkpointing_enabled else ""
+        )
+        compile_statement = (
+            f"{compiled_graph_variable} = workflow.compile(checkpointer=checkpointer)"
+            if checkpointing_enabled
+            else f"{compiled_graph_variable} = workflow.compile()"
+        )
 
         return f"""from langgraph.graph import END, START, StateGraph
-from langgraph.checkpoint.memory import InMemorySaver
+{checkpoint_import}
 
 CANONICAL_GRAPH_SPEC = {schema_literal}
 {structural_node_definitions}
 
 # Create graph from canonical graph/spec metadata.
 workflow = StateGraph(WorkflowState)
-{checkpointer_name} = InMemorySaver()
+{checkpoint_setup}
 
 # Add nodes.
 {node_additions if node_additions else "# No canonical nodes were provided."}
@@ -2243,7 +2256,7 @@ workflow = StateGraph(WorkflowState)
 {route_code if route_code else "# No conditional or Command routes were provided."}
 
 # Compile graph with the canonical variable name.
-{compiled_graph_variable} = workflow.compile(checkpointer={checkpointer_name})"""
+{compile_statement}"""
 
     @staticmethod
     def _canonical_finish_node_definition(

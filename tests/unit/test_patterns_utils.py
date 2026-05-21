@@ -33,6 +33,13 @@ def test_build_llm_init_includes_max_tokens_only_when_passed():
     assert "base_url" not in result
 
 
+def test_build_llm_init_preserves_explicit_zero_max_tokens():
+    """Explicit token limits are preserved even when the value is falsy."""
+    result = build_llm_init("gpt-5-mini", 0.3, max_tokens=0)
+
+    assert result == "ChatOpenAI(model='gpt-5-mini', temperature=0.3, max_tokens=0)"
+
+
 def test_build_llm_init_handles_special_chars_in_params():
     """Model names stay explicit in generated pattern snippets."""
     model_with_quote = 'model-with"quote'
@@ -53,3 +60,15 @@ def test_build_llm_init_notebook_helper_uses_make_llm():
     assert result == "make_llm(temperature=0.3, max_tokens=1200)"
     assert "ChatOpenAI(" not in result
     assert "base_url" not in result
+
+
+def test_build_llm_init_notebook_helper_preserves_explicit_zero_max_tokens():
+    """Notebook helper mode also preserves intentionally provided zero values."""
+    result = build_llm_init(
+        "gpt-5-mini",
+        0.3,
+        max_tokens=0,
+        use_notebook_helper=True,
+    )
+
+    assert result == "make_llm(temperature=0.3, max_tokens=0)"

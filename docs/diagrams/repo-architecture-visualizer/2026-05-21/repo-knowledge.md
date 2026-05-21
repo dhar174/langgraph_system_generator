@@ -60,7 +60,7 @@ module, or environment-variable relationships change.
 
 All generated diagrams in this folder were emitted from:
 
-`C:\Users\darf3\.codex\skills\repo-architecture-visualizer\scripts\generate_repo_diagram.py`
+`<repo-architecture-visualizer-skill>\scripts\generate_repo_diagram.py`
 
 | Diagram | Scope | Kind | Granularity | Nodes | Edges | Files |
 | --- | --- | --- | --- | ---: | ---: | --- |
@@ -74,7 +74,7 @@ Figma-layout JSON sources are present and editable.
 ## Regeneration Commands
 
 ```powershell
-python C:\Users\darf3\.codex\skills\repo-architecture-visualizer\scripts\generate_repo_diagram.py --repo . --scan-root src --kind mixed --granularity package --package-depth 2 --emit mermaid,dot,json,figma-json --name repo-package-map --output-dir docs\diagrams\repo-architecture-visualizer\2026-05-21
-python C:\Users\darf3\.codex\skills\repo-architecture-visualizer\scripts\generate_repo_diagram.py --repo . --scan-root src\langgraph_system_generator\generator --kind mixed --granularity module --emit mermaid,dot,json,figma-json --name generator-module-map --output-dir docs\diagrams\repo-architecture-visualizer\2026-05-21
-python C:\Users\darf3\.codex\skills\repo-architecture-visualizer\scripts\generate_repo_diagram.py --repo . --scan-root src --kind env --granularity file --emit mermaid,dot,json,figma-json --name env-usage-map --output-dir docs\diagrams\repo-architecture-visualizer\2026-05-21
+python <repo-architecture-visualizer-skill>\scripts\generate_repo_diagram.py --repo . --scan-root src --kind mixed --granularity package --package-depth 2 --emit mermaid,dot,json,figma-json --name repo-package-map --output-dir docs\diagrams\repo-architecture-visualizer\2026-05-21
+python <repo-architecture-visualizer-skill>\scripts\generate_repo_diagram.py --repo . --scan-root src\langgraph_system_generator\generator --kind mixed --granularity module --emit mermaid,dot,json,figma-json --name generator-module-map --output-dir docs\diagrams\repo-architecture-visualizer\2026-05-21
+python <repo-architecture-visualizer-skill>\scripts\generate_repo_diagram.py --repo . --scan-root src --kind env --granularity file --emit mermaid,dot,json,figma-json --name env-usage-map --output-dir docs\diagrams\repo-architecture-visualizer\2026-05-21
 ```
