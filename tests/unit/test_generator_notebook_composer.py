@@ -2302,7 +2302,7 @@ async def test_compose_notebook_custom_canonical_graph_uses_lowercase_refs_and_s
 def test_generate_canonical_graph_code_omits_checkpointer_when_disabled():
     """Canonical notebook graph code should honor checkpointing=false."""
 
-    composer = composer_module.NotebookComposer()
+    composer = composer_module.NotebookComposer.__new__(composer_module.NotebookComposer)
     schema = {
         "architecture_type": "custom",
         "nodes": [
