@@ -519,17 +519,18 @@ function showResult(data) {
     exportButtons.style.flexWrap = 'wrap';
 
     [
-        { key: 'notebook_path', label: 'Notebook (.ipynb)' },
-        { key: 'html_path', label: 'HTML' },
-        { key: 'docx_path', label: 'Word Doc' },
-        { key: 'pdf_path', label: 'PDF' },
-        { key: 'zip_path', label: 'ZIP Bundle' },
-        { key: 'markdown_path', label: 'Markdown (.md)' }
+        { path: manifest.notebook_path, label: 'Notebook (.ipynb)' },
+        { path: manifest.html_path, label: 'HTML' },
+        { path: data.manifest_path, label: 'Manifest (JSON)' },
+        { path: manifest.docx_path, label: 'Word Doc' },
+        { path: manifest.pdf_path, label: 'PDF' },
+        { path: manifest.zip_path, label: 'ZIP Bundle' },
+        { path: manifest.markdown_path, label: 'Markdown (.md)' }
     ].forEach((format) => {
-        if (manifest[format.key]) {
+        if (format.path) {
             const btn = document.createElement('a');
             btn.className = 'btn btn-secondary';
-            btn.href = buildArtifactDownloadUrl(manifest[format.key]);
+            btn.href = buildArtifactDownloadUrl(format.path);
             btn.download = '';
             btn.style.display = 'inline-flex';
             btn.style.textDecoration = 'none';

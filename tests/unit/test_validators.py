@@ -9,9 +9,11 @@ import pytest
 from nbformat.v4 import new_code_cell, new_markdown_cell, new_notebook
 
 from langgraph_system_generator.qa.validators import (
+    CanonicalGraphContractRule,
     CanonicalSectionOrderRule,
     ChatbotNotebookContractRule,
     DomainArchitectureAlignmentRule,
+    GeneratedLLMConfigRule,
     GraphStructureRule,
     InvocationConfigRule,
     LangGraphTopologyRule,
@@ -412,6 +414,199 @@ graph = workflow.compile()""",
         and edge.get("conditional")
         for edge in report.evidence["edge_registrations"]
     )
+
+
+def test_canonical_graph_contract_rule_detects_schema_code_drift(
+    tmp_notebook_path: Path,
+):
+    notebook = new_notebook()
+    notebook.cells.append(
+        new_code_cell(
+            """from langgraph.graph import END, START, StateGraph
+
+class WorkflowState(dict):
+    pass
+
+def router_node(state: WorkflowState) -> dict:
+    return state
+
+def persona_specialist_node(state: WorkflowState) -> dict:
+    return state
+
+def historical_verifier_node(state: WorkflowState) -> dict:
+    return state
+
+def revision_specialist_node(state: WorkflowState) -> dict:
+    return state
+
+def finish_node(state: WorkflowState) -> dict:
+    return state
+
+CANONICAL_GRAPH_SPEC = {
+    "nodes": [
+        {"name": "router"},
+        {"name": "persona_specialist"},
+        {"name": "historical_verifier"},
+        {"name": "revision_specialist"},
+        {"name": "finish"},
+    ],
+    "edges": [
+        {"from": "router", "to": "persona_specialist"},
+        {"from": "persona_specialist", "to": "historical_verifier"},
+        {"from": "revision_specialist", "to": "historical_verifier"},
+    ],
+    "conditional_edges": [
+        {
+            "from": "historical_verifier",
+            "branches": {"revise": "revision_specialist", "approved": "finish"},
+            "guarded_cycle": True,
+        }
+    ],
+    "entry_point": "router",
+    "terminal_nodes": ["finish"],
+    "compiled_graph_variable": "graph",
+}
+
+workflow = StateGraph(WorkflowState)
+workflow.add_node("router", router_node)
+workflow.add_node("persona_specialist", persona_specialist_node)
+workflow.add_node("historical_verifier", historical_verifier_node)
+workflow.add_node("revision_specialist", revision_specialist_node)
+workflow.add_node("finish", finish_node)
+workflow.add_edge(START, "router")
+workflow.add_edge("router", "persona_specialist")
+workflow.add_edge("persona_specialist", "finish")
+workflow.add_edge("finish", END)
+graph = workflow.compile()""",
+            metadata={"section": "graph"},
+        )
+    )
+    _write_notebook(tmp_notebook_path, notebook)
+
+    reports = NotebookValidator().validate_all(tmp_notebook_path)
+    report = _report_by_name(reports, "Canonical Graph Contract")
+    issue_codes = {issue["code"] for issue in report.evidence["issues"]}
+
+    assert report.passed is False
+    assert "missing_edges" in issue_codes
+    assert "extra_edges" in issue_codes
+    assert "missing_conditional_routes" in issue_codes
+
+
+def test_canonical_graph_contract_rule_accepts_matching_contract(
+    tmp_notebook_path: Path,
+):
+    notebook = new_notebook()
+    notebook.cells.append(
+        new_code_cell(
+            """from langgraph.graph import END, START, StateGraph
+
+class WorkflowState(dict):
+    pass
+
+def router_node(state: WorkflowState) -> dict:
+    return state
+
+def finish_node(state: WorkflowState) -> dict:
+    return state
+
+CANONICAL_GRAPH_SPEC = {
+    "nodes": [{"name": "router"}, {"name": "finish"}],
+    "edges": [{"from": "router", "to": "finish"}],
+    "conditional_edges": [],
+    "command_routes": [],
+    "entry_point": "router",
+    "terminal_nodes": ["finish"],
+    "compiled_graph_variable": "graph",
+}
+
+workflow = StateGraph(WorkflowState)
+workflow.add_node("router", router_node)
+workflow.add_node("finish", finish_node)
+workflow.add_edge(START, "router")
+workflow.add_edge("router", "finish")
+workflow.add_edge("finish", END)
+graph = workflow.compile()""",
+            metadata={"section": "graph"},
+        )
+    )
+    _write_notebook(tmp_notebook_path, notebook)
+
+    reports = NotebookValidator().validate_all(tmp_notebook_path)
+    report = _report_by_name(reports, "Canonical Graph Contract")
+
+    assert report.passed is True
+
+
+def test_generated_llm_config_rule_rejects_hardcoded_node_constructor(
+    tmp_notebook_path: Path,
+):
+    notebook = new_notebook()
+    notebook.cells.extend(
+        [
+            new_code_cell(
+                """from langchain_openai import ChatOpenAI
+MODEL = "gpt-5.4-mini"
+TEMPERATURE = 0.2
+MAX_TOKENS = 1200
+API_BASE = "https://example.test/v1"
+
+def make_llm(*, model=MODEL, temperature=TEMPERATURE, max_tokens=MAX_TOKENS):
+    kwargs = {"model": model, "temperature": temperature}
+    if API_BASE:
+        kwargs["base_url"] = API_BASE
+    if max_tokens is not None:
+        kwargs["max_tokens"] = max_tokens
+    return ChatOpenAI(**kwargs)""",
+                metadata={"section": "config"},
+            ),
+            new_code_cell(
+                """from langchain_openai import ChatOpenAI
+
+def specialist_node(state):
+    llm = ChatOpenAI(model="gpt-5.4-mini", temperature=0)
+    return {"messages": [llm.invoke([])]}""",
+                metadata={"section": "nodes"},
+            ),
+        ]
+    )
+    _write_notebook(tmp_notebook_path, notebook)
+
+    reports = NotebookValidator().validate_all(tmp_notebook_path)
+    report = _report_by_name(reports, "Generated LLM Config")
+
+    assert report.passed is False
+    assert report.evidence["hardcoded_constructors"]
+
+
+def test_generated_llm_config_rule_accepts_notebook_helper_nodes(
+    tmp_notebook_path: Path,
+):
+    notebook = new_notebook()
+    notebook.cells.extend(
+        [
+            new_code_cell(
+                """from langchain_openai import ChatOpenAI
+MODEL = "gpt-5.4-mini"
+
+def make_llm(*, model=MODEL, temperature=0.0, max_tokens=None):
+    return ChatOpenAI(model=model, temperature=temperature)""",
+                metadata={"section": "config"},
+            ),
+            new_code_cell(
+                """def specialist_node(state):
+    llm = make_llm(temperature=0.2, max_tokens=1200)
+    return {"messages": [llm.invoke([])]}""",
+                metadata={"section": "nodes"},
+            ),
+        ]
+    )
+    _write_notebook(tmp_notebook_path, notebook)
+
+    reports = NotebookValidator().validate_all(tmp_notebook_path)
+    report = _report_by_name(reports, "Generated LLM Config")
+
+    assert report.passed is True
 
 
 def test_state_reducer_semantics_rule_rejects_duplicate_fields(
@@ -1239,8 +1434,10 @@ def test_single_check_helpers_use_registry_backed_rules(
             CustomGraphStructureRule(),
             CanonicalSectionOrderRule(),
             LangGraphTopologyRule(),
+            CanonicalGraphContractRule(),
             StateReducerSemanticsRule(),
             ToolReachabilityRule(),
+            GeneratedLLMConfigRule(),
             InvocationConfigRule(),
         ]
     )

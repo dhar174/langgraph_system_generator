@@ -140,7 +140,7 @@ class WorkflowState(TypedDict, total=False):
         )
         team_worker_specs = _hybrid_specs(
             team_workers,
-            ["researcher", "reviewer"],
+            [],
         )
         direct_node_additions = "\n".join(
             f'workflow.add_node("{node_name}", {node_name}_node)'

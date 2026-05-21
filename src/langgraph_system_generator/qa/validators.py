@@ -82,6 +82,15 @@ def _literal_string(node: ast.AST) -> str | None:
     return None
 
 
+def _literal_python_value(node: ast.AST) -> object | None:
+    """Return a literal Python value when an AST node is fully static."""
+
+    try:
+        return ast.literal_eval(node)
+    except (ValueError, TypeError, SyntaxError):
+        return None
+
+
 def _dict_string_keys(node: ast.AST) -> set[str]:
     """Return literal string keys from a dictionary AST node."""
 
@@ -1071,7 +1080,10 @@ class LangGraphTopologyRule(QAValidationRule):
             target = str(edge.get("target") or "")
             if not source or not target:
                 continue
-            edge_pairs[(source, target)] = edge_pairs.get((source, target), 0) + 1
+            if not edge.get("conditional"):
+                edge_pairs[(source, target)] = (
+                    edge_pairs.get((source, target), 0) + 1
+                )
             if (
                 source == target
                 and not _is_graph_boundary_symbol(target)
@@ -1136,6 +1148,349 @@ class LangGraphTopologyRule(QAValidationRule):
                 "edge_registrations": edge_registrations,
             },
         )
+
+
+class CanonicalGraphContractRule(QAValidationRule):
+    """Validate executable graph code against embedded canonical graph metadata."""
+
+    rule_id = "canonical_graph_contract"
+    check_name = "Canonical Graph Contract"
+    category = "graph_structure"
+    failure_severity = "error"
+    repairable = False
+
+    END_ALIASES = {"END", "__end__"}
+    START_ALIASES = {"START", "__start__"}
+
+    def validate(self, context: NotebookValidationContext) -> Optional[QAReport]:
+        tree = context.ast_tree()
+        if tree is None:
+            return None
+
+        schema = self._canonical_schema(context, tree)
+        if not schema:
+            return None
+
+        actual = self._actual_graph_contract(tree)
+        expected = self._expected_graph_contract(schema)
+        issues: list[dict[str, object]] = []
+
+        missing_nodes = sorted(expected["nodes"] - actual["nodes"])
+        extra_nodes = sorted(actual["nodes"] - expected["nodes"])
+        if missing_nodes:
+            issues.append({"code": "missing_nodes", "nodes": missing_nodes})
+        if extra_nodes:
+            issues.append({"code": "extra_nodes", "nodes": extra_nodes})
+
+        missing_edges = sorted(expected["required_edges"] - actual["direct_edges"])
+        extra_edges = sorted(actual["direct_edges"] - expected["allowed_edges"])
+        if missing_edges:
+            issues.append({"code": "missing_edges", "edges": missing_edges})
+        if extra_edges:
+            issues.append({"code": "extra_edges", "edges": extra_edges})
+
+        missing_conditional = sorted(
+            expected["conditional_routes"] - actual["route_entries"]
+        )
+        if missing_conditional:
+            issues.append(
+                {"code": "missing_conditional_routes", "routes": missing_conditional}
+            )
+
+        missing_command_destinations = sorted(
+            expected["command_destinations"] - actual["route_destinations"]
+        )
+        if missing_command_destinations:
+            issues.append(
+                {
+                    "code": "missing_command_destinations",
+                    "destinations": missing_command_destinations,
+                }
+            )
+
+        terminal_failures = sorted(
+            terminal
+            for terminal in expected["terminal_nodes"]
+            if (terminal, "END") not in actual["direct_edges"]
+            and (terminal, "END") not in actual["route_destinations"]
+        )
+        if terminal_failures:
+            issues.append(
+                {"code": "missing_terminal_paths", "nodes": terminal_failures}
+            )
+
+        compiled_graph_variable = expected["compiled_graph_variable"]
+        if compiled_graph_variable not in actual["compiled_variables"]:
+            issues.append(
+                {
+                    "code": "compiled_graph_variable_mismatch",
+                    "expected": compiled_graph_variable,
+                    "actual": sorted(actual["compiled_variables"]),
+                }
+            )
+
+        cycle_sources = self._direct_cycle_sources(
+            actual["direct_edges"], actual["nodes"]
+        )
+        unguarded_cycles = sorted(cycle_sources - expected["guarded_cycle_sources"])
+        if unguarded_cycles:
+            issues.append(
+                {"code": "unguarded_direct_cycles", "sources": unguarded_cycles}
+            )
+
+        if issues:
+            return self.failed_report(
+                "Executable graph code does not match the canonical graph contract.",
+                suggestions=[
+                    "Render graph cells from graph_exports.schema instead of architecture defaults.",
+                    "Keep node ids, route maps, terminal paths, and compiled graph variable names aligned.",
+                ],
+                evidence={
+                    "issues": issues,
+                    "expected": self._serializable_contract(expected),
+                    "actual": self._serializable_contract(actual),
+                },
+            )
+
+        return self.passed_report(
+            "Executable graph code matches the canonical graph contract.",
+            evidence={
+                "nodes": sorted(expected["nodes"]),
+                "compiled_graph_variable": compiled_graph_variable,
+            },
+        )
+
+    @classmethod
+    def _normalize_boundary(cls, value: object) -> str:
+        text = str(value or "").strip()
+        if text in cls.START_ALIASES or text.rsplit(".", 1)[-1] == "START":
+            return "START"
+        if text in cls.END_ALIASES or text.rsplit(".", 1)[-1] == "END":
+            return "END"
+        return text
+
+    @classmethod
+    def _normalize_branch_label(cls, value: object) -> str:
+        text = str(value or "").strip()
+        return "__end__" if cls._normalize_boundary(text) == "END" else text
+
+    def _canonical_schema(
+        self, context: NotebookValidationContext, tree: ast.Module
+    ) -> dict[str, object] | None:
+        for cell in context.code_cells:
+            metadata_schema = cell.metadata.get("canonical_graph_schema")
+            if isinstance(metadata_schema, dict):
+                return metadata_schema
+
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Assign):
+                continue
+            if not any(
+                isinstance(target, ast.Name) and target.id == "CANONICAL_GRAPH_SPEC"
+                for target in node.targets
+            ):
+                continue
+            value = _literal_python_value(node.value)
+            if isinstance(value, dict):
+                return value
+        return None
+
+    def _actual_graph_contract(self, tree: ast.Module) -> dict[str, object]:
+        dict_assignments: dict[str, ast.Dict] = {}
+        nodes: set[str] = set()
+        direct_edges: set[tuple[str, str]] = set()
+        route_entries: set[tuple[str, str, str]] = set()
+        route_destinations: set[tuple[str, str]] = set()
+        compiled_variables: set[str] = set()
+
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Assign) and isinstance(node.value, ast.Dict):
+                for target in node.targets:
+                    for name in _target_names(target):
+                        dict_assignments[name] = node.value
+
+        def _path_map_entries(path_map: ast.AST | None) -> list[tuple[str, str]]:
+            if isinstance(path_map, ast.Name):
+                path_map = dict_assignments.get(path_map.id)
+            if not isinstance(path_map, ast.Dict):
+                return []
+            entries: list[tuple[str, str]] = []
+            for key, value in zip(path_map.keys, path_map.values):
+                label = _literal_string(key) if key is not None else None
+                target = _literal_string(value) or _call_name(value)
+                if label and target:
+                    entries.append(
+                        (
+                            self._normalize_branch_label(label),
+                            self._normalize_boundary(target),
+                        )
+                    )
+            return entries
+
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Assign) and isinstance(node.value, ast.Call):
+                if _call_name(node.value.func).endswith(".compile"):
+                    for target in node.targets:
+                        compiled_variables.update(_target_names(target))
+                continue
+
+            if not isinstance(node, ast.Call):
+                continue
+            call_name = _call_name(node.func)
+            if call_name.endswith(".add_node") and node.args:
+                node_id = _literal_string(node.args[0])
+                if node_id:
+                    nodes.add(node_id)
+            elif call_name.endswith(".add_edge") and len(node.args) >= 2:
+                source = _literal_string(node.args[0]) or _call_name(node.args[0])
+                target = _literal_string(node.args[1]) or _call_name(node.args[1])
+                if source and target:
+                    direct_edges.add(
+                        (
+                            self._normalize_boundary(source),
+                            self._normalize_boundary(target),
+                        )
+                    )
+            elif call_name.endswith(".add_conditional_edges"):
+                source_arg = (
+                    node.args[0] if node.args else _keyword_value(node, "source")
+                )
+                path_map = (
+                    node.args[2]
+                    if len(node.args) >= 3
+                    else _keyword_value(node, "path_map")
+                )
+                source = (
+                    (_literal_string(source_arg) or _call_name(source_arg))
+                    if source_arg is not None
+                    else ""
+                )
+                source = self._normalize_boundary(source)
+                for label, target in _path_map_entries(path_map):
+                    route_entries.add((source, label, target))
+                    route_destinations.add((source, target))
+
+        return {
+            "nodes": nodes,
+            "direct_edges": direct_edges,
+            "route_entries": route_entries,
+            "route_destinations": route_destinations,
+            "compiled_variables": compiled_variables,
+        }
+
+    def _expected_graph_contract(self, schema: dict[str, object]) -> dict[str, object]:
+        nodes = {
+            str(node.get("name") or "").strip()
+            for node in schema.get("nodes", []) or []
+            if isinstance(node, dict) and str(node.get("name") or "").strip()
+        }
+        entry_point = str(schema.get("entry_point") or "").strip()
+        compiled_graph_variable = str(schema.get("compiled_graph_variable") or "graph")
+        required_edges: set[tuple[str, str]] = set()
+        allowed_edges: set[tuple[str, str]] = set()
+        conditional_routes: set[tuple[str, str, str]] = set()
+        command_destinations: set[tuple[str, str]] = set()
+        guarded_cycle_sources: set[str] = set()
+
+        if entry_point:
+            required_edges.add(("START", entry_point))
+            allowed_edges.add(("START", entry_point))
+
+        for edge in schema.get("edges", []) or []:
+            if not isinstance(edge, dict):
+                continue
+            source = str(edge.get("from") or edge.get("source") or "").strip()
+            target = str(edge.get("to") or edge.get("target") or "").strip()
+            if source and target:
+                normalized = (
+                    self._normalize_boundary(source),
+                    self._normalize_boundary(target),
+                )
+                required_edges.add(normalized)
+                allowed_edges.add(normalized)
+
+        terminal_nodes = {
+            str(node).strip()
+            for node in schema.get("terminal_nodes", []) or []
+            if str(node).strip()
+        }
+        allowed_edges.update((node, "END") for node in terminal_nodes)
+
+        for edge in schema.get("conditional_edges", []) or []:
+            if not isinstance(edge, dict):
+                continue
+            source = str(edge.get("from") or edge.get("source") or "").strip()
+            branches = edge.get("branches")
+            if edge.get("guarded_cycle") and source:
+                guarded_cycle_sources.add(source)
+            if not source or not isinstance(branches, dict):
+                continue
+            for label, target in branches.items():
+                conditional_routes.add(
+                    (
+                        source,
+                        self._normalize_branch_label(label),
+                        self._normalize_boundary(target),
+                    )
+                )
+
+        for route in schema.get("command_routes", []) or []:
+            if not isinstance(route, dict):
+                continue
+            source = str(route.get("source") or route.get("from") or "").strip()
+            if route.get("guarded_cycle") and source:
+                guarded_cycle_sources.add(source)
+            destinations = route.get("destinations")
+            if isinstance(destinations, str):
+                destinations = [destinations]
+            for destination in destinations or []:
+                if source:
+                    command_destinations.add(
+                        (source, self._normalize_boundary(destination))
+                    )
+
+        return {
+            "nodes": nodes,
+            "required_edges": required_edges,
+            "allowed_edges": allowed_edges,
+            "conditional_routes": conditional_routes,
+            "command_destinations": command_destinations,
+            "terminal_nodes": terminal_nodes,
+            "compiled_graph_variable": compiled_graph_variable,
+            "guarded_cycle_sources": guarded_cycle_sources,
+        }
+
+    @staticmethod
+    def _direct_cycle_sources(
+        direct_edges: set[tuple[str, str]], node_ids: set[str]
+    ) -> set[str]:
+        adjacency: dict[str, set[str]] = {}
+        for source, target in direct_edges:
+            if source in node_ids and target in node_ids:
+                adjacency.setdefault(source, set()).add(target)
+
+        cycle_sources: set[str] = set()
+
+        def _visit(start: str, current: str, seen: set[str]) -> None:
+            for target in adjacency.get(current, set()):
+                if target == start:
+                    cycle_sources.update(seen | {target})
+                elif target not in seen:
+                    _visit(start, target, seen | {target})
+
+        for node_id in node_ids:
+            _visit(node_id, node_id, {node_id})
+        return cycle_sources
+
+    @staticmethod
+    def _serializable_contract(contract: dict[str, object]) -> dict[str, object]:
+        serializable: dict[str, object] = {}
+        for key, value in contract.items():
+            if isinstance(value, set):
+                serializable[key] = sorted(value)
+            else:
+                serializable[key] = value
+        return serializable
 
 
 class StateReducerSemanticsRule(QAValidationRule):
@@ -1843,6 +2198,63 @@ class DomainArchitectureAlignmentRule(QAValidationRule):
         return self.passed_report(
             "Domain-specific notebook labels align with the request domain.",
             evidence={"matched_domains": matched_domains, "generic_nodes": []},
+        )
+
+
+class GeneratedLLMConfigRule(QAValidationRule):
+    """Ensure generated notebook nodes use centralized LLM configuration."""
+
+    rule_id = "generated_llm_config"
+    check_name = "Generated LLM Config"
+    category = "configuration"
+    failure_severity = "error"
+    repairable = False
+
+    def validate(self, context: NotebookValidationContext) -> Optional[QAReport]:
+        if "def make_llm(" not in context.code_content:
+            return None
+
+        issues: list[dict[str, object]] = []
+        for mapping in context.code_mappings:
+            if mapping.section != "nodes":
+                continue
+            try:
+                tree = ast.parse(mapping.source or "")
+            except SyntaxError:
+                continue
+            for node in ast.walk(tree):
+                if not isinstance(node, ast.Call):
+                    continue
+                if _call_name(node.func) != "ChatOpenAI":
+                    continue
+                issues.append(
+                    {
+                        "cell_index": mapping.cell_index,
+                        "line": getattr(node, "lineno", None),
+                        "source_line": (
+                            mapping.source.splitlines()[getattr(node, "lineno", 1) - 1]
+                            if mapping.source.splitlines()
+                            and 0
+                            < getattr(node, "lineno", 1)
+                            <= len(mapping.source.splitlines())
+                            else ""
+                        ),
+                    }
+                )
+
+        if issues:
+            return self.failed_report(
+                "Generated node cells instantiate ChatOpenAI directly instead of using make_llm(...).",
+                suggestions=[
+                    "Pass use_notebook_helper=True when composing notebook node cells.",
+                    "Keep model, token, and API base settings centralized in the notebook config cell.",
+                ],
+                evidence={"hardcoded_constructors": issues},
+            )
+
+        return self.passed_report(
+            "Generated node cells use centralized make_llm(...) configuration.",
+            evidence={"checked_sections": ["nodes"]},
         )
 
 

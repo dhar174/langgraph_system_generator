@@ -793,6 +793,139 @@ def terminal_nodes_for(result: GraphDesignResult) -> list[str]:
     return terminal_nodes
 
 
+def _routed_sources_for_result(result: GraphDesignResult) -> set[str]:
+    """Return nodes whose outgoing execution is controlled by route maps."""
+
+    return {
+        *(
+            conditional_edge.source
+            for conditional_edge in result.conditional_edges
+            if conditional_edge.source
+        ),
+        *(
+            command_route.source
+            for command_route in result.command_routes
+            if command_route.source
+        ),
+    }
+
+
+def normalize_executable_graph_result(
+    result: GraphDesignResult,
+) -> GraphDesignResult:
+    """Return graph metadata normalized for a single executable topology.
+
+    LangGraph nodes should not mix unconditional outgoing edges with conditional
+    or Command-derived routing from the same source. The graph contract keeps
+    the routed shape as the executable truth and drops duplicate direct edges
+    from routed sources before exporting notebooks, manifests, and diagrams.
+    """
+
+    routed_sources = _routed_sources_for_result(result)
+    normalized_edges: list[GraphEdgeSpec] = []
+    seen_edges: set[tuple[str, str]] = set()
+    for edge in result.edges:
+        if edge.source in routed_sources:
+            continue
+        edge_key = (edge.source, edge.target)
+        if edge_key in seen_edges:
+            continue
+        seen_edges.add(edge_key)
+        normalized_edges.append(edge)
+
+    return result.model_copy(update={"edges": normalized_edges})
+
+
+def normalize_graph_schema_payload(schema: Mapping[str, Any]) -> dict[str, Any]:
+    """Return a JSON-like graph schema aligned to executable LangGraph wiring."""
+
+    normalized = dict(schema)
+
+    routed_sources: set[str] = set()
+    for conditional_edge in normalized.get("conditional_edges", []) or []:
+        if not isinstance(conditional_edge, Mapping):
+            continue
+        source = str(
+            conditional_edge.get("from")
+            or conditional_edge.get("source")
+            or ""
+        ).strip()
+        if source:
+            routed_sources.add(source)
+    for command_route in normalized.get("command_routes", []) or []:
+        if not isinstance(command_route, Mapping):
+            continue
+        source = str(
+            command_route.get("source")
+            or command_route.get("from")
+            or ""
+        ).strip()
+        if source:
+            routed_sources.add(source)
+
+    normalized_edges: list[dict[str, Any]] = []
+    seen_edges: set[tuple[str, str]] = set()
+    for edge in normalized.get("edges", []) or []:
+        if not isinstance(edge, Mapping):
+            continue
+        source = str(edge.get("from") or edge.get("source") or "").strip()
+        target = str(edge.get("to") or edge.get("target") or "").strip()
+        if not source or not target or source in routed_sources:
+            continue
+        edge_key = (source, target)
+        if edge_key in seen_edges:
+            continue
+        seen_edges.add(edge_key)
+        normalized_edges.append(dict(edge))
+    normalized["edges"] = normalized_edges
+
+    if not normalized.get("terminal_nodes"):
+        node_names = [
+            str(node.get("name") or "").strip()
+            for node in normalized.get("nodes", []) or []
+            if isinstance(node, Mapping) and str(node.get("name") or "").strip()
+        ]
+        outgoing_sources: set[str] = {
+            str(edge.get("from") or edge.get("source") or "").strip()
+            for edge in normalized_edges
+        }
+        terminal_nodes: list[str] = []
+        for conditional_edge in normalized.get("conditional_edges", []) or []:
+            if not isinstance(conditional_edge, Mapping):
+                continue
+            source = str(
+                conditional_edge.get("from")
+                or conditional_edge.get("source")
+                or ""
+            ).strip()
+            branches = conditional_edge.get("branches")
+            if isinstance(branches, Mapping):
+                outgoing_sources.add(source)
+                if any(str(target).strip() in END_TARGETS for target in branches.values()):
+                    terminal_nodes.append(source)
+        for command_route in normalized.get("command_routes", []) or []:
+            if not isinstance(command_route, Mapping):
+                continue
+            source = str(
+                command_route.get("source")
+                or command_route.get("from")
+                or ""
+            ).strip()
+            destinations = command_route.get("destinations")
+            if isinstance(destinations, str):
+                destinations = [destinations]
+            if destinations:
+                outgoing_sources.add(source)
+                if any(str(target).strip() in END_TARGETS for target in destinations):
+                    terminal_nodes.append(source)
+        for node_name in node_names:
+            if node_name not in outgoing_sources:
+                terminal_nodes.append(node_name)
+        normalized["terminal_nodes"] = list(dict.fromkeys(terminal_nodes))
+
+    return normalized
+
+
 def _detect_cycle(adjacency: Mapping[str, set[str]]) -> bool:
     """Return True when the graph contains a cycle."""
 
@@ -982,6 +1115,7 @@ def build_graph_exports(
 ) -> GraphExportBundle:
     """Build Mermaid and JSON-schema exports for a graph design."""
 
+    result = normalize_executable_graph_result(result)
     issue_list = list(issues or [])
     warning_messages = list(warnings or [])
     error_messages = [

@@ -1009,19 +1009,19 @@ class TestPatternModelConfig:
         router_code = RouterPattern.generate_route_node_code(
             "search", "Search", model_config=config
         )
-        assert "base_url" not in router_code
+        assert "base_url='https://custom.api.com'" in router_code
 
         # Subagents pattern
         subagent_code = SubagentsPattern.generate_subagent_code(
             "researcher", "Research", model_config=config
         )
-        assert "base_url" not in subagent_code
+        assert "base_url='https://custom.api.com'" in subagent_code
 
         # Critique loop pattern
         generate_code = CritiqueLoopPattern.generate_generation_node_code(
             model_config=config
         )
-        assert "base_url" not in generate_code
+        assert "base_url='https://custom.api.com'" in generate_code
 
     def test_patterns_support_max_tokens_parameter(self):
         """Test patterns include max_tokens in generated code when provided."""
@@ -1281,11 +1281,11 @@ def test_pattern_generators_accept_model_config_dicts_and_api_base():
         model_config=config,
     )
 
-    assert "base_url" not in router_code
+    assert "base_url='https://example.invalid/v1'" in router_code
     assert "max_tokens=2000" in router_code
 
-    assert "base_url" not in subagent_code
+    assert "base_url='https://example.invalid/v1'" in subagent_code
     assert "temperature=0.6" in subagent_code
 
-    assert "base_url" not in critique_code
+    assert "base_url='https://example.invalid/v1'" in critique_code
     assert "max_tokens=2000" in critique_code

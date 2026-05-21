@@ -41,5 +41,7 @@ def test_app_js_uses_safe_artifact_download_urls():
 
     assert "function buildArtifactDownloadUrl(path)" in content
     assert "/artifacts?path=${encodeURIComponent(path)}" in content
+    assert "data.manifest_path" in content
+    assert "Manifest (JSON)" in content
     assert "copyLastPromptFromHistory" in content
     assert "rerunLastBtn.addEventListener('click'" in content

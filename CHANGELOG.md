@@ -2,6 +2,14 @@
 
 All notable release changes are tracked in this file.
 
+## Unreleased
+
+### Changed
+- Pattern LLM initialization now has an explicit output-target contract:
+  standalone pattern snippets emit self-contained `ChatOpenAI(...)` setup,
+  while notebook-composed cells opt into notebook-level `make_llm(...)`
+  configuration.
+
 ## 1.0.0 - 2026-05-04
 
 ### Added

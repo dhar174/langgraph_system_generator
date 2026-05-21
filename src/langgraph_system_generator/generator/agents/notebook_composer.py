@@ -20,6 +20,9 @@ from langgraph_system_generator.generator.notebook_composer_registry import (
     NotebookComposerRegistry,
     get_notebook_composer_registry,
 )
+from langgraph_system_generator.generator.graph_design_registry import (
+    normalize_graph_schema_payload,
+)
 from langgraph_system_generator.generator.tool_dependency_utils import (
     DependencyAccumulator,
     accumulate_tool_dependencies,
@@ -1862,6 +1865,13 @@ def {safe_node_identifier}_node(state: WorkflowState) -> WorkflowState:
         max_iterations: int,
     ) -> List[CellSpec]:
         """Create graph construction cells using pattern library or custom generation."""
+        canonical_schema = self._canonical_graph_schema(workflow_design)
+        if canonical_schema:
+            return self._wrap_graph_cells(
+                self._generate_canonical_graph_code(workflow_design, canonical_schema),
+                canonical_schema=canonical_schema,
+            )
+
         architecture_type = workflow_design.get("architecture_type", "router")
         if architecture_type in {
             "router",
@@ -1929,8 +1939,16 @@ def {safe_node_identifier}_node(state: WorkflowState) -> WorkflowState:
         return self._wrap_graph_cells(graph_code)
 
     @staticmethod
-    def _wrap_graph_cells(graph_code: str) -> List[CellSpec]:
+    def _wrap_graph_cells(
+        graph_code: str,
+        *,
+        canonical_schema: Dict[str, Any] | None = None,
+    ) -> List[CellSpec]:
         """Wrap graph code with the standard notebook graph section cells."""
+
+        code_metadata: Dict[str, Any] = {}
+        if canonical_schema:
+            code_metadata["canonical_graph_schema"] = canonical_schema
 
         return [
             CellSpec(
@@ -1938,8 +1956,296 @@ def {safe_node_identifier}_node(state: WorkflowState) -> WorkflowState:
                 content="## Build Graph\n\nDefine the LangGraph workflow structure.",
                 section="graph",
             ),
-            CellSpec(cell_type="code", content=graph_code, section="graph"),
+            CellSpec(
+                cell_type="code",
+                content=graph_code,
+                metadata=code_metadata,
+                section="graph",
+            ),
         ]
+
+    @staticmethod
+    def _canonical_graph_schema(workflow_design: Dict[str, Any]) -> Dict[str, Any]:
+        """Return the canonical graph schema when topology is explicit enough."""
+
+        graph_exports = workflow_design.get("graph_exports")
+        if hasattr(graph_exports, "model_dump"):
+            graph_exports = graph_exports.model_dump(by_alias=True)
+
+        schema: Dict[str, Any] = {}
+        if isinstance(graph_exports, dict) and isinstance(
+            graph_exports.get("schema"), dict
+        ):
+            schema = dict(graph_exports["schema"])
+        elif any(
+            workflow_design.get(key)
+            for key in ("edges", "conditional_edges", "command_routes")
+        ):
+            schema = {
+                "architecture_type": workflow_design.get("architecture_type"),
+                "state_schema": workflow_design.get("state_schema", {}),
+                "nodes": workflow_design.get("nodes", []),
+                "edges": workflow_design.get("edges", []),
+                "conditional_edges": workflow_design.get("conditional_edges", []),
+                "command_routes": workflow_design.get("command_routes", []),
+                "tool_reachability": workflow_design.get("tool_reachability", []),
+                "domain_terms": workflow_design.get("domain_terms", []),
+                "compiled_graph_variable": workflow_design.get(
+                    "compiled_graph_variable", "graph"
+                ),
+                "entry_point": workflow_design.get("entry_point"),
+                "checkpointing": workflow_design.get("checkpointing", True),
+                "terminal_nodes": workflow_design.get("terminal_nodes", []),
+            }
+
+        nodes = schema.get("nodes")
+        if not isinstance(nodes, list) or not nodes:
+            return {}
+
+        schema.setdefault("architecture_type", workflow_design.get("architecture_type"))
+        schema.setdefault("state_schema", workflow_design.get("state_schema", {}))
+        schema.setdefault("edges", workflow_design.get("edges", []))
+        schema.setdefault(
+            "conditional_edges", workflow_design.get("conditional_edges", [])
+        )
+        schema.setdefault("command_routes", workflow_design.get("command_routes", []))
+        schema.setdefault(
+            "tool_reachability", workflow_design.get("tool_reachability", [])
+        )
+        schema.setdefault("domain_terms", workflow_design.get("domain_terms", []))
+        schema.setdefault(
+            "compiled_graph_variable",
+            workflow_design.get("compiled_graph_variable", "graph"),
+        )
+        schema.setdefault("entry_point", workflow_design.get("entry_point"))
+        schema.setdefault("checkpointing", workflow_design.get("checkpointing", True))
+        schema.setdefault("terminal_nodes", workflow_design.get("terminal_nodes", []))
+        return normalize_graph_schema_payload(schema)
+
+    def _generate_canonical_graph_code(
+        self, workflow_design: Dict[str, Any], schema: Dict[str, Any]
+    ) -> str:
+        """Render executable graph wiring from canonical graph schema."""
+
+        nodes = [node for node in schema.get("nodes", []) if isinstance(node, dict)]
+        node_names = [
+            str(node.get("name") or "").strip()
+            for node in nodes
+            if str(node.get("name") or "").strip()
+        ]
+        entry_point = str(
+            schema.get("entry_point")
+            or workflow_design.get("entry_point")
+            or (node_names[0] if node_names else "router")
+        )
+        compiled_graph_variable = str(
+            schema.get("compiled_graph_variable")
+            or workflow_design.get("compiled_graph_variable")
+            or "graph"
+        )
+        if not compiled_graph_variable.isidentifier() or keyword.iskeyword(
+            compiled_graph_variable
+        ):
+            compiled_graph_variable = "graph"
+
+        def _target_expr(value: Any) -> str:
+            normalized = str(value or "").strip()
+            if normalized in {"START", "__start__"}:
+                return "START"
+            if normalized in {"END", "__end__"}:
+                return "END"
+            return json.dumps(normalized)
+
+        def _branch_key(value: Any) -> str:
+            normalized = str(value or "").strip()
+            return "__end__" if normalized in {"END", "__end__"} else normalized
+
+        def _branch_target(value: Any) -> str:
+            normalized = str(value or "").strip()
+            return "END" if normalized in {"END", "__end__"} else json.dumps(normalized)
+
+        node_additions = "\n".join(
+            f"workflow.add_node({json.dumps(node_name)}, {self._safe_identifier(node_name, 'node')}_node)"
+            for node_name in node_names
+        )
+        structural_node_definitions = ""
+        if "finish" in node_names:
+            structural_node_definitions = '''
+
+def finish_node(state: WorkflowState) -> dict:
+    """Finalize canonical graph output without changing unrelated state."""
+    if state.get("final_output"):
+        return {}
+    messages = state.get("messages", [])
+    last_message = messages[-1].content if messages else ""
+    return {"final_output": last_message}
+'''
+
+        direct_edge_pairs: list[tuple[str, str]] = []
+        for edge in schema.get("edges", []) or []:
+            if not isinstance(edge, dict):
+                continue
+            source = str(edge.get("from") or edge.get("source") or "").strip()
+            target = str(edge.get("to") or edge.get("target") or "").strip()
+            if source and target:
+                direct_edge_pairs.append((source, target))
+
+        route_specs: dict[str, dict[str, Any]] = {}
+        route_sources_with_end: set[str] = set()
+
+        def _route_spec(source: str) -> dict[str, Any]:
+            return route_specs.setdefault(
+                source,
+                {
+                    "path_entries": [],
+                    "route_keys": [],
+                    "target_values": set(),
+                    "field_names": ["next_agent", "route", "decision", "status"],
+                },
+            )
+
+        def _add_route_entry(
+            source: str,
+            label: Any,
+            target: Any,
+            *,
+            dedupe_target: bool = False,
+        ) -> None:
+            spec = _route_spec(source)
+            key = _branch_key(label)
+            target_value = _branch_target(target)
+            if dedupe_target and target_value in spec["target_values"]:
+                return
+            if target_value == "END":
+                route_sources_with_end.add(source)
+            spec["path_entries"].append((key, target_value))
+            spec["route_keys"].append(key)
+            spec["target_values"].add(target_value)
+
+        for conditional_edge in schema.get("conditional_edges", []) or []:
+            if not isinstance(conditional_edge, dict):
+                continue
+            source = str(
+                conditional_edge.get("from")
+                or conditional_edge.get("source")
+                or ""
+            ).strip()
+            branches = conditional_edge.get("branches")
+            if not source or not isinstance(branches, dict) or not branches:
+                continue
+            for label, target in branches.items():
+                _add_route_entry(source, label, target)
+
+        for command_route in schema.get("command_routes", []) or []:
+            if not isinstance(command_route, dict):
+                continue
+            source = str(
+                command_route.get("source") or command_route.get("from") or ""
+            ).strip()
+            destinations = command_route.get("destinations")
+            if isinstance(destinations, str):
+                destinations = [destinations]
+            if not source or not destinations:
+                continue
+            for destination in destinations:
+                _add_route_entry(
+                    source,
+                    destination,
+                    destination,
+                    dedupe_target=True,
+                )
+            update_fields = command_route.get("update_fields")
+            if isinstance(update_fields, str):
+                update_fields = [update_fields]
+            spec = _route_spec(source)
+            for field_name in [
+                str(field).strip()
+                for field in (update_fields or [])
+                if str(field).strip()
+            ]:
+                if field_name not in spec["field_names"]:
+                    spec["field_names"].append(field_name)
+            if "goto" not in spec["field_names"]:
+                spec["field_names"].append("goto")
+
+        route_blocks: list[str] = []
+        for index, (source, spec) in enumerate(route_specs.items()):
+            path_entries = [
+                f"{json.dumps(key)}: {target_value}"
+                for key, target_value in spec["path_entries"]
+            ]
+            if not path_entries:
+                continue
+            route_name = f"_route_from_{self._safe_identifier(source, 'node')}_{index}"
+            path_map = "{" + ", ".join(path_entries) + "}"
+            field_names = spec["field_names"]
+            field_tuple = ", ".join(json.dumps(field) for field in field_names)
+            if len(field_names) == 1:
+                field_tuple += ","
+            default_key = json.dumps(spec["route_keys"][0])
+            route_blocks.append(
+                f"""def {route_name}(state: WorkflowState) -> str:
+    path_map = {path_map}
+    for field_name in ({field_tuple}):
+        value = state.get(field_name)
+        if value in path_map:
+            return value
+    return {default_key}
+
+workflow.add_conditional_edges({json.dumps(source)}, {route_name}, {path_map})"""
+            )
+
+        direct_edge_set = set(direct_edge_pairs)
+        terminal_nodes = [
+            str(node).strip()
+            for node in (schema.get("terminal_nodes") or [])
+            if str(node).strip()
+        ]
+        terminal_nodes_without_explicit_end = [
+            node
+            for node in terminal_nodes
+            if (node, "END") not in direct_edge_set
+            and (node, "__end__") not in direct_edge_set
+            and node not in route_sources_with_end
+        ]
+        direct_edge_pairs.extend((node, "END") for node in terminal_nodes_without_explicit_end)
+
+        edge_additions = "\n".join(
+            f"workflow.add_edge({_target_expr(source)}, {_target_expr(target)})"
+            for source, target in direct_edge_pairs
+        )
+        start_edge = (
+            ""
+            if ("START", entry_point) in direct_edge_set
+            or ("__start__", entry_point) in direct_edge_set
+            else f"workflow.add_edge(START, {json.dumps(entry_point)})"
+        )
+        route_code = "\n\n".join(route_blocks)
+        schema_literal = repr(schema)
+        checkpointer_name = "checkpointer" if schema.get("checkpointing", True) else "memory"
+
+        return f"""from langgraph.graph import END, START, StateGraph
+from langgraph.checkpoint.memory import InMemorySaver
+
+CANONICAL_GRAPH_SPEC = {schema_literal}
+{structural_node_definitions}
+
+# Create graph from canonical graph/spec metadata.
+workflow = StateGraph(WorkflowState)
+{checkpointer_name} = InMemorySaver()
+
+# Add nodes.
+{node_additions if node_additions else "# No canonical nodes were provided."}
+
+# Connect entry point and canonical direct edges.
+{start_edge}
+{edge_additions if edge_additions else "# No direct graph edges were provided."}
+
+# Add canonical conditional and Command-route destinations.
+{route_code if route_code else "# No conditional or Command routes were provided."}
+
+# Compile graph with the canonical variable name.
+{compiled_graph_variable} = workflow.compile(checkpointer={checkpointer_name})"""
 
     def _generate_graph_fallback(self, workflow_design: Dict[str, Any]) -> str:
         """Generate fallback graph construction code.

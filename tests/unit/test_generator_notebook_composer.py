@@ -2126,6 +2126,103 @@ def test_graph_fallback_lowers_command_routes_to_conditional_edges(
     compile(graph_code, "<graph_fallback_command_routes>", "exec")
 
 
+@pytest.mark.asyncio
+async def test_compose_notebook_renders_canonical_hybrid_graph_contract(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    monkeypatch.setattr(composer_module, "ChatOpenAI", DummyLLM)
+    composer = composer_module.NotebookComposer()
+
+    canonical_schema = {
+        "architecture_type": "hybrid",
+        "nodes": [
+            {"name": "router", "purpose": "Route the chat turn"},
+            {"name": "persona_specialist", "purpose": "Draft in persona"},
+            {"name": "historical_verifier", "purpose": "Verify the draft"},
+            {"name": "revision_specialist", "purpose": "Revise failed drafts"},
+            {"name": "finish", "purpose": "Finalize the answer"},
+        ],
+        "edges": [
+            {"from": "router", "to": "persona_specialist"},
+            {"from": "persona_specialist", "to": "historical_verifier"},
+            {"from": "revision_specialist", "to": "historical_verifier"},
+        ],
+        "conditional_edges": [
+            {
+                "from": "historical_verifier",
+                "condition": "Route failed drafts through revision.",
+                "branches": {
+                    "revise": "revision_specialist",
+                    "approved": "finish",
+                },
+                "guarded_cycle": True,
+            }
+        ],
+        "command_routes": [
+            {
+                "source": "revision_specialist",
+                "destinations": ["historical_verifier"],
+                "update_fields": ["route", "revision_notes"],
+            }
+        ],
+        "entry_point": "router",
+        "terminal_nodes": ["finish"],
+        "compiled_graph_variable": "graph",
+        "checkpointing": True,
+    }
+
+    composition = await composer.compose_notebook(
+        notebook_plan=NotebookPlan(
+            title="Canonical Hybrid Chatbot",
+            sections=["Setup", "Workflow", "Execution"],
+            patterns_used=["hybrid"],
+            architecture_type="hybrid",
+        ),
+        workflow_design={
+            "architecture_type": "hybrid",
+            "state_schema": {"messages": "Conversation state"},
+            "nodes": canonical_schema["nodes"],
+            "graph_exports": {
+                "mermaid": "flowchart TD",
+                "schema": canonical_schema,
+            },
+        },
+        tools=[],
+        architecture={
+            "architecture_type": "hybrid",
+            "justification": "Canonical topology test.",
+        },
+    )
+
+    graph_cells = [
+        cell
+        for cell in composition.cells
+        if cell.section == "graph" and cell.cell_type == "code"
+    ]
+    assert graph_cells
+    graph_code = graph_cells[-1].content
+
+    assert "CANONICAL_GRAPH_SPEC" in graph_code
+    assert 'workflow.add_edge("persona_specialist", "historical_verifier")' in graph_code
+    assert (
+        'workflow.add_edge("revision_specialist", "historical_verifier")'
+        not in graph_code
+    )
+    assert '"revise": "revision_specialist"' in graph_code
+    assert '"approved": "finish"' in graph_code
+    assert 'workflow.add_conditional_edges("revision_specialist"' in graph_code
+    assert 'workflow.add_edge("persona_specialist", "finish")' not in graph_code
+    assert "researcher" not in graph_code
+    assert "reviewer" not in graph_code
+    compile(graph_code, "<canonical_graph_contract>", "exec")
+    metadata_schema = graph_cells[-1].metadata["canonical_graph_schema"]
+    assert metadata_schema["command_routes"] == canonical_schema["command_routes"]
+    assert metadata_schema["edges"] == [
+        {"from": "router", "to": "persona_specialist"},
+        {"from": "persona_specialist", "to": "historical_verifier"},
+    ]
+
+
 def test_split_hybrid_nodes_uses_role_metadata_for_worker_membership():
     direct, direct_descriptions, workers, worker_descriptions = (
         composer_module.NotebookComposer._split_hybrid_nodes(

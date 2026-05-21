@@ -15,7 +15,14 @@ def build_llm_init(
     *,
     use_notebook_helper: bool = False,
 ) -> str:
-    """Build an LLM initialization expression for pattern or notebook contexts."""
+    """Build an LLM initialization expression for a concrete output target.
+
+    Callers must choose the mode intentionally. Standalone pattern snippets use
+    ``use_notebook_helper=False`` so they stay self-contained. Notebook-composed
+    cells use ``use_notebook_helper=True`` so per-node code delegates model,
+    token, and endpoint configuration to the notebook-level ``make_llm(...)``
+    helper.
+    """
     if use_notebook_helper:
         params = [f"temperature={temperature}"]
         if max_tokens:
@@ -25,6 +32,8 @@ def build_llm_init(
     params = [f"model={model!r}", f"temperature={temperature}"]
     if max_tokens:
         params.append(f"max_tokens={max_tokens}")
+    if api_base:
+        params.append(f"base_url={api_base!r}")
     return f"ChatOpenAI({', '.join(params)})"
 
 

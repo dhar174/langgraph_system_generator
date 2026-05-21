@@ -1388,6 +1388,48 @@ def test_graph_design_exports_canonical_spec_metadata():
     assert "-." in exports.mermaid
 
 
+def test_graph_design_exports_normalize_routed_direct_edges():
+    """Manifest schema should reflect one executable edge contract per source."""
+
+    result = GraphDesignResult(
+        architecture_type="hybrid",
+        state_schema={"route": "Selected route"},
+        nodes=[
+            GraphNodeSpec(name="router", purpose="Route requests"),
+            GraphNodeSpec(name="worker", purpose="Draft response"),
+            GraphNodeSpec(name="reviewer", purpose="Review response"),
+        ],
+        edges=[
+            GraphEdgeSpec(source="router", target="worker"),
+            GraphEdgeSpec(source="reviewer", target="worker"),
+        ],
+        conditional_edges=[
+            GraphConditionalEdgeSpec(
+                source="router",
+                condition="Route by request type.",
+                branches={"work": "worker", "FINISH": "END"},
+            )
+        ],
+        command_routes=[
+            GraphCommandRouteSpec(
+                source="reviewer",
+                destinations=["worker", "END"],
+                update_fields=["route"],
+            )
+        ],
+        entry_point="router",
+        checkpointing=True,
+    )
+
+    exports = build_graph_exports(result, get_graph_design_registry().get("hybrid"))
+
+    assert exports.schema["edges"] == []
+    assert "router --> worker" not in exports.mermaid
+    assert "reviewer --> worker" not in exports.mermaid
+    assert exports.schema["conditional_edges"][0]["branches"]["work"] == "worker"
+    assert exports.schema["command_routes"][0]["destinations"] == ["worker", "END"]
+
+
 def test_graph_design_normalization_preserves_scalar_command_route_values():
     """Scalar command route metadata should stay as one value, not character tokens."""
 
