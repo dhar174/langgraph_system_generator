@@ -8,10 +8,12 @@ pipeline and repository-level code relationships.
 - [Generator stage and state map](generator-stage-state-map.md): a
   hand-maintained Mermaid map of generator stages, shared state writes, and
   adjacent QA/RAG/notebook components.
-- [Repo architecture visualizer bundle](repo-architecture-visualizer/2026-04-30/repo-knowledge.md):
+- [Repo architecture visualizer bundle](repo-architecture-visualizer/2026-05-21/repo-knowledge.md):
   a docs-owned generated snapshot with editable Mermaid, DOT, JSON, and
   Figma-layout JSON sources for package, module, and environment-variable
   relationships.
+- [2026-04-30 visualizer bundle](repo-architecture-visualizer/2026-04-30/repo-knowledge.md):
+  the previous retained snapshot.
 
 ## Regeneration Notes
 
@@ -41,7 +43,7 @@ diagram current.
 
 ### Repo architecture visualizer bundle
 
-The `repo-architecture-visualizer/2026-04-30/` bundle is a generated, editable
+The `repo-architecture-visualizer/2026-05-21/` bundle is the latest generated, editable
 diagram snapshot. Refresh it with the local `repo-architecture-visualizer` skill
 when package, module, or environment-variable relationships change.
 

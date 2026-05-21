@@ -1,0 +1,211 @@
+{
+  "repo": ".",
+  "kind": "env",
+  "granularity": "file",
+  "package_depth": 2,
+  "nodes": [
+    {
+      "id": "ANTHROPIC_API_KEY",
+      "label": "ANTHROPIC_API_KEY",
+      "type": "environment",
+      "group": "environment"
+    },
+    {
+      "id": "BASE_OUTPUT_DIR",
+      "label": "BASE_OUTPUT_DIR",
+      "type": "environment",
+      "group": "environment"
+    },
+    {
+      "id": "DEEP_AGENTS_MODEL",
+      "label": "DEEP_AGENTS_MODEL",
+      "type": "environment",
+      "group": "environment"
+    },
+    {
+      "id": "LNF_DISABLE_DOTENV",
+      "label": "LNF_DISABLE_DOTENV",
+      "type": "environment",
+      "group": "environment"
+    },
+    {
+      "id": "LNF_ENV_FILE",
+      "label": "LNF_ENV_FILE",
+      "type": "environment",
+      "group": "environment"
+    },
+    {
+      "id": "LNF_MAX_CONCURRENT_GENERATIONS",
+      "label": "LNF_MAX_CONCURRENT_GENERATIONS",
+      "type": "environment",
+      "group": "environment"
+    },
+    {
+      "id": "LNF_MAX_EVENTS_PER_JOB",
+      "label": "LNF_MAX_EVENTS_PER_JOB",
+      "type": "environment",
+      "group": "environment"
+    },
+    {
+      "id": "LNF_OUTPUT_BASE",
+      "label": "LNF_OUTPUT_BASE",
+      "type": "environment",
+      "group": "environment"
+    },
+    {
+      "id": "LOG_LEVEL",
+      "label": "LOG_LEVEL",
+      "type": "environment",
+      "group": "environment"
+    },
+    {
+      "id": "MODEL",
+      "label": "MODEL",
+      "type": "environment",
+      "group": "environment"
+    },
+    {
+      "id": "OPENAI_API_KEY",
+      "label": "OPENAI_API_KEY",
+      "type": "environment",
+      "group": "environment"
+    },
+    {
+      "id": "WORKDIR",
+      "label": "WORKDIR",
+      "type": "environment",
+      "group": "environment"
+    },
+    {
+      "id": "src/langgraph_system_generator/api/progress_streaming.py",
+      "label": "src/langgraph_system_generator/api/progress_streaming.py",
+      "type": "code",
+      "group": "src/langgraph_system_generator"
+    },
+    {
+      "id": "src/langgraph_system_generator/api/server.py",
+      "label": "src/langgraph_system_generator/api/server.py",
+      "type": "code",
+      "group": "src/langgraph_system_generator"
+    },
+    {
+      "id": "src/langgraph_system_generator/cli.py",
+      "label": "src/langgraph_system_generator/cli.py",
+      "type": "code",
+      "group": "src/langgraph_system_generator"
+    },
+    {
+      "id": "src/langgraph_system_generator/constants.py",
+      "label": "src/langgraph_system_generator/constants.py",
+      "type": "code",
+      "group": "src/langgraph_system_generator"
+    },
+    {
+      "id": "src/langgraph_system_generator/examples_support.py",
+      "label": "src/langgraph_system_generator/examples_support.py",
+      "type": "code",
+      "group": "src/langgraph_system_generator"
+    },
+    {
+      "id": "src/langgraph_system_generator/notebook/templates.py",
+      "label": "src/langgraph_system_generator/notebook/templates.py",
+      "type": "code",
+      "group": "src/langgraph_system_generator"
+    },
+    {
+      "id": "src/langgraph_system_generator/patterns/deepagents.py",
+      "label": "src/langgraph_system_generator/patterns/deepagents.py",
+      "type": "code",
+      "group": "src/langgraph_system_generator"
+    },
+    {
+      "id": "src/langgraph_system_generator/utils/config.py",
+      "label": "src/langgraph_system_generator/utils/config.py",
+      "type": "code",
+      "group": "src/langgraph_system_generator"
+    },
+    {
+      "id": "src/langgraph_system_generator/utils/logging_utils.py",
+      "label": "src/langgraph_system_generator/utils/logging_utils.py",
+      "type": "code",
+      "group": "src/langgraph_system_generator"
+    }
+  ],
+  "edges": [
+    {
+      "source": "src/langgraph_system_generator/api/progress_streaming.py",
+      "target": "LNF_MAX_EVENTS_PER_JOB",
+      "kind": "reads-env"
+    },
+    {
+      "source": "src/langgraph_system_generator/api/server.py",
+      "target": "LNF_MAX_CONCURRENT_GENERATIONS",
+      "kind": "reads-env"
+    },
+    {
+      "source": "src/langgraph_system_generator/cli.py",
+      "target": "OPENAI_API_KEY",
+      "kind": "reads-env"
+    },
+    {
+      "source": "src/langgraph_system_generator/constants.py",
+      "target": "BASE_OUTPUT_DIR",
+      "kind": "reads-env"
+    },
+    {
+      "source": "src/langgraph_system_generator/constants.py",
+      "target": "LNF_OUTPUT_BASE",
+      "kind": "reads-env"
+    },
+    {
+      "source": "src/langgraph_system_generator/examples_support.py",
+      "target": "OPENAI_API_KEY",
+      "kind": "reads-env"
+    },
+    {
+      "source": "src/langgraph_system_generator/notebook/templates.py",
+      "target": "ANTHROPIC_API_KEY",
+      "kind": "reads-env"
+    },
+    {
+      "source": "src/langgraph_system_generator/notebook/templates.py",
+      "target": "MODEL",
+      "kind": "reads-env"
+    },
+    {
+      "source": "src/langgraph_system_generator/notebook/templates.py",
+      "target": "OPENAI_API_KEY",
+      "kind": "reads-env"
+    },
+    {
+      "source": "src/langgraph_system_generator/notebook/templates.py",
+      "target": "WORKDIR",
+      "kind": "reads-env"
+    },
+    {
+      "source": "src/langgraph_system_generator/patterns/deepagents.py",
+      "target": "DEEP_AGENTS_MODEL",
+      "kind": "reads-env"
+    },
+    {
+      "source": "src/langgraph_system_generator/patterns/deepagents.py",
+      "target": "OPENAI_API_KEY",
+      "kind": "reads-env"
+    },
+    {
+      "source": "src/langgraph_system_generator/utils/config.py",
+      "target": "LNF_DISABLE_DOTENV",
+      "kind": "reads-env"
+    },
+    {
+      "source": "src/langgraph_system_generator/utils/config.py",
+      "target": "LNF_ENV_FILE",
+      "kind": "reads-env"
+    },
+    {
+      "source": "src/langgraph_system_generator/utils/logging_utils.py",
+      "target": "LOG_LEVEL",
+      "kind": "reads-env"
+    }
+  ]
+}

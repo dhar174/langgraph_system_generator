@@ -1,0 +1,31 @@
+flowchart LR
+%% langgraph_system_generator: mixed module diagram
+    subgraph agents["agents"]
+        agents["agents"]
+        agents__llm["agents._llm"]
+        agents_architecture_selector["agents.architecture_selector"]
+        agents_graph_designer["agents.graph_designer"]
+        agents_notebook_composer["agents.notebook_composer"]
+        agents_qa_repair_agent["agents.qa_repair_agent"]
+        agents_requirements_analyst["agents.requirements_analyst"]
+        agents_toolchain_engineer["agents.toolchain_engineer"]
+    end
+
+    agents__llm --> agents
+    agents_architecture_selector --> agents
+    agents_graph_designer --> agents
+    agents_notebook_composer --> agents
+    agents_qa_repair_agent --> agents
+    agents_requirements_analyst --> agents
+    agents_toolchain_engineer --> agents
+
+    classDef code fill:#eef2ff,stroke:#3730a3,stroke-width:1.5px
+    classDef environment fill:#fff7ed,stroke:#c2410c,stroke-width:1.5px
+    class agents code
+    class agents__llm code
+    class agents_architecture_selector code
+    class agents_graph_designer code
+    class agents_notebook_composer code
+    class agents_qa_repair_agent code
+    class agents_requirements_analyst code
+    class agents_toolchain_engineer code

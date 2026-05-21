@@ -404,9 +404,8 @@ def _build_router_graph_section(
     composer: Any,
     context: NotebookComposerContext,
 ) -> list[CellSpec]:
-    return composer._create_pattern_graph_cells(
+    return composer._create_graph_cells(
         context.workflow_design,
-        "router",
         context.feedback.resolved_max_iterations or 1,
     )
 
@@ -415,9 +414,8 @@ def _build_subagents_graph_section(
     composer: Any,
     context: NotebookComposerContext,
 ) -> list[CellSpec]:
-    return composer._create_pattern_graph_cells(
+    return composer._create_graph_cells(
         context.workflow_design,
-        "subagents",
         context.feedback.resolved_max_iterations or 1,
     )
 
@@ -426,9 +424,8 @@ def _build_hybrid_graph_section(
     composer: Any,
     context: NotebookComposerContext,
 ) -> list[CellSpec]:
-    return composer._create_pattern_graph_cells(
+    return composer._create_graph_cells(
         context.workflow_design,
-        "hybrid",
         context.feedback.resolved_max_iterations or 1,
     )
 
@@ -437,9 +434,8 @@ def _build_autoagent_graph_section(
     composer: Any,
     context: NotebookComposerContext,
 ) -> list[CellSpec]:
-    return composer._create_pattern_graph_cells(
+    return composer._create_graph_cells(
         context.workflow_design,
-        "autoagent",
         context.feedback.resolved_max_iterations or 1,
     )
 
@@ -448,9 +444,8 @@ def _build_deepagents_graph_section(
     composer: Any,
     context: NotebookComposerContext,
 ) -> list[CellSpec]:
-    return composer._create_pattern_graph_cells(
+    return composer._create_graph_cells(
         context.workflow_design,
-        "deepagents",
         context.feedback.resolved_max_iterations or 1,
     )
 
@@ -459,9 +454,8 @@ def _build_critique_loop_graph_section(
     composer: Any,
     context: NotebookComposerContext,
 ) -> list[CellSpec]:
-    return composer._create_pattern_graph_cells(
+    return composer._create_graph_cells(
         context.workflow_design,
-        "critique_loop",
         context.feedback.resolved_max_iterations or 1,
     )
 

@@ -102,10 +102,17 @@ The same generation pipeline is exposed via:
   needed, uses deterministic patterns from the `patterns/` module.
 - **Live mode**: requires `OPENAI_API_KEY`; calls real LLM; full pipeline runs.
 
-### Three architecture types
+### Architecture IDs
 
-`router` | `subagents` | `hybrid` — selectable via `generation_config.agent_type`
-or inferred from prompt keywords in stub mode.
+`router` | `subagents` | `hybrid` | `autoagent` are public pattern IDs.
+`deepagents` is experimental and requires explicit opt-in through
+`generation_config.agent_type`.
+
+Graph design should preserve canonical graph/spec metadata for node IDs, entry
+points, terminal nodes, direct edges, conditional route labels, `Command`
+destinations, guarded cycles, tool reachability, and the compiled graph
+variable. Notebook graph cells should render from that schema when present and
+fall back to pattern templates only when no canonical schema exists.
 
 ---
 
@@ -128,6 +135,14 @@ class MyAgent:
             chat_openai_class=ChatOpenAI,   # module-local import — required for patching
         )
 ```
+
+### Generated notebook LLM configuration
+
+Standalone pattern generators should stay self-contained and emit direct
+`ChatOpenAI(...)` construction, including `base_url` when a custom endpoint is
+provided. Notebook composition paths must opt into notebook-scoped helpers and
+emit `make_llm(...)` in node cells so `MODEL`, `TEMPERATURE`, `MAX_TOKENS`, and
+`API_BASE` remain centralized in the config cell.
 
 ### Mocking rules (CI-enforced)
 

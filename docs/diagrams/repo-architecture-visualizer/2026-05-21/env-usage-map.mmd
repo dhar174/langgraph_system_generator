@@ -1,0 +1,65 @@
+flowchart LR
+%% langgraph_system_generator: env file diagram
+    ANTHROPIC_API_KEY(["ANTHROPIC_API_KEY"])
+    BASE_OUTPUT_DIR(["BASE_OUTPUT_DIR"])
+    DEEP_AGENTS_MODEL(["DEEP_AGENTS_MODEL"])
+    LNF_DISABLE_DOTENV(["LNF_DISABLE_DOTENV"])
+    LNF_ENV_FILE(["LNF_ENV_FILE"])
+    LNF_MAX_CONCURRENT_GENERATIONS(["LNF_MAX_CONCURRENT_GENERATIONS"])
+    LNF_MAX_EVENTS_PER_JOB(["LNF_MAX_EVENTS_PER_JOB"])
+    LNF_OUTPUT_BASE(["LNF_OUTPUT_BASE"])
+    LOG_LEVEL(["LOG_LEVEL"])
+    MODEL(["MODEL"])
+    OPENAI_API_KEY(["OPENAI_API_KEY"])
+    WORKDIR(["WORKDIR"])
+    subgraph src_langgraph_system_generator["src/langgraph_system_generator"]
+        src_langgraph_system_generator_api_progress_streaming_py["src/langgraph_system_generator/api/progress_streaming.py"]
+        src_langgraph_system_generator_api_server_py["src/langgraph_system_generator/api/server.py"]
+        src_langgraph_system_generator_cli_py["src/langgraph_system_generator/cli.py"]
+        src_langgraph_system_generator_constants_py["src/langgraph_system_generator/constants.py"]
+        src_langgraph_system_generator_examples_support_py["src/langgraph_system_generator/examples_support.py"]
+        src_langgraph_system_generator_notebook_templates_py["src/langgraph_system_generator/notebook/templates.py"]
+        src_langgraph_system_generator_patterns_deepagents_py["src/langgraph_system_generator/patterns/deepagents.py"]
+        src_langgraph_system_generator_utils_config_py["src/langgraph_system_generator/utils/config.py"]
+        src_langgraph_system_generator_utils_logging_utils_py["src/langgraph_system_generator/utils/logging_utils.py"]
+    end
+
+    src_langgraph_system_generator_api_progress_streaming_py -. reads .-> LNF_MAX_EVENTS_PER_JOB
+    src_langgraph_system_generator_api_server_py -. reads .-> LNF_MAX_CONCURRENT_GENERATIONS
+    src_langgraph_system_generator_cli_py -. reads .-> OPENAI_API_KEY
+    src_langgraph_system_generator_constants_py -. reads .-> BASE_OUTPUT_DIR
+    src_langgraph_system_generator_constants_py -. reads .-> LNF_OUTPUT_BASE
+    src_langgraph_system_generator_examples_support_py -. reads .-> OPENAI_API_KEY
+    src_langgraph_system_generator_notebook_templates_py -. reads .-> ANTHROPIC_API_KEY
+    src_langgraph_system_generator_notebook_templates_py -. reads .-> MODEL
+    src_langgraph_system_generator_notebook_templates_py -. reads .-> OPENAI_API_KEY
+    src_langgraph_system_generator_notebook_templates_py -. reads .-> WORKDIR
+    src_langgraph_system_generator_patterns_deepagents_py -. reads .-> DEEP_AGENTS_MODEL
+    src_langgraph_system_generator_patterns_deepagents_py -. reads .-> OPENAI_API_KEY
+    src_langgraph_system_generator_utils_config_py -. reads .-> LNF_DISABLE_DOTENV
+    src_langgraph_system_generator_utils_config_py -. reads .-> LNF_ENV_FILE
+    src_langgraph_system_generator_utils_logging_utils_py -. reads .-> LOG_LEVEL
+
+    classDef code fill:#eef2ff,stroke:#3730a3,stroke-width:1.5px
+    classDef environment fill:#fff7ed,stroke:#c2410c,stroke-width:1.5px
+    class ANTHROPIC_API_KEY environment
+    class BASE_OUTPUT_DIR environment
+    class DEEP_AGENTS_MODEL environment
+    class LNF_DISABLE_DOTENV environment
+    class LNF_ENV_FILE environment
+    class LNF_MAX_CONCURRENT_GENERATIONS environment
+    class LNF_MAX_EVENTS_PER_JOB environment
+    class LNF_OUTPUT_BASE environment
+    class LOG_LEVEL environment
+    class MODEL environment
+    class OPENAI_API_KEY environment
+    class WORKDIR environment
+    class src_langgraph_system_generator_api_progress_streaming_py code
+    class src_langgraph_system_generator_api_server_py code
+    class src_langgraph_system_generator_cli_py code
+    class src_langgraph_system_generator_constants_py code
+    class src_langgraph_system_generator_examples_support_py code
+    class src_langgraph_system_generator_notebook_templates_py code
+    class src_langgraph_system_generator_patterns_deepagents_py code
+    class src_langgraph_system_generator_utils_config_py code
+    class src_langgraph_system_generator_utils_logging_utils_py code

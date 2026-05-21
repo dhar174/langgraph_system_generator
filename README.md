@@ -15,6 +15,9 @@ exports, and structured QA feedback.
   architecture, graph, tool, and notebook generation.
 - **Registry-backed planning**: Architecture, graph design, tool planning,
   notebook composition, and QA/repair stages expose structured feedback.
+- **Truthful graph and artifact contracts**: Manifests carry graph/schema
+  exports, actual serialized notebook cell counts, artifact availability, and
+  QA validation scope details.
 - **Portable notebooks**: Generated notebooks target local Jupyter and Google
   Colab.
 - **Multi-format export**: Write IPYNB, HTML, Markdown, DOCX, ZIP, and optional

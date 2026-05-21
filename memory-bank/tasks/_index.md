@@ -21,4 +21,5 @@
 - Task-level Memory Bank tracking has started with the documentation and
   visualization sync for the checked-in repo architecture bundle, the completed
   1.0 release-readiness branch, the completed Cloud Run deployment hardening
-  lane, and the active generated-output quality wave under epic #342.
+  lane, and the active generated-output quality wave under epic #342. The
+  current Wave 3 PR is #359 for #343/#348.

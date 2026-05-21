@@ -19,6 +19,13 @@
   `workflow_design` payloads while also carrying command routes, tool
   reachability, domain terms, guarded cycles, terminal nodes, and the compiled
   graph variable for exports, manifests, and notebook rendering.
+- Notebook graph cells render from the canonical schema first when
+  `graph_exports.schema` is present. Pattern graph templates are fallback only,
+  and custom node implementations own their own terminal node functions unless a
+  known architecture pattern supplies the finish behavior.
+- Pattern LLM initialization has an output-target boundary: standalone pattern
+  generators emit self-contained `ChatOpenAI(...)`, while notebook composition
+  opts into notebook-scoped `make_llm(...)` cells.
 - QA is split into static validation, runtime smoke testing, and a bounded
   deterministic repair loop. Repair attempts are capped by
   `settings.max_repair_attempts`, and rollback/no-op outcomes are recorded in

@@ -222,6 +222,13 @@ aligned when changing notebook assembly behavior:
 - keep deterministic pattern builders ordered and synchronous; only the
   LLM-backed tool and custom-node generation paths should use the internal
   parallel async flow
+- keep standalone pattern generators self-contained by default: generated
+  snippets should initialize `ChatOpenAI(...)` directly, including `base_url`
+  when an API base is provided
+- when pattern code is emitted into notebook-composed cells, opt into
+  notebook-scoped helpers explicitly with `use_notebook_helper=True` so node
+  code calls `make_llm(...)` and leaves model/API-base settings centralized in
+  the config cell
 - register architecture-specific notebook assembly behavior through
   `src/langgraph_system_generator/generator/notebook_composer_registry.py`
   and `NOTEBOOK_COMPOSER_PLUGIN_MODULES` rather than adding more hardcoded
