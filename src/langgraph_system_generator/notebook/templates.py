@@ -115,7 +115,7 @@ def build_graph_cells() -> List[CellSpec]:
         router = create_agent(
             model=MODEL,
             tools=[],
-            prompt="You are a router that decides whether to hand off or answer directly.",
+            system_prompt="You are a router that decides whether to hand off or answer directly.",
         )
 
         def router_node(state: WorkflowState) -> Command:

@@ -1627,7 +1627,20 @@ class ChatbotNotebookContractRule(QAValidationRule):
         has_input_loop = "input(" in content and all(
             token in lowered for token in ("quit", "exit")
         )
-        has_values_stream = 'stream_mode="values"' in content or "stream_mode='values'" in content
+        has_values_stream = (
+            'stream_mode="values"' in content
+            or "stream_mode='values'" in content
+            or (
+                "stream_mode" in content
+                and '"updates" if show_updates else "values"' in content
+                and "stream_mode=stream_mode" in content
+            )
+            or (
+                "stream_mode" in content
+                and "'updates' if show_updates else 'values'" in content
+                and "stream_mode=stream_mode" in content
+            )
+        )
         has_state_read = ".get_state(config).values" in content
         has_thread_id = "thread_id" in lowered and "THREAD_ID" in content
         has_bad_update_carryover = "current_state = step" in content

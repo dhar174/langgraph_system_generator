@@ -1013,6 +1013,76 @@ def run_chat_loop() -> None:
     assert report.passed is True
 
 
+def test_chatbot_contract_rule_accepts_values_stream_variable_pattern(
+    tmp_notebook_path: Path,
+):
+    notebook = new_notebook()
+    notebook.cells.extend(
+        [
+            new_markdown_cell(
+                "Interactive chatbot character with male/female persona, memory, verification, and revision."
+            ),
+            new_code_cell(
+                """from langchain_core.messages import HumanMessage
+from langgraph.graph import StateGraph
+from langgraph.checkpoint.memory import InMemorySaver
+
+THREAD_ID = "lnf-demo-thread"
+CHARACTER_GENDER = None
+MAX_ITERATIONS = 3
+SHOW_UPDATES = False
+
+workflow = StateGraph(dict)
+memory = InMemorySaver()
+graph = workflow.compile(checkpointer=memory)
+
+needs_revision = False
+historical_risk_notes = ""
+realism_notes = ""
+revision_instructions = ""
+
+def select_character_gender(value: str | None = CHARACTER_GENDER) -> str:
+    return value or "female"
+
+def chat_once(
+    user_text: str,
+    *,
+    thread_id: str = THREAD_ID,
+    show_updates: bool = SHOW_UPDATES,
+) -> dict:
+    config = {"configurable": {"thread_id": thread_id}, "recursion_limit": 25}
+    stream_mode = "updates" if show_updates else "values"
+    for state in graph.stream(
+        {"messages": [HumanMessage(content=user_text)]},
+        config,
+        stream_mode=stream_mode,
+    ):
+        latest_state = state
+    final_state = graph.get_state(config).values
+    return final_state or latest_state
+
+def run_chat_loop() -> None:
+    select_character_gender()
+    while True:
+        user_input = input("Enter next message (or type 'quit' to exit): ")
+        if user_input.lower() in {"quit", "exit", "q"}:
+            break
+        chat_once(user_input)
+""",
+                metadata={"section": "execution"},
+            ),
+        ]
+    )
+    _write_notebook(tmp_notebook_path, notebook)
+
+    report = ChatbotNotebookContractRule().validate(
+        NotebookValidator()._context_from_path(tmp_notebook_path)
+    )
+
+    assert report is not None
+    assert report.passed is True
+
+
 def test_invocation_config_rule_requires_thread_id_and_recursion_limit(
     tmp_notebook_path: Path,
 ):
