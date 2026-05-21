@@ -5,7 +5,7 @@
 - Current maintenance work includes keeping the Memory Bank aligned with the
   actual codebase so future sessions do not rely on template placeholders.
 - Current documentation work includes the docs-owned
-  `docs/diagrams/repo-architecture-visualizer/2026-04-30/` bundle for
+  `docs/diagrams/repo-architecture-visualizer/2026-05-21/` bundle for
   package/module/env relationship snapshots.
 - Current release work is now post-1.0 maintenance: `v1.0.0` is published,
   the release-readiness tracker is closed, and follow-up work should be scoped
@@ -30,6 +30,10 @@
   credential/config improvements. The child issues #344-#348 remain open and
   should be re-triaged against the merged code before starting overlapping
   implementation.
+- PR #359 is open for Wave 3 #343/#348. It preserves canonical graph/spec
+  topology in generated notebooks, manifests, and QA, keeps standalone pattern
+  LLM snippets separate from notebook `make_llm(...)` cells, and has had its six
+  review threads addressed and resolved on the PR branch.
 - `memory-bank/systemPatterns.md` was updated to document the actual repo
   architecture instead of template bullets.
 - The API layer includes guarded output-path resolution and bounded async job
@@ -53,7 +57,7 @@
   agent/skill inventory and keeps those assets separate from runtime product
   agents.
 - `docs/diagrams/README.md` now indexes both the hand-maintained generator
-  stage/state map and the generated repo architecture visualizer bundle.
+  stage/state map and the latest generated repo architecture visualizer bundle.
 - The 1.0 release work landed with a root MIT license, changelog, stable
   package metadata, isolated install smoke tests, and
   `scripts/run_release_eval.py` for local-only release evaluation.
@@ -81,12 +85,11 @@
 
 ## Immediate Next Steps
 
-- Continue the generated-output quality wave from #342 with #343 first:
-  preserve canonical graph topology across executable notebook code,
-  Mermaid/schema exports, manifests, and QA.
-- Before implementing #344-#348, compare each issue's acceptance criteria
-  against merged PR #357 so follow-up branches close remaining gaps rather than
-  duplicating already-landed chat/runtime work.
+- Watch PR #359 to completion, then close or update #343 and #348 based on the
+  merge result.
+- Before implementing the next Wave 4 branch, compare #344-#347 and #349
+  against merged PR #357 and PR #359 so follow-up work closes remaining gaps
+  rather than duplicating already-landed chat/runtime behavior.
 - Keep public docs, examples, and onboarding copy aligned with the current
   CLI/API contract.
 - Keep contributor-facing LangGraph/LangChain skills and LNF custom agents
@@ -134,6 +137,13 @@
   runtime; GitHub repository secrets are only used for deployment plumbing.
 - Cloud Run deploys with `2Gi` memory because live generation and artifact
   packaging exceeded the default `512Mi` limit during live testing.
-- The release-readiness verification baseline was `python -m pytest
-  --asyncio-mode=auto` with 625 passing tests and 4 skipped tests, plus the CI
-  fatal-error flake8 gate.
+- The PR #359 review-fix verification slices were:
+  `python -m pytest tests/unit/test_patterns_utils.py tests/unit/test_patterns.py -q`
+  with 96 passed,
+  `python -m pytest tests/unit/test_generator_notebook_composer.py tests/unit/test_validators.py -q`
+  with 102 passed, and
+  `python -m pytest tests/unit/test_generator_agents.py tests/unit/test_generator_nodes_additional.py tests/unit/test_cli_api.py --asyncio-mode=auto -q`
+  with 142 passed.
+- The post-refresh broad unit gate was
+  `python -m pytest tests/unit/ --asyncio-mode=auto -q` with 622 passed and 4
+  warnings.

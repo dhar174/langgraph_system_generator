@@ -4,11 +4,24 @@ All notable release changes are tracked in this file.
 
 ## Unreleased
 
+### Added
+- Canonical graph topology is now preserved through generated notebook graph
+  code, graph/schema exports, manifests, and QA checks.
+- Runtime pipeline reliability work now includes bounded state accumulation,
+  in-memory notebook validation, cached retriever construction, and thread
+  offloading for blocking retrieval, validation, and repair paths.
+- Artifact manifests now report serialized notebook cell counts, raw generated
+  cell-spec counts, artifact availability, ZIP membership, and QA scope more
+  truthfully.
+
 ### Changed
 - Pattern LLM initialization now has an explicit output-target contract:
   standalone pattern snippets emit self-contained `ChatOpenAI(...)` setup,
   while notebook-composed cells opt into notebook-level `make_llm(...)`
   configuration.
+- Generated chatbot notebooks now use stronger runtime scaffolding for
+  character selection, turn-taking, verifier/reviser fallbacks, executable-tool
+  wiring, typed memory checks, and centralized generated LLM configuration.
 
 ## 1.0.0 - 2026-05-04
 

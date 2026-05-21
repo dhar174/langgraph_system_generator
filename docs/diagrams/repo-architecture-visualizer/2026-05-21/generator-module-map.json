@@ -1,0 +1,93 @@
+{
+  "repo": "C:\\Users\\darf3\\Documents\\langgraph_system_generator",
+  "kind": "mixed",
+  "granularity": "module",
+  "package_depth": 2,
+  "nodes": [
+    {
+      "id": "agents",
+      "label": "agents",
+      "type": "code",
+      "group": "agents"
+    },
+    {
+      "id": "agents._llm",
+      "label": "agents._llm",
+      "type": "code",
+      "group": "agents"
+    },
+    {
+      "id": "agents.architecture_selector",
+      "label": "agents.architecture_selector",
+      "type": "code",
+      "group": "agents"
+    },
+    {
+      "id": "agents.graph_designer",
+      "label": "agents.graph_designer",
+      "type": "code",
+      "group": "agents"
+    },
+    {
+      "id": "agents.notebook_composer",
+      "label": "agents.notebook_composer",
+      "type": "code",
+      "group": "agents"
+    },
+    {
+      "id": "agents.qa_repair_agent",
+      "label": "agents.qa_repair_agent",
+      "type": "code",
+      "group": "agents"
+    },
+    {
+      "id": "agents.requirements_analyst",
+      "label": "agents.requirements_analyst",
+      "type": "code",
+      "group": "agents"
+    },
+    {
+      "id": "agents.toolchain_engineer",
+      "label": "agents.toolchain_engineer",
+      "type": "code",
+      "group": "agents"
+    }
+  ],
+  "edges": [
+    {
+      "source": "agents._llm",
+      "target": "agents",
+      "kind": "imports"
+    },
+    {
+      "source": "agents.architecture_selector",
+      "target": "agents",
+      "kind": "imports"
+    },
+    {
+      "source": "agents.graph_designer",
+      "target": "agents",
+      "kind": "imports"
+    },
+    {
+      "source": "agents.notebook_composer",
+      "target": "agents",
+      "kind": "imports"
+    },
+    {
+      "source": "agents.qa_repair_agent",
+      "target": "agents",
+      "kind": "imports"
+    },
+    {
+      "source": "agents.requirements_analyst",
+      "target": "agents",
+      "kind": "imports"
+    },
+    {
+      "source": "agents.toolchain_engineer",
+      "target": "agents",
+      "kind": "imports"
+    }
+  ]
+}

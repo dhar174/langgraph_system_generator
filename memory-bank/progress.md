@@ -19,6 +19,10 @@
   #357, including chat-loop execution helpers, character selection,
   executable-tool wiring, verifier/reviser fallbacks, memory checks, and
   centralized generated LLM configuration patterns.
+- PR #359 is open for #343/#348 with canonical graph/spec rendering, manifest
+  and QA graph-contract preservation, and explicit standalone-versus-notebook
+  LLM initialization boundaries. Its six review threads have been addressed and
+  resolved on the PR branch.
 - Pattern generators and examples cover router, subagents, hybrid, autoagent,
   experimental deepagents, critique-revise, and advanced example-only workflows.
 - Notebook composition, dependency planning, runtime validation, deterministic
@@ -37,7 +41,10 @@
 - The latest documented generated-output full-suite pass was
   `pytest --asyncio-mode=auto -q` with 721 passed and 3 skipped on the #350
   artifact-manifest branch. PR #357 additionally reported 609 unit tests
-  passing after generated-chat contract changes.
+  passing after generated-chat contract changes. PR #359 review-fix slices
+  reported 96 pattern tests, 102 composer/validator tests, and 142
+  generator/API-node tests passing; the post-refresh broad unit gate reported
+  622 passed and 4 warnings.
 - Stale completed release-plan issues were closed with evidence during the
   release-readiness pass, reducing that older open issue inventory from 49 to
   26 while keeping true residual items open.
@@ -82,8 +89,8 @@
 - The Cloud Run deploy workflow builds and pushes the container image, deploys
   the private service, mounts `OPENAI_API_KEY` from Secret Manager, and checks
   `/health` after deployment.
-- As of the 2026-05-20 issue refresh, the open issue count is 29. The next
-  generated-output branch target is #343 on a branch from synced `main`.
+- As of the 2026-05-21 issue refresh, the open issue count is 29. #343 and
+  #348 remain open until PR #359 merges.
 
 ## Known Issues and Limitations
 
@@ -99,9 +106,9 @@
 - Router fallback/general routing (#60), iterative requirements refinement
   (#202), and the remaining CYOA notebook cell issues are tracked as residual
   follow-up work rather than closed stale items.
-- The canonical graph topology issue (#343) is still open and remains the next
-  Wave 3 implementation target before any further generated credential/config
-  hardening.
+- The canonical graph topology issue (#343) and generated credential/config
+  hardening issue (#348) are still open while PR #359 is pending. Treat further
+  Wave 4 work as blocked on checking what PR #359 closes.
 - The Cloud Run workflow's private-service health check is sensitive to token
   minting details in GitHub Actions WIF. Do not use `gcloud auth
   print-identity-token --audiences=...` for this workflow's health token; the

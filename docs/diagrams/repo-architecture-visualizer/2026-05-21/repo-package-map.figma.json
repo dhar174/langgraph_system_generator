@@ -1,0 +1,395 @@
+{
+  "repo": "C:\\Users\\darf3\\Documents\\langgraph_system_generator",
+  "kind": "mixed",
+  "granularity": "package",
+  "nodes": [
+    {
+      "id": "langgraph_system_generator",
+      "label": "langgraph_system_generator",
+      "type": "code",
+      "group": "langgraph_system_generator",
+      "x": 0,
+      "y": 0,
+      "width": 240,
+      "height": 72
+    },
+    {
+      "id": "langgraph_system_generator.api",
+      "label": "langgraph_system_generator.api",
+      "type": "code",
+      "group": "langgraph_system_generator",
+      "x": 0,
+      "y": 120,
+      "width": 240,
+      "height": 72
+    },
+    {
+      "id": "langgraph_system_generator.cli",
+      "label": "langgraph_system_generator.cli",
+      "type": "code",
+      "group": "langgraph_system_generator",
+      "x": 0,
+      "y": 240,
+      "width": 240,
+      "height": 72
+    },
+    {
+      "id": "langgraph_system_generator.constants",
+      "label": "langgraph_system_generator.constants",
+      "type": "code",
+      "group": "langgraph_system_generator",
+      "x": 0,
+      "y": 360,
+      "width": 240,
+      "height": 72
+    },
+    {
+      "id": "langgraph_system_generator.examples_support",
+      "label": "langgraph_system_generator.examples_support",
+      "type": "code",
+      "group": "langgraph_system_generator",
+      "x": 0,
+      "y": 480,
+      "width": 240,
+      "height": 72
+    },
+    {
+      "id": "langgraph_system_generator.generator",
+      "label": "langgraph_system_generator.generator",
+      "type": "code",
+      "group": "langgraph_system_generator",
+      "x": 0,
+      "y": 600,
+      "width": 240,
+      "height": 72
+    },
+    {
+      "id": "langgraph_system_generator.notebook",
+      "label": "langgraph_system_generator.notebook",
+      "type": "code",
+      "group": "langgraph_system_generator",
+      "x": 0,
+      "y": 720,
+      "width": 240,
+      "height": 72
+    },
+    {
+      "id": "langgraph_system_generator.patterns",
+      "label": "langgraph_system_generator.patterns",
+      "type": "code",
+      "group": "langgraph_system_generator",
+      "x": 0,
+      "y": 840,
+      "width": 240,
+      "height": 72
+    },
+    {
+      "id": "langgraph_system_generator.qa",
+      "label": "langgraph_system_generator.qa",
+      "type": "code",
+      "group": "langgraph_system_generator",
+      "x": 0,
+      "y": 960,
+      "width": 240,
+      "height": 72
+    },
+    {
+      "id": "langgraph_system_generator.rag",
+      "label": "langgraph_system_generator.rag",
+      "type": "code",
+      "group": "langgraph_system_generator",
+      "x": 0,
+      "y": 1080,
+      "width": 240,
+      "height": 72
+    },
+    {
+      "id": "langgraph_system_generator.repo_agent_bootstrap",
+      "label": "langgraph_system_generator.repo_agent_bootstrap",
+      "type": "code",
+      "group": "langgraph_system_generator",
+      "x": 0,
+      "y": 1200,
+      "width": 240,
+      "height": 72
+    },
+    {
+      "id": "langgraph_system_generator.utils",
+      "label": "langgraph_system_generator.utils",
+      "type": "code",
+      "group": "langgraph_system_generator",
+      "x": 0,
+      "y": 1320,
+      "width": 240,
+      "height": 72
+    },
+    {
+      "id": "ANTHROPIC_API_KEY",
+      "label": "ANTHROPIC_API_KEY",
+      "type": "environment",
+      "group": "environment",
+      "x": 340,
+      "y": 0,
+      "width": 200,
+      "height": 56
+    },
+    {
+      "id": "BASE_OUTPUT_DIR",
+      "label": "BASE_OUTPUT_DIR",
+      "type": "environment",
+      "group": "environment",
+      "x": 340,
+      "y": 120,
+      "width": 200,
+      "height": 56
+    },
+    {
+      "id": "DEEP_AGENTS_MODEL",
+      "label": "DEEP_AGENTS_MODEL",
+      "type": "environment",
+      "group": "environment",
+      "x": 340,
+      "y": 240,
+      "width": 200,
+      "height": 56
+    },
+    {
+      "id": "LNF_DISABLE_DOTENV",
+      "label": "LNF_DISABLE_DOTENV",
+      "type": "environment",
+      "group": "environment",
+      "x": 340,
+      "y": 360,
+      "width": 200,
+      "height": 56
+    },
+    {
+      "id": "LNF_ENV_FILE",
+      "label": "LNF_ENV_FILE",
+      "type": "environment",
+      "group": "environment",
+      "x": 340,
+      "y": 480,
+      "width": 200,
+      "height": 56
+    },
+    {
+      "id": "LNF_MAX_CONCURRENT_GENERATIONS",
+      "label": "LNF_MAX_CONCURRENT_GENERATIONS",
+      "type": "environment",
+      "group": "environment",
+      "x": 340,
+      "y": 600,
+      "width": 200,
+      "height": 56
+    },
+    {
+      "id": "LNF_MAX_EVENTS_PER_JOB",
+      "label": "LNF_MAX_EVENTS_PER_JOB",
+      "type": "environment",
+      "group": "environment",
+      "x": 340,
+      "y": 720,
+      "width": 200,
+      "height": 56
+    },
+    {
+      "id": "LNF_OUTPUT_BASE",
+      "label": "LNF_OUTPUT_BASE",
+      "type": "environment",
+      "group": "environment",
+      "x": 340,
+      "y": 840,
+      "width": 200,
+      "height": 56
+    },
+    {
+      "id": "LOG_LEVEL",
+      "label": "LOG_LEVEL",
+      "type": "environment",
+      "group": "environment",
+      "x": 340,
+      "y": 960,
+      "width": 200,
+      "height": 56
+    },
+    {
+      "id": "MODEL",
+      "label": "MODEL",
+      "type": "environment",
+      "group": "environment",
+      "x": 340,
+      "y": 1080,
+      "width": 200,
+      "height": 56
+    },
+    {
+      "id": "OPENAI_API_KEY",
+      "label": "OPENAI_API_KEY",
+      "type": "environment",
+      "group": "environment",
+      "x": 340,
+      "y": 1200,
+      "width": 200,
+      "height": 56
+    },
+    {
+      "id": "WORKDIR",
+      "label": "WORKDIR",
+      "type": "environment",
+      "group": "environment",
+      "x": 340,
+      "y": 1320,
+      "width": 200,
+      "height": 56
+    }
+  ],
+  "edges": [
+    {
+      "source": "langgraph_system_generator.api",
+      "target": "LNF_MAX_CONCURRENT_GENERATIONS",
+      "kind": "reads-env"
+    },
+    {
+      "source": "langgraph_system_generator.api",
+      "target": "LNF_MAX_EVENTS_PER_JOB",
+      "kind": "reads-env"
+    },
+    {
+      "source": "langgraph_system_generator.api",
+      "target": "langgraph_system_generator",
+      "kind": "imports"
+    },
+    {
+      "source": "langgraph_system_generator.cli",
+      "target": "OPENAI_API_KEY",
+      "kind": "reads-env"
+    },
+    {
+      "source": "langgraph_system_generator.cli",
+      "target": "langgraph_system_generator",
+      "kind": "imports"
+    },
+    {
+      "source": "langgraph_system_generator.cli",
+      "target": "langgraph_system_generator.constants",
+      "kind": "imports"
+    },
+    {
+      "source": "langgraph_system_generator.constants",
+      "target": "BASE_OUTPUT_DIR",
+      "kind": "reads-env"
+    },
+    {
+      "source": "langgraph_system_generator.constants",
+      "target": "LNF_OUTPUT_BASE",
+      "kind": "reads-env"
+    },
+    {
+      "source": "langgraph_system_generator.constants",
+      "target": "langgraph_system_generator",
+      "kind": "imports"
+    },
+    {
+      "source": "langgraph_system_generator.examples_support",
+      "target": "OPENAI_API_KEY",
+      "kind": "reads-env"
+    },
+    {
+      "source": "langgraph_system_generator.examples_support",
+      "target": "langgraph_system_generator",
+      "kind": "imports"
+    },
+    {
+      "source": "langgraph_system_generator.generator",
+      "target": "langgraph_system_generator",
+      "kind": "imports"
+    },
+    {
+      "source": "langgraph_system_generator.notebook",
+      "target": "ANTHROPIC_API_KEY",
+      "kind": "reads-env"
+    },
+    {
+      "source": "langgraph_system_generator.notebook",
+      "target": "MODEL",
+      "kind": "reads-env"
+    },
+    {
+      "source": "langgraph_system_generator.notebook",
+      "target": "OPENAI_API_KEY",
+      "kind": "reads-env"
+    },
+    {
+      "source": "langgraph_system_generator.notebook",
+      "target": "WORKDIR",
+      "kind": "reads-env"
+    },
+    {
+      "source": "langgraph_system_generator.notebook",
+      "target": "langgraph_system_generator",
+      "kind": "imports"
+    },
+    {
+      "source": "langgraph_system_generator.patterns",
+      "target": "DEEP_AGENTS_MODEL",
+      "kind": "reads-env"
+    },
+    {
+      "source": "langgraph_system_generator.patterns",
+      "target": "OPENAI_API_KEY",
+      "kind": "reads-env"
+    },
+    {
+      "source": "langgraph_system_generator.patterns",
+      "target": "langgraph_system_generator",
+      "kind": "imports"
+    },
+    {
+      "source": "langgraph_system_generator.qa",
+      "target": "langgraph_system_generator",
+      "kind": "imports"
+    },
+    {
+      "source": "langgraph_system_generator.rag",
+      "target": "langgraph_system_generator",
+      "kind": "imports"
+    },
+    {
+      "source": "langgraph_system_generator.repo_agent_bootstrap",
+      "target": "langgraph_system_generator",
+      "kind": "imports"
+    },
+    {
+      "source": "langgraph_system_generator.utils",
+      "target": "LNF_DISABLE_DOTENV",
+      "kind": "reads-env"
+    },
+    {
+      "source": "langgraph_system_generator.utils",
+      "target": "LNF_ENV_FILE",
+      "kind": "reads-env"
+    },
+    {
+      "source": "langgraph_system_generator.utils",
+      "target": "LOG_LEVEL",
+      "kind": "reads-env"
+    }
+  ],
+  "legend": {
+    "code": {
+      "fill": "#EEF2FF",
+      "stroke": "#3730A3"
+    },
+    "environment": {
+      "fill": "#FFF7ED",
+      "stroke": "#C2410C"
+    },
+    "imports": {
+      "line_style": "solid"
+    },
+    "reads-env": {
+      "line_style": "dashed"
+    }
+  }
+}

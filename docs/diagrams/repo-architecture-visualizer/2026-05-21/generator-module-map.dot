@@ -1,0 +1,26 @@
+digraph repo_diagram {
+  label="langgraph_system_generator: mixed module diagram";
+  labelloc=t;
+  graph [rankdir=LR, fontsize=18, fontname="Arial"];
+  node [shape=box, style="rounded,filled", fontname="Arial", fillcolor="#EEF2FF", color="#3730A3"];
+  edge [fontname="Arial", color="#6B7280"];
+  subgraph cluster_0 {
+    label="agents";
+    color="#CBD5E1";
+    "agents" [label="agents"];
+    "agents._llm" [label="agents._llm"];
+    "agents.architecture_selector" [label="agents.architecture_selector"];
+    "agents.graph_designer" [label="agents.graph_designer"];
+    "agents.notebook_composer" [label="agents.notebook_composer"];
+    "agents.qa_repair_agent" [label="agents.qa_repair_agent"];
+    "agents.requirements_analyst" [label="agents.requirements_analyst"];
+    "agents.toolchain_engineer" [label="agents.toolchain_engineer"];
+  }
+  "agents._llm" -> "agents";
+  "agents.architecture_selector" -> "agents";
+  "agents.graph_designer" -> "agents";
+  "agents.notebook_composer" -> "agents";
+  "agents.qa_repair_agent" -> "agents";
+  "agents.requirements_analyst" -> "agents";
+  "agents.toolchain_engineer" -> "agents";
+}
