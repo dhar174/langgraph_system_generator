@@ -73,6 +73,54 @@ async def test_intake_node_returns_constraints():
 
 
 @pytest.mark.asyncio
+async def test_intake_node_uses_dialog_refinement_when_messages_are_present():
+    constraints = [
+        Constraint(type="goal", value="Build a router workflow", priority=5),
+        Constraint(type="runtime", value="Use gpt-5.4-mini", priority=4),
+    ]
+    feedback = RequirementsFeedback(
+        fallback_used=False,
+        dialog_turn_count=2,
+        constraint_changes=["Retained 1 prior constraint(s)."],
+    )
+
+    with patch(
+        "langgraph_system_generator.generator.agents.requirements_analyst.ChatOpenAI",
+        return_value=MagicMock(),
+    ):
+        with patch.object(
+            RequirementsAnalyst,
+            "analyze_dialog",
+            new=AsyncMock(
+                return_value=RequirementsAnalysis(
+                    constraints=constraints,
+                    feedback=feedback,
+                )
+            ),
+        ) as mock_analyze_dialog:
+            result = await intake_node(
+                {
+                    "user_prompt": "Use gpt-5.4-mini.",
+                    "constraints": [constraints[0]],
+                    "requirements_messages": [
+                        {"role": "user", "content": "Build a router workflow."},
+                        {"role": "user", "content": "Use gpt-5.4-mini."},
+                    ],
+                }
+            )
+
+    assert result["constraints"] == constraints
+    assert result["requirements_feedback"].dialog_turn_count == 2
+    mock_analyze_dialog.assert_awaited_once_with(
+        [
+            {"role": "user", "content": "Build a router workflow."},
+            {"role": "user", "content": "Use gpt-5.4-mini."},
+        ],
+        existing_constraints=[constraints[0]],
+    )
+
+
+@pytest.mark.asyncio
 async def test_tooling_plan_node_returns_tools_plan():
     constraints = [Constraint(type="goal", value="Build agents", priority=5)]
     workflow_design = {"nodes": [{"name": "agent", "purpose": "coordinate"}]}

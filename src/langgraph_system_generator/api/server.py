@@ -7,13 +7,13 @@ from contextlib import asynccontextmanager
 import logging
 import os
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Literal, Optional
 from urllib.parse import urlparse
 
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import FileResponse, HTMLResponse, Response
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from langgraph_system_generator import __version__
 from langgraph_system_generator.constants import _BASE_OUTPUT, resolve_under_base
@@ -217,7 +217,10 @@ def _validate_advanced_options(
 
     if normalized_custom_endpoint:
         parsed_endpoint = urlparse(normalized_custom_endpoint)
-        if parsed_endpoint.scheme not in {"http", "https"} or not parsed_endpoint.hostname:
+        if (
+            parsed_endpoint.scheme not in {"http", "https"}
+            or not parsed_endpoint.hostname
+        ):
             raise HTTPException(
                 status_code=400,
                 detail="custom_endpoint must be a valid http or https URL with a hostname.",
@@ -245,13 +248,58 @@ def _normalize_request(request: "GenerationRequest") -> "GenerationRequest":
         }
     )
 
+
+def _request_dialog_messages(
+    request: "GenerationRequest",
+) -> list[dict[str, str]] | None:
+    """Return normalized dialog messages for iterative requirements refinement."""
+
+    if not request.messages:
+        return None
+    return [message.model_dump() for message in request.messages]
+
+
+def _request_prompt(request: "GenerationRequest") -> str:
+    """Return the single prompt value used by legacy generation surfaces."""
+
+    if request.prompt:
+        return request.prompt
+    messages = request.messages or []
+    for message in reversed(messages):
+        if message.role == "user":
+            return message.content
+    return messages[-1].content if messages else ""
+
+
+class DialogMessage(BaseModel):
+    """One requirements dialog turn accepted by the API."""
+
+    role: Literal["system", "user", "assistant"] = Field(
+        description="Dialog role for this requirements turn."
+    )
+    content: str = Field(
+        ...,
+        description="Message content for this requirements turn.",
+        max_length=5000,
+    )
+
+
 class GenerationRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    prompt: str = Field(
-        ...,
+    prompt: Optional[str] = Field(
+        default=None,
         description="User prompt describing the desired system",
         max_length=5000,
+    )
+    messages: Optional[list[DialogMessage]] = Field(
+        default=None,
+        description=(
+            "Optional multi-turn requirements dialog. When provided, live intake "
+            "refines constraints across these turns while prompt remains the "
+            "legacy request summary."
+        ),
+        max_length=50,
     )
     mode: GenerationMode = Field(
         default="stub",
@@ -299,6 +347,14 @@ class GenerationRequest(BaseModel):
         default=None,
         description="Type of agent architecture (router, subagents, hybrid, autoagent, deepagents, etc.) when overriding auto-detection.",
     )
+
+    @model_validator(mode="after")
+    def _require_prompt_or_messages(self) -> "GenerationRequest":
+        """Require either a legacy prompt or at least one dialog message."""
+
+        if not (self.prompt and self.prompt.strip()) and not self.messages:
+            raise ValueError("Either prompt or messages must be provided.")
+        return self
 
 
 class GenerationResponse(BaseModel):
@@ -368,6 +424,8 @@ async def chrome_devtools_endpoint():
 async def generate_notebook(request: GenerationRequest) -> GenerationResponse:
     """Generate notebook artifacts via the generator pipeline."""
     normalized_request = _normalize_request(request)
+    prompt = _request_prompt(normalized_request)
+    requirements_messages = _request_dialog_messages(normalized_request)
 
     # Use the secure path resolution function
     output_path = _resolve_output_dir(request.output_dir)
@@ -375,7 +433,7 @@ async def generate_notebook(request: GenerationRequest) -> GenerationResponse:
     async with _generation_slot():
         try:
             artifacts: GenerationArtifacts = await generate_artifacts(
-                request.prompt,
+                prompt,
                 output_dir=str(output_path),
                 mode=request.mode,
                 formats=request.formats,
@@ -384,6 +442,7 @@ async def generate_notebook(request: GenerationRequest) -> GenerationResponse:
                 max_tokens=request.max_tokens,
                 agent_type=normalized_request.agent_type,
                 custom_endpoint=normalized_request.custom_endpoint,
+                requirements_messages=requirements_messages,
             )
             return GenerationResponse(
                 success=True,
@@ -419,7 +478,7 @@ async def start_async_generation(
 
     Returns:
         GenerationStartResponse with job_id and stream_url
-        
+
     Raises:
         HTTPException 503: When concurrent generation limit is reached
     """
@@ -475,7 +534,7 @@ async def _run_generation_with_progress(
 
     This function orchestrates the generation process and emits progress events
     to the SSE stream. It wraps generate_artifacts() and adds instrumentation.
-    
+
     Uses the API admission controller to limit concurrent generations and prevent
     resource exhaustion.
 
@@ -494,7 +553,9 @@ async def _run_generation_with_progress(
         # Run generation
         emit_node_progress(job_id, "generation", 10, "Initializing generator...")
 
-        def progress_callback(event: Any, percentage: int | None = None, message: str | None = None) -> None:
+        def progress_callback(
+            event: Any, percentage: int | None = None, message: str | None = None
+        ) -> None:
             """Forward progress to SSE stream."""
             if isinstance(event, dict):
                 event_type = event.get("event", "progress")
@@ -522,8 +583,10 @@ async def _run_generation_with_progress(
 
             emit_node_progress(job_id, str(event), int(percentage or 0), message or "")
 
+        prompt = _request_prompt(request)
+        requirements_messages = _request_dialog_messages(request)
         artifacts: GenerationArtifacts = await generate_artifacts(
-            request.prompt,
+            prompt,
             output_dir=str(output_path),
             mode=request.mode,
             formats=request.formats,
@@ -532,6 +595,7 @@ async def _run_generation_with_progress(
             max_tokens=request.max_tokens,
             agent_type=request.agent_type,
             custom_endpoint=request.custom_endpoint,
+            requirements_messages=requirements_messages,
             progress_callback=progress_callback,
         )
 

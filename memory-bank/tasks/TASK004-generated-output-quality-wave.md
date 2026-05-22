@@ -1,8 +1,8 @@
 # TASK004 - Generated-Output Quality Wave
 
-**Status:** In Progress
+**Status:** Complete
 **Added:** 2026-05-20
-**Updated:** 2026-05-21
+**Updated:** 2026-05-22
 
 ## Original Request
 
@@ -14,8 +14,8 @@ aligned before continuing the wave.
 
 Treat generated-output work as a sequence under epic #342. Reliability work
 from #351-#355 is complete. Manifest truth work from #350 is complete. PR #357
-landed broad generated-chat runtime improvements. PR #359 merged #343/#348, so
-Wave 4 is now active for #344, #345, #346, #347, and #349.
+landed broad generated-chat runtime improvements. PR #359 merged #343/#348, and
+PR #360 completed Wave 4 for #344, #345, #346, #347, and #349.
 
 ## Implementation Plan
 
@@ -37,7 +37,7 @@ Wave 4 is now active for #344, #345, #346, #347, and #349.
 
 ## Progress Tracking
 
-**Overall Status:** In Progress
+**Overall Status:** Complete
 
 ### Subtasks
 
@@ -48,7 +48,7 @@ Wave 4 is now active for #344, #345, #346, #347, and #349.
 | 4.3 | Reconcile generated-chat contract PR #357 with open child issues | Complete | 2026-05-21 | PR #359 folded the #348 config boundary into the #343 branch; remaining Wave 4 issues still need final triage after #359. |
 | 4.4 | Implement canonical graph topology preservation for #343 | Complete | 2026-05-21 | PR #359 merged at `d851008ffc5e6ca289c666c5b1c0564b2282f32f`. |
 | 4.5 | Implement remaining #348 follow-up if still needed | Complete | 2026-05-21 | PR #359 implements the standalone `ChatOpenAI(...)` versus notebook `make_llm(...)` boundary. |
-| 4.6 | Implement generated chatbot Wave 4 for #344/#345/#346/#347/#349 | In Progress | 2026-05-21 | Branch `codex/chatbot-fidelity-wave4`; focused slices, broad unit gate, and headed/live UI artifact gate are passing. |
+| 4.6 | Implement generated chatbot Wave 4 for #344/#345/#346/#347/#349 | Complete | 2026-05-22 | PR #360 merged at `89da744e3f4b232eebf6ce4802ecee6537b02c8f`, closing the remaining generated-output children and epic #342. |
 
 ## Progress Log
 
@@ -99,3 +99,10 @@ Wave 4 is now active for #344, #345, #346, #347, and #349.
   `./output/wave4-live-chatbot`: notebook, HTML, and manifest downloads worked,
   no browser console/page errors were observed, and the manifest reported
   advisory-only QA with zero blocking issues.
+
+### 2026-05-22
+
+- PR #360 merged at `89da744e3f4b232eebf6ce4802ecee6537b02c8f`, closing #344,
+  #345, #346, #347, #349, and epic #342.
+- Generated-output quality work is now complete. Remaining runtime outer-agent
+  follow-ups #334/#335 stay active as a separate downstream architecture lane.

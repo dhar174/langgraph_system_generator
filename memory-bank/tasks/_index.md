@@ -2,13 +2,14 @@
 
 ## In Progress
 
-- [TASK004 - Generated-output quality wave](TASK004-generated-output-quality-wave.md)
+- [TASK005 - Pattern/intake modernization wave](TASK005-pattern-intake-modernization-wave.md)
 
 ## Completed
 
 - [TASK001 - Repo architecture visualizer docs sync](TASK001-repo-architecture-visualizer-docs-sync.md)
 - [TASK002 - 1.0 release readiness implementation](TASK002-1-0-release-readiness.md)
 - [TASK003 - Cloud Run deployment and live QA hardening](TASK003-cloud-run-deployment-live-qa.md)
+- [TASK004 - Generated-output quality wave](TASK004-generated-output-quality-wave.md)
 
 ## Current State
 
@@ -18,10 +19,10 @@
   - `TASK002-1-0-release-readiness.md`
   - `TASK003-cloud-run-deployment-live-qa.md`
   - `TASK004-generated-output-quality-wave.md`
+  - `TASK005-pattern-intake-modernization-wave.md`
 - Task-level Memory Bank tracking has started with the documentation and
   visualization sync for the checked-in repo architecture bundle, the completed
   1.0 release-readiness branch, the completed Cloud Run deployment hardening
-  lane, and the active generated-output quality wave under epic #342. Wave 4 is
-  active on `codex/chatbot-fidelity-wave4` for #344, #345, #346, #347, and
-  #349 after PR #359 merged #343/#348; the focused tests, broad unit gate, and
-  headed/live UI artifact gate are passing before PR publication.
+  lane, the completed generated-output quality wave under epic #342, and the
+  active Wave 5 pattern/intake modernization branch for #60, #63, #64, and
+  #202. PR #360 closed the remaining generated-output child issues and #342.

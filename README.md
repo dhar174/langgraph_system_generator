@@ -245,8 +245,11 @@ curl -X POST http://localhost:8000/generate \
   }'
 ```
 
-Request fields are `prompt`, `mode`, `output_dir`, `formats`, `model`,
-`custom_endpoint`, `temperature`, `max_tokens`, and `agent_type`.
+Request fields are `prompt`, `messages`, `mode`, `output_dir`, `formats`,
+`model`, `custom_endpoint`, `temperature`, `max_tokens`, and `agent_type`.
+Use `prompt` for the legacy single-turn request shape. Use `messages` for an
+iterative requirements dialog; when `prompt` is omitted, the API derives the
+generation prompt from the latest user message.
 
 Current API request model snapshot:
 
@@ -254,6 +257,7 @@ Current API request model snapshot:
 classDiagram
   class GenerationRequest {
     prompt : Optional[str]
+    messages : Optional[list[DialogMessage]]
     mode : Optional[GenerationMode]
     output_dir : Optional[str]
     formats : Optional[list[str]]
@@ -262,6 +266,10 @@ classDiagram
     temperature : Optional[float]
     max_tokens : Optional[int]
     agent_type : Optional[str]
+  }
+  class DialogMessage {
+    role : Literal["system", "user", "assistant"]
+    content : str
   }
 ```
 

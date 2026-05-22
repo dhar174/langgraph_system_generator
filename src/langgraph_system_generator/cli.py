@@ -181,11 +181,13 @@ def _default_state(
     prompt: str,
     generation_config: GenerationConfig | None = None,
     generation_mode: GenerationMode = "live",
+    requirements_messages: List[Dict[str, str]] | None = None,
 ) -> Dict[str, Any]:
     """Return a baseline GeneratorState payload."""
 
     return {
         "user_prompt": prompt,
+        "requirements_messages": requirements_messages,
         "uploaded_files": None,
         "constraints": [],
         "requirements_feedback": RequirementsFeedback(
@@ -1137,6 +1139,7 @@ def _build_stub_result(prompt: str, agent_type: str | None = None) -> Dict[str, 
             "search": "Search for information",
             "analyze": "Analyze data and identify patterns",
             "summarize": "Condense content into summaries",
+            "fallback": "Handle general, unsupported, or unclear requests safely.",
         }
 
         # State
@@ -1158,7 +1161,7 @@ def _build_stub_result(prompt: str, agent_type: str | None = None) -> Dict[str, 
         )
 
         # Route nodes
-        for route in routes:
+        for route in [*routes, "fallback"]:
             cells.append(
                 CellSpec(
                     cell_type="code",
@@ -1464,6 +1467,7 @@ async def generate_artifacts(
     max_tokens: int | None = None,
     agent_type: str | None = None,
     custom_endpoint: str | None = None,
+    requirements_messages: List[Dict[str, str]] | None = None,
     progress_callback: Any | None = None,
 ) -> GenerationArtifacts:
     """Generate notebook artifacts either in stub or live mode.
@@ -1482,6 +1486,7 @@ async def generate_artifacts(
         max_tokens: Maximum tokens for LLM response (optional)
         agent_type: Type of agent architecture (optional, auto-detected if not specified)
         custom_endpoint: Custom API endpoint URL (optional)
+        requirements_messages: Optional dialog turns for iterative requirements refinement.
         progress_callback: Optional callback function(node, percentage, message) for progress tracking
     """
 
@@ -1566,7 +1571,12 @@ async def generate_artifacts(
         tracker.finish("graph_init", "Generator graph created.", percentage=15)
         tracker.start("graph_invoke", "Invoking generator graph...", percentage=18)
         result = await graph.ainvoke(
-            _default_state(prompt, generation_config, generation_mode="live")
+            _default_state(
+                prompt,
+                generation_config,
+                generation_mode="live",
+                requirements_messages=requirements_messages,
+            )
         )
         tracker.finish("graph_invoke", "Generator graph completed.", percentage=60)
     else:

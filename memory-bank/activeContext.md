@@ -31,11 +31,17 @@
 - PR #359 merged Wave 3 #343/#348. It preserves canonical graph/spec topology in
   generated notebooks, manifests, and QA, and keeps standalone pattern LLM
   snippets separate from notebook `make_llm(...)` cells.
-- Wave 4 is active on `codex/chatbot-fidelity-wave4` for #344, #345, #346,
-  #347, and #349. The branch hardens existing generated-chat behavior rather
-  than replacing PR #357/#359: non-blocking chat helpers, same-thread turns,
-  canonical verifier/reviser fields, memory writers, tool contract summaries,
-  and prompt-faithfulness/domain QA.
+- PR #360 merged Wave 4 at
+  `89da744e3f4b232eebf6ce4802ecee6537b02c8f`, closing #344, #345, #346,
+  #347, #349, and generated-output epic #342. Generated chatbot notebooks now
+  have non-blocking chat helpers, same-thread demo turns, canonical
+  verifier/reviser fields, memory writers, tool contract summaries, and
+  prompt-faithfulness/domain QA.
+- Wave 5 is active on `codex/pattern-intake-modernization-wave5` for #60, #63,
+  #64, and #202. The branch modernizes residual LangGraph pattern/intake
+  behavior: router fallback/general routes, critique-loop static interrupts,
+  Send-based subagent fan-out, and multi-turn requirements refinement through
+  the API/intake state contract.
 - `memory-bank/systemPatterns.md` was updated to document the actual repo
   architecture instead of template bullets.
 - The API layer includes guarded output-path resolution and bounded async job
@@ -89,11 +95,10 @@
 
 ## Immediate Next Steps
 
-- Open the ready Wave 4 PR from `codex/chatbot-fidelity-wave4` for #344, #345,
-  #346, #347, and #349. The branch has passed focused tests, the broad unit
-  gate, and headed/live UI artifact validation.
-- After Wave 4 lands, close epic #342 only if all children #343-#350 are closed;
-  keep #334/#335 active as downstream runtime outer-agent architecture work.
+- Complete and open the ready Wave 5 PR from
+  `codex/pattern-intake-modernization-wave5` for #60, #63, #64, and #202.
+- Keep #334/#335 active as downstream runtime outer-agent architecture work
+  after generated-output epic #342.
 - Keep public docs, examples, and onboarding copy aligned with the current
   CLI/API contract.
 - Keep contributor-facing LangGraph/LangChain skills and LNF custom agents
@@ -151,8 +156,7 @@
 - The post-refresh broad unit gate was
   `python -m pytest tests/unit/ --asyncio-mode=auto -q` with 622 passed and 4
   warnings.
-- Current Wave 4 focused verification on `codex/chatbot-fidelity-wave4` has
-  passed:
+- Wave 4 focused verification on `codex/chatbot-fidelity-wave4` passed:
   `python -m pytest tests/unit/test_generator_notebook_composer.py tests/unit/test_validators.py -q`
   with 111 passed,
   `python -m pytest tests/unit/test_generator_agents.py tests/unit/test_generator_nodes_additional.py tests/unit/test_cli_api.py --asyncio-mode=auto -q`
@@ -166,3 +170,11 @@
   `./output/wave4-live-chatbot`; required artifact downloads worked, the
   browser reported no console or page errors, and the manifest reported
   advisory QA only with zero blocking issues.
+- Current Wave 5 focused verification has passed:
+  `python -m pytest tests/unit/test_patterns.py tests/patterns/test_router.py tests/patterns/test_critique_loops.py -q`
+  with 167 passed, and
+  `python -m pytest tests/unit/test_generator_agents.py tests/unit/test_generator_nodes.py tests/unit/test_cli_api.py --asyncio-mode=auto -q`
+  with 115 passed.
+- The Wave 5 broad unit gate
+  `python -m pytest tests/unit/ --asyncio-mode=auto -q` passed with 646 tests
+  and 4 warnings.

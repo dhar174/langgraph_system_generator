@@ -173,9 +173,7 @@ Return a polished draft that can be reviewed and revised."""
     ) -> str:
         """Generate code for critique/review node."""
         if feedback_source not in {"automated", "human"}:
-            raise ValueError(
-                "feedback_source must be either 'automated' or 'human'"
-            )
+            raise ValueError("feedback_source must be either 'automated' or 'human'")
 
         if model_config is None:
             config = ModelConfig()
@@ -496,12 +494,18 @@ Address the critique directly while preserving good parts of the draft."""
         max_revisions: int = 5,
         min_quality_score: float = 0.8,
         failure_conditions: Optional[dict[str, Any]] = None,
+        require_human_approval: bool = False,
     ) -> str:
         """Generate the graph wiring for the critique loop."""
         conditional_helper = CritiqueLoopPattern.generate_conditional_edge_code(
             max_revisions=max_revisions,
             min_quality_score=min_quality_score,
             failure_conditions=failure_conditions,
+        )
+        compile_args = (
+            'checkpointer=checkpointer, interrupt_before=["revise"]'
+            if require_human_approval
+            else "checkpointer=checkpointer"
         )
         return textwrap.dedent(
             f'''from langgraph.checkpoint.memory import InMemorySaver
@@ -569,7 +573,7 @@ workflow.add_conditional_edges(
 workflow.add_edge("revise", "critique")
 workflow.add_edge("finalize", END)
 
-graph = workflow.compile(checkpointer=checkpointer)
+graph = workflow.compile({compile_args})
 '''
         )
 
@@ -583,6 +587,7 @@ graph = workflow.compile(checkpointer=checkpointer)
         use_structured_output: bool = True,
         feedback_source: str = "automated",
         failure_conditions: Optional[dict[str, Any]] = None,
+        require_human_approval: bool = False,
     ) -> str:
         """Generate a complete, runnable critique-revise loop example."""
         if criteria is None:
@@ -618,6 +623,7 @@ graph = workflow.compile(checkpointer=checkpointer)
             max_revisions=max_revisions,
             min_quality_score=min_quality_score,
             failure_conditions=failure_conditions,
+            require_human_approval=require_human_approval,
         )
 
         human_feedback_example = ""
@@ -639,7 +645,9 @@ def collect_human_feedback(
         ),
     }
 '''
-            human_state_fields = '\n        "human_feedback_handler": collect_human_feedback,'
+            human_state_fields = (
+                '\n        "human_feedback_handler": collect_human_feedback,'
+            )
 
         failure_state_fields = ""
         if failure_conditions:
