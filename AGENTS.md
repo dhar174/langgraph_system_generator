@@ -229,6 +229,18 @@ aligned when changing notebook assembly behavior:
   notebook-scoped helpers explicitly with `use_notebook_helper=True` so node
   code calls `make_llm(...)` and leaves model/API-base settings centralized in
   the config cell
+- generated chatbot notebooks must remain non-blocking on top-to-bottom
+  execution by default; interactive input loops should run only when the
+  notebook-level `RUN_INTERACTIVE_LOOP` flag is enabled, while `chat_once(...)`
+  and repeatable same-thread helper calls remain available for tests and demos
+- generated chatbot verifier/reviser nodes should use the canonical draft,
+  safety, revision, and final-response fields so QA can prove bounded revision
+  routing instead of relying on prose-only verifier cells
+- generated tool claims should stay aligned with
+  `graph_exports.schema.tool_reachability`; manifests expose
+  `tool_contract_summary` to distinguish planned, executable, utility, and
+  unsupported tools, plus unclassified tools when reachability metadata is
+  missing or mismatched
 - register architecture-specific notebook assembly behavior through
   `src/langgraph_system_generator/generator/notebook_composer_registry.py`
   and `NOTEBOOK_COMPOSER_PLUGIN_MODULES` rather than adding more hardcoded
@@ -254,8 +266,9 @@ that shared engine, not a second repair implementation.
 - keep validator coverage aligned with official LangGraph notebook semantics:
   accumulated messages need reducer semantics, graph nodes should return
   partial state updates, tool descriptions must match reachable execution
-  paths, and domain-specific prompts should not render generic architecture
-  placeholders
+  paths, memory/persona fields need registered writers, chatbot verifier loops
+  need executable revise/accept routing, and domain-specific prompts should not
+  render generic architecture placeholders
 - prefer bounded deterministic repairs over free-form rewrites, especially in
   stub mode and CI-facing tests
 

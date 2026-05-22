@@ -38,7 +38,11 @@ from langgraph_system_generator.generator.architecture_registry import (
     get_default_architecture_registry,
 )
 from langgraph_system_generator.generator.tool_registry import get_tool_registry
-from langgraph_system_generator.qa.summary import build_qa_summary, serialize_qa_report
+from langgraph_system_generator.qa.summary import (
+    build_qa_summary,
+    build_tool_contract_summary,
+    serialize_qa_report,
+)
 from langgraph_system_generator.generator.graph_design_registry import (
     build_graph_exports,
     graph_design_issue_messages,
@@ -280,10 +284,9 @@ def _resolve_path_within_base(
             os.path.realpath(os.path.join(os.fspath(base_resolved), normalized))
         )
     try:
-        if (
-            os.path.commonpath([os.fspath(base_resolved), os.fspath(candidate)])
-            != os.fspath(base_resolved)
-        ):
+        if os.path.commonpath(
+            [os.fspath(base_resolved), os.fspath(candidate)]
+        ) != os.fspath(base_resolved):
             return None, None
     except ValueError:
         return None, None
@@ -385,41 +388,40 @@ def _build_artifact_contract(
     }
 
     zip_members: list[dict[str, Any]] = []
-    zip_path_value = manifest.get("zip_path")
-    if zip_path_value:
-        resolved_zip_path, _ = _resolve_path_within_base(zip_path_value, output_dir)
-        if resolved_zip_path:
-            output_dir_real = os.path.realpath(os.fspath(output_dir))
-            resolved_zip_real = os.path.realpath(os.fspath(resolved_zip_path))
-            if (
-                os.path.commonpath([output_dir_real, resolved_zip_real])
-                == output_dir_real
-                and os.path.isfile(resolved_zip_real)
-            ):
-                with zipfile.ZipFile(resolved_zip_real, "r") as zf:
-                    for member in zf.infolist():
-                        source_entry = standalone_by_filename.get(member.filename)
-                        source_exists = bool(source_entry and source_entry.get("exists"))
-                        zip_members.append(
-                            {
-                                "name": member.filename,
-                                "availability": (
-                                    "standalone_and_bundle"
-                                    if source_exists
-                                    else "bundle_only"
-                                ),
-                                "source_manifest_key": (
-                                    source_entry.get("manifest_key")
-                                    if source_entry
-                                    else None
-                                ),
-                                "source_path": (
-                                    source_entry.get("path") if source_entry else None
-                                ),
-                                "source_exists": source_exists,
-                                "size_bytes": member.file_size,
-                            }
-                        )
+    zip_entry = next(
+        (
+            entry
+            for entry in standalone_files
+            if entry.get("manifest_key") == "zip_path"
+            and entry.get("path_type") == "server_local"
+            and entry.get("exists")
+        ),
+        None,
+    )
+    expected_zip_path = Path(
+        os.path.realpath(os.fspath(output_dir / "notebook_bundle.zip"))
+    )
+    if zip_entry and Path(str(zip_entry.get("path", ""))) == expected_zip_path:
+        with zipfile.ZipFile(expected_zip_path, "r") as zf:
+            for member in zf.infolist():
+                source_entry = standalone_by_filename.get(member.filename)
+                source_exists = bool(source_entry and source_entry.get("exists"))
+                zip_members.append(
+                    {
+                        "name": member.filename,
+                        "availability": (
+                            "standalone_and_bundle" if source_exists else "bundle_only"
+                        ),
+                        "source_manifest_key": (
+                            source_entry.get("manifest_key") if source_entry else None
+                        ),
+                        "source_path": (
+                            source_entry.get("path") if source_entry else None
+                        ),
+                        "source_exists": source_exists,
+                        "size_bytes": member.file_size,
+                    }
+                )
 
     return {
         "version": 1,
@@ -1519,7 +1521,10 @@ async def generate_artifacts(
         if normalized_requested in ("", "."):
             target_real = base_output_real
         else:
-            if normalized_requested.startswith("..") or f"{os.sep}.." in normalized_requested:
+            if (
+                normalized_requested.startswith("..")
+                or f"{os.sep}.." in normalized_requested
+            ):
                 raise ValueError(
                     "output_dir must reside within the configured base output directory."
                 )
@@ -1600,6 +1605,11 @@ async def generate_artifacts(
     qa_reports = serialized.get("qa_reports") or []
     serialized_qa_reports = [serialize_qa_report(report) for report in qa_reports]
     qa_summary = build_qa_summary(serialized_qa_reports)
+    tool_contract_summary = build_tool_contract_summary(
+        serialized.get("tools_plan") or [],
+        graph_exports,
+        serialized_qa_reports,
+    )
 
     manifest: Dict[str, Any] = {
         "prompt": prompt,
@@ -1614,6 +1624,7 @@ async def generate_artifacts(
         "graph_design_feedback": graph_design_feedback,
         "graph_exports": graph_exports,
         "tool_planning_feedback": tool_planning_feedback,
+        "tool_contract_summary": tool_contract_summary,
         "generation_context_pack": generation_context_pack,
         "notebook_composition_feedback": notebook_composition_feedback,
         "notebook_dependency_plan": notebook_dependency_plan,

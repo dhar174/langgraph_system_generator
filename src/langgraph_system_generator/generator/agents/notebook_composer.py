@@ -136,6 +136,26 @@ class NotebookComposer:
         "finish",
         "final",
     }
+    _CHATBOT_STATE_FIELDS: dict[str, str] = {
+        "draft_response": "Draft chatbot response awaiting verification.",
+        "safety_passed": "Whether safety and realism checks passed.",
+        "needs_revision": "Whether the draft requires a bounded revision.",
+        "historical_risk_notes": "Historical anachronism or realism findings.",
+        "realism_notes": "Persona realism notes from verifier nodes.",
+        "revision_instructions": "Concrete instructions for the reviser node.",
+        "revision_count": "Number of revision attempts for the current turn.",
+        "revision_history": "Attempt-by-attempt revision notes.",
+        "verification_passed": "Whether verifier checks accepted the draft.",
+        "final_response": "Accepted final chatbot response.",
+        "turn_count": "Number of completed chat turns for the thread.",
+        "memory_summary": "Short running conversation memory summary.",
+        "conversation_memory": "Thread-scoped multi-turn conversation memory.",
+        "persona_profile": "Selected persona profile for the active character.",
+        "persona": "Selected 18th-century commoner persona.",
+        "persona_choice": "Selected persona choice for the active character.",
+        "selected_gender": "Selected male or female character gender.",
+        "gender_pending": "Whether character selection is still pending.",
+    }
 
     def __init__(
         self,
@@ -200,6 +220,99 @@ class NotebookComposer:
                 continue
             extensions[str(field_name)] = str(description)
         return extensions
+
+    def _augment_chatbot_state_schema(
+        self,
+        workflow_design: Dict[str, Any],
+        notebook_plan: NotebookPlan | None = None,
+    ) -> Dict[str, Any]:
+        """Return state schema plus canonical chatbot/verifier memory fields."""
+
+        state_schema = dict(workflow_design.get("state_schema") or {})
+        if not self._is_chatbot_workflow(workflow_design, notebook_plan):
+            return state_schema
+        for field_name, description in self._CHATBOT_STATE_FIELDS.items():
+            state_schema.setdefault(field_name, description)
+        return state_schema
+
+    def _workflow_state_fields(
+        self,
+        workflow_design: Dict[str, Any],
+        notebook_plan: NotebookPlan | None = None,
+    ) -> set[str]:
+        """Return sanitized state field names expected by generated code."""
+
+        state_schema = self._augment_chatbot_state_schema(
+            workflow_design,
+            notebook_plan,
+        )
+        return {
+            self._safe_identifier(field_name, "field").lower()
+            for field_name in state_schema
+        }
+
+    def _nodes_for_generated_node_cells(
+        self,
+        workflow_design: Dict[str, Any],
+        nodes: List[Dict[str, Any]],
+    ) -> List[Dict[str, Any]]:
+        """Return nodes that need explicit node-cell implementations."""
+
+        canonical_schema = self._canonical_graph_schema(workflow_design)
+        if not canonical_schema:
+            return nodes
+        architecture_type = str(
+            canonical_schema.get("architecture_type")
+            or workflow_design.get("architecture_type")
+            or ""
+        ).lower()
+        if architecture_type not in {"subagents", "autoagent", "hybrid"}:
+            return nodes
+        node_names = {
+            str(node.get("name") or "") for node in canonical_schema.get("nodes", [])
+        }
+        if "finish" not in node_names:
+            return nodes
+        return [node for node in nodes if str(node.get("name") or "") != "finish"]
+
+    def _with_required_pattern_scaffold_nodes(
+        self,
+        nodes: List[Dict[str, Any]],
+        workflow_design: Dict[str, Any],
+    ) -> List[Dict[str, Any]]:
+        """Ensure fallback node cells define handlers referenced by pattern graphs."""
+
+        architecture_type = str(workflow_design.get("architecture_type") or "").lower()
+        required_by_architecture = {
+            "router": [
+                ("router", "Route the chat turn to the next workflow handler."),
+            ],
+            "subagents": [
+                ("supervisor", "Coordinate the generated chatbot subagents."),
+            ],
+            "hybrid": [
+                ("router", "Route direct chatbot turns or delegate to the team."),
+                ("supervisor", "Coordinate the generated chatbot worker team."),
+            ],
+            "autoagent": [
+                ("coordinator", "Coordinate generated chatbot worker agents."),
+            ],
+        }
+        required_nodes = required_by_architecture.get(architecture_type, [])
+        if not required_nodes:
+            return nodes
+
+        existing_names = {
+            str(node.get("name") or "").strip().lower()
+            for node in nodes
+            if isinstance(node, dict)
+        }
+        prepended_nodes: list[Dict[str, Any]] = []
+        for name, purpose in required_nodes:
+            if name not in existing_names:
+                prepended_nodes.append({"name": name, "purpose": purpose})
+                existing_names.add(name)
+        return [*prepended_nodes, *nodes]
 
     @staticmethod
     def _normalize_inline_text(value: Any, fallback: str) -> str:
@@ -463,6 +576,11 @@ class NotebookComposer:
             .lower()
         )
         workflow_design["architecture_type"] = architecture_type
+        if self._is_chatbot_workflow(workflow_design, notebook_plan):
+            workflow_design["state_schema"] = self._augment_chatbot_state_schema(
+                workflow_design,
+                notebook_plan,
+            )
         registration = self.registry.resolve(architecture_type)
         cells: List[CellSpec] = []
         for section_name in registration.section_order:
@@ -737,7 +855,20 @@ else:
             ),
             'THREAD_ID = "lnf-demo-thread"',
             "SHOW_UPDATES = False",
+            "RUN_INTERACTIVE_LOOP = False",
+            "RUN_DEMO_TURNS = False",
             "CHARACTER_GENDER = None  # Set to 'male' or 'female' to skip the first-turn prompt.",
+            "ANACHRONISM_TERMS = (",
+            '    "smartphone",',
+            '    "internet",',
+            '    "television",',
+            '    "movie",',
+            '    "star wars",',
+            '    "computer",',
+            '    "airplane",',
+            '    "radio",',
+            '    "electricity",',
+            ")",
             "",
             "# Credentials",
             "# Prefer environment variables over hardcoded secrets in notebooks.",
@@ -817,9 +948,10 @@ else:
         architecture_type = str(
             workflow_design.get("architecture_type", "router")
         ).lower()
+        augmented_state_schema = self._augment_chatbot_state_schema(workflow_design)
         state_schema = self._state_schema_extensions(
             architecture_type,
-            workflow_design.get("state_schema", {}),
+            augmented_state_schema,
         )
 
         # Use pattern library for known architectures
@@ -868,10 +1000,177 @@ class WorkflowState(MessagesState):
             CellSpec(cell_type="code", content=state_content, section="state"),
         ]
 
+    @classmethod
+    def _tool_contract_ids(cls, tool: Dict[str, Any]) -> set[str]:
+        """Return normalized identifiers that may link a tool to graph reachability."""
+
+        identifiers = {
+            str(tool.get("tool_id") or "").strip(),
+            str(tool.get("name") or "").strip(),
+            cls._safe_identifier(tool.get("name") or "", "tool"),
+        }
+        return {identifier for identifier in identifiers if identifier}
+
+    @staticmethod
+    def _executable_tool_ids(workflow_design: Dict[str, Any] | None) -> set[str]:
+        """Return tool IDs whose graph contract claims executable tool wiring."""
+
+        executable_paths = {
+            "tool_node",
+            "manual_loop",
+            "create_agent",
+            "create_react_agent",
+        }
+        executable_ids: set[str] = set()
+        for entry in NotebookComposer._tool_reachability_entries(workflow_design):
+            if not isinstance(entry, dict):
+                continue
+            execution_path = str(entry.get("execution_path") or "").strip()
+            if execution_path not in executable_paths:
+                continue
+            tool_id = str(
+                entry.get("tool_id")
+                or entry.get("name")
+                or entry.get("tool_name")
+                or ""
+            ).strip()
+            if tool_id:
+                executable_ids.add(tool_id)
+        return executable_ids
+
+    @staticmethod
+    def _tool_reachability_entries(
+        workflow_design: Dict[str, Any] | None,
+    ) -> list[dict[str, Any]]:
+        """Return graph tool reachability entries when a workflow declares them."""
+
+        if not workflow_design:
+            return []
+        graph_exports = workflow_design.get("graph_exports") or {}
+        schema = graph_exports.get("schema") if isinstance(graph_exports, dict) else {}
+        if not isinstance(schema, dict):
+            schema = {}
+        entries = schema.get("tool_reachability") or workflow_design.get(
+            "tool_reachability",
+            [],
+        )
+        return [entry for entry in entries or [] if isinstance(entry, dict)]
+
+    @staticmethod
+    def _as_utility_helper_code(tool_code: str) -> str:
+        """Render generated helper code without claiming LangChain tool reachability."""
+
+        utility_notice = [
+            "# Utility helper only: this function is not registered as a LangChain tool.",
+            "# The graph contract did not declare an executable tool path for it.",
+        ]
+        source_lines = NotebookComposer._strip_tool_import_scaffold(
+            tool_code.splitlines()
+        )
+        lines: list[str] = []
+        if source_lines and source_lines[0].startswith("# WARNING:"):
+            lines.append(source_lines[0])
+            lines.extend(utility_notice)
+            source_lines = source_lines[1:]
+        else:
+            lines.extend(utility_notice)
+        for line in source_lines:
+            if line.strip() == "@tool":
+                continue
+            if line.strip() == "from langchain_core.tools import tool":
+                continue
+            lines.append(line)
+        return "\n".join(lines).strip() + "\n"
+
+    @staticmethod
+    def _strip_tool_import_scaffold(source_lines: list[str]) -> list[str]:
+        """Remove local @tool import guards when a generated tool becomes a helper."""
+
+        source = "\n".join(source_lines)
+        try:
+            tree = ast.parse(source)
+        except SyntaxError:
+            return source_lines
+
+        remove_lines: set[int] = set()
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Try):
+                continue
+            meaningful_body = [
+                statement
+                for statement in node.body
+                if not (
+                    isinstance(statement, ast.Expr)
+                    and isinstance(statement.value, ast.Constant)
+                    and isinstance(statement.value.value, str)
+                )
+            ]
+            imports_tool = any(
+                isinstance(statement, ast.ImportFrom)
+                and statement.module == "langchain_core.tools"
+                and any(alias.name == "tool" for alias in statement.names)
+                for statement in meaningful_body
+            )
+            if not imports_tool:
+                continue
+            handlers_are_noop = bool(node.handlers) and all(
+                NotebookComposer._handler_only_suppresses_tool_import(handler)
+                for handler in node.handlers
+            )
+            if not handlers_are_noop:
+                continue
+            end_lineno = getattr(node, "end_lineno", node.lineno)
+            remove_lines.update(range(node.lineno, end_lineno + 1))
+
+        if remove_lines:
+            return [
+                line
+                for lineno, line in enumerate(source_lines, start=1)
+                if lineno not in remove_lines
+            ]
+        return source_lines
+
+    @staticmethod
+    def _handler_only_suppresses_tool_import(handler: ast.ExceptHandler) -> bool:
+        """Return True for except handlers that only neutralize a missing tool import."""
+
+        meaningful_body = [
+            statement
+            for statement in handler.body
+            if not (
+                isinstance(statement, ast.Expr)
+                and isinstance(statement.value, ast.Constant)
+                and isinstance(statement.value.value, str)
+            )
+        ]
+        if not meaningful_body:
+            return False
+        for statement in meaningful_body:
+            if isinstance(statement, ast.Pass):
+                continue
+            if isinstance(statement, ast.Assign):
+                targets = [
+                    target.id
+                    for target in statement.targets
+                    if isinstance(target, ast.Name)
+                ]
+                if targets == ["tool"] and isinstance(statement.value, ast.Constant):
+                    continue
+            if (
+                isinstance(statement, ast.AnnAssign)
+                and isinstance(statement.target, ast.Name)
+                and statement.target.id == "tool"
+                and isinstance(statement.value, ast.Constant)
+            ):
+                continue
+            return False
+        return True
+
     async def _create_tool_cells(
         self,
         tools: List[Dict[str, Any]],
         feedback: NotebookCompositionFeedback,
+        workflow_design: Dict[str, Any] | None = None,
     ) -> List[CellSpec]:
         """Create tool implementation cells with tracked fallback behavior."""
         cells = [
@@ -881,20 +1180,40 @@ class WorkflowState(MessagesState):
                 section="tools",
             )
         ]
+        split_by_contract = bool(self._tool_reachability_entries(workflow_design))
+        executable_tool_ids = (
+            self._executable_tool_ids(workflow_design) if split_by_contract else set()
+        )
+        executable_tools: list[Dict[str, Any]] = []
+        utility_tools: list[Dict[str, Any]] = []
+        for tool in tools:
+            tool_ids = self._tool_contract_ids(tool)
+            if not split_by_contract or tool_ids & executable_tool_ids:
+                executable_tools.append(tool)
+            else:
+                utility_tools.append(tool)
 
         async def build_tool_code(
             tool: Dict[str, Any],
+            *,
+            executable: bool,
         ) -> tuple[str, NotebookCompositionFeedback]:
             tool_feedback = NotebookCompositionFeedback()
             tool_code = await self._generate_tool_implementation(
                 tool,
                 feedback=tool_feedback,
             )
+            if not executable:
+                tool_code = self._as_utility_helper_code(tool_code)
             return tool_code, tool_feedback
 
         tool_results = await self._execute_llm_tasks_in_order(
-            tools,
-            build_tool_code,
+            executable_tools,
+            lambda tool: build_tool_code(tool, executable=True),
+        )
+        utility_results = await self._execute_llm_tasks_in_order(
+            utility_tools,
+            lambda tool: build_tool_code(tool, executable=False),
         )
         tool_function_names: list[str] = []
         for tool_code, tool_feedback in tool_results:
@@ -903,6 +1222,9 @@ class WorkflowState(MessagesState):
             tool_function_names.append(
                 self._tool_function_name(tool_code, "unknown_tool")
             )
+        for tool_code, tool_feedback in utility_results:
+            self._merge_feedback(feedback, tool_feedback)
+            cells.append(CellSpec(cell_type="code", content=tool_code, section="tools"))
 
         tool_function_names = [
             name for name in dict.fromkeys(tool_function_names) if name
@@ -1141,13 +1463,16 @@ Generate the complete Python function implementation."""
         "kwargs": kwargs,
     }}'''
 
-        return header + "from langchain_core.tools import tool\n\n@tool\n" + implementation
+        return (
+            header + "from langchain_core.tools import tool\n\n@tool\n" + implementation
+        )
 
     async def _create_node_cells(
         self,
         workflow_design: Dict[str, Any],
         feedback: NotebookCompositionFeedback,
         tools: Optional[List[Dict[str, Any]]] = None,
+        notebook_plan: NotebookPlan | None = None,
     ) -> List[CellSpec]:
         """Create node implementation cells with tracked fallback behavior."""
         cells = [
@@ -1158,23 +1483,54 @@ Generate the complete Python function implementation."""
             )
         ]
 
-        nodes = workflow_design.get("nodes", [])
+        nodes = self._nodes_for_generated_node_cells(
+            workflow_design,
+            list(workflow_design.get("nodes", [])),
+        )
         architecture_type = workflow_design.get("architecture_type", "router")
+        is_chatbot_workflow = self._is_chatbot_workflow(
+            workflow_design,
+            notebook_plan,
+        )
+        if is_chatbot_workflow:
+            nodes = self._with_required_pattern_scaffold_nodes(
+                nodes,
+                workflow_design,
+            )
+        use_pattern_nodes = (
+            architecture_type
+            in [
+                "router",
+                "subagents",
+                "hybrid",
+                "autoagent",
+                "deepagents",
+                "critique_loop",
+            ]
+            and not is_chatbot_workflow
+        )
 
         # Check if we should use pattern-based generation
-        if architecture_type in [
-            "router",
-            "subagents",
-            "hybrid",
-            "autoagent",
-            "deepagents",
-            "critique_loop",
-        ]:
+        if use_pattern_nodes:
             # Use pattern library for architecture-specific nodes
             pattern_cells = self._create_pattern_node_cells(
                 nodes, architecture_type, workflow_design, tools=tools
             )
             cells.extend(pattern_cells)
+        elif is_chatbot_workflow:
+            for node in nodes:
+                cells.append(
+                    CellSpec(
+                        cell_type="code",
+                        content=self._generate_node_fallback(
+                            node,
+                            workflow_design,
+                            reason="Chatbot workflows use deterministic contract nodes for memory, verifier, and revision semantics.",
+                            feedback=feedback,
+                        ),
+                        section="nodes",
+                    )
+                )
         else:
             # Use LLM for custom node generation
             async def build_node_code(
@@ -1348,6 +1704,7 @@ Generate the complete Python function implementation."""
             self._normalize_inline_text(node_purpose, safe_node_name)
         )
         lowered_node_context = f"{safe_node_name} {node_purpose}".lower()
+        state_fields = self._workflow_state_fields(workflow_design)
 
         update_lines = [
             "    updates: dict[str, object] = {}",
@@ -1356,6 +1713,12 @@ Generate the complete Python function implementation."""
             f'    node_summary = {node_name_literal} + " completed: " + (last_content or {node_purpose_literal})',
             '    updates["messages"] = messages + [HumanMessage(content=node_summary)]',
         ]
+        written_state_fields: set[str] = {"messages"}
+
+        def add_if_state_field(field_name: str, *lines: str) -> None:
+            if field_name in state_fields and field_name not in written_state_fields:
+                update_lines.extend(lines)
+                written_state_fields.add(field_name)
 
         if architecture_type == "router" and node_name == "router":
             update_lines.extend(
@@ -1410,11 +1773,37 @@ Generate the complete Python function implementation."""
         ):
             update_lines.extend(
                 [
-                    '    updates["needs_revision"] = False',
-                    '    updates["historical_risk_notes"] = ""',
-                    '    updates["realism_notes"] = ""',
-                    '    updates["revision_instructions"] = ""',
-                    '    updates["verification_passed"] = True',
+                    '    draft = str(state.get("draft_response") or state.get("final_response") or last_content)',
+                    "    lowered_draft = draft.lower()",
+                    '    configured_terms = globals().get("ANACHRONISM_TERMS", (',
+                    '        "smartphone", "internet", "television", "movie", "star wars", "computer", "airplane"',
+                    "    ))",
+                    "    anachronism_terms = tuple(str(term).lower() for term in configured_terms if str(term).strip())",
+                    "    findings = [term for term in anachronism_terms if term in lowered_draft]",
+                    '    revision_count = int(state.get("revision_count", 0))',
+                    "    max_revisions = int(globals().get('MAX_ITERATIONS', 3) or 3)",
+                    "    needs_revision = bool(findings) and revision_count < max_revisions",
+                    "    safety_passed = not findings",
+                    "    historical_risk_notes = (",
+                    '        "Potential anachronisms detected: " + ", ".join(findings)',
+                    "        if findings",
+                    '        else "No obvious anachronisms detected."',
+                    "    )",
+                    '    realism_notes = "Checked response against persona and historical-realism constraints."',
+                    "    revision_instructions = (",
+                    '        "Revise the draft to avoid future knowledge or out-of-period references: " + ", ".join(findings)',
+                    "        if needs_revision",
+                    '        else ""',
+                    "    )",
+                    '    updates["safety_passed"] = safety_passed',
+                    '    updates["needs_revision"] = needs_revision',
+                    '    updates["historical_risk_notes"] = historical_risk_notes',
+                    '    updates["realism_notes"] = realism_notes',
+                    '    updates["revision_instructions"] = revision_instructions',
+                    '    updates["verification_passed"] = safety_passed',
+                    '    updates["route"] = "revise" if needs_revision else "accept"',
+                    "    if not needs_revision:",
+                    '        updates["final_response"] = draft',
                 ]
             )
         elif any(marker in lowered_node_context for marker in {"revise", "revision"}):
@@ -1422,11 +1811,151 @@ Generate the complete Python function implementation."""
                 [
                     '    revision_history = list(state.get("revision_history", []))',
                     '    instructions = state.get("revision_instructions", "")',
+                    '    draft = str(state.get("draft_response") or state.get("final_response") or last_content)',
+                    '    revision_count = int(state.get("revision_count", 0)) + 1',
+                    "    revised_draft = (",
+                    '        draft + "\\n\\nRevision note: " + str(instructions or "Keep the answer in-period and in persona.")',
+                    "    )",
                     '    revision_history.append(instructions or "No revision required.")',
+                    '    updates["draft_response"] = revised_draft',
+                    '    updates["revision_count"] = revision_count',
                     '    updates["revision_history"] = revision_history',
                     '    updates["needs_revision"] = False',
+                    '    updates["revision_instructions"] = ""',
+                    '    updates["route"] = "verify"',
                 ]
             )
+        elif any(
+            marker in lowered_node_context
+            for marker in {
+                "persona",
+                "character",
+                "chat",
+                "draft",
+                "response",
+                "commoner",
+                "memory",
+            }
+        ):
+            update_lines.extend(
+                [
+                    '    selected_gender = str(state.get("selected_gender") or state.get("character_sex") or "female").lower()',
+                    '    if selected_gender not in {"male", "female"}:',
+                    '        selected_gender = "female"',
+                    "    persona_profile = {",
+                    '        "gender": selected_gender,',
+                    '        "role": "18th-century conversational character",',
+                    '        "style": "period-appropriate, plainspoken, and historically grounded",',
+                    "    }",
+                    "    draft = node_summary",
+                ]
+            )
+            add_if_state_field(
+                "selected_gender", '    updates["selected_gender"] = selected_gender'
+            )
+            add_if_state_field(
+                "character_sex", '    updates["character_sex"] = selected_gender'
+            )
+            add_if_state_field(
+                "character_gender",
+                '    updates["character_gender"] = selected_gender',
+            )
+            add_if_state_field(
+                "persona_choice",
+                '    updates["persona_choice"] = f"{selected_gender}_commoner"',
+            )
+            add_if_state_field(
+                "persona",
+                '    updates["persona"] = f"{selected_gender}_commoner"',
+            )
+            add_if_state_field(
+                "persona_id",
+                '    updates["persona_id"] = f"{selected_gender}_commoner"',
+            )
+            add_if_state_field(
+                "gender_pending", '    updates["gender_pending"] = False'
+            )
+            add_if_state_field(
+                "persona_profile", '    updates["persona_profile"] = persona_profile'
+            )
+            add_if_state_field(
+                "character_profile",
+                '    updates["character_profile"] = persona_profile',
+            )
+            add_if_state_field(
+                "draft_response", '    updates["draft_response"] = draft'
+            )
+            add_if_state_field(
+                "final_response", '    updates["final_response"] = draft'
+            )
+            add_if_state_field(
+                "turn_count",
+                '    updates["turn_count"] = int(state.get("turn_count", 0)) + 1',
+            )
+            add_if_state_field(
+                "memory_summary",
+                '    updates["memory_summary"] = (',
+                '        str(state.get("memory_summary") or "").strip()',
+                '        + ("\\n" if state.get("memory_summary") else "")',
+                "        + node_summary",
+                "    )[-1200:]",
+            )
+            add_if_state_field(
+                "persona_memory",
+                '    updates["persona_memory"] = (',
+                '        str(state.get("persona_memory") or "").strip()',
+                '        + ("\\n" if state.get("persona_memory") else "")',
+                "        + node_summary",
+                "    )[-1200:]",
+            )
+            add_if_state_field(
+                "conversation_summary",
+                '    updates["conversation_summary"] = (',
+                '        str(state.get("conversation_summary") or "").strip()',
+                '        + ("\\n" if state.get("conversation_summary") else "")',
+                "        + node_summary",
+                "    )[-1200:]",
+            )
+            add_if_state_field(
+                "conversation_memory",
+                '    updates["conversation_memory"] = (',
+                '        str(state.get("conversation_memory") or "").strip()',
+                '        + ("\\n" if state.get("conversation_memory") else "")',
+                "        + node_summary",
+                "    )[-1200:]",
+            )
+            for field_name in sorted(state_fields - written_state_fields):
+                lowered_field = field_name.lower()
+                field_literal = json.dumps(field_name)
+                if "profile" in lowered_field:
+                    update_lines.append(
+                        f"    updates[{field_literal}] = persona_profile"
+                    )
+                    written_state_fields.add(field_name)
+                elif (
+                    "memories" in lowered_field
+                    or "conversation_history" in lowered_field
+                ):
+                    update_lines.append(
+                        f"    updates[{field_literal}] = [node_summary]"
+                    )
+                    written_state_fields.add(field_name)
+                elif "memory" in lowered_field:
+                    update_lines.extend(
+                        [
+                            f"    updates[{field_literal}] = (",
+                            f"        str(state.get({field_literal}) or '').strip()",
+                            f"        + ('\\n' if state.get({field_literal}) else '')",
+                            "        + node_summary",
+                            "    )[-1200:]",
+                        ]
+                    )
+                    written_state_fields.add(field_name)
+                elif "persona" in lowered_field:
+                    update_lines.append(
+                        f'    updates[{field_literal}] = f"{{selected_gender}}_commoner"'
+                    )
+                    written_state_fields.add(field_name)
         else:
             update_lines.extend(
                 [
@@ -1493,9 +2022,7 @@ def {safe_node_identifier}_node(state: WorkflowState) -> WorkflowState:
             if name in seen:
                 continue
             seen.add(name)
-            purpose = str(
-                node.get("purpose") or f"Handle {name} requests"
-            ).strip()
+            purpose = str(node.get("purpose") or f"Handle {name} requests").strip()
             specs.append((name, purpose or f"Handle {name} requests"))
 
         if specs:
@@ -2124,9 +2651,7 @@ def {safe_node_identifier}_node(state: WorkflowState) -> WorkflowState:
             if not isinstance(conditional_edge, dict):
                 continue
             source = str(
-                conditional_edge.get("from")
-                or conditional_edge.get("source")
-                or ""
+                conditional_edge.get("from") or conditional_edge.get("source") or ""
             ).strip()
             branches = conditional_edge.get("branches")
             if not source or not isinstance(branches, dict) or not branches:
@@ -2174,7 +2699,9 @@ def {safe_node_identifier}_node(state: WorkflowState) -> WorkflowState:
             ]
             if not path_entries:
                 continue
-            route_name = f"_route_from_{self._safe_node_identifier(source, 'node')}_{index}"
+            route_name = (
+                f"_route_from_{self._safe_node_identifier(source, 'node')}_{index}"
+            )
             path_map = "{" + ", ".join(path_entries) + "}"
             field_names = spec["field_names"]
             field_tuple = ", ".join(json.dumps(field) for field in field_names)
@@ -2206,7 +2733,9 @@ workflow.add_conditional_edges({json.dumps(source)}, {route_name}, {path_map})""
             and (node, "__end__") not in direct_edge_set
             and node not in route_sources_with_end
         ]
-        direct_edge_pairs.extend((node, "END") for node in terminal_nodes_without_explicit_end)
+        direct_edge_pairs.extend(
+            (node, "END") for node in terminal_nodes_without_explicit_end
+        )
 
         edge_additions = "\n".join(
             f"workflow.add_edge({_target_expr(source)}, {_target_expr(target)})"
@@ -2473,7 +3002,9 @@ graph = workflow.compile(checkpointer=memory)"""
         parts.extend(str(value) for value in workflow_design.values() if value)
         for node in workflow_design.get("nodes", []) or []:
             if isinstance(node, dict):
-                parts.extend(str(node.get(key, "")) for key in ("name", "purpose", "role"))
+                parts.extend(
+                    str(node.get(key, "")) for key in ("name", "purpose", "role")
+                )
         state_schema = workflow_design.get("state_schema", {})
         if isinstance(state_schema, dict):
             for key, value in state_schema.items():
@@ -2534,6 +3065,9 @@ graph = workflow.compile(checkpointer=memory)"""
             workflow_design,
             notebook_plan,
         )
+        state_fields_literal = repr(
+            sorted(self._workflow_state_fields(workflow_design, notebook_plan))
+        )
         first_turn_gender = (
             "    selected_gender = select_character_gender(CHARACTER_GENDER)\n"
             "    if first_message:\n"
@@ -2543,10 +3077,17 @@ graph = workflow.compile(checkpointer=memory)"""
             "        chat_once(first_message, thread_id=thread_id, show_updates=show_updates)"
         )
 
+        next_turn_gender = (
+            "        chat_once(user_input, thread_id=thread_id, character_gender=selected_gender, show_updates=show_updates)"
+            if requires_character
+            else "        chat_once(user_input, thread_id=thread_id, show_updates=show_updates)"
+        )
+
         return f'''from langchain_core.messages import BaseMessage, HumanMessage
 
 
 _MISSING = object()
+WORKFLOW_STATE_FIELDS = set({state_fields_literal})
 
 
 def _find_nested_key(value, target_key: str, default=_MISSING):
@@ -2588,6 +3129,11 @@ def _extract_final_output(state: dict) -> str:
     return ""
 
 
+def _set_state_field(payload: dict, field_name: str, value) -> None:
+    if field_name in WORKFLOW_STATE_FIELDS:
+        payload[field_name] = value
+
+
 def select_character_gender(value: str | None = CHARACTER_GENDER) -> str:
     """Resolve the requested character gender before the first chat turn."""
     if isinstance(value, str):
@@ -2603,10 +3149,34 @@ def select_character_gender(value: str | None = CHARACTER_GENDER) -> str:
 
 def _chat_input(user_text: str, character_gender: str | None = None) -> dict:
     payload: dict[str, object] = {{"messages": [HumanMessage(content=user_text)]}}
+    _set_state_field(payload, "user_message", user_text)
+    _set_state_field(payload, "user_request", user_text)
     if character_gender:
-        payload["selected_gender"] = character_gender
-        payload["gender_pending"] = False
-        payload["persona_profile"] = f"A helpful {{character_gender}} assistant"
+        persona_profile = {{
+            "gender": character_gender,
+            "role": "18th-century conversational character",
+            "style": "period-appropriate, plainspoken, and historically grounded",
+        }}
+        if "selected_gender" in WORKFLOW_STATE_FIELDS:
+            payload["selected_gender"] = character_gender
+        if "character_sex" in WORKFLOW_STATE_FIELDS:
+            payload["character_sex"] = character_gender
+        if "character_gender" in WORKFLOW_STATE_FIELDS:
+            payload["character_gender"] = character_gender
+        if "persona_choice" in WORKFLOW_STATE_FIELDS:
+            payload["persona_choice"] = f"{{character_gender}}_commoner"
+        if "persona" in WORKFLOW_STATE_FIELDS:
+            payload["persona"] = f"{{character_gender}}_commoner"
+        if "persona_id" in WORKFLOW_STATE_FIELDS:
+            payload["persona_id"] = f"{{character_gender}}_commoner"
+        if "gender_pending" in WORKFLOW_STATE_FIELDS:
+            payload["gender_pending"] = False
+        if "needs_character_selection" in WORKFLOW_STATE_FIELDS:
+            payload["needs_character_selection"] = False
+        if "persona_profile" in WORKFLOW_STATE_FIELDS:
+            payload["persona_profile"] = persona_profile
+        if "character_profile" in WORKFLOW_STATE_FIELDS:
+            payload["character_profile"] = persona_profile
     return payload
 
 
@@ -2645,10 +3215,44 @@ def run_chat_loop(
         user_input = input("\\nEnter next message (or type 'quit' to exit): ").strip()
         if user_input.lower() in {{"quit", "exit", "q"}}:
             break
-        chat_once(user_input, thread_id=thread_id, show_updates=show_updates)
+{next_turn_gender}
 
 
-run_chat_loop()'''
+def run_demo_turns(
+    turns: list[str] | None = None,
+    *,
+    thread_id: str = THREAD_ID,
+    character_gender: str | None = None,
+    show_updates: bool = SHOW_UPDATES,
+) -> list[dict]:
+    """Run repeatable same-thread turns without blocking for input."""
+    selected_gender = (
+        select_character_gender(character_gender or CHARACTER_GENDER)
+        if {requires_character!r}
+        else None
+    )
+    states: list[dict] = []
+    for user_text in turns or [
+        "Good day. Who are you?",
+        "What would you think of a smartphone?",
+    ]:
+        states.append(
+            chat_once(
+                user_text,
+                thread_id=thread_id,
+                character_gender=selected_gender,
+                show_updates=show_updates,
+            )
+        )
+    return states
+
+
+if RUN_INTERACTIVE_LOOP:
+    run_chat_loop()
+elif RUN_DEMO_TURNS:
+    run_demo_turns()
+else:
+    print("Chat helpers ready. Call chat_once(...) or run_chat_loop() when ready.")'''
 
     def _create_execution_cells(
         self,
@@ -2779,7 +3383,9 @@ print(final_state)"""
         try:
             ast.parse(content)
         except SyntaxError as exc:
-            location = f"line {exc.lineno}" if exc.lineno is not None else "unknown line"
+            location = (
+                f"line {exc.lineno}" if exc.lineno is not None else "unknown line"
+            )
             return f"{exc.msg} at {location}"
         return None
 

@@ -15,14 +15,14 @@
   counts from raw generated cell specs, expose an `artifact_contract` for
   standalone files and ZIP members, and include QA validation-scope wording for
   runtime smoke tests.
-- Generated chatbot notebooks now include stronger runtime affordances from PR
-  #357, including chat-loop execution helpers, character selection,
-  executable-tool wiring, verifier/reviser fallbacks, memory checks, and
-  centralized generated LLM configuration patterns.
-- PR #359 is open for #343/#348 with canonical graph/spec rendering, manifest
-  and QA graph-contract preservation, and explicit standalone-versus-notebook
-  LLM initialization boundaries. Its six review threads have been addressed and
-  resolved on the PR branch.
+- Generated chatbot notebooks include stronger runtime affordances from PR #357
+  and current Wave 4 work, including chat-loop execution helpers, character
+  selection, executable-tool wiring, verifier/reviser fallbacks, memory checks,
+  non-blocking top-to-bottom chat execution, and centralized generated LLM
+  configuration patterns.
+- PR #359 merged #343/#348 with canonical graph/spec rendering, manifest and QA
+  graph-contract preservation, and explicit standalone-versus-notebook LLM
+  initialization boundaries.
 - Pattern generators and examples cover router, subagents, hybrid, autoagent,
   experimental deepagents, critique-revise, and advanced example-only workflows.
 - Notebook composition, dependency planning, runtime validation, deterministic
@@ -44,7 +44,11 @@
   passing after generated-chat contract changes. PR #359 review-fix slices
   reported 96 pattern tests, 102 composer/validator tests, and 142
   generator/API-node tests passing; the post-refresh broad unit gate reported
-  622 passed and 4 warnings.
+  622 passed and 4 warnings. Current Wave 4 focused slices report 111
+  composer/validator tests, 143 generator/API-node tests, and 98 pattern tests
+  passing. The Wave 4 broad unit gate reports 634 passed and 4 warnings, and
+  the headed/live web UI gate completed with `gpt-5.4-mini`, working notebook,
+  HTML, and manifest downloads, no browser errors, and advisory-only QA.
 - Stale completed release-plan issues were closed with evidence during the
   release-readiness pass, reducing that older open issue inventory from 49 to
   26 while keeping true residual items open.
@@ -89,8 +93,9 @@
 - The Cloud Run deploy workflow builds and pushes the container image, deploys
   the private service, mounts `OPENAI_API_KEY` from Secret Manager, and checks
   `/health` after deployment.
-- As of the 2026-05-21 issue refresh, the open issue count is 29. #343 and
-  #348 remain open until PR #359 merges.
+- As of the post-PR #359 refresh, #343 and #348 are complete. The remaining
+  generated-output children under #342 are #344, #345, #346, #347, and #349,
+  currently implemented on `codex/chatbot-fidelity-wave4`.
 
 ## Known Issues and Limitations
 
@@ -106,9 +111,9 @@
 - Router fallback/general routing (#60), iterative requirements refinement
   (#202), and the remaining CYOA notebook cell issues are tracked as residual
   follow-up work rather than closed stale items.
-- The canonical graph topology issue (#343) and generated credential/config
-  hardening issue (#348) are still open while PR #359 is pending. Treat further
-  Wave 4 work as blocked on checking what PR #359 closes.
+- Generated-output Wave 4 still needs diff hygiene and a ready PR before #344,
+  #345, #346, #347, and #349 can be closed. The broad unit and headed/live UI
+  artifact gates have passed on `codex/chatbot-fidelity-wave4`.
 - The Cloud Run workflow's private-service health check is sensitive to token
   minting details in GitHub Actions WIF. Do not use `gcloud auth
   print-identity-token --audiences=...` for this workflow's health token; the

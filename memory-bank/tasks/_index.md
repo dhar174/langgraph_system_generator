@@ -21,5 +21,7 @@
 - Task-level Memory Bank tracking has started with the documentation and
   visualization sync for the checked-in repo architecture bundle, the completed
   1.0 release-readiness branch, the completed Cloud Run deployment hardening
-  lane, and the active generated-output quality wave under epic #342. The
-  current Wave 3 PR is #359 for #343/#348.
+  lane, and the active generated-output quality wave under epic #342. Wave 4 is
+  active on `codex/chatbot-fidelity-wave4` for #344, #345, #346, #347, and
+  #349 after PR #359 merged #343/#348; the focused tests, broad unit gate, and
+  headed/live UI artifact gate are passing before PR publication.

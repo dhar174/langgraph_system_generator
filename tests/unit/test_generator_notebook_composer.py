@@ -240,11 +240,23 @@ async def test_chatbot_notebook_emits_interactive_chat_contract(
             "state_schema": {
                 "messages": "Conversation messages",
                 "selected_gender": "Selected male or female character gender",
+                "character_sex": "Selected character sex alias",
                 "gender_pending": "Whether the character selection is pending",
                 "turn_count": "Number of chat turns",
+                "memory_summary": "Short memory summary",
+                "conversation_memory": "Thread-scoped chat memory",
+                "persona": "Selected persona alias",
+                "persona_choice": "Selected persona choice",
+                "selected_persona": "Selected persona alias from live graph design",
+                "thread_memory": "Thread memory alias from live graph design",
                 "retrieved_memories": "Conversation memories retrieved",
+                "persona_profile": "Selected character profile",
+                "character_profile": "Selected character profile alias",
                 "historical_verification": "Structured historical check payload",
+                "draft_response": "Draft chatbot response",
+                "safety_passed": "Whether safety and realism checks passed",
                 "needs_revision": "Whether the response must be revised",
+                "revision_count": "Number of revision attempts",
                 "revision_history": "Revision history",
                 "final_response": "Final chatbot response",
             },
@@ -267,9 +279,11 @@ async def test_chatbot_notebook_emits_interactive_chat_contract(
         for cell in composition.cells
         if cell.section == "config" and cell.cell_type == "code"
     )
-    assert 'CHARACTER_GENDER = None' in config_code
+    assert "CHARACTER_GENDER = None" in config_code
+    assert "ANACHRONISM_TERMS = (" in config_code
     assert 'THREAD_ID = "lnf-demo-thread"' in config_code
     assert "SHOW_UPDATES = False" in config_code
+    assert "RUN_INTERACTIVE_LOOP = False" in config_code
 
     state_code = next(
         cell.content
@@ -277,12 +291,41 @@ async def test_chatbot_notebook_emits_interactive_chat_contract(
         if cell.section == "state" and cell.cell_type == "code"
     )
     assert "selected_gender: str" in state_code
+    assert "character_sex: str" in state_code
     assert "gender_pending: bool" in state_code
     assert "turn_count: int" in state_code
+    assert "memory_summary: str" in state_code
+    assert "conversation_memory: str" in state_code
+    assert "persona: str" in state_code
+    assert "persona_choice: str" in state_code
+    assert "selected_persona: str" in state_code
+    assert "thread_memory: str" in state_code
     assert "retrieved_memories: Annotated[List[str], operator.add]" in state_code
+    assert "persona_profile: Dict[str, object]" in state_code
+    assert "character_profile: Dict[str, object]" in state_code
     assert "historical_verification: Dict[str, object]" in state_code
+    assert "draft_response: str" in state_code
+    assert "safety_passed: bool" in state_code
     assert "needs_revision: bool" in state_code
+    assert "revision_count: int" in state_code
     assert "revision_history: Annotated[List[str], operator.add]" in state_code
+
+    node_code = "\n\n".join(
+        cell.content
+        for cell in composition.cells
+        if cell.section == "nodes" and cell.cell_type == "code"
+    )
+    assert 'updates["draft_response"]' in node_code
+    assert 'updates["persona_profile"]' in node_code
+    assert 'updates["persona"]' in node_code
+    assert 'updates["persona_choice"]' in node_code
+    assert 'updates["selected_persona"]' in node_code
+    assert 'updates["memory_summary"]' in node_code
+    assert 'updates["conversation_memory"]' in node_code
+    assert 'updates["thread_memory"]' in node_code
+    assert 'updates["safety_passed"]' in node_code
+    assert 'updates["revision_count"]' in node_code
+    assert 'updates["revision_instructions"]' in node_code
 
     execution_code = next(
         cell.content
@@ -296,6 +339,17 @@ async def test_chatbot_notebook_emits_interactive_chat_contract(
     assert 'stream_mode = "updates" if show_updates else "values"' in execution_code
     assert "graph.get_state(config).values" in execution_code
     assert "def select_character_gender" in execution_code
+    assert "WORKFLOW_STATE_FIELDS" in execution_code
+    assert 'payload["character_sex"] = character_gender' in execution_code
+    assert (
+        'payload["persona_choice"] = f"{character_gender}_commoner"' in execution_code
+    )
+    assert 'payload["persona"] = f"{character_gender}_commoner"' in execution_code
+    assert 'payload["character_profile"] = persona_profile' in execution_code
+    assert "def run_demo_turns(" in execution_code
+    assert "if RUN_INTERACTIVE_LOOP:" in execution_code
+    assert "elif RUN_DEMO_TURNS:" in execution_code
+    assert "\nrun_chat_loop()" not in execution_code
     assert "current_state = step" not in execution_code
     assert "graph.invoke(initial_state" not in execution_code
     ast.parse(execution_code)
@@ -638,8 +692,7 @@ async def test_compose_notebook_sanitizes_provider_env_vars_for_config_code(
     assert "os.environ[name] = value" in config_cells[0]
     assert "def make_llm(" in config_cells[0]
     assert (
-        'ENV_123_SERVICE_KEY = _load_env_var("ENV_123_SERVICE_KEY")'
-        in config_cells[0]
+        'ENV_123_SERVICE_KEY = _load_env_var("ENV_123_SERVICE_KEY")' in config_cells[0]
     )
     ast.parse(config_cells[0])
 
@@ -842,10 +895,7 @@ async def test_compose_notebook_sections_and_packages(
         and "MODEL =" in cell.content
     ]
     assert config_cells
-    assert (
-        'OPENAI_API_KEY = _load_env_var("OPENAI_API_KEY")'
-        in config_cells[0].content
-    )
+    assert 'OPENAI_API_KEY = _load_env_var("OPENAI_API_KEY")' in config_cells[0].content
     assert "from google.colab import userdata" in config_cells[0].content
     assert "from getpass import getpass" in config_cells[0].content
     assert "def make_llm(" in config_cells[0].content
@@ -1502,8 +1552,13 @@ async def test_compose_notebook_hybrid_terminal_finish_is_not_duplicated(
     assert code.count("def finish_node") == 1
     assert code.count('workflow.add_node("finish", finish_node)') == 1
     assert 'workflow.add_node("gender_setup", gender_setup_node)' in code
-    assert 'workflow.add_node("anachronism_verifier", anachronism_verifier_node)' in code
-    assert 'workflow.add_node("believability_verifier", believability_verifier_node)' in code
+    assert (
+        'workflow.add_node("anachronism_verifier", anachronism_verifier_node)' in code
+    )
+    assert (
+        'workflow.add_node("believability_verifier", believability_verifier_node)'
+        in code
+    )
     assert 'workflow.add_edge("finish", "finish")' not in code
     ast.parse(code)
 
@@ -1954,6 +2009,77 @@ async def test_tool_cells_emit_decorated_tools_and_tool_node(
 
 
 @pytest.mark.asyncio
+async def test_tool_cells_keep_tools_executable_when_reachability_contract_missing(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    monkeypatch.setattr(composer_module, "ChatOpenAI", DummyLLM)
+    composer = composer_module.NotebookComposer()
+    feedback = composer_module.NotebookCompositionFeedback()
+
+    cells = await composer._create_tool_cells(
+        [
+            {
+                "tool_id": "context_lookup",
+                "name": "Context Lookup",
+                "purpose": "Lookup conversational context.",
+                "category": "validation",
+            }
+        ],
+        feedback,
+        workflow_design={"architecture_type": "hybrid", "nodes": []},
+    )
+    tool_code = "\n\n".join(cell.content for cell in cells if cell.cell_type == "code")
+
+    assert "@tool" in tool_code
+    assert "TOOLS = [Context_Lookup]" in tool_code
+    assert "ToolNode(TOOLS, handle_tool_errors=True)" in tool_code
+    assert "Utility helper only" not in tool_code
+    ast.parse(tool_code)
+
+
+def test_utility_helper_conversion_removes_local_tool_import_guard():
+    generated_code = """
+def schema_validator(payload: dict) -> dict:
+    try:
+        from langchain_core.tools import tool
+    except Exception:
+        tool = None  # Allows immediate execution without LangChain.
+
+    return {"valid": isinstance(payload, dict)}
+"""
+
+    helper_code = composer_module.NotebookComposer._as_utility_helper_code(
+        generated_code
+    )
+
+    assert "@tool" not in helper_code
+    assert "langchain_core.tools" not in helper_code
+    assert "tool = None" not in helper_code
+    assert "try:\n    except" not in helper_code
+    ast.parse(helper_code)
+
+
+def test_deterministic_node_tool_path_is_not_executable_tool_contract():
+    executable_ids = composer_module.NotebookComposer._executable_tool_ids(
+        {
+            "graph_exports": {
+                "schema": {
+                    "tool_reachability": [
+                        {
+                            "tool_id": "schema_validator",
+                            "execution_path": "deterministic_node",
+                        },
+                        {"tool_id": "web_search", "execution_path": "tool_node"},
+                    ]
+                }
+            }
+        }
+    )
+
+    assert executable_ids == {"web_search"}
+
+
+@pytest.mark.asyncio
 async def test_generate_node_implementation_rejects_invalid_python_and_falls_back(
     monkeypatch: pytest.MonkeyPatch,
 ):
@@ -2041,11 +2167,16 @@ def test_verifier_and_reviser_fallbacks_emit_structured_revision_state(
     workflow_design = {
         "architecture_type": "custom",
         "state_schema": {
+            "draft_response": "Draft response awaiting verification",
+            "safety_passed": "Whether safety and realism checks passed",
             "needs_revision": "Whether revision is required",
             "historical_risk_notes": "Historical risk notes",
             "realism_notes": "Realism notes",
             "revision_instructions": "Instructions for reviser",
+            "revision_count": "Bounded revision count",
             "revision_history": "Revision history",
+            "final_response": "Accepted final response",
+            "route": "Revision route",
         },
         "nodes": [
             {"name": "historical_verifier", "purpose": "Verify anachronisms"},
@@ -2062,11 +2193,24 @@ def test_verifier_and_reviser_fallbacks_emit_structured_revision_state(
         workflow_design,
     )
 
-    assert 'updates["needs_revision"] = False' in verifier_code
-    assert 'updates["historical_risk_notes"] = ""' in verifier_code
-    assert 'updates["realism_notes"] = ""' in verifier_code
-    assert 'updates["revision_instructions"] = ""' in verifier_code
+    assert 'draft = str(state.get("draft_response")' in verifier_code
+    assert 'updates["safety_passed"] = safety_passed' in verifier_code
+    assert 'updates["needs_revision"] = needs_revision' in verifier_code
+    assert 'updates["historical_risk_notes"] = historical_risk_notes' in verifier_code
+    assert 'updates["realism_notes"] = realism_notes' in verifier_code
+    assert 'updates["revision_instructions"] = revision_instructions' in verifier_code
+    assert (
+        'updates["route"] = "revise" if needs_revision else "accept"' in verifier_code
+    )
+    assert 'updates["final_response"] = draft' in verifier_code
+    assert 'globals().get("ANACHRONISM_TERMS", (' in verifier_code
+    assert '"smartphone"' in verifier_code
+    assert '"star wars"' in verifier_code
+    assert 'revision_count = int(state.get("revision_count", 0)) + 1' in reviser_code
+    assert 'updates["draft_response"] = revised_draft' in reviser_code
+    assert 'updates["revision_count"] = revision_count' in reviser_code
     assert 'updates["revision_history"] = revision_history' in reviser_code
+    assert 'updates["route"] = "verify"' in reviser_code
     compile(verifier_code, "<verifier_fallback>", "exec")
     compile(reviser_code, "<reviser_fallback>", "exec")
 
@@ -2091,6 +2235,29 @@ def test_graph_fallback_uses_sanitized_function_references(
     assert 'workflow.add_node("start node", start_node_node)' in graph_code
     assert 'workflow.add_node("9 result-node", _9_result_node_node)' in graph_code
     compile(graph_code, "<graph_fallback>", "exec")
+
+
+def test_chatbot_fallback_nodes_include_pattern_scaffold_handlers(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    monkeypatch.setattr(composer_module, "ChatOpenAI", DummyLLM)
+    composer = composer_module.NotebookComposer()
+    workflow_design = {
+        "architecture_type": "hybrid",
+        "state_schema": {"messages": "Conversation messages"},
+        "nodes": [
+            {"name": "persona_specialist", "purpose": "Draft in persona"},
+            {"name": "historical_verifier", "purpose": "Verify realism"},
+        ],
+    }
+
+    nodes = composer._with_required_pattern_scaffold_nodes(
+        workflow_design["nodes"],
+        workflow_design,
+    )
+
+    assert [node["name"] for node in nodes[:2]] == ["router", "supervisor"]
+    assert "persona_specialist" in {node["name"] for node in nodes}
 
 
 def test_graph_fallback_lowers_command_routes_to_conditional_edges(
@@ -2202,9 +2369,15 @@ async def test_compose_notebook_renders_canonical_hybrid_graph_contract(
     ]
     assert graph_cells
     graph_code = graph_cells[-1].content
+    all_code = "\n\n".join(
+        cell.content for cell in composition.cells if cell.cell_type == "code"
+    )
 
     assert "CANONICAL_GRAPH_SPEC" in graph_code
-    assert 'workflow.add_edge("persona_specialist", "historical_verifier")' in graph_code
+    assert all_code.count("def finish_node") == 1
+    assert (
+        'workflow.add_edge("persona_specialist", "historical_verifier")' in graph_code
+    )
     assert (
         'workflow.add_edge("revision_specialist", "historical_verifier")'
         not in graph_code
@@ -2302,7 +2475,9 @@ async def test_compose_notebook_custom_canonical_graph_uses_lowercase_refs_and_s
 def test_generate_canonical_graph_code_omits_checkpointer_when_disabled():
     """Canonical notebook graph code should honor checkpointing=false."""
 
-    composer = composer_module.NotebookComposer.__new__(composer_module.NotebookComposer)
+    composer = composer_module.NotebookComposer.__new__(
+        composer_module.NotebookComposer
+    )
     schema = {
         "architecture_type": "custom",
         "nodes": [

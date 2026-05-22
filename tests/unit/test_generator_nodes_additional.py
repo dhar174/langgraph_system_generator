@@ -45,10 +45,12 @@ from langgraph_system_generator.generator.state import (
     QAReport,
     QARepairFeedback,
     ToolPlanningFeedback,
+    ToolSpec,
     bounded_constraints_reducer,
     bounded_docs_context_reducer,
 )
 from langgraph_system_generator.qa.registry import RepairRoutineRegistration
+from langgraph_system_generator.qa.summary import build_tool_contract_summary
 from langgraph_system_generator.qa.validators import (
     NotebookValidationContext,
     QAValidationRule,
@@ -1404,12 +1406,47 @@ async def test_package_outputs_node_manifest_fields():
             schema={
                 "entry_point": "router",
                 "terminal_nodes": ["finish"],
+                "tool_reachability": [
+                    {
+                        "tool_id": "web_search",
+                        "execution_path": "tool_node",
+                        "node": "tools",
+                        "rationale": "Executed by ToolNode.",
+                    },
+                    {
+                        "tool_id": "schema_validator",
+                        "execution_path": "omitted",
+                        "node": None,
+                        "rationale": "Classified as a local utility.",
+                    },
+                ],
                 "validation_summary": {
                     "errors": ["Duplicate node id 'router'."],
                     "warnings": ["Recovered using deterministic hybrid fallback."],
                 },
             },
         ),
+        "tools_plan": [
+            ToolSpec(
+                tool_id="web_search",
+                name="Web Search",
+                category="search",
+                purpose="Search current context.",
+            ),
+            ToolSpec(
+                tool_id="schema_validator",
+                name="Schema Validator",
+                category="validation",
+                purpose="Validate local schema data.",
+            ),
+            ToolSpec(
+                tool_id="unsupported_tool",
+                name="Unsupported Tool",
+                category="external",
+                purpose="Unsupported external dependency.",
+                status="unsupported",
+            ),
+        ],
         "tool_planning_feedback": ToolPlanningFeedback(
             fallback_used=True,
             fallback_reason="Tool planning used heuristic fallback inference.",
@@ -1448,6 +1485,25 @@ async def test_package_outputs_node_manifest_fields():
     assert manifest["graph_design_feedback"]["fallback_used"] is True
     assert "flowchart TD" in manifest["graph_exports"]["mermaid"]
     assert manifest["tool_planning_feedback"]["fallback_used"] is True
+    assert manifest["tool_contract_summary"]["counts"] == {
+        "planned": 3,
+        "executable": 1,
+        "utility": 1,
+        "unsupported": 1,
+        "unclassified": 0,
+    }
+    assert (
+        manifest["tool_contract_summary"]["executable_tools"][0]["tool_id"]
+        == "web_search"
+    )
+    assert (
+        manifest["tool_contract_summary"]["utility_helpers"][0]["tool_id"]
+        == "schema_validator"
+    )
+    assert (
+        manifest["tool_contract_summary"]["unsupported_tools"][0]["tool_id"]
+        == "unsupported_tool"
+    )
     assert (
         manifest["generation_context_pack"]["notebook_contract"][
             "compiled_graph_variable"
@@ -1459,6 +1515,49 @@ async def test_package_outputs_node_manifest_fields():
     assert "requests" in manifest["notebook_dependency_plan"]["packages"]
     assert manifest["qa_repair_feedback"]["repair_attempts"] == 1
     assert result["generation_complete"] is True
+
+
+def test_tool_contract_summary_treats_deterministic_nodes_as_utilities():
+    summary = build_tool_contract_summary(
+        [{"tool_id": "schema_validator", "name": "Schema Validator"}],
+        {
+            "schema": {
+                "tool_reachability": [
+                    {
+                        "tool_id": "schema_validator",
+                        "execution_path": "deterministic_node",
+                        "rationale": "Used as deterministic validation helper.",
+                    }
+                ]
+            }
+        },
+    )
+
+    assert summary["counts"] == {
+        "planned": 1,
+        "executable": 0,
+        "utility": 1,
+        "unsupported": 0,
+        "unclassified": 0,
+    }
+    assert summary["utility_helpers"][0]["tool_id"] == "schema_validator"
+
+
+def test_tool_contract_summary_classifies_missing_reachability_contract():
+    summary = build_tool_contract_summary(
+        [{"tool_id": "context_lookup", "name": "Context Lookup"}],
+        {},
+    )
+
+    assert summary["counts"] == {
+        "planned": 1,
+        "executable": 0,
+        "utility": 0,
+        "unsupported": 0,
+        "unclassified": 1,
+    }
+    assert summary["unclassified_tools"][0]["tool_id"] == "context_lookup"
+    assert summary["unclassified_tools"][0]["status"] == "missing_contract"
 
 
 @pytest.mark.asyncio

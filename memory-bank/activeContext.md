@@ -27,13 +27,15 @@
   runtime smoke-test scope limits.
 - PR #357 merged a broad generated-chat notebook contract pass with chat-loop,
   character-selection, executable-tool, verifier/reviser, memory, and generated
-  credential/config improvements. The child issues #344-#348 remain open and
-  should be re-triaged against the merged code before starting overlapping
-  implementation.
-- PR #359 is open for Wave 3 #343/#348. It preserves canonical graph/spec
-  topology in generated notebooks, manifests, and QA, keeps standalone pattern
-  LLM snippets separate from notebook `make_llm(...)` cells, and has had its six
-  review threads addressed and resolved on the PR branch.
+  credential/config improvements.
+- PR #359 merged Wave 3 #343/#348. It preserves canonical graph/spec topology in
+  generated notebooks, manifests, and QA, and keeps standalone pattern LLM
+  snippets separate from notebook `make_llm(...)` cells.
+- Wave 4 is active on `codex/chatbot-fidelity-wave4` for #344, #345, #346,
+  #347, and #349. The branch hardens existing generated-chat behavior rather
+  than replacing PR #357/#359: non-blocking chat helpers, same-thread turns,
+  canonical verifier/reviser fields, memory writers, tool contract summaries,
+  and prompt-faithfulness/domain QA.
 - `memory-bank/systemPatterns.md` was updated to document the actual repo
   architecture instead of template bullets.
 - The API layer includes guarded output-path resolution and bounded async job
@@ -51,8 +53,10 @@
   manifests, and QA can explain whether docs came from local LangChain docs,
   Context7, cached repo docs, or fallback retrieval context.
 - Runtime QA now checks for LangGraph notebook contract drift such as full-state
-  overwrite node returns, unsafe broad HTTP tool placeholders, and generic
-  architecture labels in domain-specific notebooks.
+  overwrite node returns, unsafe broad HTTP tool placeholders, unwired ToolNode
+  executors, blocking default chatbot loops, terminal verifier/reviser prose
+  nodes, declared memory fields without writers, and generic architecture labels
+  in domain-specific notebooks.
 - `docs/agent-assets-audit.md` records the contributor-facing custom
   agent/skill inventory and keeps those assets separate from runtime product
   agents.
@@ -85,11 +89,11 @@
 
 ## Immediate Next Steps
 
-- Watch PR #359 to completion, then close or update #343 and #348 based on the
-  merge result.
-- Before implementing the next Wave 4 branch, compare #344-#347 and #349
-  against merged PR #357 and PR #359 so follow-up work closes remaining gaps
-  rather than duplicating already-landed chat/runtime behavior.
+- Open the ready Wave 4 PR from `codex/chatbot-fidelity-wave4` for #344, #345,
+  #346, #347, and #349. The branch has passed focused tests, the broad unit
+  gate, and headed/live UI artifact validation.
+- After Wave 4 lands, close epic #342 only if all children #343-#350 are closed;
+  keep #334/#335 active as downstream runtime outer-agent architecture work.
 - Keep public docs, examples, and onboarding copy aligned with the current
   CLI/API contract.
 - Keep contributor-facing LangGraph/LangChain skills and LNF custom agents
@@ -147,3 +151,18 @@
 - The post-refresh broad unit gate was
   `python -m pytest tests/unit/ --asyncio-mode=auto -q` with 622 passed and 4
   warnings.
+- Current Wave 4 focused verification on `codex/chatbot-fidelity-wave4` has
+  passed:
+  `python -m pytest tests/unit/test_generator_notebook_composer.py tests/unit/test_validators.py -q`
+  with 111 passed,
+  `python -m pytest tests/unit/test_generator_agents.py tests/unit/test_generator_nodes_additional.py tests/unit/test_cli_api.py --asyncio-mode=auto -q`
+  with 143 passed, and
+  `python -m pytest tests/unit/test_patterns.py tests/unit/test_patterns_utils.py -q`
+  with 98 passed.
+- The Wave 4 broad unit gate
+  `python -m pytest tests/unit/ --asyncio-mode=auto -q` passed with 634 tests
+  and 4 warnings.
+- The headed/live Wave 4 UI gate used `gpt-5.4-mini` to generate
+  `./output/wave4-live-chatbot`; required artifact downloads worked, the
+  browser reported no console or page errors, and the manifest reported
+  advisory QA only with zero blocking issues.
