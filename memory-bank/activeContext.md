@@ -178,3 +178,9 @@
 - The Wave 5 broad unit gate
   `python -m pytest tests/unit/ --asyncio-mode=auto -q` passed with 646 tests
   and 4 warnings.
+- After the PR #361 CI build surfaced a stale integration assertion, the updated
+  integration slice
+  `python -m pytest tests/integration/test_pattern_code_generation.py --asyncio-mode=auto -q`
+  passed with 8 tests, and the full local CI-style gate
+  `python -m pytest --asyncio-mode=auto -q` passed with 764 passed, 3 skipped,
+  and 4 warnings.

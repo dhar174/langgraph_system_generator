@@ -59,7 +59,10 @@ Excluded:
 Current Wave 5 focused verification on
 `codex/pattern-intake-modernization-wave5` has passed the pattern gate with 167
 tests and the generator/API-node gate with 115 tests. The broad unit gate
-passed with 646 tests and 4 warnings.
+passed with 646 tests and 4 warnings. After updating a stale integration
+assertion from Command routing to Send fan-out, the full local CI-style gate
+`python -m pytest --asyncio-mode=auto -q` passed with 764 passed, 3 skipped,
+and 4 warnings.
 
 ## Completion criteria
 - MemoryBank and plan context reflect PR #360 as merged, #342 as closed, and

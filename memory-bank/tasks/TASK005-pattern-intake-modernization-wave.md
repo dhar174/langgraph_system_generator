@@ -48,7 +48,7 @@ reopening generated-output epic #342. The focused scope is #60, #63, #64, and
 | 5.3 | Implement critique-loop HITL interrupt for #63 | Complete | 2026-05-22 | `generate_graph_code(require_human_approval=True)` emits `interrupt_before=["revise"]`. |
 | 5.4 | Implement Send fan-out subagents for #64 | Complete | 2026-05-22 | Supervisor decisions carry `next_agents`; graph routers return `Send(...)` fan-out. |
 | 5.5 | Implement iterative requirements refinement for #202 | Complete | 2026-05-22 | API `messages` and state `requirements_messages` feed `RequirementsAnalyst.analyze_dialog(...)`. |
-| 5.6 | Run verification and open ready PR | In Progress | 2026-05-22 | Focused pattern and generator/API slices plus broad unit gate are passing; PR publication pending. |
+| 5.6 | Run verification and open ready PR | In Progress | 2026-05-22 | Focused slices, broad unit gate, integration slice, and full local CI-style pytest are passing; PR #361 is open. |
 
 ## Progress Log
 
@@ -66,4 +66,11 @@ reopening generated-output epic #342. The focused scope is #60, #63, #64, and
   with 115 passed.
 - Broad unit verification passed:
   `python -m pytest tests/unit/ --asyncio-mode=auto -q` with 646 passed and 4
+  warnings.
+- After PR #361 CI found a stale integration assertion, the targeted integration
+  slice passed:
+  `python -m pytest tests/integration/test_pattern_code_generation.py --asyncio-mode=auto -q`
+  with 8 passed.
+- Full local CI-style pytest passed:
+  `python -m pytest --asyncio-mode=auto -q` with 764 passed, 3 skipped, and 4
   warnings.

@@ -57,7 +57,9 @@
   #360 merged at `89da744e3f4b232eebf6ce4802ecee6537b02c8f`, closing the
   remaining generated-output child issues and epic #342. Current Wave 5 focused
   slices report 167 pattern tests and 115 generator/API-node tests passing; the
-  Wave 5 broad unit gate reports 646 passed and 4 warnings.
+  Wave 5 broad unit gate reports 646 passed and 4 warnings. After updating a
+  stale integration assertion from Command routing to Send fan-out, the full
+  local CI-style gate reports 764 passed, 3 skipped, and 4 warnings.
 - Stale completed release-plan issues were closed with evidence during the
   release-readiness pass, reducing that older open issue inventory from 49 to
   26 while keeping true residual items open.
