@@ -275,6 +275,45 @@ class NotebookComposer:
             return nodes
         return [node for node in nodes if str(node.get("name") or "") != "finish"]
 
+    def _with_required_pattern_scaffold_nodes(
+        self,
+        nodes: List[Dict[str, Any]],
+        workflow_design: Dict[str, Any],
+    ) -> List[Dict[str, Any]]:
+        """Ensure fallback node cells define handlers referenced by pattern graphs."""
+
+        architecture_type = str(workflow_design.get("architecture_type") or "").lower()
+        required_by_architecture = {
+            "router": [
+                ("router", "Route the chat turn to the next workflow handler."),
+            ],
+            "subagents": [
+                ("supervisor", "Coordinate the generated chatbot subagents."),
+            ],
+            "hybrid": [
+                ("router", "Route direct chatbot turns or delegate to the team."),
+                ("supervisor", "Coordinate the generated chatbot worker team."),
+            ],
+            "autoagent": [
+                ("coordinator", "Coordinate generated chatbot worker agents."),
+            ],
+        }
+        required_nodes = required_by_architecture.get(architecture_type, [])
+        if not required_nodes:
+            return nodes
+
+        existing_names = {
+            str(node.get("name") or "").strip().lower()
+            for node in nodes
+            if isinstance(node, dict)
+        }
+        prepended_nodes: list[Dict[str, Any]] = []
+        for name, purpose in required_nodes:
+            if name not in existing_names:
+                prepended_nodes.append({"name": name, "purpose": purpose})
+                existing_names.add(name)
+        return [*prepended_nodes, *nodes]
+
     @staticmethod
     def _normalize_inline_text(value: Any, fallback: str) -> str:
         """Normalize arbitrary text for safe single-line comments/messages."""
@@ -819,6 +858,17 @@ else:
             "RUN_INTERACTIVE_LOOP = False",
             "RUN_DEMO_TURNS = False",
             "CHARACTER_GENDER = None  # Set to 'male' or 'female' to skip the first-turn prompt.",
+            "ANACHRONISM_TERMS = (",
+            '    "smartphone",',
+            '    "internet",',
+            '    "television",',
+            '    "movie",',
+            '    "star wars",',
+            '    "computer",',
+            '    "airplane",',
+            '    "radio",',
+            '    "electricity",',
+            ")",
             "",
             "# Credentials",
             "# Prefer environment variables over hardcoded secrets in notebooks.",
@@ -965,16 +1015,6 @@ class WorkflowState(MessagesState):
     def _executable_tool_ids(workflow_design: Dict[str, Any] | None) -> set[str]:
         """Return tool IDs whose graph contract claims executable tool wiring."""
 
-        if not workflow_design:
-            return set()
-        graph_exports = workflow_design.get("graph_exports") or {}
-        schema = graph_exports.get("schema") if isinstance(graph_exports, dict) else {}
-        if not isinstance(schema, dict):
-            schema = {}
-        reachability = schema.get("tool_reachability") or workflow_design.get(
-            "tool_reachability",
-            [],
-        )
         executable_paths = {
             "tool_node",
             "manual_loop",
@@ -982,7 +1022,7 @@ class WorkflowState(MessagesState):
             "create_react_agent",
         }
         executable_ids: set[str] = set()
-        for entry in reachability or []:
+        for entry in NotebookComposer._tool_reachability_entries(workflow_design):
             if not isinstance(entry, dict):
                 continue
             execution_path = str(entry.get("execution_path") or "").strip()
@@ -997,6 +1037,24 @@ class WorkflowState(MessagesState):
             if tool_id:
                 executable_ids.add(tool_id)
         return executable_ids
+
+    @staticmethod
+    def _tool_reachability_entries(
+        workflow_design: Dict[str, Any] | None,
+    ) -> list[dict[str, Any]]:
+        """Return graph tool reachability entries when a workflow declares them."""
+
+        if not workflow_design:
+            return []
+        graph_exports = workflow_design.get("graph_exports") or {}
+        schema = graph_exports.get("schema") if isinstance(graph_exports, dict) else {}
+        if not isinstance(schema, dict):
+            schema = {}
+        entries = schema.get("tool_reachability") or workflow_design.get(
+            "tool_reachability",
+            [],
+        )
+        return [entry for entry in entries or [] if isinstance(entry, dict)]
 
     @staticmethod
     def _as_utility_helper_code(tool_code: str) -> str:
@@ -1028,82 +1086,85 @@ class WorkflowState(MessagesState):
     def _strip_tool_import_scaffold(source_lines: list[str]) -> list[str]:
         """Remove local @tool import guards when a generated tool becomes a helper."""
 
-        lines: list[str] = []
-        index = 0
-        while index < len(source_lines):
-            line = source_lines[index]
-            stripped = line.strip()
-            indent = len(line) - len(line.lstrip())
-            if stripped != "try:":
-                lines.append(line)
-                index += 1
+        source = "\n".join(source_lines)
+        try:
+            tree = ast.parse(source)
+        except SyntaxError:
+            return source_lines
+
+        remove_lines: set[int] = set()
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Try):
                 continue
-
-            body_index = index + 1
-            while (
-                body_index < len(source_lines) and not source_lines[body_index].strip()
-            ):
-                body_index += 1
-            if body_index >= len(source_lines):
-                lines.append(line)
-                index += 1
-                continue
-
-            body_line = source_lines[body_index]
-            body_indent = len(body_line) - len(body_line.lstrip())
-            if (
-                body_indent <= indent
-                or body_line.strip() != "from langchain_core.tools import tool"
-            ):
-                lines.append(line)
-                index += 1
-                continue
-
-            except_index = body_index + 1
-            while (
-                except_index < len(source_lines)
-                and not source_lines[except_index].strip()
-            ):
-                except_index += 1
-            if except_index >= len(source_lines):
-                lines.append(line)
-                index += 1
-                continue
-
-            except_line = source_lines[except_index]
-            except_indent = len(except_line) - len(except_line.lstrip())
-            if except_indent != indent or not except_line.strip().startswith("except "):
-                lines.append(line)
-                index += 1
-                continue
-
-            end_index = except_index + 1
-            except_body: list[str] = []
-            while end_index < len(source_lines):
-                candidate = source_lines[end_index]
-                if candidate.strip():
-                    candidate_indent = len(candidate) - len(candidate.lstrip())
-                    if candidate_indent <= indent:
-                        break
-                except_body.append(candidate)
-                end_index += 1
-
             meaningful_body = [
-                body.strip()
-                for body in except_body
-                if body.strip() and not body.strip().startswith("#")
+                statement
+                for statement in node.body
+                if not (
+                    isinstance(statement, ast.Expr)
+                    and isinstance(statement.value, ast.Constant)
+                    and isinstance(statement.value.value, str)
+                )
             ]
-            if meaningful_body and all(
-                body.startswith("tool =") or body.startswith("pass")
-                for body in meaningful_body
-            ):
-                index = end_index
+            imports_tool = any(
+                isinstance(statement, ast.ImportFrom)
+                and statement.module == "langchain_core.tools"
+                and any(alias.name == "tool" for alias in statement.names)
+                for statement in meaningful_body
+            )
+            if not imports_tool:
                 continue
+            handlers_are_noop = bool(node.handlers) and all(
+                NotebookComposer._handler_only_suppresses_tool_import(handler)
+                for handler in node.handlers
+            )
+            if not handlers_are_noop:
+                continue
+            end_lineno = getattr(node, "end_lineno", node.lineno)
+            remove_lines.update(range(node.lineno, end_lineno + 1))
 
-            lines.append(line)
-            index += 1
+        if remove_lines:
+            return [
+                line
+                for lineno, line in enumerate(source_lines, start=1)
+                if lineno not in remove_lines
+            ]
+        return source_lines
 
-        return lines
+    @staticmethod
+    def _handler_only_suppresses_tool_import(handler: ast.ExceptHandler) -> bool:
+        """Return True for except handlers that only neutralize a missing tool import."""
+
+        meaningful_body = [
+            statement
+            for statement in handler.body
+            if not (
+                isinstance(statement, ast.Expr)
+                and isinstance(statement.value, ast.Constant)
+                and isinstance(statement.value.value, str)
+            )
+        ]
+        if not meaningful_body:
+            return False
+        for statement in meaningful_body:
+            if isinstance(statement, ast.Pass):
+                continue
+            if isinstance(statement, ast.Assign):
+                targets = [
+                    target.id
+                    for target in statement.targets
+                    if isinstance(target, ast.Name)
+                ]
+                if targets == ["tool"] and isinstance(statement.value, ast.Constant):
+                    continue
+            if (
+                isinstance(statement, ast.AnnAssign)
+                and isinstance(statement.target, ast.Name)
+                and statement.target.id == "tool"
+                and isinstance(statement.value, ast.Constant)
+            ):
+                continue
+            return False
+        return True
 
     async def _create_tool_cells(
         self,
@@ -1119,8 +1180,10 @@ class WorkflowState(MessagesState):
                 section="tools",
             )
         ]
-        executable_tool_ids = self._executable_tool_ids(workflow_design)
-        split_by_contract = workflow_design is not None
+        split_by_contract = bool(self._tool_reachability_entries(workflow_design))
+        executable_tool_ids = (
+            self._executable_tool_ids(workflow_design) if split_by_contract else set()
+        )
         executable_tools: list[Dict[str, Any]] = []
         utility_tools: list[Dict[str, Any]] = []
         for tool in tools:
@@ -1429,6 +1492,11 @@ Generate the complete Python function implementation."""
             workflow_design,
             notebook_plan,
         )
+        if is_chatbot_workflow:
+            nodes = self._with_required_pattern_scaffold_nodes(
+                nodes,
+                workflow_design,
+            )
         use_pattern_nodes = (
             architecture_type
             in [
@@ -1707,7 +1775,10 @@ Generate the complete Python function implementation."""
                 [
                     '    draft = str(state.get("draft_response") or state.get("final_response") or last_content)',
                     "    lowered_draft = draft.lower()",
-                    '    anachronism_terms = ("smartphone", "internet", "television", "movie", "star wars", "computer", "airplane")',
+                    '    configured_terms = globals().get("ANACHRONISM_TERMS", (',
+                    '        "smartphone", "internet", "television", "movie", "star wars", "computer", "airplane"',
+                    "    ))",
+                    "    anachronism_terms = tuple(str(term).lower() for term in configured_terms if str(term).strip())",
                     "    findings = [term for term in anachronism_terms if term in lowered_draft]",
                     '    revision_count = int(state.get("revision_count", 0))',
                     "    max_revisions = int(globals().get('MAX_ITERATIONS', 3) or 3)",

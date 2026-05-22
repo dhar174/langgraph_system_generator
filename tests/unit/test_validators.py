@@ -821,6 +821,75 @@ workflow.add_node("persona", persona_node)
     assert report.evidence["writer_map"]["persona_profile"] == ["persona_node"]
 
 
+def test_state_reducer_semantics_rule_tracks_update_methods_and_command_alias(
+    tmp_notebook_path: Path,
+):
+    notebook = new_notebook()
+    notebook.cells.append(
+        new_code_cell(
+            """from langgraph.graph import MessagesState, StateGraph
+from langgraph.types import Command as GraphCommand
+
+class WorkflowState(MessagesState):
+    memory_summary: str
+    persona_profile: dict
+
+def persona_node(state: WorkflowState):
+    updates = {}
+    updates.update({"memory_summary": "remembered"})
+    updates.setdefault("persona_profile", {"name": "demo"})
+    return GraphCommand(update=updates, goto="done")
+
+workflow = StateGraph(WorkflowState)
+workflow.add_node("persona", persona_node)
+""",
+            metadata={"section": "state"},
+        )
+    )
+    _write_notebook(tmp_notebook_path, notebook)
+
+    reports = NotebookValidator().validate_all(tmp_notebook_path)
+    report = _report_by_name(reports, "State Reducer Semantics")
+
+    assert report.passed is True
+    assert report.evidence["writer_map"]["memory_summary"] == ["persona_node"]
+    assert report.evidence["writer_map"]["persona_profile"] == ["persona_node"]
+
+
+def test_state_reducer_semantics_rule_does_not_treat_custom_command_as_langgraph(
+    tmp_notebook_path: Path,
+):
+    notebook = new_notebook()
+    notebook.cells.append(
+        new_code_cell(
+            """from langgraph.graph import MessagesState, StateGraph
+
+class WorkflowState(MessagesState):
+    memory_summary: str
+
+class AuditCommand:
+    def __init__(self, update: dict):
+        self.update = update
+
+def memory_node(state: WorkflowState):
+    return AuditCommand(update={"memory_summary": "not a LangGraph Command"})
+
+workflow = StateGraph(WorkflowState)
+workflow.add_node("memory", memory_node)
+""",
+            metadata={"section": "state"},
+        )
+    )
+    _write_notebook(tmp_notebook_path, notebook)
+
+    reports = NotebookValidator().validate_all(tmp_notebook_path)
+    report = _report_by_name(reports, "State Reducer Semantics")
+    issue_codes = {issue["code"] for issue in report.evidence["issues"]}
+
+    assert report.passed is False
+    assert "declared_memory_field_without_writer" in issue_codes
+
+
 def test_tool_reachability_rule_flags_unbound_placeholder_tools(
     tmp_notebook_path: Path,
 ):

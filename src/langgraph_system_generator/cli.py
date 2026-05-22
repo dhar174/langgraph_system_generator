@@ -388,41 +388,40 @@ def _build_artifact_contract(
     }
 
     zip_members: list[dict[str, Any]] = []
-    zip_path_value = manifest.get("zip_path")
-    if zip_path_value:
-        resolved_zip_path, _ = _resolve_path_within_base(zip_path_value, output_dir)
-        if resolved_zip_path:
-            output_dir_real = os.path.realpath(os.fspath(output_dir))
-            resolved_zip_real = os.path.realpath(os.fspath(resolved_zip_path))
-            if os.path.commonpath(
-                [output_dir_real, resolved_zip_real]
-            ) == output_dir_real and os.path.isfile(resolved_zip_real):
-                with zipfile.ZipFile(resolved_zip_real, "r") as zf:
-                    for member in zf.infolist():
-                        source_entry = standalone_by_filename.get(member.filename)
-                        source_exists = bool(
-                            source_entry and source_entry.get("exists")
-                        )
-                        zip_members.append(
-                            {
-                                "name": member.filename,
-                                "availability": (
-                                    "standalone_and_bundle"
-                                    if source_exists
-                                    else "bundle_only"
-                                ),
-                                "source_manifest_key": (
-                                    source_entry.get("manifest_key")
-                                    if source_entry
-                                    else None
-                                ),
-                                "source_path": (
-                                    source_entry.get("path") if source_entry else None
-                                ),
-                                "source_exists": source_exists,
-                                "size_bytes": member.file_size,
-                            }
-                        )
+    zip_entry = next(
+        (
+            entry
+            for entry in standalone_files
+            if entry.get("manifest_key") == "zip_path"
+            and entry.get("path_type") == "server_local"
+            and entry.get("exists")
+        ),
+        None,
+    )
+    expected_zip_path = Path(
+        os.path.realpath(os.fspath(output_dir / "notebook_bundle.zip"))
+    )
+    if zip_entry and Path(str(zip_entry.get("path", ""))) == expected_zip_path:
+        with zipfile.ZipFile(expected_zip_path, "r") as zf:
+            for member in zf.infolist():
+                source_entry = standalone_by_filename.get(member.filename)
+                source_exists = bool(source_entry and source_entry.get("exists"))
+                zip_members.append(
+                    {
+                        "name": member.filename,
+                        "availability": (
+                            "standalone_and_bundle" if source_exists else "bundle_only"
+                        ),
+                        "source_manifest_key": (
+                            source_entry.get("manifest_key") if source_entry else None
+                        ),
+                        "source_path": (
+                            source_entry.get("path") if source_entry else None
+                        ),
+                        "source_exists": source_exists,
+                        "size_bytes": member.file_size,
+                    }
+                )
 
     return {
         "version": 1,

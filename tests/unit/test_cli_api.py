@@ -657,6 +657,7 @@ async def test_generate_artifacts_surfaces_tool_planning_feedback_as_warnings(
         "executable": 1,
         "utility": 0,
         "unsupported": 1,
+        "unclassified": 0,
     }
     assert (
         artifacts["manifest"]["tool_contract_summary"]["executable_tools"][0]["tool_id"]

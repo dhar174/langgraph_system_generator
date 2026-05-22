@@ -134,6 +134,7 @@ def build_tool_contract_summary(
     executable_tools: list[dict[str, Any]] = []
     utility_helpers: list[dict[str, Any]] = []
     unsupported_tools: list[dict[str, Any]] = []
+    unclassified_tools: list[dict[str, Any]] = []
     summarized_ids: set[str] = set()
 
     for tool in planned_tools:
@@ -159,6 +160,9 @@ def build_tool_contract_summary(
             executable_tools.append(summary_entry)
         elif execution_path in utility_paths:
             utility_helpers.append(summary_entry)
+        else:
+            summary_entry["status"] = "missing_contract"
+            unclassified_tools.append(summary_entry)
         if tool_id:
             summarized_ids.add(tool_id)
 
@@ -170,11 +174,6 @@ def build_tool_contract_summary(
             or reachability_entry.get("path")
             or ""
         ).strip()
-        if (
-            execution_path not in executable_paths
-            and execution_path not in utility_paths
-        ):
-            continue
         summary_entry = {
             "tool_id": tool_id,
             "name": reachability_entry.get("name") or tool_id,
@@ -185,8 +184,11 @@ def build_tool_contract_summary(
         }
         if execution_path in executable_paths:
             executable_tools.append(summary_entry)
-        else:
+        elif execution_path in utility_paths:
             utility_helpers.append(summary_entry)
+        else:
+            summary_entry["status"] = "unrecognized_execution_path"
+            unclassified_tools.append(summary_entry)
 
     qa_evidence = _tool_contract_qa_evidence(qa_reports or [])
     return {
@@ -196,11 +198,13 @@ def build_tool_contract_summary(
             "executable": len(executable_tools),
             "utility": len(utility_helpers),
             "unsupported": len(unsupported_tools),
+            "unclassified": len(unclassified_tools),
         },
         "planned_tools": planned_tools,
         "executable_tools": executable_tools,
         "utility_helpers": utility_helpers,
         "unsupported_tools": unsupported_tools,
+        "unclassified_tools": unclassified_tools,
         "qa_evidence": qa_evidence,
         "source_precedence": [
             "graph_exports.schema.tool_reachability",

@@ -239,7 +239,8 @@ aligned when changing notebook assembly behavior:
 - generated tool claims should stay aligned with
   `graph_exports.schema.tool_reachability`; manifests expose
   `tool_contract_summary` to distinguish planned, executable, utility, and
-  unsupported tools
+  unsupported tools, plus unclassified tools when reachability metadata is
+  missing or mismatched
 - register architecture-specific notebook assembly behavior through
   `src/langgraph_system_generator/generator/notebook_composer_registry.py`
   and `NOTEBOOK_COMPOSER_PLUGIN_MODULES` rather than adding more hardcoded

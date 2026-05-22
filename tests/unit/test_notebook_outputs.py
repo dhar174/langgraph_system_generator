@@ -267,6 +267,25 @@ async def test_manifest_artifact_contract_marks_standalone_files_and_zip_members
     )
 
 
+def test_artifact_contract_does_not_inspect_nonstandard_manifest_zip(tmp_path: Path):
+    """Only the generator-owned bundle name is inspected for ZIP members."""
+    import langgraph_system_generator.cli as cli_module
+
+    output_dir = tmp_path / "artifact_contract"
+    output_dir.mkdir()
+    alternate_zip = output_dir / "user_named_bundle.zip"
+    with zipfile.ZipFile(alternate_zip, "w") as zf:
+        zf.writestr("unexpected.txt", "not a generated bundle member")
+
+    contract = cli_module._build_artifact_contract(
+        {"zip_path": str(alternate_zip)},
+        output_dir,
+    )
+
+    assert contract["standalone_files"][0]["exists"] is True
+    assert contract["zip_members"] == []
+
+
 @pytest.mark.asyncio
 async def test_generate_all_formats(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     """Test that all formats are generated when formats=None."""

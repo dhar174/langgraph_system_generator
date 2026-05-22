@@ -1560,6 +1560,29 @@ class StateReducerSemanticsRule(QAValidationRule):
 
         writer_map: dict[str, set[str]] = {}
 
+        def _command_symbol_names() -> set[str]:
+            command_names = {"Command"}
+            for module_node in ast.walk(tree):
+                if not isinstance(module_node, ast.ImportFrom):
+                    continue
+                if module_node.module not in {"langgraph.types", "langgraph.graph"}:
+                    continue
+                for alias in module_node.names:
+                    if alias.name == "Command":
+                        command_names.add(alias.asname or alias.name)
+            return command_names
+
+        command_symbol_names = _command_symbol_names()
+
+        def _is_command_call(value: ast.AST | None) -> bool:
+            if not isinstance(value, ast.Call):
+                return False
+            if isinstance(value.func, ast.Name):
+                return value.func.id in command_symbol_names
+            if isinstance(value.func, ast.Attribute):
+                return value.func.attr == "Command"
+            return False
+
         def _is_state_name(node: ast.AST | None) -> bool:
             return isinstance(node, ast.Name) and node.id == "state"
 
@@ -1582,9 +1605,7 @@ class StateReducerSemanticsRule(QAValidationRule):
                 for key in _dict_string_keys(value):
                     writer_map.setdefault(key, set()).add(function_name)
                 return
-            if isinstance(value, ast.Call) and _call_name(value.func).endswith(
-                "Command"
-            ):
+            if _is_command_call(value):
                 for keyword in value.keywords:
                     if keyword.arg == "update" and isinstance(keyword.value, ast.Dict):
                         for key in _dict_string_keys(keyword.value):
@@ -1593,6 +1614,27 @@ class StateReducerSemanticsRule(QAValidationRule):
         def _record_update_keys(function_name: str, keys: set[str]) -> None:
             for key in keys:
                 writer_map.setdefault(key, set()).add(function_name)
+
+        def _local_update_keys_from_call(call: ast.Call) -> tuple[str, set[str]] | None:
+            if not isinstance(call.func, ast.Attribute):
+                return None
+            if not isinstance(call.func.value, ast.Name):
+                return None
+            variable_name = call.func.value.id
+            method_name = call.func.attr
+            keys: set[str] = set()
+            if method_name == "update":
+                for arg in call.args:
+                    if isinstance(arg, ast.Dict):
+                        keys.update(_dict_string_keys(arg))
+                keys.update(keyword.arg for keyword in call.keywords if keyword.arg)
+            elif method_name == "setdefault" and call.args:
+                key = _literal_string(call.args[0])
+                if key:
+                    keys.add(key)
+            if not keys:
+                return None
+            return variable_name, keys
 
         def _subscript_string_key(target: ast.AST) -> tuple[str, str] | None:
             if not isinstance(target, ast.Subscript) or not isinstance(
@@ -1637,7 +1679,9 @@ class StateReducerSemanticsRule(QAValidationRule):
                         if isinstance(target, ast.Name) and isinstance(
                             statement.value, (ast.Dict, ast.Call)
                         ):
-                            local_update_keys.setdefault(target.id, set())
+                            local_update_keys.setdefault(target.id, set()).update(
+                                _dict_string_keys(statement.value)
+                            )
                         subscript_key = _subscript_string_key(target)
                         if subscript_key:
                             variable_name, key = subscript_key
@@ -1646,11 +1690,21 @@ class StateReducerSemanticsRule(QAValidationRule):
                     if isinstance(statement.target, ast.Name) and isinstance(
                         statement.value, (ast.Dict, ast.Call)
                     ):
-                        local_update_keys.setdefault(statement.target.id, set())
+                        local_update_keys.setdefault(
+                            statement.target.id,
+                            set(),
+                        ).update(_dict_string_keys(statement.value))
                     subscript_key = _subscript_string_key(statement.target)
                     if subscript_key:
                         variable_name, key = subscript_key
                         local_update_keys.setdefault(variable_name, set()).add(key)
+                elif isinstance(statement, ast.Expr) and isinstance(
+                    statement.value, ast.Call
+                ):
+                    call_update_keys = _local_update_keys_from_call(statement.value)
+                    if call_update_keys:
+                        variable_name, keys = call_update_keys
+                        local_update_keys.setdefault(variable_name, set()).update(keys)
                 if isinstance(statement, ast.Return):
                     if (
                         is_registered_node
@@ -1677,9 +1731,7 @@ class StateReducerSemanticsRule(QAValidationRule):
                                 node.name,
                                 local_update_keys.get(statement.value.id, set()),
                             )
-                        if isinstance(statement.value, ast.Call) and _call_name(
-                            statement.value.func
-                        ).endswith("Command"):
+                        if _is_command_call(statement.value):
                             for keyword in statement.value.keywords:
                                 if keyword.arg == "update" and isinstance(
                                     keyword.value, ast.Name

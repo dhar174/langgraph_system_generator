@@ -280,6 +280,7 @@ async def test_chatbot_notebook_emits_interactive_chat_contract(
         if cell.section == "config" and cell.cell_type == "code"
     )
     assert "CHARACTER_GENDER = None" in config_code
+    assert "ANACHRONISM_TERMS = (" in config_code
     assert 'THREAD_ID = "lnf-demo-thread"' in config_code
     assert "SHOW_UPDATES = False" in config_code
     assert "RUN_INTERACTIVE_LOOP = False" in config_code
@@ -2007,6 +2008,35 @@ async def test_tool_cells_emit_decorated_tools_and_tool_node(
     ast.parse(tool_code)
 
 
+@pytest.mark.asyncio
+async def test_tool_cells_keep_tools_executable_when_reachability_contract_missing(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    monkeypatch.setattr(composer_module, "ChatOpenAI", DummyLLM)
+    composer = composer_module.NotebookComposer()
+    feedback = composer_module.NotebookCompositionFeedback()
+
+    cells = await composer._create_tool_cells(
+        [
+            {
+                "tool_id": "context_lookup",
+                "name": "Context Lookup",
+                "purpose": "Lookup conversational context.",
+                "category": "validation",
+            }
+        ],
+        feedback,
+        workflow_design={"architecture_type": "hybrid", "nodes": []},
+    )
+    tool_code = "\n\n".join(cell.content for cell in cells if cell.cell_type == "code")
+
+    assert "@tool" in tool_code
+    assert "TOOLS = [Context_Lookup]" in tool_code
+    assert "ToolNode(TOOLS, handle_tool_errors=True)" in tool_code
+    assert "Utility helper only" not in tool_code
+    ast.parse(tool_code)
+
+
 def test_utility_helper_conversion_removes_local_tool_import_guard():
     generated_code = """
 def schema_validator(payload: dict) -> dict:
@@ -2173,6 +2203,7 @@ def test_verifier_and_reviser_fallbacks_emit_structured_revision_state(
         'updates["route"] = "revise" if needs_revision else "accept"' in verifier_code
     )
     assert 'updates["final_response"] = draft' in verifier_code
+    assert 'globals().get("ANACHRONISM_TERMS", (' in verifier_code
     assert '"smartphone"' in verifier_code
     assert '"star wars"' in verifier_code
     assert 'revision_count = int(state.get("revision_count", 0)) + 1' in reviser_code
@@ -2204,6 +2235,29 @@ def test_graph_fallback_uses_sanitized_function_references(
     assert 'workflow.add_node("start node", start_node_node)' in graph_code
     assert 'workflow.add_node("9 result-node", _9_result_node_node)' in graph_code
     compile(graph_code, "<graph_fallback>", "exec")
+
+
+def test_chatbot_fallback_nodes_include_pattern_scaffold_handlers(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    monkeypatch.setattr(composer_module, "ChatOpenAI", DummyLLM)
+    composer = composer_module.NotebookComposer()
+    workflow_design = {
+        "architecture_type": "hybrid",
+        "state_schema": {"messages": "Conversation messages"},
+        "nodes": [
+            {"name": "persona_specialist", "purpose": "Draft in persona"},
+            {"name": "historical_verifier", "purpose": "Verify realism"},
+        ],
+    }
+
+    nodes = composer._with_required_pattern_scaffold_nodes(
+        workflow_design["nodes"],
+        workflow_design,
+    )
+
+    assert [node["name"] for node in nodes[:2]] == ["router", "supervisor"]
+    assert "persona_specialist" in {node["name"] for node in nodes}
 
 
 def test_graph_fallback_lowers_command_routes_to_conditional_edges(

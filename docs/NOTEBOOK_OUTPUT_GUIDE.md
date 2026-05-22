@@ -163,7 +163,8 @@ curl -X POST http://localhost:8000/generate \
         "planned": 2,
         "executable": 1,
         "utility": 0,
-        "unsupported": 1
+        "unsupported": 1,
+        "unclassified": 0
       },
       "source_precedence": [
         "graph_exports.schema.tool_reachability",

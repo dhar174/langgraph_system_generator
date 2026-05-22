@@ -1490,6 +1490,7 @@ async def test_package_outputs_node_manifest_fields():
         "executable": 1,
         "utility": 1,
         "unsupported": 1,
+        "unclassified": 0,
     }
     assert (
         manifest["tool_contract_summary"]["executable_tools"][0]["tool_id"]
@@ -1537,8 +1538,26 @@ def test_tool_contract_summary_treats_deterministic_nodes_as_utilities():
         "executable": 0,
         "utility": 1,
         "unsupported": 0,
+        "unclassified": 0,
     }
     assert summary["utility_helpers"][0]["tool_id"] == "schema_validator"
+
+
+def test_tool_contract_summary_classifies_missing_reachability_contract():
+    summary = build_tool_contract_summary(
+        [{"tool_id": "context_lookup", "name": "Context Lookup"}],
+        {},
+    )
+
+    assert summary["counts"] == {
+        "planned": 1,
+        "executable": 0,
+        "utility": 0,
+        "unsupported": 0,
+        "unclassified": 1,
+    }
+    assert summary["unclassified_tools"][0]["tool_id"] == "context_lookup"
+    assert summary["unclassified_tools"][0]["status"] == "missing_contract"
 
 
 @pytest.mark.asyncio
