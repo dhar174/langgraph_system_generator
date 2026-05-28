@@ -13,7 +13,7 @@ from urllib.parse import urlparse
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import FileResponse, HTMLResponse, Response
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from langgraph_system_generator import __version__
 from langgraph_system_generator.constants import _BASE_OUTPUT, resolve_under_base
@@ -262,13 +262,17 @@ def _request_dialog_messages(
 def _request_prompt(request: "GenerationRequest") -> str:
     """Return the single prompt value used by legacy generation surfaces."""
 
-    if request.prompt:
-        return request.prompt
+    prompt = request.prompt or ""
+    if prompt.strip():
+        return prompt
     messages = request.messages or []
     for message in reversed(messages):
-        if message.role == "user":
+        if message.role == "user" and message.content.strip():
             return message.content
-    return messages[-1].content if messages else ""
+    for message in reversed(messages):
+        if message.content.strip():
+            return message.content
+    return ""
 
 
 class DialogMessage(BaseModel):
@@ -280,8 +284,18 @@ class DialogMessage(BaseModel):
     content: str = Field(
         ...,
         description="Message content for this requirements turn.",
+        min_length=1,
         max_length=5000,
     )
+
+    @field_validator("content")
+    @classmethod
+    def _validate_non_whitespace_content(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError(
+                "Message content must include non-whitespace characters."
+            )
+        return value
 
 
 class GenerationRequest(BaseModel):

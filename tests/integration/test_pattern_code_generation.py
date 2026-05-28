@@ -48,7 +48,7 @@ async def test_router_pattern_notebook_generation(tmp_path: Path):
     assert "Recent conversation (last {window_size} messages):" in all_code
     assert "TypedDict" in all_code, "TypedDict state not found"
     assert "route_history" in all_code, "Router reducer-backed state field missing"
-    assert "Command" in all_code, "Router should use Command-based routing"
+    assert "RouteDecision" in all_code, "Router should include typed route decisions"
 
     # Verify no empty implementations (no standalone 'pass' statements for nodes)
     # Note: We allow pass in fallback scenarios, but pattern code should not have it

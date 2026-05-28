@@ -71,7 +71,7 @@ class WorkflowState(TypedDict, total=False):
         include_fallback: bool = True,
         fallback_route: str = "fallback",
     ) -> str:
-        """Generate a router node that returns ``Command``."""
+        """Generate a router node that returns state updates."""
         if model_config is None:
             config = ModelConfig()
         elif isinstance(model_config, dict):
@@ -107,7 +107,6 @@ class WorkflowState(TypedDict, total=False):
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
-from langgraph.types import Command
 from pydantic import BaseModel, Field
 
 

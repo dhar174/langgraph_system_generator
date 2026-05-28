@@ -1093,7 +1093,7 @@ def test_router_pattern_emits_typed_state_and_command_routing():
     assert "route_history" in state_code
     assert "user_id: str" in state_code
 
-    assert "Command" in router_code
+    assert "from langgraph.types import Command" not in router_code
     assert "RouteDecision" in router_code
     assert "with_structured_output" in router_code
     assert "temperature=0" in router_code
