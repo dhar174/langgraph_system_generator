@@ -356,6 +356,127 @@ async def test_api_generate_stub(tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 
 
 @pytest.mark.asyncio
+async def test_api_generate_stub_accepts_dialog_messages_without_legacy_prompt(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """Dialog requests should derive the legacy prompt from the latest user turn."""
+
+    monkeypatch.setenv("LNF_OUTPUT_BASE", "test_api_dialog_stub")
+
+    import importlib
+    import langgraph_system_generator.constants as constants_module
+    import langgraph_system_generator.notebook.exporters as exporters_module
+    import langgraph_system_generator.api.server as server_module
+
+    importlib.reload(constants_module)
+    importlib.reload(exporters_module)
+    importlib.reload(server_module)
+
+    transport = httpx.ASGITransport(app=server_module.app)
+    output_dir = constants_module._BASE_OUTPUT / tmp_path.name
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(
+            "/generate",
+            json={
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": "Build a router workflow.",
+                    },
+                    {
+                        "role": "assistant",
+                        "content": "Which model and runtime should it use?",
+                    },
+                    {
+                        "role": "user",
+                        "content": "Use gpt-5.4-mini in a portable notebook.",
+                    },
+                ],
+                "mode": "stub",
+                "output_dir": str(output_dir),
+            },
+        )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["success"] is True
+    assert payload["prompt"] == "Use gpt-5.4-mini in a portable notebook."
+    assert payload["manifest"]["prompt"] == "Use gpt-5.4-mini in a portable notebook."
+
+
+@pytest.mark.asyncio
+async def test_api_generate_stub_prefers_dialog_when_prompt_is_whitespace(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """Whitespace prompt values should fall back to the latest user dialog turn."""
+
+    monkeypatch.setenv("LNF_OUTPUT_BASE", "test_api_dialog_prefers_messages")
+
+    import importlib
+    import langgraph_system_generator.constants as constants_module
+    import langgraph_system_generator.notebook.exporters as exporters_module
+    import langgraph_system_generator.api.server as server_module
+
+    importlib.reload(constants_module)
+    importlib.reload(exporters_module)
+    importlib.reload(server_module)
+
+    transport = httpx.ASGITransport(app=server_module.app)
+    output_dir = constants_module._BASE_OUTPUT / tmp_path.name
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(
+            "/generate",
+            json={
+                "prompt": "   ",
+                "messages": [
+                    {"role": "assistant", "content": "What should I build?"},
+                    {"role": "user", "content": "Create a concise router workflow."},
+                ],
+                "mode": "stub",
+                "output_dir": str(output_dir),
+            },
+        )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["prompt"] == "Create a concise router workflow."
+    assert payload["manifest"]["prompt"] == "Create a concise router workflow."
+
+
+@pytest.mark.asyncio
+async def test_api_generate_rejects_whitespace_only_dialog_message(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    monkeypatch.setenv("LNF_OUTPUT_BASE", "test_api_dialog_invalid_message")
+
+    import importlib
+    import langgraph_system_generator.constants as constants_module
+    import langgraph_system_generator.notebook.exporters as exporters_module
+    import langgraph_system_generator.api.server as server_module
+
+    importlib.reload(constants_module)
+    importlib.reload(exporters_module)
+    importlib.reload(server_module)
+
+    transport = httpx.ASGITransport(app=server_module.app)
+    output_dir = constants_module._BASE_OUTPUT / tmp_path.name
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(
+            "/generate",
+            json={
+                "messages": [{"role": "user", "content": "   "}],
+                "mode": "stub",
+                "output_dir": str(output_dir),
+            },
+        )
+
+    assert response.status_code == 422
+
+
+@pytest.mark.asyncio
 async def test_api_generate_stub_accepts_deepagents_agent_type(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):

@@ -16,7 +16,7 @@ async def test_router_pattern_notebook_generation(tmp_path: Path):
     """Test notebook generation with router pattern."""
 
     # Set BASE_OUTPUT_DIR to allow test output in tmp_path
-    os.environ['BASE_OUTPUT_DIR'] = str(tmp_path.resolve())
+    os.environ["BASE_OUTPUT_DIR"] = str(tmp_path.resolve())
 
     # Generate notebook for router pattern
     artifacts = await generate_artifacts(
@@ -38,7 +38,9 @@ async def test_router_pattern_notebook_generation(tmp_path: Path):
     all_code = "\n\n".join([cell.source for cell in code_cells])
 
     # Verify pattern-specific code generation
-    assert "class WorkflowState(TypedDict, total=False):" in all_code, "State class not found"
+    assert (
+        "class WorkflowState(TypedDict, total=False):" in all_code
+    ), "State class not found"
     assert "route:" in all_code, "Router state field missing"
     assert (
         "def router_node(state: WorkflowState, window_size: int = 5)" in all_code
@@ -46,7 +48,7 @@ async def test_router_pattern_notebook_generation(tmp_path: Path):
     assert "Recent conversation (last {window_size} messages):" in all_code
     assert "TypedDict" in all_code, "TypedDict state not found"
     assert "route_history" in all_code, "Router reducer-backed state field missing"
-    assert "Command" in all_code, "Router should use Command-based routing"
+    assert "RouteDecision" in all_code, "Router should include typed route decisions"
 
     # Verify no empty implementations (no standalone 'pass' statements for nodes)
     # Note: We allow pass in fallback scenarios, but pattern code should not have it
@@ -54,9 +56,9 @@ async def test_router_pattern_notebook_generation(tmp_path: Path):
     router_related = [s for s in code_sections if "def router_node" in s]
     if router_related:
         # Router node should have actual implementation, not just pass
-        assert "with_structured_output" in all_code or "ChatOpenAI" in all_code, (
-            "Router notebook should include model-backed routing logic"
-        )
+        assert (
+            "with_structured_output" in all_code or "ChatOpenAI" in all_code
+        ), "Router notebook should include model-backed routing logic"
 
     # Verify graph construction
     assert "StateGraph(WorkflowState)" in all_code, "Graph construction missing"
@@ -64,7 +66,9 @@ async def test_router_pattern_notebook_generation(tmp_path: Path):
     assert "compile" in all_code, "Graph compilation missing"
 
     execution_cells = [
-        cell for cell in nb.cells if cell.cell_type == "code" and 'config = {"configurable"' in cell.source
+        cell
+        for cell in nb.cells
+        if cell.cell_type == "code" and 'config = {"configurable"' in cell.source
     ]
     assert execution_cells, "Execution cell missing"
     execution_source = execution_cells[0].source
@@ -78,7 +82,7 @@ async def test_subagents_pattern_notebook_generation(tmp_path: Path):
     """Test notebook generation with subagents pattern."""
 
     # Set BASE_OUTPUT_DIR to allow test output in tmp_path
-    os.environ['BASE_OUTPUT_DIR'] = str(tmp_path.resolve())
+    os.environ["BASE_OUTPUT_DIR"] = str(tmp_path.resolve())
 
     # Generate notebook for subagents pattern
     artifacts = await generate_artifacts(
@@ -102,15 +106,19 @@ async def test_subagents_pattern_notebook_generation(tmp_path: Path):
     # Verify pattern-specific code generation
     assert "TypedDict" in all_code, "TypedDict state not found"
     assert "next_agent:" in all_code, "Supervisor state field 'next_agent' missing"
+    assert "next_agents:" in all_code, "Supervisor state field 'next_agents' missing"
     assert "instructions:" in all_code, "Supervisor state field 'instructions' missing"
-    assert "Command" in all_code, "Supervisor should use Command-based routing"
+    assert "Send" in all_code, "Supervisor should use Send-based fan-out routing"
+    assert "def supervisor_router" in all_code, "Supervisor router missing"
 
     # Verify graph construction
     assert "StateGraph(WorkflowState)" in all_code, "Graph construction missing"
     assert "finish_node" in all_code, "Finish node missing"
 
     execution_cells = [
-        cell for cell in nb.cells if cell.cell_type == "code" and 'config = {"configurable"' in cell.source
+        cell
+        for cell in nb.cells
+        if cell.cell_type == "code" and 'config = {"configurable"' in cell.source
     ]
     assert execution_cells, "Execution cell missing"
     execution_source = execution_cells[0].source
@@ -124,7 +132,7 @@ async def test_tool_code_generation_not_empty(tmp_path: Path):
     """Test that tools have real implementations, not just 'pass' statements."""
 
     # Set BASE_OUTPUT_DIR to allow test output in tmp_path
-    os.environ['BASE_OUTPUT_DIR'] = str(tmp_path.resolve())
+    os.environ["BASE_OUTPUT_DIR"] = str(tmp_path.resolve())
 
     # Generate notebook that should have tools
     artifacts = await generate_artifacts(
@@ -147,12 +155,16 @@ async def test_tool_code_generation_not_empty(tmp_path: Path):
         if "# Tool:" in cell.source or (
             "def " in cell.source and "_tool" in cell.source.lower()
         ):
-            assert "pass" not in cell.source, f"Tool implementation should not contain pass: {cell.source[:200]}"
-            assert "TODO" not in cell.source, f"Tool implementation should not contain TODO: {cell.source[:200]}"
+            assert (
+                "pass" not in cell.source
+            ), f"Tool implementation should not contain pass: {cell.source[:200]}"
+            assert (
+                "TODO" not in cell.source
+            ), f"Tool implementation should not contain TODO: {cell.source[:200]}"
             assert "Implement your tool logic here" not in cell.source
-            assert any(marker in cell.source for marker in meaningful_markers), (
-                f"Tool implementation lacks meaningful logic markers: {cell.source[:200]}"
-            )
+            assert any(
+                marker in cell.source for marker in meaningful_markers
+            ), f"Tool implementation lacks meaningful logic markers: {cell.source[:200]}"
 
     # It's ok if no tools found for some prompts
     # The main check is if tools exist, they should have meaningful content
@@ -163,7 +175,7 @@ async def test_node_code_generation_not_empty(tmp_path: Path):
     """Test that nodes have real implementations or meaningful templates."""
 
     # Set BASE_OUTPUT_DIR to allow test output in tmp_path
-    os.environ['BASE_OUTPUT_DIR'] = str(tmp_path.resolve())
+    os.environ["BASE_OUTPUT_DIR"] = str(tmp_path.resolve())
 
     # Generate notebook
     artifacts = await generate_artifacts(
@@ -185,9 +197,15 @@ async def test_node_code_generation_not_empty(tmp_path: Path):
     for cell in code_cells:
         if "def " in cell.source and "_node(state:" in cell.source:
             node_found = True
-            assert "return state" not in cell.source, f"Node implementation contains stub return: {cell.source[:200]}"
-            assert "pass" not in cell.source, f"Node implementation contains pass: {cell.source[:200]}"
-            assert "TODO: Implement" not in cell.source, f"Node implementation contains TODO placeholder: {cell.source[:200]}"
+            assert (
+                "return state" not in cell.source
+            ), f"Node implementation contains stub return: {cell.source[:200]}"
+            assert (
+                "pass" not in cell.source
+            ), f"Node implementation contains pass: {cell.source[:200]}"
+            assert (
+                "TODO: Implement" not in cell.source
+            ), f"Node implementation contains TODO placeholder: {cell.source[:200]}"
             has_logic = any(
                 keyword in cell.source
                 for keyword in [
@@ -211,7 +229,7 @@ async def test_generated_code_is_syntactically_valid(tmp_path: Path):
     """Test that all generated Python code is syntactically valid."""
 
     # Set BASE_OUTPUT_DIR to allow test output in tmp_path
-    os.environ['BASE_OUTPUT_DIR'] = str(tmp_path.resolve())
+    os.environ["BASE_OUTPUT_DIR"] = str(tmp_path.resolve())
 
     # Generate notebook
     artifacts = await generate_artifacts(
@@ -232,12 +250,15 @@ async def test_generated_code_is_syntactically_valid(tmp_path: Path):
     for i, cell in enumerate(code_cells):
         try:
             # Skip cells with magic commands
-            if cell.source.strip().startswith("!") or cell.source.strip().startswith("%"):
+            if cell.source.strip().startswith("!") or cell.source.strip().startswith(
+                "%"
+            ):
                 continue
 
             # Filter out magic commands from within cells
             clean_source = "\n".join(
-                line for line in cell.source.split("\n")
+                line
+                for line in cell.source.split("\n")
                 if not line.strip().startswith("!") and not line.strip().startswith("%")
             )
 
@@ -254,7 +275,7 @@ async def test_pattern_selection_based_on_prompt(tmp_path: Path):
     """Test that different prompts result in appropriate pattern selection."""
 
     # Set BASE_OUTPUT_DIR to allow test output in tmp_path
-    os.environ['BASE_OUTPUT_DIR'] = str(tmp_path.resolve())
+    os.environ["BASE_OUTPUT_DIR"] = str(tmp_path.resolve())
 
     # Test router pattern selection
     artifacts_router = await generate_artifacts(
@@ -281,7 +302,7 @@ async def test_complete_workflow_has_no_broken_references(tmp_path: Path):
     """Test that generated notebooks have no undefined variable references."""
 
     # Set BASE_OUTPUT_DIR to allow test output in tmp_path
-    os.environ['BASE_OUTPUT_DIR'] = str(tmp_path.resolve())
+    os.environ["BASE_OUTPUT_DIR"] = str(tmp_path.resolve())
 
     # Generate notebook
     artifacts = await generate_artifacts(
@@ -324,7 +345,7 @@ async def test_notebooks_include_execution_section(tmp_path: Path):
     """Test that generated notebooks include complete execution sections."""
 
     # Set BASE_OUTPUT_DIR to allow test output in tmp_path
-    os.environ['BASE_OUTPUT_DIR'] = str(tmp_path.resolve())
+    os.environ["BASE_OUTPUT_DIR"] = str(tmp_path.resolve())
 
     # Generate notebook
     artifacts = await generate_artifacts(

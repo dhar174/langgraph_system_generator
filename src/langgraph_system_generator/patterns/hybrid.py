@@ -55,6 +55,7 @@ class WorkflowState(TypedDict, total=False):
     route_reasoning: str
     route_history: Annotated[List[str], operator.add]
     next_agent: str
+    next_agents: List[str]
     instructions: str
     iterations: int
     dispatch_log: Annotated[List[str], operator.add]
@@ -76,6 +77,7 @@ class WorkflowState(TypedDict, total=False):
             routes=routes,
             model_config=model_config,
             use_notebook_helper=use_notebook_helper,
+            include_fallback=False,
         )
 
     @staticmethod
@@ -168,9 +170,35 @@ class WorkflowState(TypedDict, total=False):
         direct_route_labels = ", ".join(
             double_quoted_literal(label) for label, _ in direct_specialist_specs
         )
+        supervisor_route_map = ",\n        ".join(
+            [
+                f"{double_quoted_literal(label)}: {double_quoted_literal(node_name)}"
+                for label, node_name in team_worker_specs
+            ]
+            + [
+                f"{double_quoted_literal(node_name)}: {double_quoted_literal(node_name)}"
+                for _, node_name in team_worker_specs
+            ]
+            + ['"FINISH": "finish"', '"finish": "finish"']
+        )
+        worker_nodes_literal = (
+            "{"
+            + ", ".join(
+                double_quoted_literal(node_name) for _, node_name in team_worker_specs
+            )
+            + "}"
+        )
+        supervisor_path_map = ", ".join(
+            [
+                f"{double_quoted_literal(node_name)}: {double_quoted_literal(node_name)}"
+                for _, node_name in team_worker_specs
+            ]
+            + ['"finish": "finish"']
+        )
 
         return f'''from langgraph.graph import END, START, StateGraph
 from langgraph.checkpoint.memory import InMemorySaver
+from langgraph.types import Send
 
 
 def route_from_router(state: WorkflowState) -> str:
@@ -199,6 +227,29 @@ def finish_node(state: WorkflowState) -> dict:
     }}
 
 
+def supervisor_router(state: WorkflowState):
+    """Fan out to selected worker nodes or finish the hybrid workflow."""
+    route_map = {{
+        {supervisor_route_map}
+    }}
+    worker_nodes = {worker_nodes_literal}
+    requested_agents = state.get("next_agents") or []
+    if not requested_agents and state.get("next_agent"):
+        requested_agents = [state.get("next_agent")]
+
+    destinations = []
+    for agent_name in requested_agents:
+        target = route_map.get(agent_name)
+        if target == "finish":
+            return "finish"
+        if target in worker_nodes and target not in destinations:
+            destinations.append(target)
+
+    if not destinations:
+        return "finish"
+    return [Send(destination, state) for destination in destinations]
+
+
 workflow = StateGraph(WorkflowState)
 checkpointer = InMemorySaver()
 
@@ -213,6 +264,11 @@ workflow.add_conditional_edges(
     "router",
     route_from_router,
     {{{router_branch_map}}},
+)
+workflow.add_conditional_edges(
+    "supervisor",
+    supervisor_router,
+    {{{supervisor_path_map}}},
 )
 {direct_finish_edges}
 {worker_return_edges}

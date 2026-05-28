@@ -414,6 +414,70 @@ async def test_requirements_analyst_detects_conflicts_and_missing_inputs(monkeyp
 
 
 @pytest.mark.asyncio
+async def test_requirements_analyst_refines_multi_turn_dialog_with_prior_constraints(
+    monkeypatch,
+):
+    """Dialog analysis should retain prior constraints and add latest-turn details."""
+
+    captured_messages = []
+    monkeypatch.setattr(
+        requirements_analyst,
+        "ChatOpenAI",
+        make_recording_llm(
+            """
+            {
+              "constraints": [
+                {
+                  "type": "runtime",
+                  "value": "Use gpt-5.4-mini",
+                  "priority": 4,
+                  "confidence": 0.86
+                }
+              ],
+              "clarification_questions": [
+                "Should the notebook target Colab or local Jupyter?"
+              ]
+            }
+            """,
+            captured_messages,
+        ),
+    )
+
+    analyst = requirements_analyst.RequirementsAnalyst()
+    prior = [
+        Constraint(
+            type="goal",
+            value="Build a router workflow",
+            priority=5,
+        )
+    ]
+    analysis = await analyst.analyze_dialog(
+        [
+            {"role": "user", "content": "Build a router workflow."},
+            {"role": "assistant", "content": "Which model should it use?"},
+            {"role": "user", "content": "Use gpt-5.4-mini."},
+        ],
+        existing_constraints=prior,
+    )
+
+    assert [constraint.type for constraint in analysis.constraints] == [
+        "goal",
+        "runtime",
+    ]
+    assert analysis.constraints[0].value == "Build a router workflow"
+    assert analysis.constraints[1].value == "Use gpt-5.4-mini"
+    assert analysis.feedback.dialog_turn_count == 3
+    assert analysis.feedback.clarification_questions == [
+        "Should the notebook target Colab or local Jupyter?"
+    ]
+    assert any(
+        "Retained 1 prior" in change for change in analysis.feedback.constraint_changes
+    )
+    assert captured_messages
+    assert "Prior constraints already accepted" in captured_messages[0][1].content
+
+
+@pytest.mark.asyncio
 async def test_requirements_analyst_uses_configured_constraint_type_registry(
     monkeypatch,
 ):

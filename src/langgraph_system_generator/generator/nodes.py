@@ -442,7 +442,14 @@ async def intake_node(state: GeneratorState) -> Dict[str, Any]:
         Updated state with extracted constraints
     """
     analyst = RequirementsAnalyst(model_config=_resolve_model_config(state))
-    analysis = await analyst.analyze(state["user_prompt"])
+    requirements_messages = state.get("requirements_messages") or []
+    if requirements_messages:
+        analysis = await analyst.analyze_dialog(
+            requirements_messages,
+            existing_constraints=state.get("constraints") or [],
+        )
+    else:
+        analysis = await analyst.analyze(state["user_prompt"])
 
     return {
         "constraints": analysis.constraints,

@@ -16,10 +16,15 @@
   standalone files and ZIP members, and include QA validation-scope wording for
   runtime smoke tests.
 - Generated chatbot notebooks include stronger runtime affordances from PR #357
-  and current Wave 4 work, including chat-loop execution helpers, character
-  selection, executable-tool wiring, verifier/reviser fallbacks, memory checks,
-  non-blocking top-to-bottom chat execution, and centralized generated LLM
-  configuration patterns.
+  and PR #360, including chat-loop execution helpers, character selection,
+  executable-tool wiring, verifier/reviser fallbacks, memory checks,
+  non-blocking top-to-bottom chat execution, prompt-faithfulness/domain QA, and
+  centralized generated LLM configuration patterns.
+- Wave 5 pattern/intake modernization is active on
+  `codex/pattern-intake-modernization-wave5`: router snippets now emit a
+  fallback/general route, subagent snippets emit Send-based parallel fan-out
+  contracts, critique-loop snippets can compile with `interrupt_before` on the
+  revise node, and API/intake state can carry multi-turn requirements dialogs.
 - PR #359 merged #343/#348 with canonical graph/spec rendering, manifest and QA
   graph-contract preservation, and explicit standalone-versus-notebook LLM
   initialization boundaries.
@@ -48,7 +53,13 @@
   composer/validator tests, 143 generator/API-node tests, and 98 pattern tests
   passing. The Wave 4 broad unit gate reports 634 passed and 4 warnings, and
   the headed/live web UI gate completed with `gpt-5.4-mini`, working notebook,
-  HTML, and manifest downloads, no browser errors, and advisory-only QA.
+  HTML, and manifest downloads, no browser errors, and advisory-only QA. PR
+  #360 merged at `89da744e3f4b232eebf6ce4802ecee6537b02c8f`, closing the
+  remaining generated-output child issues and epic #342. Current Wave 5 focused
+  slices report 167 pattern tests and 115 generator/API-node tests passing; the
+  Wave 5 broad unit gate reports 646 passed and 4 warnings. After updating a
+  stale integration assertion from Command routing to Send fan-out, the full
+  local CI-style gate reports 764 passed, 3 skipped, and 4 warnings.
 - Stale completed release-plan issues were closed with evidence during the
   release-readiness pass, reducing that older open issue inventory from 49 to
   26 while keeping true residual items open.
@@ -70,9 +81,9 @@
 - Production Cloud Run deployment uses an authenticated health-check path. The
   deploy job mints a Cloud Run ID token through `google-github-actions/auth`
   with the deployed service URL as the token audience.
-- Generated-output quality epic #342 remains active. Issue #350 is closed, but
-  #343-#349 remain open; PR #357 may satisfy parts of #344-#348 and should be
-  checked before additional implementation.
+- Generated-output quality epic #342 is closed as completed by PRs #358, #359,
+  and #360. Runtime outer-agent follow-ups #334/#335 remain separate downstream
+  work.
 
 ## Current Status
 
@@ -93,9 +104,9 @@
 - The Cloud Run deploy workflow builds and pushes the container image, deploys
   the private service, mounts `OPENAI_API_KEY` from Secret Manager, and checks
   `/health` after deployment.
-- As of the post-PR #359 refresh, #343 and #348 are complete. The remaining
-  generated-output children under #342 are #344, #345, #346, #347, and #349,
-  currently implemented on `codex/chatbot-fidelity-wave4`.
+- As of the post-PR #360 refresh, generated-output epic #342 and children
+  #343-#350 are complete. Wave 5 is active for residual pattern/intake
+  modernization issues #60, #63, #64, and #202.
 
 ## Known Issues and Limitations
 
@@ -108,12 +119,10 @@
 - Full-extra packaging smoke tests are intentionally opt-in because they install
   the broad notebook/RAG/export dependency set into a fresh virtual
   environment.
-- Router fallback/general routing (#60), iterative requirements refinement
-  (#202), and the remaining CYOA notebook cell issues are tracked as residual
-  follow-up work rather than closed stale items.
-- Generated-output Wave 4 still needs diff hygiene and a ready PR before #344,
-  #345, #346, #347, and #349 can be closed. The broad unit and headed/live UI
-  artifact gates have passed on `codex/chatbot-fidelity-wave4`.
+- Router fallback/general routing (#60), critique-loop human approval
+  interrupts (#63), Send-based subagent dispatch (#64), iterative requirements
+  refinement (#202), and the remaining CYOA notebook cell issues are tracked as
+  residual follow-up work rather than closed stale items.
 - The Cloud Run workflow's private-service health check is sensitive to token
   minting details in GitHub Actions WIF. Do not use `gcloud auth
   print-identity-token --audiences=...` for this workflow's health token; the

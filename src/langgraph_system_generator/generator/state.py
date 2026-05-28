@@ -148,6 +148,19 @@ class RequirementsFeedback(BaseModel):
         default_factory=list,
         description="Constraint types available to the analyst for the current request.",
     )
+    dialog_turn_count: int = Field(
+        default=1,
+        ge=1,
+        description="Number of prompt/dialog turns considered during extraction.",
+    )
+    clarification_questions: List[str] = Field(
+        default_factory=list,
+        description="Clarifying questions surfaced when dialog requirements remain underspecified.",
+    )
+    constraint_changes: List[str] = Field(
+        default_factory=list,
+        description="Short summary of how this extraction added, retained, or conflicted with prior constraints.",
+    )
 
 
 class RequirementsAnalysis(BaseModel):
@@ -825,6 +838,7 @@ class GeneratorState(TypedDict):
 
     # Input
     user_prompt: str
+    requirements_messages: Optional[List[Dict[str, str]]]
     uploaded_files: Optional[List[str]]
 
     # Extracted requirements

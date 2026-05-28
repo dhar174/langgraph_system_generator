@@ -114,6 +114,9 @@ Important patterns:
 - `constraints` and `docs_context` are accumulated lists with bounded,
   latest-unique reducers.
 - `requirements_feedback` is advisory metadata from intake. It should surface fallback/gap/conflict guidance without replacing `constraints` as the downstream source of truth.
+- `requirements_messages` is optional multi-turn intake context. When present,
+  `RequirementsAnalyst.analyze_dialog(...)` should refine constraints across
+  turns while keeping legacy single-prompt generation compatible.
 - `architecture_feedback` is advisory metadata from architecture selection. It should surface fallback, tradeoff, and validation guidance without replacing `architecture_type` or `selected_patterns` as the downstream contract.
 - `tools_plan` stays the backward-compatible downstream tool payload, while `tool_planning_feedback` carries fallback, environment, and dependency advisories for manifests and notebook warning surfaces.
 - `generated_cells` is authoritative for the current repair iteration and is
@@ -229,6 +232,15 @@ aligned when changing notebook assembly behavior:
   notebook-scoped helpers explicitly with `use_notebook_helper=True` so node
   code calls `make_llm(...)` and leaves model/API-base settings centralized in
   the config cell
+- router pattern snippets should include a fallback/general route for greetings,
+  unsupported requests, and unclear routing decisions unless a composed
+  architecture supplies a stricter canonical graph contract
+- supervisor/subagent pattern snippets should use `Send(...)` fan-out when
+  dispatching multiple independent specialists and should keep result fields
+  reducer-backed
+- critique-loop snippets may opt into LangGraph static interrupts with
+  `require_human_approval=True`, compiling with `interrupt_before=["revise"]`
+  and a checkpointer
 - generated chatbot notebooks must remain non-blocking on top-to-bottom
   execution by default; interactive input loops should run only when the
   notebook-level `RUN_INTERACTIVE_LOOP` flag is enabled, while `chat_once(...)`

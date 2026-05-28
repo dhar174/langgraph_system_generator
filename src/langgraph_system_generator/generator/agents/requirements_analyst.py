@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+import json
 import logging
-from typing import Any, Dict, List, Set
+from typing import Any, Dict, List, Mapping, Sequence, Set
 
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
@@ -36,6 +37,7 @@ MISSING_INPUT_SUGGESTIONS = {
     "environment": "Describe the target environment, such as Colab, local Jupyter, deployment target, or required libraries.",
 }
 
+
 class RequirementsAnalyst:
     """Extracts structured constraints from user prompt."""
 
@@ -55,7 +57,7 @@ class RequirementsAnalyst:
         """Return the current ordered registry of supported constraint types."""
         return build_constraint_type_registry(settings.requirements_constraint_types)
 
-    def _build_analysis_prompt(self) -> SystemMessage:
+    def _build_analysis_prompt(self, *, dialog_mode: bool = False) -> SystemMessage:
         """Return the system prompt used for requirements extraction."""
 
         type_lines = []
@@ -81,17 +83,99 @@ class RequirementsAnalyst:
                 '      "confidence": 0.0,\n'
                 '      "explanation": "why this constraint was extracted"\n'
                 "    }\n"
-                "  ]\n"
+                "  ],\n"
+                '  "clarification_questions": ["question to ask only if needed"]\n'
                 "}\n\n"
                 "Rules:\n"
                 "- Use only the available constraint types listed above.\n"
                 "- Omit any constraint type that is not justified by the prompt.\n"
+                "- Preserve prior constraints unless the latest dialog turn clearly supersedes them.\n"
                 "- Priority is 1 (low) to 5 (high). Goals are usually priority 5.\n"
                 "- Confidence is optional and should be between 0.0 and 1.0.\n"
                 "- Explanations should be short and actionable.\n"
                 "- Return valid JSON only."
+                + (
+                    "\n- Treat the input as a multi-turn requirements dialog. "
+                    "Combine the latest user request with earlier turns and prior constraints."
+                    if dialog_mode
+                    else ""
+                )
             )
         )
+
+    def _normalize_dialog_messages(
+        self,
+        messages: Sequence[Mapping[str, Any] | str | Any],
+    ) -> List[Dict[str, str]]:
+        """Normalize supported dialog message shapes into role/content dictionaries."""
+
+        normalized: List[Dict[str, str]] = []
+        for message in messages:
+            if isinstance(message, str):
+                role = "user"
+                content = message
+            elif isinstance(message, Mapping):
+                role = str(message.get("role") or message.get("type") or "user")
+                content = str(message.get("content") or "")
+            else:
+                role = str(
+                    getattr(message, "role", None)
+                    or getattr(message, "type", None)
+                    or message.__class__.__name__
+                )
+                content = str(getattr(message, "content", ""))
+
+            role = role.strip().lower() or "user"
+            content = content.strip()
+            if content:
+                normalized.append({"role": role, "content": content})
+
+        return normalized
+
+    def _dialog_to_prompt(self, messages: Sequence[Dict[str, str]]) -> str:
+        """Render dialog turns into a compact model-facing transcript."""
+
+        if not messages:
+            return ""
+        return "\n".join(
+            f"{message['role']}: {message['content']}" for message in messages
+        )
+
+    def _constraint_merge_key(self, constraint: Constraint) -> tuple[str, str]:
+        """Return the key used to de-duplicate constraints across dialog turns."""
+
+        return (
+            normalize_constraint_type(constraint.type),
+            constraint.value.strip().lower(),
+        )
+
+    def _merge_constraints(
+        self,
+        prior_constraints: Sequence[Constraint] | None,
+        extracted_constraints: Sequence[Constraint],
+    ) -> tuple[List[Constraint], List[str]]:
+        """Merge prior and newly extracted constraints with latest unique semantics."""
+
+        prior = list(prior_constraints or [])
+        extracted = list(extracted_constraints)
+        merged: List[Constraint] = []
+        seen: set[tuple[str, str]] = set()
+        for constraint in [*prior, *extracted]:
+            key = self._constraint_merge_key(constraint)
+            if key in seen:
+                continue
+            seen.add(key)
+            merged.append(constraint)
+
+        changes: List[str] = []
+        if prior:
+            changes.append(f"Retained {len(prior)} prior constraint(s).")
+        if extracted:
+            changes.append(f"Added or refreshed {len(extracted)} dialog constraint(s).")
+        if not prior and not extracted:
+            changes.append("No constraints were extracted from the dialog.")
+
+        return merged, changes
 
     def _parse_constraints_payload(self, payload: Any) -> List[Constraint]:
         """Convert model JSON into a list of constraints."""
@@ -102,7 +186,9 @@ class RequirementsAnalyst:
             elif {"type", "value"}.issubset(payload):
                 payload = [payload]
             else:
-                raise ValueError("Requirements payload did not contain a constraints array.")
+                raise ValueError(
+                    "Requirements payload did not contain a constraints array."
+                )
 
         if not isinstance(payload, list):
             raise ValueError("Requirements payload must be a list of constraints.")
@@ -114,7 +200,9 @@ class RequirementsAnalyst:
             raw_type = item.get("type")
             normalized_type = normalize_constraint_type(raw_type)
             if not normalized_type:
-                raise ValueError("Each extracted constraint must include a non-empty type.")
+                raise ValueError(
+                    "Each extracted constraint must include a non-empty type."
+                )
             if normalized_type not in self.constraint_types:
                 raise ValueError(
                     f"Unsupported constraint type '{raw_type}'. "
@@ -144,6 +232,23 @@ class RequirementsAnalyst:
             ),
         )
 
+    def _extract_clarification_questions(self, payload: Any) -> List[str]:
+        """Return optional clarification questions from a model payload."""
+
+        if not isinstance(payload, dict):
+            return []
+        raw_questions = payload.get("clarification_questions") or []
+        if isinstance(raw_questions, str):
+            raw_questions = [raw_questions]
+        if not isinstance(raw_questions, list):
+            return []
+        questions: List[str] = []
+        for raw_question in raw_questions:
+            question = str(raw_question or "").strip()
+            if question and question not in questions:
+                questions.append(question)
+        return questions
+
     def _detect_conflicts(self, constraints: List[Constraint]) -> List[str]:
         """Return conflicts where the same constraint type has divergent values."""
 
@@ -164,8 +269,14 @@ class RequirementsAnalyst:
     def _missing_core_inputs(self, constraints: List[Constraint]) -> List[str]:
         """Return missing core requirement categories."""
 
-        present = {normalize_constraint_type(constraint.type) for constraint in constraints}
-        return [constraint_type for constraint_type in CORE_CONSTRAINT_TYPES if constraint_type not in present]
+        present = {
+            normalize_constraint_type(constraint.type) for constraint in constraints
+        }
+        return [
+            constraint_type
+            for constraint_type in CORE_CONSTRAINT_TYPES
+            if constraint_type not in present
+        ]
 
     def _build_feedback(
         self,
@@ -173,6 +284,9 @@ class RequirementsAnalyst:
         *,
         fallback_used: bool,
         fallback_reason: str | None,
+        dialog_turn_count: int = 1,
+        clarification_questions: List[str] | None = None,
+        constraint_changes: List[str] | None = None,
     ) -> RequirementsFeedback:
         """Build structured advisory feedback from parsed constraints."""
 
@@ -192,6 +306,8 @@ class RequirementsAnalyst:
             suggestions.append(
                 "Resolve conflicting prompt instructions so the generator can pick a single interpretation."
             )
+        for question in clarification_questions or []:
+            suggestions.append(f"Clarify: {question}")
 
         return RequirementsFeedback(
             fallback_used=fallback_used,
@@ -200,6 +316,9 @@ class RequirementsAnalyst:
             conflicts=conflicts,
             suggestions=suggestions,
             available_constraint_types=list(self.constraint_types),
+            dialog_turn_count=max(dialog_turn_count, 1),
+            clarification_questions=list(clarification_questions or []),
+            constraint_changes=list(constraint_changes or []),
         )
 
     async def analyze(self, prompt: str) -> RequirementsAnalysis:
@@ -211,12 +330,18 @@ class RequirementsAnalyst:
 
         fallback_used = False
         fallback_reason: str | None = None
+        clarification_questions: List[str] = []
 
         try:
             constraints_data = extract_json_from_llm_response(response.content)
+            clarification_questions = self._extract_clarification_questions(
+                constraints_data
+            )
             constraints = self._parse_constraints_payload(constraints_data)
             if not constraints:
-                raise ValueError("No constraints were extracted from the model response.")
+                raise ValueError(
+                    "No constraints were extracted from the model response."
+                )
         except (ValueError, KeyError, TypeError) as exc:
             fallback_used = True
             fallback_reason = f"Requirements extraction fallback used: {exc}"
@@ -227,5 +352,75 @@ class RequirementsAnalyst:
             constraints,
             fallback_used=fallback_used,
             fallback_reason=fallback_reason,
+            clarification_questions=clarification_questions,
+        )
+        return RequirementsAnalysis(constraints=constraints, feedback=feedback)
+
+    async def analyze_dialog(
+        self,
+        messages: Sequence[Mapping[str, Any] | str | Any],
+        *,
+        existing_constraints: Sequence[Constraint] | None = None,
+    ) -> RequirementsAnalysis:
+        """Extract and refine constraints from a multi-turn requirements dialog."""
+
+        normalized_messages = self._normalize_dialog_messages(messages)
+        dialog_text = self._dialog_to_prompt(normalized_messages)
+        if not dialog_text:
+            return await self.analyze("")
+
+        prior_payload = [
+            constraint.model_dump(mode="json")
+            for constraint in (existing_constraints or [])
+        ]
+        user_message = HumanMessage(
+            content=(
+                "Requirements dialog transcript:\n"
+                f"{dialog_text}\n\n"
+                "Prior constraints already accepted by the generator:\n"
+                f"{json.dumps(prior_payload, indent=2)}\n\n"
+                "Return the full refined constraint set that should drive generation."
+            )
+        )
+        response = await self.llm.ainvoke(
+            [self._build_analysis_prompt(dialog_mode=True), user_message]
+        )
+
+        fallback_used = False
+        fallback_reason: str | None = None
+        clarification_questions: List[str] = []
+
+        try:
+            constraints_data = extract_json_from_llm_response(response.content)
+            clarification_questions = self._extract_clarification_questions(
+                constraints_data
+            )
+            parsed_constraints = self._parse_constraints_payload(constraints_data)
+            if not parsed_constraints and not existing_constraints:
+                raise ValueError(
+                    "No constraints were extracted from the model response."
+                )
+        except (ValueError, KeyError, TypeError) as exc:
+            fallback_used = True
+            fallback_reason = f"Requirements dialog fallback used: {exc}"
+            logger.warning(fallback_reason)
+            parsed_constraints = [self._fallback_constraint(dialog_text)]
+
+        constraints, changes = self._merge_constraints(
+            existing_constraints,
+            parsed_constraints,
+        )
+        if len(normalized_messages) > 1 and not clarification_questions:
+            changes.append(
+                f"Analyzed {len(normalized_messages)} dialog turn(s) for refinement."
+            )
+
+        feedback = self._build_feedback(
+            constraints,
+            fallback_used=fallback_used,
+            fallback_reason=fallback_reason,
+            dialog_turn_count=len(normalized_messages),
+            clarification_questions=clarification_questions,
+            constraint_changes=changes,
         )
         return RequirementsAnalysis(constraints=constraints, feedback=feedback)

@@ -2190,6 +2190,13 @@ def {safe_node_identifier}_node(state: WorkflowState) -> WorkflowState:
         if architecture_type == "router":
             route_specs = self._router_route_specs(nodes, workflow_design)
             routes = [name for name, _ in route_specs]
+            fallback_route_spec = (
+                "fallback",
+                "Handle general, unsupported, or unclear requests safely.",
+            )
+            if fallback_route_spec[0] not in routes:
+                route_specs = [*route_specs, fallback_route_spec]
+                routes = [name for name, _ in route_specs]
 
             # Generate router node
             router_code = RouterPattern.generate_router_node_code(
@@ -2430,6 +2437,8 @@ def {safe_node_identifier}_node(state: WorkflowState) -> WorkflowState:
             routes = [
                 name for name, _ in self._router_route_specs(nodes, workflow_design)
             ]
+            if "fallback" not in routes:
+                routes.append("fallback")
             graph_code = RouterPattern.generate_graph_code(routes)
         elif architecture_type == "subagents":
             subagents = [

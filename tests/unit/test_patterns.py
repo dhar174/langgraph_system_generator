@@ -48,6 +48,8 @@ class TestRouterPattern:
         assert '"search"' in code
         assert '"analyze"' in code
         assert '"summarize"' in code
+        assert '"fallback"' in code
+        assert "unsupported requests" in code
         assert "with_structured_output" in code
 
     def test_generate_router_node_code_simple(self):
@@ -80,6 +82,7 @@ class TestRouterPattern:
         assert "def route_decision(state: WorkflowState)" in code
         assert "StateGraph(WorkflowState)" in code
         assert 'workflow.add_node("router", router_node)' in code
+        assert 'workflow.add_node("fallback", fallback_node)' in code
         assert "add_conditional_edges" in code
         assert "InMemorySaver()" in code
 
@@ -291,7 +294,8 @@ class TestHybridPattern:
         assert 'workflow.add_edge("worker", "supervisor")' in code
         supervisor_code = HybridPattern.generate_supervisor_code([])
         assert '"worker": "worker"' in supervisor_code
-        assert 'Command[Literal["worker", "finish"]]' in supervisor_code
+        assert "next: List[Literal" in supervisor_code
+        assert "next_agents" in supervisor_code
         assert "researcher" not in code
         assert "reviewer" not in code
 
@@ -355,7 +359,9 @@ class TestDeepAgentsPattern:
 
     def test_example_live_mode_explains_missing_optional_sdk(self, monkeypatch):
         example_path = (
-            Path(__file__).resolve().parents[2] / "examples" / "deepagents_pattern_example.py"
+            Path(__file__).resolve().parents[2]
+            / "examples"
+            / "deepagents_pattern_example.py"
         )
         spec = importlib.util.spec_from_file_location(
             "deepagents_pattern_example_for_test",
@@ -1087,7 +1093,7 @@ def test_router_pattern_emits_typed_state_and_command_routing():
     assert "route_history" in state_code
     assert "user_id: str" in state_code
 
-    assert "Command" in router_code
+    assert "from langgraph.types import Command" not in router_code
     assert "RouteDecision" in router_code
     assert "with_structured_output" in router_code
     assert "temperature=0" in router_code
@@ -1101,7 +1107,7 @@ def test_router_pattern_emits_typed_state_and_command_routing():
     assert "add_conditional_edges" not in graph_code
 
 
-def test_subagents_pattern_emits_supervisor_command_flow_and_finish_node():
+def test_subagents_pattern_emits_send_fanout_flow_and_finish_node():
     state_code = SubagentsPattern.generate_state_code(
         additional_fields={"priority": "Task priority"}
     )
@@ -1123,7 +1129,8 @@ def test_subagents_pattern_emits_supervisor_command_flow_and_finish_node():
     assert "priority: str" in state_code
 
     assert "SupervisorDecision" in supervisor_code
-    assert "Command" in supervisor_code
+    assert "next: List[Literal" in supervisor_code
+    assert "next_agents" in supervisor_code
     assert "with_structured_output" in supervisor_code
     assert "MAX_ITERATIONS" in supervisor_code
     assert "ChatOpenAI(" in supervisor_code
@@ -1134,8 +1141,45 @@ def test_subagents_pattern_emits_supervisor_command_flow_and_finish_node():
     assert "lookup_context" in tool_agent_code
 
     assert "finish_node" in graph_code
+    assert "from langgraph.types import Send" in graph_code
+    assert "def supervisor_router" in graph_code
+    assert "return [Send(destination, state)" in graph_code
     assert "InMemorySaver" in graph_code
     assert 'workflow.add_edge("researcher", "supervisor")' in graph_code
+
+
+def test_router_pattern_emits_general_fallback_route_contract():
+    router_code = RouterPattern.generate_router_node_code(["weather"])
+    graph_code = RouterPattern.generate_graph_code(["weather"])
+    route_code = RouterPattern.generate_complete_example(["weather"])
+
+    assert 'route: Literal["weather", "fallback"]' in router_code
+    assert "Use the fallback route for greetings" in router_code
+    assert 'workflow.add_node("fallback", fallback_node)' in graph_code
+    assert 'return "fallback"' in graph_code
+    assert "def fallback_node" in route_code
+
+
+def test_critique_loop_can_compile_with_interrupt_before_revise():
+    code = CritiqueLoopPattern.generate_graph_code(require_human_approval=True)
+
+    assert 'interrupt_before=["revise"]' in code
+    assert "checkpointer=checkpointer" in code
+
+
+def test_subagents_pattern_emits_send_based_map_reduce_router():
+    state_code = SubagentsPattern.generate_state_code()
+    supervisor_code = SubagentsPattern.generate_supervisor_code(
+        ["researcher", "writer"]
+    )
+    graph_code = SubagentsPattern.generate_graph_code(["researcher", "writer"])
+
+    assert "next_agents: List[str]" in state_code
+    assert 'next: List[Literal["researcher", "writer", "FINISH"]]' in supervisor_code
+    assert '"next_agents": next_agents' in supervisor_code
+    assert "from langgraph.types import Send" in graph_code
+    assert "workflow.add_conditional_edges(" in graph_code
+    assert "return [Send(destination, state)" in graph_code
 
 
 def test_critique_loop_pattern_emits_structured_judging_and_finalize_path():
