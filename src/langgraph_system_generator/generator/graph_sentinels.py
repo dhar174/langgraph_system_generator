@@ -19,7 +19,11 @@ def normalize_sentinel_edges(result: GraphDesignResult) -> GraphDesignResult:
     """
 
     entry_point = result.entry_point.strip()
-    node_names = {node.name for node in result.nodes}
+    node_names = {node.name.strip() for node in result.nodes}
+    reserved_nodes = node_names & (START_TARGETS | END_TARGETS)
+    if reserved_nodes:
+        nodes = ", ".join(sorted(reserved_nodes))
+        raise ValueError(f"Sentinel node ids must not be declared: {nodes}.")
     normalized_edges: list[GraphEdgeSpec] = []
     start_targets: set[str] = set()
     terminal_sources: set[str] = set()
@@ -48,7 +52,9 @@ def normalize_sentinel_edges(result: GraphDesignResult) -> GraphDesignResult:
             terminal_sources.add(source)
             continue
 
-        normalized_edges.append(edge)
+        normalized_edges.append(
+            edge.model_copy(update={'source': source, 'target': target})
+        )
 
     if len(start_targets) > 1:
         targets = ", ".join(sorted(start_targets))
@@ -63,9 +69,9 @@ def normalize_sentinel_edges(result: GraphDesignResult) -> GraphDesignResult:
             )
         entry_point = start_target
 
-    outgoing_sources = {edge.source for edge in normalized_edges}
-    outgoing_sources.update(edge.source for edge in result.conditional_edges)
-    outgoing_sources.update(route.source for route in result.command_routes)
+    outgoing_sources = {edge.source.strip() for edge in normalized_edges}
+    outgoing_sources.update(edge.source.strip() for edge in result.conditional_edges)
+    outgoing_sources.update(route.source.strip() for route in result.command_routes)
     ambiguous_terminals = terminal_sources & outgoing_sources
     if ambiguous_terminals:
         nodes = ", ".join(sorted(ambiguous_terminals))
