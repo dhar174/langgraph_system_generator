@@ -9,8 +9,11 @@ import pytest
 from nbformat.v4 import new_code_cell, new_markdown_cell, new_notebook
 
 from langgraph_system_generator.qa.validators import (
+    CanonicalGraphContractRule,
     CanonicalSectionOrderRule,
+    ChatbotNotebookContractRule,
     DomainArchitectureAlignmentRule,
+    GeneratedLLMConfigRule,
     GraphStructureRule,
     InvocationConfigRule,
     LangGraphTopologyRule,
@@ -89,6 +92,44 @@ def test_validate_json_structure_valid(tmp_notebook_path: Path, valid_notebook):
     assert report.passed is True
     assert report.rule_id == "json_structure"
     assert report.category == "serialization"
+
+
+def test_validate_notebook_accepts_in_memory_notebook(valid_notebook, monkeypatch):
+    """In-memory validation should not require loading a notebook from disk."""
+
+    def fail_disk_load(*_args, **_kwargs):
+        raise AssertionError("disk-backed notebook loading should not be used")
+
+    validator = NotebookValidator()
+    monkeypatch.setattr(validator, "_load_notebook", fail_disk_load)
+
+    reports = validator.validate_notebook(valid_notebook, source="<unit-test>")
+
+    assert reports
+    assert all(report.passed for report in reports)
+    assert _report_by_name(reports, "JSON Validity").evidence["path"] == "<unit-test>"
+
+
+def test_validate_all_loads_path_once(
+    tmp_notebook_path: Path, valid_notebook, monkeypatch
+):
+    """Path-backed full validation should reuse the loaded notebook object."""
+
+    _write_notebook(tmp_notebook_path, valid_notebook)
+    validator = NotebookValidator()
+    original_load = validator._load_notebook
+    calls = []
+
+    def counted_load(path):
+        calls.append(path)
+        return original_load(path)
+
+    monkeypatch.setattr(validator, "_load_notebook", counted_load)
+
+    reports = validator.validate_all(tmp_notebook_path)
+
+    assert _report_by_name(reports, "JSON Validity").passed is True
+    assert len(calls) == 1
 
 
 def test_validate_json_structure_missing_file(tmp_path: Path):
@@ -375,6 +416,199 @@ graph = workflow.compile()""",
     )
 
 
+def test_canonical_graph_contract_rule_detects_schema_code_drift(
+    tmp_notebook_path: Path,
+):
+    notebook = new_notebook()
+    notebook.cells.append(
+        new_code_cell(
+            """from langgraph.graph import END, START, StateGraph
+
+class WorkflowState(dict):
+    pass
+
+def router_node(state: WorkflowState) -> dict:
+    return state
+
+def persona_specialist_node(state: WorkflowState) -> dict:
+    return state
+
+def historical_verifier_node(state: WorkflowState) -> dict:
+    return state
+
+def revision_specialist_node(state: WorkflowState) -> dict:
+    return state
+
+def finish_node(state: WorkflowState) -> dict:
+    return state
+
+CANONICAL_GRAPH_SPEC = {
+    "nodes": [
+        {"name": "router"},
+        {"name": "persona_specialist"},
+        {"name": "historical_verifier"},
+        {"name": "revision_specialist"},
+        {"name": "finish"},
+    ],
+    "edges": [
+        {"from": "router", "to": "persona_specialist"},
+        {"from": "persona_specialist", "to": "historical_verifier"},
+        {"from": "revision_specialist", "to": "historical_verifier"},
+    ],
+    "conditional_edges": [
+        {
+            "from": "historical_verifier",
+            "branches": {"revise": "revision_specialist", "approved": "finish"},
+            "guarded_cycle": True,
+        }
+    ],
+    "entry_point": "router",
+    "terminal_nodes": ["finish"],
+    "compiled_graph_variable": "graph",
+}
+
+workflow = StateGraph(WorkflowState)
+workflow.add_node("router", router_node)
+workflow.add_node("persona_specialist", persona_specialist_node)
+workflow.add_node("historical_verifier", historical_verifier_node)
+workflow.add_node("revision_specialist", revision_specialist_node)
+workflow.add_node("finish", finish_node)
+workflow.add_edge(START, "router")
+workflow.add_edge("router", "persona_specialist")
+workflow.add_edge("persona_specialist", "finish")
+workflow.add_edge("finish", END)
+graph = workflow.compile()""",
+            metadata={"section": "graph"},
+        )
+    )
+    _write_notebook(tmp_notebook_path, notebook)
+
+    reports = NotebookValidator().validate_all(tmp_notebook_path)
+    report = _report_by_name(reports, "Canonical Graph Contract")
+    issue_codes = {issue["code"] for issue in report.evidence["issues"]}
+
+    assert report.passed is False
+    assert "missing_edges" in issue_codes
+    assert "extra_edges" in issue_codes
+    assert "missing_conditional_routes" in issue_codes
+
+
+def test_canonical_graph_contract_rule_accepts_matching_contract(
+    tmp_notebook_path: Path,
+):
+    notebook = new_notebook()
+    notebook.cells.append(
+        new_code_cell(
+            """from langgraph.graph import END, START, StateGraph
+
+class WorkflowState(dict):
+    pass
+
+def router_node(state: WorkflowState) -> dict:
+    return state
+
+def finish_node(state: WorkflowState) -> dict:
+    return state
+
+CANONICAL_GRAPH_SPEC = {
+    "nodes": [{"name": "router"}, {"name": "finish"}],
+    "edges": [{"from": "router", "to": "finish"}],
+    "conditional_edges": [],
+    "command_routes": [],
+    "entry_point": "router",
+    "terminal_nodes": ["finish"],
+    "compiled_graph_variable": "graph",
+}
+
+workflow = StateGraph(WorkflowState)
+workflow.add_node("router", router_node)
+workflow.add_node("finish", finish_node)
+workflow.add_edge(START, "router")
+workflow.add_edge("router", "finish")
+workflow.add_edge("finish", END)
+graph = workflow.compile()""",
+            metadata={"section": "graph"},
+        )
+    )
+    _write_notebook(tmp_notebook_path, notebook)
+
+    reports = NotebookValidator().validate_all(tmp_notebook_path)
+    report = _report_by_name(reports, "Canonical Graph Contract")
+
+    assert report.passed is True
+
+
+def test_generated_llm_config_rule_rejects_hardcoded_node_constructor(
+    tmp_notebook_path: Path,
+):
+    notebook = new_notebook()
+    notebook.cells.extend(
+        [
+            new_code_cell(
+                """from langchain_openai import ChatOpenAI
+MODEL = "gpt-5.4-mini"
+TEMPERATURE = 0.2
+MAX_TOKENS = 1200
+API_BASE = "https://example.test/v1"
+
+def make_llm(*, model=MODEL, temperature=TEMPERATURE, max_tokens=MAX_TOKENS):
+    kwargs = {"model": model, "temperature": temperature}
+    if API_BASE:
+        kwargs["base_url"] = API_BASE
+    if max_tokens is not None:
+        kwargs["max_tokens"] = max_tokens
+    return ChatOpenAI(**kwargs)""",
+                metadata={"section": "config"},
+            ),
+            new_code_cell(
+                """from langchain_openai import ChatOpenAI
+
+def specialist_node(state):
+    llm = ChatOpenAI(model="gpt-5.4-mini", temperature=0)
+    return {"messages": [llm.invoke([])]}""",
+                metadata={"section": "nodes"},
+            ),
+        ]
+    )
+    _write_notebook(tmp_notebook_path, notebook)
+
+    reports = NotebookValidator().validate_all(tmp_notebook_path)
+    report = _report_by_name(reports, "Generated LLM Config")
+
+    assert report.passed is False
+    assert report.evidence["hardcoded_constructors"]
+
+
+def test_generated_llm_config_rule_accepts_notebook_helper_nodes(
+    tmp_notebook_path: Path,
+):
+    notebook = new_notebook()
+    notebook.cells.extend(
+        [
+            new_code_cell(
+                """from langchain_openai import ChatOpenAI
+MODEL = "gpt-5.4-mini"
+
+def make_llm(*, model=MODEL, temperature=0.0, max_tokens=None):
+    return ChatOpenAI(model=model, temperature=temperature)""",
+                metadata={"section": "config"},
+            ),
+            new_code_cell(
+                """def specialist_node(state):
+    llm = make_llm(temperature=0.2, max_tokens=1200)
+    return {"messages": [llm.invoke([])]}""",
+                metadata={"section": "nodes"},
+            ),
+        ]
+    )
+    _write_notebook(tmp_notebook_path, notebook)
+
+    reports = NotebookValidator().validate_all(tmp_notebook_path)
+    report = _report_by_name(reports, "Generated LLM Config")
+
+    assert report.passed is True
+
+
 def test_state_reducer_semantics_rule_rejects_duplicate_fields(
     tmp_notebook_path: Path,
 ):
@@ -549,6 +783,111 @@ workflow.add_node("router", router_node)
     assert report.passed is True
     assert "route" in report.evidence["writer_map"]
     assert "copy_state" not in report.evidence["writer_map"].get("route", [])
+
+
+def test_state_reducer_semantics_rule_flags_declared_memory_field_without_writer(
+    tmp_notebook_path: Path,
+):
+    notebook = new_notebook()
+    notebook.cells.append(
+        new_code_cell(
+            """from langgraph.graph import MessagesState, StateGraph
+
+class WorkflowState(MessagesState):
+    memory_summary: str
+    persona_profile: dict
+    final_response: str
+
+def persona_node(state: WorkflowState) -> dict:
+    updates = {}
+    updates["persona_profile"] = {"name": "demo"}
+    updates["final_response"] = "Good day."
+    return updates
+
+workflow = StateGraph(WorkflowState)
+workflow.add_node("persona", persona_node)
+""",
+            metadata={"section": "state"},
+        )
+    )
+    _write_notebook(tmp_notebook_path, notebook)
+
+    reports = NotebookValidator().validate_all(tmp_notebook_path)
+    report = _report_by_name(reports, "State Reducer Semantics")
+    issue_codes = {issue["code"] for issue in report.evidence["issues"]}
+
+    assert report.passed is False
+    assert "declared_memory_field_without_writer" in issue_codes
+    assert report.evidence["writer_map"]["persona_profile"] == ["persona_node"]
+
+
+def test_state_reducer_semantics_rule_tracks_update_methods_and_command_alias(
+    tmp_notebook_path: Path,
+):
+    notebook = new_notebook()
+    notebook.cells.append(
+        new_code_cell(
+            """from langgraph.graph import MessagesState, StateGraph
+from langgraph.types import Command as GraphCommand
+
+class WorkflowState(MessagesState):
+    memory_summary: str
+    persona_profile: dict
+
+def persona_node(state: WorkflowState):
+    updates = {}
+    updates.update({"memory_summary": "remembered"})
+    updates.setdefault("persona_profile", {"name": "demo"})
+    return GraphCommand(update=updates, goto="done")
+
+workflow = StateGraph(WorkflowState)
+workflow.add_node("persona", persona_node)
+""",
+            metadata={"section": "state"},
+        )
+    )
+    _write_notebook(tmp_notebook_path, notebook)
+
+    reports = NotebookValidator().validate_all(tmp_notebook_path)
+    report = _report_by_name(reports, "State Reducer Semantics")
+
+    assert report.passed is True
+    assert report.evidence["writer_map"]["memory_summary"] == ["persona_node"]
+    assert report.evidence["writer_map"]["persona_profile"] == ["persona_node"]
+
+
+def test_state_reducer_semantics_rule_does_not_treat_custom_command_as_langgraph(
+    tmp_notebook_path: Path,
+):
+    notebook = new_notebook()
+    notebook.cells.append(
+        new_code_cell(
+            """from langgraph.graph import MessagesState, StateGraph
+
+class WorkflowState(MessagesState):
+    memory_summary: str
+
+class AuditCommand:
+    def __init__(self, update: dict):
+        self.update = update
+
+def memory_node(state: WorkflowState):
+    return AuditCommand(update={"memory_summary": "not a LangGraph Command"})
+
+workflow = StateGraph(WorkflowState)
+workflow.add_node("memory", memory_node)
+""",
+            metadata={"section": "state"},
+        )
+    )
+    _write_notebook(tmp_notebook_path, notebook)
+
+    reports = NotebookValidator().validate_all(tmp_notebook_path)
+    report = _report_by_name(reports, "State Reducer Semantics")
+    issue_codes = {issue["code"] for issue in report.evidence["issues"]}
+
+    assert report.passed is False
+    assert "declared_memory_field_without_writer" in issue_codes
 
 
 def test_tool_reachability_rule_flags_unbound_placeholder_tools(
@@ -738,6 +1077,74 @@ workflow.add_node("specialist_1", specialist_1_node)
     assert report.evidence["generic_nodes"]
 
 
+def test_domain_architecture_alignment_rule_prioritizes_chatbot_domain_cues(
+    tmp_notebook_path: Path,
+):
+    notebook = new_notebook()
+    notebook.cells.extend(
+        [
+            new_markdown_cell(
+                "18th century chatbot persona workflow with schema validation notes."
+            ),
+            new_code_cell(
+                """from langgraph.graph import StateGraph
+
+def persona_node(state):
+    return {"final_response": "Good day."}
+
+workflow = StateGraph(dict)
+workflow.add_node("persona", persona_node)
+""",
+                metadata={"section": "graph"},
+            ),
+        ]
+    )
+    _write_notebook(tmp_notebook_path, notebook)
+
+    report = DomainArchitectureAlignmentRule().validate(
+        NotebookValidator()._context_from_path(tmp_notebook_path)
+    )
+
+    assert report is not None
+    assert report.passed is True
+    assert {"chatbot", "historical", "persona"}.issubset(
+        set(report.evidence["matched_domains"])
+    )
+    assert "data" not in report.evidence["matched_domains"]
+
+
+def test_domain_architecture_alignment_rule_rejects_generic_chatbot_workers(
+    tmp_notebook_path: Path,
+):
+    notebook = new_notebook()
+    notebook.cells.extend(
+        [
+            new_markdown_cell("18th century chatbot persona with memory."),
+            new_code_cell(
+                """from langgraph.graph import StateGraph
+
+def data_processor_node(state):
+    return {"final_response": "processed"}
+
+workflow = StateGraph(dict)
+workflow.add_node("data_processor", data_processor_node)
+""",
+                metadata={"section": "graph"},
+            ),
+        ]
+    )
+    _write_notebook(tmp_notebook_path, notebook)
+
+    report = DomainArchitectureAlignmentRule().validate(
+        NotebookValidator()._context_from_path(tmp_notebook_path)
+    )
+
+    assert report is not None
+    assert report.passed is False
+    assert "chatbot" in report.evidence["matched_domains"]
+    assert report.evidence["generic_nodes"][0]["identifier"] == "data_processor"
+
+
 def test_tool_reachability_rule_requires_executor_for_bound_tools(
     tmp_notebook_path: Path,
 ):
@@ -766,6 +1173,31 @@ model_with_tools = model.bind_tools(tools)
     assert report.evidence["advisories"][0]["code"] == "bound_tool_without_executor"
 
 
+def test_tool_reachability_rule_flags_undecorated_declared_tools(
+    tmp_notebook_path: Path,
+):
+    notebook = new_notebook()
+    notebook.cells.append(
+        new_code_cell(
+            """def lookup_context(query: str) -> str:
+    \"\"\"Lookup context as a planned tool.\"\"\"
+    return query
+
+tools = [lookup_context]
+""",
+            metadata={"section": "tools"},
+        )
+    )
+    _write_notebook(tmp_notebook_path, notebook)
+
+    reports = NotebookValidator().validate_all(tmp_notebook_path)
+    report = _report_by_name(reports, "Tool Reachability")
+    issue_codes = {issue["code"] for issue in report.evidence["advisories"]}
+
+    assert report.passed is False
+    assert "undecorated_tool" in issue_codes
+
+
 def test_tool_reachability_rule_accepts_tool_node_executor(tmp_notebook_path: Path):
     notebook = new_notebook()
     notebook.cells.append(
@@ -779,7 +1211,8 @@ def lookup_context(query: str) -> str:
     return query
 
 tools = [lookup_context]
-tool_node = ToolNode(tools)
+tool_node = ToolNode(tools, handle_tool_errors=True)
+workflow.add_node("tools", tool_node)
 """,
             metadata={"section": "tools"},
         )
@@ -790,6 +1223,419 @@ tool_node = ToolNode(tools)
     report = _report_by_name(reports, "Tool Reachability")
 
     assert report.passed is True
+
+
+def test_tool_reachability_rule_rejects_unwired_tool_node_executor(
+    tmp_notebook_path: Path,
+):
+    notebook = new_notebook()
+    notebook.cells.append(
+        new_code_cell(
+            """from langchain_core.tools import tool
+from langgraph.prebuilt import ToolNode
+
+@tool
+def lookup_context(query: str) -> str:
+    \"\"\"Lookup context.\"\"\"
+    return query
+
+tools = [lookup_context]
+tool_node = ToolNode(tools, handle_tool_errors=True)
+""",
+            metadata={"section": "tools"},
+        )
+    )
+    _write_notebook(tmp_notebook_path, notebook)
+
+    reports = NotebookValidator().validate_all(tmp_notebook_path)
+    report = _report_by_name(reports, "Tool Reachability")
+    issue_codes = {issue["code"] for issue in report.evidence["advisories"]}
+
+    assert report.passed is False
+    assert "unwired_tool_node_executor" in issue_codes
+
+
+def test_tool_reachability_rule_accepts_create_agent_executor(
+    tmp_notebook_path: Path,
+):
+    notebook = new_notebook()
+    notebook.cells.append(
+        new_code_cell(
+            """from langchain_core.tools import tool
+from langchain.agents import create_agent
+
+@tool
+def lookup_context(query: str) -> str:
+    \"\"\"Lookup context.\"\"\"
+    return query
+
+tools = [lookup_context]
+agent = create_agent(model="openai:gpt-5.4-mini", tools=tools)
+""",
+            metadata={"section": "tools"},
+        )
+    )
+    _write_notebook(tmp_notebook_path, notebook)
+
+    reports = NotebookValidator().validate_all(tmp_notebook_path)
+    report = _report_by_name(reports, "Tool Reachability")
+
+    assert report.passed is True
+
+
+def test_tool_reachability_rule_warns_on_deprecated_create_react_agent(
+    tmp_notebook_path: Path,
+):
+    notebook = new_notebook()
+    notebook.cells.append(
+        new_code_cell(
+            """from langchain_core.tools import tool
+from langgraph.prebuilt import create_react_agent
+
+@tool
+def lookup_context(query: str) -> str:
+    \"\"\"Lookup context.\"\"\"
+    return query
+
+tools = [lookup_context]
+agent = create_react_agent(model="openai:gpt-5.4-mini", tools=tools)
+""",
+            metadata={"section": "tools"},
+        )
+    )
+    _write_notebook(tmp_notebook_path, notebook)
+
+    reports = NotebookValidator().validate_all(tmp_notebook_path)
+    report = _report_by_name(reports, "Tool Reachability")
+    issue_codes = {issue["code"] for issue in report.evidence["advisories"]}
+
+    assert report.passed is False
+    assert "deprecated_create_react_agent" in issue_codes
+
+
+def test_chatbot_contract_rule_flags_missing_chat_loop_and_character_gate(
+    tmp_notebook_path: Path,
+):
+    notebook = new_notebook()
+    notebook.cells.extend(
+        [
+            new_markdown_cell(
+                "Create a chatbot character with male and female persona selection, memory, and verification."
+            ),
+            new_code_cell(
+                """from langgraph.graph import StateGraph
+from langgraph.checkpoint.memory import InMemorySaver
+
+workflow = StateGraph(dict)
+memory = InMemorySaver()
+graph = workflow.compile(checkpointer=memory)
+""",
+                metadata={"section": "graph"},
+            ),
+        ]
+    )
+    _write_notebook(tmp_notebook_path, notebook)
+
+    report = ChatbotNotebookContractRule().validate(
+        NotebookValidator()._context_from_path(tmp_notebook_path)
+    )
+    assert report is not None
+    issue_codes = {issue["code"] for issue in report.evidence["issues"]}
+
+    assert report.passed is False
+    assert "missing_chat_loop" in issue_codes
+    assert "missing_character_gate" in issue_codes
+    assert "missing_structured_verifier_state" in issue_codes
+
+
+def test_chatbot_contract_rule_accepts_current_chat_loop_pattern(
+    tmp_notebook_path: Path,
+):
+    notebook = new_notebook()
+    notebook.cells.extend(
+        [
+            new_markdown_cell(
+                "Interactive chatbot character with male/female persona, memory, verification, and revision."
+            ),
+            new_code_cell(
+                """from langchain_core.messages import HumanMessage
+from langgraph.graph import StateGraph
+from langgraph.checkpoint.memory import InMemorySaver
+
+THREAD_ID = "lnf-demo-thread"
+CHARACTER_GENDER = None
+MAX_ITERATIONS = 3
+SHOW_UPDATES = False
+RUN_INTERACTIVE_LOOP = False
+
+workflow = StateGraph(dict)
+checkpointer = InMemorySaver()
+graph = workflow.compile(checkpointer=checkpointer)
+
+needs_revision = False
+historical_risk_notes = ""
+realism_notes = ""
+revision_instructions = ""
+revision_count = 0
+
+def select_character_gender(value: str | None = CHARACTER_GENDER) -> str:
+    return value or "female"
+
+def chat_once(user_text: str, *, thread_id: str = THREAD_ID) -> dict:
+    config = {"configurable": {"thread_id": thread_id}, "recursion_limit": 25}
+    for state in graph.stream(
+        {"messages": [HumanMessage(content=user_text)]},
+        config,
+        stream_mode="values",
+    ):
+        latest_state = state
+    final_state = graph.get_state(config).values
+    return final_state or latest_state
+
+def run_chat_loop() -> None:
+    select_character_gender()
+    while True:
+        user_input = input("Enter next message (or type 'quit' to exit): ")
+        if user_input.lower() in {"quit", "exit", "q"}:
+            break
+        chat_once(user_input)
+
+if RUN_INTERACTIVE_LOOP:
+    run_chat_loop()
+""",
+                metadata={"section": "execution"},
+            ),
+        ]
+    )
+    _write_notebook(tmp_notebook_path, notebook)
+
+    report = ChatbotNotebookContractRule().validate(
+        NotebookValidator()._context_from_path(tmp_notebook_path)
+    )
+
+    assert report is not None
+    assert report.passed is True
+
+
+def test_chatbot_contract_rule_accepts_values_stream_variable_pattern(
+    tmp_notebook_path: Path,
+):
+    notebook = new_notebook()
+    notebook.cells.extend(
+        [
+            new_markdown_cell(
+                "Interactive chatbot character with male/female persona, memory, verification, and revision."
+            ),
+            new_code_cell(
+                """from langchain_core.messages import HumanMessage
+from langgraph.graph import StateGraph
+from langgraph.checkpoint.memory import InMemorySaver
+
+THREAD_ID = "lnf-demo-thread"
+CHARACTER_GENDER = None
+MAX_ITERATIONS = 3
+SHOW_UPDATES = False
+RUN_INTERACTIVE_LOOP = False
+
+workflow = StateGraph(dict)
+checkpointer = InMemorySaver()
+graph = workflow.compile(checkpointer=checkpointer)
+
+needs_revision = False
+historical_risk_notes = ""
+realism_notes = ""
+revision_instructions = ""
+revision_count = 0
+
+def select_character_gender(value: str | None = CHARACTER_GENDER) -> str:
+    return value or "female"
+
+def chat_once(
+    user_text: str,
+    *,
+    thread_id: str = THREAD_ID,
+    show_updates: bool = SHOW_UPDATES,
+) -> dict:
+    config = {"configurable": {"thread_id": thread_id}, "recursion_limit": 25}
+    stream_mode = "updates" if show_updates else "values"
+    for state in graph.stream(
+        {"messages": [HumanMessage(content=user_text)]},
+        config,
+        stream_mode=stream_mode,
+    ):
+        latest_state = state
+    final_state = graph.get_state(config).values
+    return final_state or latest_state
+
+def run_chat_loop() -> None:
+    select_character_gender()
+    while True:
+        user_input = input("Enter next message (or type 'quit' to exit): ")
+        if user_input.lower() in {"quit", "exit", "q"}:
+            break
+        chat_once(user_input)
+
+if RUN_INTERACTIVE_LOOP:
+    run_chat_loop()
+""",
+                metadata={"section": "execution"},
+            ),
+        ]
+    )
+    _write_notebook(tmp_notebook_path, notebook)
+
+    report = ChatbotNotebookContractRule().validate(
+        NotebookValidator()._context_from_path(tmp_notebook_path)
+    )
+
+    assert report is not None
+    assert report.passed is True
+
+
+def test_chatbot_contract_rule_flags_blocking_default_interactive_loop(
+    tmp_notebook_path: Path,
+):
+    notebook = new_notebook()
+    notebook.cells.extend(
+        [
+            new_markdown_cell(
+                "Interactive chatbot character with male/female persona, memory, verification, and revision."
+            ),
+            new_code_cell(
+                """from langchain_core.messages import HumanMessage
+from langgraph.graph import StateGraph
+from langgraph.checkpoint.memory import InMemorySaver
+
+THREAD_ID = "lnf-demo-thread"
+CHARACTER_GENDER = None
+MAX_ITERATIONS = 3
+SHOW_UPDATES = False
+
+workflow = StateGraph(dict)
+checkpointer = InMemorySaver()
+graph = workflow.compile(checkpointer=checkpointer)
+
+needs_revision = False
+revision_instructions = ""
+revision_count = 0
+
+def select_character_gender(value: str | None = CHARACTER_GENDER) -> str:
+    return value or "female"
+
+def chat_once(user_text: str, *, thread_id: str = THREAD_ID) -> dict:
+    config = {"configurable": {"thread_id": thread_id}, "recursion_limit": 25}
+    latest_state = {}
+    for state in graph.stream(
+        {"messages": [HumanMessage(content=user_text)]},
+        config,
+        stream_mode="values",
+    ):
+        latest_state = state
+    final_state = graph.get_state(config).values
+    return final_state or latest_state
+
+def run_chat_loop() -> None:
+    select_character_gender()
+    while True:
+        user_input = input("Enter next message (or type 'quit' to exit): ")
+        if user_input.lower() in {"quit", "exit", "q"}:
+            break
+        chat_once(user_input)
+
+run_chat_loop()
+""",
+                metadata={"section": "execution"},
+            ),
+        ]
+    )
+    _write_notebook(tmp_notebook_path, notebook)
+
+    report = ChatbotNotebookContractRule().validate(
+        NotebookValidator()._context_from_path(tmp_notebook_path)
+    )
+    issue_codes = {issue["code"] for issue in report.evidence["issues"]}
+
+    assert report is not None
+    assert report.passed is False
+    assert "blocking_default_chat_loop" in issue_codes
+
+
+def test_chatbot_contract_rule_flags_terminal_verifier_reviser_prose_nodes(
+    tmp_notebook_path: Path,
+):
+    notebook = new_notebook()
+    notebook.cells.extend(
+        [
+            new_markdown_cell(
+                "Interactive chatbot with historical verifier and reviser."
+            ),
+            new_code_cell(
+                """from langchain_core.messages import HumanMessage
+from langgraph.graph import END, StateGraph
+from langgraph.checkpoint.memory import InMemorySaver
+
+THREAD_ID = "lnf-demo-thread"
+CHARACTER_GENDER = None
+MAX_ITERATIONS = 3
+RUN_INTERACTIVE_LOOP = False
+needs_revision = False
+historical_risk_notes = ""
+realism_notes = ""
+revision_instructions = ""
+revision_count = 0
+
+def select_character_gender(value: str | None = CHARACTER_GENDER) -> str:
+    return value or "female"
+
+def historical_verifier_node(state):
+    return {"needs_revision": False, "revision_instructions": ""}
+
+def revision_specialist_node(state):
+    return {"revision_count": state.get("revision_count", 0) + 1}
+
+def chat_once(user_text: str, *, thread_id: str = THREAD_ID) -> dict:
+    config = {"configurable": {"thread_id": thread_id}, "recursion_limit": 25}
+    latest_state = {}
+    for state in graph.stream(
+        {"messages": [HumanMessage(content=user_text)]},
+        config,
+        stream_mode="values",
+    ):
+        latest_state = state
+    final_state = graph.get_state(config).values
+    return final_state or latest_state
+
+def run_chat_loop() -> None:
+    while True:
+        user_input = input("Enter next message (or type 'quit' to exit): ")
+        if user_input.lower() in {"quit", "exit", "q"}:
+            break
+        chat_once(user_input)
+
+workflow = StateGraph(dict)
+workflow.add_node("historical_verifier", historical_verifier_node)
+workflow.add_node("revision_specialist", revision_specialist_node)
+workflow.add_edge("historical_verifier", END)
+checkpointer = InMemorySaver()
+graph = workflow.compile(checkpointer=checkpointer)
+
+if RUN_INTERACTIVE_LOOP:
+    run_chat_loop()
+""",
+                metadata={"section": "graph"},
+            ),
+        ]
+    )
+    _write_notebook(tmp_notebook_path, notebook)
+
+    report = ChatbotNotebookContractRule().validate(
+        NotebookValidator()._context_from_path(tmp_notebook_path)
+    )
+    issue_codes = {issue["code"] for issue in report.evidence["issues"]}
+
+    assert report is not None
+    assert report.passed is False
+    assert "missing_executable_verifier_loop" in issue_codes
 
 
 def test_invocation_config_rule_requires_thread_id_and_recursion_limit(
@@ -948,8 +1794,10 @@ def test_single_check_helpers_use_registry_backed_rules(
             CustomGraphStructureRule(),
             CanonicalSectionOrderRule(),
             LangGraphTopologyRule(),
+            CanonicalGraphContractRule(),
             StateReducerSemanticsRule(),
             ToolReachabilityRule(),
+            GeneratedLLMConfigRule(),
             InvocationConfigRule(),
         ]
     )

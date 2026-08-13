@@ -38,23 +38,24 @@ flowchart LR
 
 ## State Semantics
 
-- Merge/accumulate: `constraints`, `docs_context`.
+- Bounded latest-unique accumulation: `constraints`, `docs_context`.
 - Replace: `generated_cells`, `qa_reports`.
-- Append history: `qa_history`.
+- Bounded append history: `qa_history`, preserving current-attempt blocking
+  failures.
 - Advisory single-writer feedback: `requirements_feedback`,
   `architecture_feedback`, `graph_design_feedback`, `tool_planning_feedback`,
   `notebook_composition_feedback`, `notebook_dependency_plan`,
   `qa_repair_feedback`.
 - Increment: `repair_attempts`.
 - Finalize: `artifacts_manifest`, `generation_complete`, `error_message`.
-- Inputs/config: `user_prompt`, `uploaded_files`, `generation_config`,
-  `generation_mode`.
+- Inputs/config: `user_prompt`, optional `requirements_messages`,
+  `uploaded_files`, `generation_config`, `generation_mode`.
 
 ## State Write Ledger
 
 | State field(s) | Written by | Semantics |
 | --- | --- | --- |
-| `constraints`, `requirements_feedback` | `intake_node` | Extracted requirements plus advisory intake feedback. |
+| `constraints`, `requirements_feedback` | `intake_node` | Extracted requirements plus advisory intake feedback; optional `requirements_messages` lets live intake refine constraints across dialog turns. |
 | `docs_context` | `rag_retrieval_node` | Retrieved snippets; falls back to `[]` when RAG fails. |
 | `selected_patterns`, `architecture_type`, `architecture_justification`, `architecture_feedback` | `architecture_selection_node` | Single-writer architecture decision, rationale, and selector feedback. |
 | `workflow_design`, `graph_design_feedback`, `graph_exports`, `notebook_plan` | `graph_design_node` | Typed graph design unpacked into backward-compatible workflow payload plus Mermaid/schema exports. |

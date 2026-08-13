@@ -24,6 +24,8 @@ Those generators now emit LangGraph code in the current docs-aligned style:
 ### RouterPattern
 
 Use when a request should be handled by exactly one specialist.
+Generated router snippets include a `fallback` route by default for greetings,
+generic chat, unsupported requests, and unclear routing decisions.
 
 ```python
 from langgraph_system_generator.patterns import RouterPattern
@@ -41,6 +43,9 @@ code = RouterPattern.generate_complete_example(
 ### SubagentsPattern
 
 Use when a supervisor must coordinate multiple specialists over several steps.
+Generated supervisor graphs support Send-based fan-out when multiple
+specialists can work independently, while `task_results` remains reducer-backed
+for map-reduce style accumulation.
 
 ```python
 from langgraph_system_generator.patterns import SubagentsPattern
@@ -95,6 +100,11 @@ code = CritiqueLoopPattern.generate_complete_example(
 In human-feedback mode the generated example includes a `collect_human_feedback`
 callback that you can replace with a UI approval flow, moderation queue, or
 external review service.
+
+For notebook or application flows that should pause before revision, pass
+`require_human_approval=True` to `generate_graph_code(...)` or
+`generate_complete_example(...)`; the generated graph compiles with
+`interrupt_before=["revise"]` and an in-memory checkpointer.
 
 Only inject trusted application callbacks into workflow state. Do not source
 the human feedback handler from user input, persisted checkpoints, or other
@@ -309,6 +319,8 @@ class RouterPattern:
         routes: List[str],
         llm_model: str = "gpt-5-mini",
         use_structured_output: bool = True,
+        include_fallback: bool = True,
+        fallback_route: str = "fallback",
     ) -> str
     
     @staticmethod
@@ -323,12 +335,16 @@ class RouterPattern:
         routes: List[str],
         entry_point: str = "router",
         use_conditional_edges: bool = True,
+        include_fallback: bool = True,
+        fallback_route: str = "fallback",
     ) -> str
     
     @staticmethod
     def generate_complete_example(
         routes: List[str],
         route_purposes: Optional[Dict[str, str]] = None,
+        include_fallback: bool = True,
+        fallback_route: str = "fallback",
     ) -> str
 ```
 
@@ -415,6 +431,7 @@ class CritiqueLoopPattern:
         max_revisions: int = 3,
         min_quality_score: float = 0.8,
         failure_conditions: Optional[Dict[str, Any]] = None,
+        require_human_approval: bool = False,
     ) -> str
 
     @staticmethod
@@ -427,6 +444,7 @@ class CritiqueLoopPattern:
         use_structured_output: bool = True,
         feedback_source: str = "automated",
         failure_conditions: Optional[Dict[str, Any]] = None,
+        require_human_approval: bool = False,
     ) -> str
 ```
 

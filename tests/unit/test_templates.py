@@ -36,3 +36,14 @@ def test_configuration_cell_includes_keys_and_model():
     assert "ANTHROPIC_API_KEY" in code
     assert "getpass" in code
     assert f'MODEL = os.getenv("MODEL", {repr("gpt-test")})' in code
+
+
+def test_build_graph_cells_uses_create_agent_system_prompt():
+    """Ensure the prebuilt agent scaffold uses the modern create_agent API."""
+    cells = templates.build_graph_cells()
+
+    code = cells[1].content
+    assert "from langchain.agents import create_agent" in code
+    assert "router = create_agent(" in code
+    assert "system_prompt=" in code
+    assert "            prompt=" not in code

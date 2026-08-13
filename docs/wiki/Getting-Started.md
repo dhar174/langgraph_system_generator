@@ -136,7 +136,8 @@ This writes a subset of the following artifacts, depending on requested formats:
 - `notebook_bundle.zip`: Bundle with notebook, requested exports, and JSON data.
 - `notebook_plan.json`: Notebook structure plan.
 - `generated_cells.json`: Raw generated cell specs.
-- `manifest.json`: Metadata, warning entries, and structured feedback.
+- `manifest.json`: Metadata, warning entries, structured feedback, true
+  notebook cell counts, artifact availability, and QA validation scope.
 
 The default CLI formats are `ipynb html markdown docx zip`; PDF is generated
 only when explicitly requested.

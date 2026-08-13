@@ -414,6 +414,70 @@ async def test_requirements_analyst_detects_conflicts_and_missing_inputs(monkeyp
 
 
 @pytest.mark.asyncio
+async def test_requirements_analyst_refines_multi_turn_dialog_with_prior_constraints(
+    monkeypatch,
+):
+    """Dialog analysis should retain prior constraints and add latest-turn details."""
+
+    captured_messages = []
+    monkeypatch.setattr(
+        requirements_analyst,
+        "ChatOpenAI",
+        make_recording_llm(
+            """
+            {
+              "constraints": [
+                {
+                  "type": "runtime",
+                  "value": "Use gpt-5.4-mini",
+                  "priority": 4,
+                  "confidence": 0.86
+                }
+              ],
+              "clarification_questions": [
+                "Should the notebook target Colab or local Jupyter?"
+              ]
+            }
+            """,
+            captured_messages,
+        ),
+    )
+
+    analyst = requirements_analyst.RequirementsAnalyst()
+    prior = [
+        Constraint(
+            type="goal",
+            value="Build a router workflow",
+            priority=5,
+        )
+    ]
+    analysis = await analyst.analyze_dialog(
+        [
+            {"role": "user", "content": "Build a router workflow."},
+            {"role": "assistant", "content": "Which model should it use?"},
+            {"role": "user", "content": "Use gpt-5.4-mini."},
+        ],
+        existing_constraints=prior,
+    )
+
+    assert [constraint.type for constraint in analysis.constraints] == [
+        "goal",
+        "runtime",
+    ]
+    assert analysis.constraints[0].value == "Build a router workflow"
+    assert analysis.constraints[1].value == "Use gpt-5.4-mini"
+    assert analysis.feedback.dialog_turn_count == 3
+    assert analysis.feedback.clarification_questions == [
+        "Should the notebook target Colab or local Jupyter?"
+    ]
+    assert any(
+        "Retained 1 prior" in change for change in analysis.feedback.constraint_changes
+    )
+    assert captured_messages
+    assert "Prior constraints already accepted" in captured_messages[0][1].content
+
+
+@pytest.mark.asyncio
 async def test_requirements_analyst_uses_configured_constraint_type_registry(
     monkeypatch,
 ):
@@ -1204,9 +1268,11 @@ async def test_graph_designer_prompt_requests_canonical_contract_fields(monkeypa
 
     reachability_schema = (
         '"execution_path": '
-        '"deterministic_node|tool_node|manual_loop|create_react_agent|demo_only|omitted"'
+        '"deterministic_node|tool_node|manual_loop|create_agent|create_react_agent|demo_only|omitted"'
     )
     assert reachability_schema in system_prompt
+    assert "prefer langchain.agents.create_agent" in system_prompt
+    assert "legacy compatibility" in system_prompt
     assert "omitted_demo_only" not in system_prompt
 
 
@@ -1384,6 +1450,48 @@ def test_graph_design_exports_canonical_spec_metadata():
     assert exports.schema["tool_reachability"][0]["tool_id"] == "catalog_lookup"
     assert exports.schema["domain_terms"] == ["museum", "artifact"]
     assert "-." in exports.mermaid
+
+
+def test_graph_design_exports_normalize_routed_direct_edges():
+    """Manifest schema should reflect one executable edge contract per source."""
+
+    result = GraphDesignResult(
+        architecture_type="hybrid",
+        state_schema={"route": "Selected route"},
+        nodes=[
+            GraphNodeSpec(name="router", purpose="Route requests"),
+            GraphNodeSpec(name="worker", purpose="Draft response"),
+            GraphNodeSpec(name="reviewer", purpose="Review response"),
+        ],
+        edges=[
+            GraphEdgeSpec(source="router", target="worker"),
+            GraphEdgeSpec(source="reviewer", target="worker"),
+        ],
+        conditional_edges=[
+            GraphConditionalEdgeSpec(
+                source="router",
+                condition="Route by request type.",
+                branches={"work": "worker", "FINISH": "END"},
+            )
+        ],
+        command_routes=[
+            GraphCommandRouteSpec(
+                source="reviewer",
+                destinations=["worker", "END"],
+                update_fields=["route"],
+            )
+        ],
+        entry_point="router",
+        checkpointing=True,
+    )
+
+    exports = build_graph_exports(result, get_graph_design_registry().get("hybrid"))
+
+    assert exports.schema["edges"] == []
+    assert "router --> worker" not in exports.mermaid
+    assert "reviewer --> worker" not in exports.mermaid
+    assert exports.schema["conditional_edges"][0]["branches"]["work"] == "worker"
+    assert exports.schema["command_routes"][0]["destinations"] == ["worker", "END"]
 
 
 def test_graph_design_normalization_preserves_scalar_command_route_values():

@@ -8,6 +8,7 @@ from langgraph_system_generator.generator.agents.requirements_analyst import (
     RequirementsAnalyst,
 )
 from langgraph_system_generator.generator.nodes import (
+    _reset_docs_retriever_cache_for_tests,
     intake_node,
     notebook_assembly_node,
     rag_retrieval_node,
@@ -27,6 +28,13 @@ from langgraph_system_generator.generator.state import (
     ToolPlanningResult,
     ToolSpec,
 )
+
+
+@pytest.fixture(autouse=True)
+def clear_docs_retriever_cache():
+    _reset_docs_retriever_cache_for_tests()
+    yield
+    _reset_docs_retriever_cache_for_tests()
 
 
 @pytest.mark.asyncio
@@ -57,8 +65,59 @@ async def test_intake_node_returns_constraints():
 
     assert result["constraints"] == constraints
     assert result["requirements_feedback"].fallback_used is False
-    assert result["requirements_feedback"].available_constraint_types == ["goal", "tone"]
+    assert result["requirements_feedback"].available_constraint_types == [
+        "goal",
+        "tone",
+    ]
     mock_analyze.assert_awaited_once_with("Build a router workflow")
+
+
+@pytest.mark.asyncio
+async def test_intake_node_uses_dialog_refinement_when_messages_are_present():
+    constraints = [
+        Constraint(type="goal", value="Build a router workflow", priority=5),
+        Constraint(type="runtime", value="Use gpt-5.4-mini", priority=4),
+    ]
+    feedback = RequirementsFeedback(
+        fallback_used=False,
+        dialog_turn_count=2,
+        constraint_changes=["Retained 1 prior constraint(s)."],
+    )
+
+    with patch(
+        "langgraph_system_generator.generator.agents.requirements_analyst.ChatOpenAI",
+        return_value=MagicMock(),
+    ):
+        with patch.object(
+            RequirementsAnalyst,
+            "analyze_dialog",
+            new=AsyncMock(
+                return_value=RequirementsAnalysis(
+                    constraints=constraints,
+                    feedback=feedback,
+                )
+            ),
+        ) as mock_analyze_dialog:
+            result = await intake_node(
+                {
+                    "user_prompt": "Use gpt-5.4-mini.",
+                    "constraints": [constraints[0]],
+                    "requirements_messages": [
+                        {"role": "user", "content": "Build a router workflow."},
+                        {"role": "user", "content": "Use gpt-5.4-mini."},
+                    ],
+                }
+            )
+
+    assert result["constraints"] == constraints
+    assert result["requirements_feedback"].dialog_turn_count == 2
+    mock_analyze_dialog.assert_awaited_once_with(
+        [
+            {"role": "user", "content": "Build a router workflow."},
+            {"role": "user", "content": "Use gpt-5.4-mini."},
+        ],
+        existing_constraints=[constraints[0]],
+    )
 
 
 @pytest.mark.asyncio
@@ -311,11 +370,12 @@ async def test_notebook_assembly_node_fallback_when_selected_patterns_missing():
         "justification": "Fits the request.",
     }
     assert captured_args["tool_planning_feedback"] is None
+
+
 @pytest.mark.parametrize("failure_mode", ["vector_store", "retrieve"])
-async def test_rag_retrieval_node_returns_empty_on_failure(
-    monkeypatch, failure_mode
-):
+async def test_rag_retrieval_node_returns_empty_on_failure(monkeypatch, failure_mode):
     if failure_mode == "vector_store":
+
         class BoomManager:
             def __init__(self, *args, **kwargs):
                 raise RuntimeError("boom")
@@ -325,6 +385,7 @@ async def test_rag_retrieval_node_returns_empty_on_failure(
             BoomManager,
         )
     else:
+
         class DummyManager:
             def __init__(self, *args, **kwargs):
                 pass

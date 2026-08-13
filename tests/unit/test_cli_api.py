@@ -64,13 +64,19 @@ async def test_generate_artifacts_stub(tmp_path: Path, monkeypatch: pytest.Monke
     assert artifacts["manifest"]["generation_context_pack"]["source_precedence"][0] == (
         "langchain-docs-local"
     )
-    assert artifacts["manifest"]["generation_context_pack"]["notebook_contract"][
-        "compiled_graph_variable"
-    ] == "graph"
-    assert "invocation_config" in artifacts["manifest"]["generation_context_pack"][
-        "qa_gates"
-    ]
-    assert artifacts["manifest"]["notebook_composition_feedback"]["fallback_used"] is False
+    assert (
+        artifacts["manifest"]["generation_context_pack"]["notebook_contract"][
+            "compiled_graph_variable"
+        ]
+        == "graph"
+    )
+    assert (
+        "invocation_config"
+        in artifacts["manifest"]["generation_context_pack"]["qa_gates"]
+    )
+    assert (
+        artifacts["manifest"]["notebook_composition_feedback"]["fallback_used"] is False
+    )
     assert "langgraph" in artifacts["manifest"]["notebook_dependency_plan"]["packages"]
     assert artifacts["manifest"]["qa_repair_feedback"]["repair_attempts"] == 0
     assert artifacts["result"]["requirements_feedback"]["fallback_used"] is False
@@ -79,8 +85,13 @@ async def test_generate_artifacts_stub(tmp_path: Path, monkeypatch: pytest.Monke
     assert artifacts["result"]["graph_design_feedback"]["fallback_used"] is False
     assert "flowchart TD" in artifacts["result"]["graph_exports"]["mermaid"]
     assert artifacts["result"]["tool_planning_feedback"]["fallback_used"] is False
-    assert artifacts["result"]["notebook_composition_feedback"]["fallback_used"] is False
-    assert "OPENAI_API_KEY" in artifacts["result"]["notebook_dependency_plan"]["provider_env_vars"]
+    assert (
+        artifacts["result"]["notebook_composition_feedback"]["fallback_used"] is False
+    )
+    assert (
+        "OPENAI_API_KEY"
+        in artifacts["result"]["notebook_dependency_plan"]["provider_env_vars"]
+    )
     assert artifacts["result"]["qa_repair_feedback"]["repair_attempts"] == 0
     assert Path(artifacts["manifest_path"]).exists()
     assert artifacts["result"]["generation_complete"] is True
@@ -102,7 +113,9 @@ def test_default_state_includes_generation_mode_and_qa_history():
     assert state["graph_design_feedback"].fallback_used is False
     assert state["graph_exports"].schema == {}
     assert state["tool_planning_feedback"].fallback_used is False
-    assert state["generation_context_pack"].source_precedence[0] == "langchain-docs-local"
+    assert (
+        state["generation_context_pack"].source_precedence[0] == "langchain-docs-local"
+    )
     assert state["generation_context_pack"].request["generation_mode"] == "live"
     assert state["notebook_composition_feedback"].fallback_used is False
     assert state["notebook_dependency_plan"].packages == []
@@ -141,8 +154,13 @@ def test_default_and_stub_results_normalize_constraint_type_registry(monkeypatch
     state = cli_module._default_state("Test prompt")
     stub_result = cli_module._build_stub_result("Test prompt")
 
-    assert state["requirements_feedback"].available_constraint_types == expected_registry
-    assert stub_result["requirements_feedback"].available_constraint_types == expected_registry
+    assert (
+        state["requirements_feedback"].available_constraint_types == expected_registry
+    )
+    assert (
+        stub_result["requirements_feedback"].available_constraint_types
+        == expected_registry
+    )
     assert (
         stub_result["notebook_composition_feedback"].resolved_model
         == cli_module.settings.default_model
@@ -214,7 +232,9 @@ async def test_generate_artifacts_stub_hybrid_override(
     assert artifacts["result"]["architecture_type"] == "hybrid"
     assert graph_cells
     assert 'workflow.add_node("router", router_node)' in graph_cells[0]["content"]
-    assert 'workflow.add_node("supervisor", supervisor_node)' in graph_cells[0]["content"]
+    assert (
+        'workflow.add_node("supervisor", supervisor_node)' in graph_cells[0]["content"]
+    )
 
 
 @pytest.mark.asyncio
@@ -251,7 +271,9 @@ async def test_generate_artifacts_stub_deepagents_override(
     assert artifacts["result"]["generation_complete"] is True
     dependency_plan = artifacts["manifest"]["notebook_dependency_plan"]
     assert "deepagents" not in dependency_plan["packages"]
-    assert all("deepagents" not in command for command in dependency_plan["install_commands"])
+    assert all(
+        "deepagents" not in command for command in dependency_plan["install_commands"]
+    )
     assert any(
         "python -m pip install deepagents" in note
         for note in dependency_plan["runtime_notes"]
@@ -326,9 +348,132 @@ async def test_api_generate_stub(tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     assert payload["manifest"]["requirements_feedback"]["fallback_used"] is False
     assert payload["manifest"]["architecture_feedback"]["fallback_used"] is False
     assert payload["manifest"]["tool_planning_feedback"]["fallback_used"] is False
-    assert payload["manifest"]["notebook_composition_feedback"]["fallback_used"] is False
+    assert (
+        payload["manifest"]["notebook_composition_feedback"]["fallback_used"] is False
+    )
     assert "langgraph" in payload["manifest"]["notebook_dependency_plan"]["packages"]
     assert payload["manifest"]["qa_repair_feedback"]["repair_attempts"] == 0
+
+
+@pytest.mark.asyncio
+async def test_api_generate_stub_accepts_dialog_messages_without_legacy_prompt(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """Dialog requests should derive the legacy prompt from the latest user turn."""
+
+    monkeypatch.setenv("LNF_OUTPUT_BASE", "test_api_dialog_stub")
+
+    import importlib
+    import langgraph_system_generator.constants as constants_module
+    import langgraph_system_generator.notebook.exporters as exporters_module
+    import langgraph_system_generator.api.server as server_module
+
+    importlib.reload(constants_module)
+    importlib.reload(exporters_module)
+    importlib.reload(server_module)
+
+    transport = httpx.ASGITransport(app=server_module.app)
+    output_dir = constants_module._BASE_OUTPUT / tmp_path.name
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(
+            "/generate",
+            json={
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": "Build a router workflow.",
+                    },
+                    {
+                        "role": "assistant",
+                        "content": "Which model and runtime should it use?",
+                    },
+                    {
+                        "role": "user",
+                        "content": "Use gpt-5.4-mini in a portable notebook.",
+                    },
+                ],
+                "mode": "stub",
+                "output_dir": str(output_dir),
+            },
+        )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["success"] is True
+    assert payload["prompt"] == "Use gpt-5.4-mini in a portable notebook."
+    assert payload["manifest"]["prompt"] == "Use gpt-5.4-mini in a portable notebook."
+
+
+@pytest.mark.asyncio
+async def test_api_generate_stub_prefers_dialog_when_prompt_is_whitespace(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """Whitespace prompt values should fall back to the latest user dialog turn."""
+
+    monkeypatch.setenv("LNF_OUTPUT_BASE", "test_api_dialog_prefers_messages")
+
+    import importlib
+    import langgraph_system_generator.constants as constants_module
+    import langgraph_system_generator.notebook.exporters as exporters_module
+    import langgraph_system_generator.api.server as server_module
+
+    importlib.reload(constants_module)
+    importlib.reload(exporters_module)
+    importlib.reload(server_module)
+
+    transport = httpx.ASGITransport(app=server_module.app)
+    output_dir = constants_module._BASE_OUTPUT / tmp_path.name
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(
+            "/generate",
+            json={
+                "prompt": "   ",
+                "messages": [
+                    {"role": "assistant", "content": "What should I build?"},
+                    {"role": "user", "content": "Create a concise router workflow."},
+                ],
+                "mode": "stub",
+                "output_dir": str(output_dir),
+            },
+        )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["prompt"] == "Create a concise router workflow."
+    assert payload["manifest"]["prompt"] == "Create a concise router workflow."
+
+
+@pytest.mark.asyncio
+async def test_api_generate_rejects_whitespace_only_dialog_message(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    monkeypatch.setenv("LNF_OUTPUT_BASE", "test_api_dialog_invalid_message")
+
+    import importlib
+    import langgraph_system_generator.constants as constants_module
+    import langgraph_system_generator.notebook.exporters as exporters_module
+    import langgraph_system_generator.api.server as server_module
+
+    importlib.reload(constants_module)
+    importlib.reload(exporters_module)
+    importlib.reload(server_module)
+
+    transport = httpx.ASGITransport(app=server_module.app)
+    output_dir = constants_module._BASE_OUTPUT / tmp_path.name
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(
+            "/generate",
+            json={
+                "messages": [{"role": "user", "content": "   "}],
+                "mode": "stub",
+                "output_dir": str(output_dir),
+            },
+        )
+
+    assert response.status_code == 422
 
 
 @pytest.mark.asyncio
@@ -400,7 +545,9 @@ async def test_generate_artifacts_surfaces_requirements_feedback_as_warnings(
         }
         return result
 
-    monkeypatch.setattr(cli_module, "_build_stub_result", build_stub_result_with_feedback)
+    monkeypatch.setattr(
+        cli_module, "_build_stub_result", build_stub_result_with_feedback
+    )
 
     output_dir = constants_module._BASE_OUTPUT / tmp_path.name
     artifacts = await cli_module.generate_artifacts(
@@ -445,7 +592,9 @@ async def test_generate_artifacts_surfaces_architecture_feedback_as_warnings(
         }
         return result
 
-    monkeypatch.setattr(cli_module, "_build_stub_result", build_stub_result_with_feedback)
+    monkeypatch.setattr(
+        cli_module, "_build_stub_result", build_stub_result_with_feedback
+    )
 
     output_dir = constants_module._BASE_OUTPUT / tmp_path.name
     artifacts = await cli_module.generate_artifacts(
@@ -476,7 +625,9 @@ async def test_generate_artifacts_surfaces_graph_design_feedback_as_warnings(
 
     original_build_stub_result = cli_module._build_stub_result
 
-    def build_stub_result_with_graph_feedback(prompt: str, agent_type: str | None = None):
+    def build_stub_result_with_graph_feedback(
+        prompt: str, agent_type: str | None = None
+    ):
         result = original_build_stub_result(prompt, agent_type=agent_type)
         result["graph_design_feedback"] = {
             "fallback_used": True,
@@ -512,7 +663,9 @@ async def test_generate_artifacts_surfaces_graph_design_feedback_as_warnings(
         }
         return result
 
-    monkeypatch.setattr(cli_module, "_build_stub_result", build_stub_result_with_graph_feedback)
+    monkeypatch.setattr(
+        cli_module, "_build_stub_result", build_stub_result_with_graph_feedback
+    )
 
     output_dir = constants_module._BASE_OUTPUT / "graph_feedback_stub"
     artifacts = await cli_module.generate_artifacts(
@@ -544,17 +697,60 @@ async def test_generate_artifacts_surfaces_tool_planning_feedback_as_warnings(
 
     original_build_stub_result = cli_module._build_stub_result
 
-    def build_stub_result_with_tool_feedback(prompt: str, agent_type: str | None = None):
+    def build_stub_result_with_tool_feedback(
+        prompt: str, agent_type: str | None = None
+    ):
         result = original_build_stub_result(prompt, agent_type=agent_type)
         result["tool_planning_feedback"] = {
             "fallback_used": True,
             "fallback_reason": "Tool planning used heuristic fallback inference.",
             "validation_errors": ["Unsupported tool suggestion 'swarm_tool'."],
             "unresolved_tools": ["swarm_tool"],
-            "environment_notes": ["Network access may be unavailable in the target runtime."],
-            "dependency_conflicts": ["Both 'requests' and a custom HTTP client were suggested."],
+            "environment_notes": [
+                "Network access may be unavailable in the target runtime."
+            ],
+            "dependency_conflicts": [
+                "Both 'requests' and a custom HTTP client were suggested."
+            ],
             "available_tool_ids": ["web_search", "http_client"],
             "warnings": ["Tool planning used heuristic fallback inference."],
+        }
+        result["tools_plan"] = [
+            {
+                "tool_id": "web_search",
+                "name": "Web Search",
+                "category": "search",
+                "purpose": "Search current context.",
+                "configuration": {},
+                "packages": [],
+                "provider_env_vars": [],
+                "status": "ready",
+                "warnings": [],
+            },
+            {
+                "tool_id": "swarm_tool",
+                "name": "Swarm Tool",
+                "category": "external",
+                "purpose": "Unsupported suggested tool.",
+                "configuration": {},
+                "packages": [],
+                "provider_env_vars": [],
+                "status": "unsupported",
+                "warnings": [],
+            },
+        ]
+        result["graph_exports"] = {
+            "mermaid": "",
+            "schema": {
+                "tool_reachability": [
+                    {
+                        "tool_id": "web_search",
+                        "execution_path": "tool_node",
+                        "node": "tools",
+                        "rationale": "Executed by ToolNode.",
+                    }
+                ]
+            },
         }
         return result
 
@@ -577,6 +773,17 @@ async def test_generate_artifacts_surfaces_tool_planning_feedback_as_warnings(
     assert "tool_planning_environment" in warning_codes
     assert "tool_planning_dependency" in warning_codes
     assert artifacts["manifest"]["tool_planning_feedback"]["fallback_used"] is True
+    assert artifacts["manifest"]["tool_contract_summary"]["counts"] == {
+        "planned": 2,
+        "executable": 1,
+        "utility": 0,
+        "unsupported": 1,
+        "unclassified": 0,
+    }
+    assert (
+        artifacts["manifest"]["tool_contract_summary"]["executable_tools"][0]["tool_id"]
+        == "web_search"
+    )
 
 
 @pytest.mark.asyncio
@@ -653,7 +860,9 @@ async def test_generate_artifacts_surfaces_notebook_composition_feedback_as_warn
 
     warning_codes = {warning["code"] for warning in artifacts["manifest"]["warnings"]}
     assert "notebook_composition_fallback" in warning_codes
-    assert artifacts["manifest"]["notebook_composition_feedback"]["fallback_used"] is True
+    assert (
+        artifacts["manifest"]["notebook_composition_feedback"]["fallback_used"] is True
+    )
     assert "requests" in artifacts["manifest"]["notebook_dependency_plan"]["packages"]
 
 
@@ -719,6 +928,72 @@ async def test_generate_artifacts_surfaces_qa_feedback_as_warnings(
     assert artifacts["manifest"]["qa_repair_feedback"]["repair_attempts"] == 1
     assert artifacts["manifest"]["qa_summary"]["status"] == "blocking_failed"
     assert artifacts["manifest"]["qa_reports"][0]["rule_id"] == "python_syntax"
+
+
+@pytest.mark.asyncio
+async def test_generate_artifacts_describes_runtime_smoke_test_scope(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.setenv("LNF_OUTPUT_BASE", "test_runtime_smoke_scope")
+
+    import langgraph_system_generator.constants as constants_module
+    import langgraph_system_generator.notebook.exporters as exporters_module
+    import langgraph_system_generator.cli as cli_module
+
+    importlib.reload(constants_module)
+    importlib.reload(exporters_module)
+    importlib.reload(cli_module)
+
+    original_build_stub_result = cli_module._build_stub_result
+
+    def build_stub_result_with_runtime_smoke(
+        prompt: str, agent_type: str | None = None
+    ):
+        result = original_build_stub_result(prompt, agent_type=agent_type)
+        result["qa_reports"] = [
+            {
+                "check_name": "Runtime Smoke Test",
+                "passed": True,
+                "message": (
+                    "Runtime execution environment validated using the "
+                    "'python3' kernel."
+                ),
+                "rule_id": "runtime_smoke_test",
+                "severity": "info",
+                "category": "runtime",
+                "repairable": False,
+                "suggestions": [],
+                "stage": "runtime",
+                "attempt": 0,
+                "evidence": {
+                    "execution": {
+                        "execution_scope": "trusted_smoke_test",
+                    },
+                    "message": "runtime smoke notebook passed",
+                },
+            }
+        ]
+        return result
+
+    monkeypatch.setattr(
+        cli_module,
+        "_build_stub_result",
+        build_stub_result_with_runtime_smoke,
+    )
+
+    artifacts = await cli_module.generate_artifacts(
+        "Runtime scope prompt",
+        output_dir=str(constants_module._BASE_OUTPUT / "runtime_smoke_scope"),
+        mode="stub",
+        formats=["ipynb"],
+    )
+
+    validation_scope = artifacts["manifest"]["qa_summary"]["validation_scope"]
+    validated = " ".join(validation_scope["validated"]).lower()
+    not_validated = " ".join(validation_scope["not_validated"]).lower()
+
+    assert "trusted smoke notebook" in validated
+    assert "did not execute the full generated notebook" in not_validated
 
 
 @pytest.mark.asyncio
@@ -849,9 +1124,9 @@ async def test_api_rejects_removed_advanced_options_as_unknown_fields(
 
 
 def test_generation_request_formats_description_mentions_markdown():
-    description = app.openapi()["components"]["schemas"]["GenerationRequest"]["properties"][
-        "formats"
-    ]["description"]
+    description = app.openapi()["components"]["schemas"]["GenerationRequest"][
+        "properties"
+    ]["formats"]["description"]
 
     assert "markdown" in description.lower()
     assert "ipynb, html, markdown, docx, zip" in description

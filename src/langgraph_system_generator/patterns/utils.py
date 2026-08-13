@@ -12,13 +12,28 @@ def build_llm_init(
     temperature: float,
     api_base: Optional[str] = None,
     max_tokens: Optional[int] = None,
+    *,
+    use_notebook_helper: bool = False,
 ) -> str:
-    """Build a ChatOpenAI initialization expression."""
-    params = [f"model={repr(model)}", f"temperature={temperature}"]
-    if api_base:
-        params.append(f"base_url={repr(api_base)}")
-    if max_tokens:
+    """Build an LLM initialization expression for a concrete output target.
+
+    Callers must choose the mode intentionally. Standalone pattern snippets use
+    ``use_notebook_helper=False`` so they stay self-contained. Notebook-composed
+    cells use ``use_notebook_helper=True`` so per-node code delegates model,
+    token, and endpoint configuration to the notebook-level ``make_llm(...)``
+    helper.
+    """
+    if use_notebook_helper:
+        params = [f"temperature={temperature}"]
+        if max_tokens is not None:
+            params.append(f"max_tokens={max_tokens}")
+        return f"make_llm({', '.join(params)})"
+
+    params = [f"model={model!r}", f"temperature={temperature}"]
+    if max_tokens is not None:
         params.append(f"max_tokens={max_tokens}")
+    if api_base:
+        params.append(f"base_url={api_base!r}")
     return f"ChatOpenAI({', '.join(params)})"
 
 
@@ -43,6 +58,106 @@ def collapse_whitespace(value: str) -> str:
     return " ".join(str(value).split())
 
 
+def infer_state_field_type(field_name: str, description: str = "") -> str:
+    """Infer a useful generated state type for a graph-spec field."""
+
+    normalized = sanitize_identifier(field_name)
+    lowered_name = normalized.lower()
+    lowered_text = f"{lowered_name} {description}".lower()
+
+    if lowered_name in {"messages"}:
+        return "Annotated[List[BaseMessage], add_messages]"
+
+    list_markers = {
+        "history",
+        "logs",
+        "memories",
+        "memory_updates",
+        "retrieved_memories",
+        "notes_list",
+        "events",
+        "warnings",
+    }
+    list_suffixes = (
+        "_history",
+        "_log",
+        "_logs",
+        "_memories",
+        "_updates",
+        "_events",
+        "_warnings",
+    )
+    if lowered_name in list_markers or lowered_name.endswith(list_suffixes):
+        return "Annotated[List[str], operator.add]"
+
+    if lowered_name.endswith(("_passed", "_pending", "_complete")):
+        return "bool"
+
+    dict_markers = {
+        "results",
+        "task_results",
+        "verification",
+        "verifications",
+        "metadata",
+        "payload",
+        "context",
+        "profile",
+        "profile_data",
+        "tool_outputs",
+    }
+    if any(marker in lowered_name for marker in dict_markers):
+        return "Dict[str, object]"
+
+    bool_markers = {
+        "approved",
+        "attempted",
+        "complete",
+        "completed",
+        "done",
+        "failed",
+        "passed",
+        "pending",
+        "success",
+        "needs_",
+        "requires_",
+        "should_",
+        "has_",
+        "is_",
+    }
+    if any(
+        lowered_name == marker or lowered_name.startswith(marker)
+        for marker in bool_markers
+    ):
+        return "bool"
+    if any(
+        lowered_name.endswith(f"_{marker}")
+        for marker in {"passed", "pending", "complete"}
+    ):
+        return "bool"
+
+    int_markers = {
+        "count",
+        "counter",
+        "iteration",
+        "iterations",
+        "attempt",
+        "attempts",
+        "turn",
+        "turns",
+        "retry",
+        "retries",
+        "step",
+        "steps",
+    }
+    if any(marker in lowered_name for marker in int_markers):
+        return "int"
+
+    if any(marker in lowered_text for marker in {"score", "confidence", "probability"}):
+        return "float"
+
+    return "str"
+
+
 def render_additional_fields(additional_fields: Optional[Dict[str, str]]) -> str:
     """Render optional TypedDict fields with inline descriptions."""
     if not additional_fields:
@@ -50,5 +165,8 @@ def render_additional_fields(additional_fields: Optional[Dict[str, str]]) -> str
     rendered = []
     for field_name, description in additional_fields.items():
         comment = collapse_whitespace(description)
-        rendered.append(f"    {sanitize_identifier(field_name)}: str  # {comment}")
+        field_type = infer_state_field_type(field_name, description)
+        rendered.append(
+            f"    {sanitize_identifier(field_name)}: {field_type}  # {comment}"
+        )
     return "\n".join(rendered) + "\n"

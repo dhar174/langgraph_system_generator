@@ -21,6 +21,9 @@ from langgraph_system_generator.generator.graph_design_registry import (
     normalize_graph_design,
     validate_graph_design,
 )
+from langgraph_system_generator.generator.graph_sentinels import (
+    normalize_sentinel_edges,
+)
 from langgraph_system_generator.generator.state import (
     Constraint,
     GraphDesignFeedback,
@@ -99,6 +102,15 @@ class GraphDesigner:
                 "8. entry_point: Starting node\n"
                 "9. compiled_graph_variable: Compiled graph variable name, normally graph\n"
                 "10. checkpointing: Whether to enable checkpointing\n\n"
+                "Sentinel rules:\n"
+                "- Prefer entry_point to represent LangGraph START.\n"
+                "- Prefer a terminal node with no outgoing route to represent LangGraph END.\n"
+                "- Never declare START, __start__, END, or __end__ as nodes.\n"
+                "- Direct START -> node and node -> END edges are accepted as shorthand and normalized.\n"
+                "- START may only be an edge source and END may only be an edge target.\n\n"
+                "For generated tool execution paths, prefer ToolNode for custom StateGraph workflows. "
+                "When a prebuilt agent loop is the better fit, prefer langchain.agents.create_agent; "
+                "treat langgraph.prebuilt.create_react_agent as legacy compatibility, not the default for new designs.\n\n"
                 "Return a JSON object with this structure:\n"
                 "{\n"
                 '  "state_schema": {"field_name": "description"},\n'
@@ -124,7 +136,7 @@ class GraphDesigner:
                 '  "tool_reachability": [\n'
                 "    {\n"
                 '      "tool_id": "tool_name",\n'
-                '      "execution_path": "deterministic_node|tool_node|manual_loop|create_react_agent|demo_only|omitted",\n'
+                '      "execution_path": "deterministic_node|tool_node|manual_loop|create_agent|create_react_agent|demo_only|omitted",\n'
                 '      "node": "node_name",\n'
                 '      "rationale": "How the graph can execute this tool, or why it is intentionally omitted"\n'
                 "    }\n"
@@ -154,8 +166,8 @@ class GraphDesigner:
         try:
             response = await self.llm.ainvoke([design_prompt, user_message])
             payload = extract_json_from_llm_response(response.content)
-            live_result = normalize_graph_design(
-                payload, architecture_type, registration
+            live_result = normalize_sentinel_edges(
+                normalize_graph_design(payload, architecture_type, registration)
             )
             if not live_result.domain_terms:
                 live_result = live_result.model_copy(
@@ -267,10 +279,12 @@ class GraphDesigner:
             architecture=architecture,
             constraints=constraints,
         )
-        fallback_result = normalize_graph_design(
-            fallback_payload,
-            registration.architecture_id,
-            registration,
+        fallback_result = normalize_sentinel_edges(
+            normalize_graph_design(
+                fallback_payload,
+                registration.architecture_id,
+                registration,
+            )
         )
         fallback_issues = validate_graph_design(fallback_result, registration)
         if self._has_blocking_issues(fallback_issues):

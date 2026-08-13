@@ -134,9 +134,12 @@ def test_default_registry_contains_builtin_validators_and_repairs():
         "graph_structure",
         "canonical_section_order",
         "langgraph_topology",
+        "canonical_graph_contract",
         "state_reducer_semantics",
         "tool_reachability",
+        "chatbot_notebook_contract",
         "domain_architecture_alignment",
+        "generated_llm_config",
         "invocation_config",
     ]
     assert registry.registered_repair_routine_ids() == [

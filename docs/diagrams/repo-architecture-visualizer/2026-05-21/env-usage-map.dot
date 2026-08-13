@@ -1,0 +1,47 @@
+digraph repo_diagram {
+  label="langgraph_system_generator: env file diagram";
+  labelloc=t;
+  graph [rankdir=LR, fontsize=18, fontname="Arial"];
+  node [shape=box, style="rounded,filled", fontname="Arial", fillcolor="#EEF2FF", color="#3730A3"];
+  edge [fontname="Arial", color="#6B7280"];
+  "ANTHROPIC_API_KEY" [label="ANTHROPIC_API_KEY", shape=hexagon, fillcolor="#FFF7ED", color="#C2410C"];
+  "BASE_OUTPUT_DIR" [label="BASE_OUTPUT_DIR", shape=hexagon, fillcolor="#FFF7ED", color="#C2410C"];
+  "DEEP_AGENTS_MODEL" [label="DEEP_AGENTS_MODEL", shape=hexagon, fillcolor="#FFF7ED", color="#C2410C"];
+  "LNF_DISABLE_DOTENV" [label="LNF_DISABLE_DOTENV", shape=hexagon, fillcolor="#FFF7ED", color="#C2410C"];
+  "LNF_ENV_FILE" [label="LNF_ENV_FILE", shape=hexagon, fillcolor="#FFF7ED", color="#C2410C"];
+  "LNF_MAX_CONCURRENT_GENERATIONS" [label="LNF_MAX_CONCURRENT_GENERATIONS", shape=hexagon, fillcolor="#FFF7ED", color="#C2410C"];
+  "LNF_MAX_EVENTS_PER_JOB" [label="LNF_MAX_EVENTS_PER_JOB", shape=hexagon, fillcolor="#FFF7ED", color="#C2410C"];
+  "LNF_OUTPUT_BASE" [label="LNF_OUTPUT_BASE", shape=hexagon, fillcolor="#FFF7ED", color="#C2410C"];
+  "LOG_LEVEL" [label="LOG_LEVEL", shape=hexagon, fillcolor="#FFF7ED", color="#C2410C"];
+  "MODEL" [label="MODEL", shape=hexagon, fillcolor="#FFF7ED", color="#C2410C"];
+  "OPENAI_API_KEY" [label="OPENAI_API_KEY", shape=hexagon, fillcolor="#FFF7ED", color="#C2410C"];
+  "WORKDIR" [label="WORKDIR", shape=hexagon, fillcolor="#FFF7ED", color="#C2410C"];
+  subgraph cluster_0 {
+    label="src/langgraph_system_generator";
+    color="#CBD5E1";
+    "src/langgraph_system_generator/api/progress_streaming.py" [label="src/langgraph_system_generator/api/progress_streaming.py"];
+    "src/langgraph_system_generator/api/server.py" [label="src/langgraph_system_generator/api/server.py"];
+    "src/langgraph_system_generator/cli.py" [label="src/langgraph_system_generator/cli.py"];
+    "src/langgraph_system_generator/constants.py" [label="src/langgraph_system_generator/constants.py"];
+    "src/langgraph_system_generator/examples_support.py" [label="src/langgraph_system_generator/examples_support.py"];
+    "src/langgraph_system_generator/notebook/templates.py" [label="src/langgraph_system_generator/notebook/templates.py"];
+    "src/langgraph_system_generator/patterns/deepagents.py" [label="src/langgraph_system_generator/patterns/deepagents.py"];
+    "src/langgraph_system_generator/utils/config.py" [label="src/langgraph_system_generator/utils/config.py"];
+    "src/langgraph_system_generator/utils/logging_utils.py" [label="src/langgraph_system_generator/utils/logging_utils.py"];
+  }
+  "src/langgraph_system_generator/api/progress_streaming.py" -> "LNF_MAX_EVENTS_PER_JOB" [style=dashed, color="#C2410C", label="reads"];
+  "src/langgraph_system_generator/api/server.py" -> "LNF_MAX_CONCURRENT_GENERATIONS" [style=dashed, color="#C2410C", label="reads"];
+  "src/langgraph_system_generator/cli.py" -> "OPENAI_API_KEY" [style=dashed, color="#C2410C", label="reads"];
+  "src/langgraph_system_generator/constants.py" -> "BASE_OUTPUT_DIR" [style=dashed, color="#C2410C", label="reads"];
+  "src/langgraph_system_generator/constants.py" -> "LNF_OUTPUT_BASE" [style=dashed, color="#C2410C", label="reads"];
+  "src/langgraph_system_generator/examples_support.py" -> "OPENAI_API_KEY" [style=dashed, color="#C2410C", label="reads"];
+  "src/langgraph_system_generator/notebook/templates.py" -> "ANTHROPIC_API_KEY" [style=dashed, color="#C2410C", label="reads"];
+  "src/langgraph_system_generator/notebook/templates.py" -> "MODEL" [style=dashed, color="#C2410C", label="reads"];
+  "src/langgraph_system_generator/notebook/templates.py" -> "OPENAI_API_KEY" [style=dashed, color="#C2410C", label="reads"];
+  "src/langgraph_system_generator/notebook/templates.py" -> "WORKDIR" [style=dashed, color="#C2410C", label="reads"];
+  "src/langgraph_system_generator/patterns/deepagents.py" -> "DEEP_AGENTS_MODEL" [style=dashed, color="#C2410C", label="reads"];
+  "src/langgraph_system_generator/patterns/deepagents.py" -> "OPENAI_API_KEY" [style=dashed, color="#C2410C", label="reads"];
+  "src/langgraph_system_generator/utils/config.py" -> "LNF_DISABLE_DOTENV" [style=dashed, color="#C2410C", label="reads"];
+  "src/langgraph_system_generator/utils/config.py" -> "LNF_ENV_FILE" [style=dashed, color="#C2410C", label="reads"];
+  "src/langgraph_system_generator/utils/logging_utils.py" -> "LOG_LEVEL" [style=dashed, color="#C2410C", label="reads"];
+}

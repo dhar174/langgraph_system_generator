@@ -53,16 +53,16 @@ graph TD
 *   **Routing/File**: `src/langgraph_system_generator/cli.py`
 *   **Core Logic**: `cli.generate_artifacts` calls `graph.create_generator_graph().ainvoke(...)`
 *   **Data Flow**:
-    *   **Writes**: `user_prompt` (Initial State)
+    *   **Writes**: `user_prompt` and optional `requirements_messages` (Initial State)
 
 ### Step 2: Requirement Analysis (Intake)
-*   **Goal**: Analyze the user's raw prompt to extract structured constraints and requirements.
+*   **Goal**: Analyze the user's raw prompt or multi-turn requirements dialog to extract structured constraints and requirements.
 *   **Graph Node**: `intake`
 *   **Routing/File**: `src/langgraph_system_generator/generator/nodes.py` -> `intake_node`
-*   **Core Logic**: `src/langgraph_system_generator/generator/agents/requirements_analyst.py` -> `RequirementsAnalyst.analyze`
+*   **Core Logic**: `src/langgraph_system_generator/generator/agents/requirements_analyst.py` -> `RequirementsAnalyst.analyze` / `RequirementsAnalyst.analyze_dialog`
 *   **Data Flow**:
-    *   **Reads**: `user_prompt`
-    *   **Writes**: `constraints` (List[Constraint])
+    *   **Reads**: `user_prompt`, optional `requirements_messages`, and prior `constraints`
+    *   **Writes**: `constraints` (List[Constraint]), `requirements_feedback`
 
 ### Step 3: Context Retrieval (RAG)
 *   **Goal**: Retrieve relevant documentation and patterns from the vector store to inform design.
@@ -144,7 +144,8 @@ The `GeneratorState` acts as the central data bus. Below is the mapping of how d
 
 | State Key | Type | Populated By (Node) | Consumed By (Node) |
 | :--- | :--- | :--- | :--- |
-| **user_prompt** | `str` | CLI (Init) | `intake`, `rag_retrieval` |
+| **user_prompt** | `str` | CLI/API (Init) | `intake`, `rag_retrieval` |
+| **requirements_messages** | `Optional[List[Dict[str, str]]]` | API/CLI (Init) | `intake` |
 | **constraints** | `List[Constraint]` | `intake` | `architecture_selection`, `graph_design`, `tooling_plan` |
 | **docs_context** | `List[DocSnippet]` | `rag_retrieval` | `architecture_selection` |
 | **selected_patterns** | `Dict` | `architecture_selection` | `graph_design`, `notebook_assembly` |
@@ -153,7 +154,14 @@ The `GeneratorState` acts as the central data bus. Below is the mapping of how d
 | **workflow_design** | `Dict` | `graph_design` | `tooling_plan`, `notebook_assembly` |
 | **notebook_plan** | `NotebookPlan` | `graph_design` | `notebook_assembly`, `package_outputs` |
 | **tools_plan** | `List` | `tooling_plan` | `notebook_assembly` |
-| **generated_cells** | `List[CellSpec]` | `notebook_assembly` | `static_qa`, `runtime_qa`, `repair`, `package_outputs` |
-| **qa_reports** | `List[QAReport]` | `static_qa`, `runtime_qa` | `repair` (conditional edge logic) |
+| **generated_cells** | `List[CellSpec]` | `notebook_assembly` / accepted repair | `static_qa`, `runtime_qa`, `repair`, `package_outputs` |
+| **qa_reports** | `List[QAReport]` | `static_qa`, `runtime_qa`, `repair` | `repair` (conditional edge logic) |
+| **qa_history** | `List[QAReport]` | `static_qa`, `runtime_qa`, `repair` | `package_outputs` |
 | **repair_attempts** | `int` | `repair` | `repair` (conditional edge logic) |
-| **artifacts_manifest** | `Dict` | `package_outputs` | CLI (Export) |
+| **artifacts_manifest** | `Dict` | `package_outputs` | CLI/API export and download surfaces |
+
+`constraints` and `docs_context` use bounded latest-unique accumulation. QA
+history is also bounded while preserving current-attempt blocking failures.
+`generated_cells` is last-write-wins across repair iterations; packaging derives
+manifest cell counts from the serialized notebook and uses `artifact_contract`
+for standalone files versus ZIP members.

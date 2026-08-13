@@ -83,7 +83,7 @@ class TrackingLLM(DummyLLM):
             )
         elif node_match:
             label = node_match.group(1).strip()
-            safe_identifier = composer_module.NotebookComposer._safe_identifier(
+            safe_identifier = composer_module.NotebookComposer._safe_node_identifier(
                 label, "node"
             )
             content = (
@@ -219,6 +219,161 @@ def test_state_cells_filter_pattern_base_state_fields(
     assert state_code.count("    results:") == 1
     assert state_code.count("    final_output:") == 1
     assert "catalog_id: str  # Museum catalog identifier" in state_code
+
+
+@pytest.mark.asyncio
+async def test_chatbot_notebook_emits_interactive_chat_contract(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    monkeypatch.setattr(composer_module, "ChatOpenAI", DummyLLM)
+    composer = composer_module.NotebookComposer()
+
+    composition = await composer.compose_notebook(
+        notebook_plan=NotebookPlan(
+            title="18th Century Commoner Chatbot",
+            sections=["Setup", "Workflow", "Interactive Chat"],
+            patterns_used=["hybrid", "chatbot"],
+            architecture_type="hybrid",
+        ),
+        workflow_design={
+            "architecture_type": "hybrid",
+            "state_schema": {
+                "messages": "Conversation messages",
+                "selected_gender": "Selected male or female character gender",
+                "character_sex": "Selected character sex alias",
+                "gender_pending": "Whether the character selection is pending",
+                "turn_count": "Number of chat turns",
+                "memory_summary": "Short memory summary",
+                "conversation_memory": "Thread-scoped chat memory",
+                "persona": "Selected persona alias",
+                "persona_choice": "Selected persona choice",
+                "selected_persona": "Selected persona alias from live graph design",
+                "thread_memory": "Thread memory alias from live graph design",
+                "retrieved_memories": "Conversation memories retrieved",
+                "persona_profile": "Selected character profile",
+                "character_profile": "Selected character profile alias",
+                "historical_verification": "Structured historical check payload",
+                "draft_response": "Draft chatbot response",
+                "safety_passed": "Whether safety and realism checks passed",
+                "needs_revision": "Whether the response must be revised",
+                "revision_count": "Number of revision attempts",
+                "revision_history": "Revision history",
+                "final_response": "Final chatbot response",
+            },
+            "nodes": [
+                {"name": "router", "purpose": "Route chat turns"},
+                {"name": "persona", "purpose": "Play an 18th century character"},
+                {
+                    "name": "historical_verifier",
+                    "purpose": "Verify future knowledge and realism",
+                },
+                {"name": "reviser", "purpose": "Revise unsafe anachronisms"},
+            ],
+        },
+        tools=[],
+        architecture={"architecture_type": "hybrid", "justification": "Chat test."},
+    )
+
+    config_code = next(
+        cell.content
+        for cell in composition.cells
+        if cell.section == "config" and cell.cell_type == "code"
+    )
+    assert "CHARACTER_GENDER = None" in config_code
+    assert "ANACHRONISM_TERMS = (" in config_code
+    assert 'THREAD_ID = "lnf-demo-thread"' in config_code
+    assert "SHOW_UPDATES = False" in config_code
+    assert "RUN_INTERACTIVE_LOOP = False" in config_code
+
+    state_code = next(
+        cell.content
+        for cell in composition.cells
+        if cell.section == "state" and cell.cell_type == "code"
+    )
+    assert "selected_gender: str" in state_code
+    assert "character_sex: str" in state_code
+    assert "gender_pending: bool" in state_code
+    assert "turn_count: int" in state_code
+    assert "memory_summary: str" in state_code
+    assert "conversation_memory: str" in state_code
+    assert "persona: str" in state_code
+    assert "persona_choice: str" in state_code
+    assert "selected_persona: str" in state_code
+    assert "thread_memory: str" in state_code
+    assert "retrieved_memories: Annotated[List[str], operator.add]" in state_code
+    assert "persona_profile: Dict[str, object]" in state_code
+    assert "character_profile: Dict[str, object]" in state_code
+    assert "historical_verification: Dict[str, object]" in state_code
+    assert "draft_response: str" in state_code
+    assert "safety_passed: bool" in state_code
+    assert "needs_revision: bool" in state_code
+    assert "revision_count: int" in state_code
+    assert "revision_history: Annotated[List[str], operator.add]" in state_code
+
+    node_code = "\n\n".join(
+        cell.content
+        for cell in composition.cells
+        if cell.section == "nodes" and cell.cell_type == "code"
+    )
+    assert 'updates["draft_response"]' in node_code
+    assert 'updates["persona_profile"]' in node_code
+    assert 'updates["persona"]' in node_code
+    assert 'updates["persona_choice"]' in node_code
+    assert 'updates["selected_persona"]' in node_code
+    assert 'updates["memory_summary"]' in node_code
+    assert 'updates["conversation_memory"]' in node_code
+    assert 'updates["thread_memory"]' in node_code
+    assert 'updates["safety_passed"]' in node_code
+    assert 'updates["revision_count"]' in node_code
+    assert 'updates["revision_instructions"]' in node_code
+
+    execution_code = next(
+        cell.content
+        for cell in composition.cells
+        if cell.section == "execution" and cell.cell_type == "code"
+    )
+    assert "def chat_once(" in execution_code
+    assert "def run_chat_loop(" in execution_code
+    assert "input(" in execution_code
+    assert "quit" in execution_code and "exit" in execution_code
+    assert 'stream_mode = "updates" if show_updates else "values"' in execution_code
+    assert "graph.get_state(config).values" in execution_code
+    assert "def select_character_gender" in execution_code
+    assert "WORKFLOW_STATE_FIELDS" in execution_code
+    assert 'payload["character_sex"] = character_gender' in execution_code
+    assert (
+        'payload["persona_choice"] = f"{character_gender}_commoner"' in execution_code
+    )
+    assert 'payload["persona"] = f"{character_gender}_commoner"' in execution_code
+    assert 'payload["character_profile"] = persona_profile' in execution_code
+    assert "def run_demo_turns(" in execution_code
+    assert "if RUN_INTERACTIVE_LOOP:" in execution_code
+    assert "elif RUN_DEMO_TURNS:" in execution_code
+    assert "\nrun_chat_loop()" not in execution_code
+    assert "current_state = step" not in execution_code
+    assert "graph.invoke(initial_state" not in execution_code
+    ast.parse(execution_code)
+
+
+def test_one_shot_execution_reads_state_without_rerunning_initial_state(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    monkeypatch.setattr(composer_module, "ChatOpenAI", DummyLLM)
+    composer = composer_module.NotebookComposer()
+
+    cells = composer._create_execution_cells(
+        {
+            "architecture_type": "router",
+            "state_schema": {"messages": "Conversation state"},
+            "nodes": [{"name": "router", "purpose": "Route requests"}],
+        }
+    )
+    execution_code = next(cell.content for cell in cells if cell.cell_type == "code")
+
+    assert 'stream_mode="values"' in execution_code
+    assert "graph.get_state(config).values" in execution_code
+    assert "graph.invoke(initial_state" not in execution_code
+    ast.parse(execution_code)
 
 
 @pytest.mark.asyncio
@@ -531,10 +686,13 @@ async def test_compose_notebook_sanitizes_provider_env_vars_for_config_code(
         and "MODEL =" in cell.content
     ]
     assert config_cells
-    assert 'OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")' in config_cells[0]
+    assert 'OPENAI_API_KEY = _load_env_var("OPENAI_API_KEY")' in config_cells[0]
+    assert "from google.colab import userdata" in config_cells[0]
+    assert "from getpass import getpass" in config_cells[0]
+    assert "os.environ[name] = value" in config_cells[0]
+    assert "def make_llm(" in config_cells[0]
     assert (
-        'ENV_123_SERVICE_KEY = os.environ.get("ENV_123_SERVICE_KEY", "")'
-        in config_cells[0]
+        'ENV_123_SERVICE_KEY = _load_env_var("ENV_123_SERVICE_KEY")' in config_cells[0]
     )
     ast.parse(config_cells[0])
 
@@ -737,10 +895,10 @@ async def test_compose_notebook_sections_and_packages(
         and "MODEL =" in cell.content
     ]
     assert config_cells
-    assert (
-        'OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")'
-        in config_cells[0].content
-    )
+    assert 'OPENAI_API_KEY = _load_env_var("OPENAI_API_KEY")' in config_cells[0].content
+    assert "from google.colab import userdata" in config_cells[0].content
+    assert "from getpass import getpass" in config_cells[0].content
+    assert "def make_llm(" in config_cells[0].content
     assert "ANTHROPIC_API_KEY" not in config_cells[0].content
     assert "MAX_ITERATIONS = 10" in config_cells[0].content
 
@@ -1323,12 +1481,13 @@ async def test_compose_notebook_hybrid_sparse_nodes_keep_defaults_aligned(
     )
 
     assert "def specialist_1_node" in node_source
-    assert "def researcher_node" in node_source
-    assert "def reviewer_node" in node_source
+    assert "def worker_node" in node_source
+    assert "def researcher_node" not in node_source
+    assert "def reviewer_node" not in node_source
     assert 'workflow.add_node("specialist_1", specialist_1_node)' in graph_code
-    assert 'workflow.add_node("researcher", researcher_node)' in graph_code
-    assert 'workflow.add_node("reviewer", reviewer_node)' in graph_code
+    assert 'workflow.add_node("worker", worker_node)' in graph_code
     assert 'workflow.add_edge("specialist_1", "finish")' in graph_code
+    assert 'workflow.add_edge("worker", "supervisor")' in graph_code
 
 
 @pytest.mark.asyncio
@@ -1393,8 +1552,13 @@ async def test_compose_notebook_hybrid_terminal_finish_is_not_duplicated(
     assert code.count("def finish_node") == 1
     assert code.count('workflow.add_node("finish", finish_node)') == 1
     assert 'workflow.add_node("gender_setup", gender_setup_node)' in code
-    assert 'workflow.add_node("anachronism_verifier", anachronism_verifier_node)' in code
-    assert 'workflow.add_node("believability_verifier", believability_verifier_node)' in code
+    assert (
+        'workflow.add_node("anachronism_verifier", anachronism_verifier_node)' in code
+    )
+    assert (
+        'workflow.add_node("believability_verifier", believability_verifier_node)'
+        in code
+    )
     assert 'workflow.add_edge("finish", "finish")' not in code
     ast.parse(code)
 
@@ -1817,6 +1981,105 @@ async def test_generate_tool_implementation_rejects_invalid_python_and_falls_bac
 
 
 @pytest.mark.asyncio
+async def test_tool_cells_emit_decorated_tools_and_tool_node(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    monkeypatch.setattr(composer_module, "ChatOpenAI", DummyLLM)
+    composer = composer_module.NotebookComposer()
+    feedback = composer_module.NotebookCompositionFeedback()
+
+    cells = await composer._create_tool_cells(
+        [
+            {
+                "name": "Context Lookup",
+                "purpose": "Lookup conversational context.",
+                "category": "validation",
+            }
+        ],
+        feedback,
+    )
+    tool_code = "\n\n".join(cell.content for cell in cells if cell.cell_type == "code")
+
+    assert "from langchain_core.tools import tool" in tool_code
+    assert "@tool" in tool_code
+    assert "TOOLS = [Context_Lookup]" in tool_code
+    assert "TOOLS_BY_NAME = {tool.name: tool for tool in TOOLS}" in tool_code
+    assert "ToolNode(TOOLS, handle_tool_errors=True)" in tool_code
+    ast.parse(tool_code)
+
+
+@pytest.mark.asyncio
+async def test_tool_cells_keep_tools_executable_when_reachability_contract_missing(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    monkeypatch.setattr(composer_module, "ChatOpenAI", DummyLLM)
+    composer = composer_module.NotebookComposer()
+    feedback = composer_module.NotebookCompositionFeedback()
+
+    cells = await composer._create_tool_cells(
+        [
+            {
+                "tool_id": "context_lookup",
+                "name": "Context Lookup",
+                "purpose": "Lookup conversational context.",
+                "category": "validation",
+            }
+        ],
+        feedback,
+        workflow_design={"architecture_type": "hybrid", "nodes": []},
+    )
+    tool_code = "\n\n".join(cell.content for cell in cells if cell.cell_type == "code")
+
+    assert "@tool" in tool_code
+    assert "TOOLS = [Context_Lookup]" in tool_code
+    assert "ToolNode(TOOLS, handle_tool_errors=True)" in tool_code
+    assert "Utility helper only" not in tool_code
+    ast.parse(tool_code)
+
+
+def test_utility_helper_conversion_removes_local_tool_import_guard():
+    generated_code = """
+def schema_validator(payload: dict) -> dict:
+    try:
+        from langchain_core.tools import tool
+    except Exception:
+        tool = None  # Allows immediate execution without LangChain.
+
+    return {"valid": isinstance(payload, dict)}
+"""
+
+    helper_code = composer_module.NotebookComposer._as_utility_helper_code(
+        generated_code
+    )
+
+    assert "@tool" not in helper_code
+    assert "langchain_core.tools" not in helper_code
+    assert "tool = None" not in helper_code
+    assert "try:\n    except" not in helper_code
+    ast.parse(helper_code)
+
+
+def test_deterministic_node_tool_path_is_not_executable_tool_contract():
+    executable_ids = composer_module.NotebookComposer._executable_tool_ids(
+        {
+            "graph_exports": {
+                "schema": {
+                    "tool_reachability": [
+                        {
+                            "tool_id": "schema_validator",
+                            "execution_path": "deterministic_node",
+                        },
+                        {"tool_id": "web_search", "execution_path": "tool_node"},
+                    ]
+                }
+            }
+        }
+    )
+
+    assert executable_ids == {"web_search"}
+
+
+@pytest.mark.asyncio
 async def test_generate_node_implementation_rejects_invalid_python_and_falls_back(
     monkeypatch: pytest.MonkeyPatch,
 ):
@@ -1865,10 +2128,11 @@ def test_tool_fallback_sanitizes_identifier_and_compiles(
     assert fallback_code.splitlines()[0].startswith(
         "# WARNING: Deterministic fallback generated"
     )
+    assert "from langchain_core.tools import tool" in fallback_code
+    assert "@tool" in fallback_code
     compile(fallback_code, "<tool_fallback>", "exec")
     parsed = ast.parse(fallback_code)
-    assert len(parsed.body) == 1
-    assert isinstance(parsed.body[0], ast.FunctionDef)
+    assert any(isinstance(node, ast.FunctionDef) for node in parsed.body)
 
 
 def test_node_fallback_sanitizes_identifier_and_compiles(
@@ -1885,13 +2149,70 @@ def test_node_fallback_sanitizes_identifier_and_compiles(
         {},
     )
 
-    assert "def _9_node_name_raise_SystemExit_node" in fallback_code
+    assert "def _9_node_name_raise_systemexit_node" in fallback_code
     assert '9 node name";\nraise SystemExit' not in fallback_code
     assert '\\"\\"\\"' in fallback_code
     compile(fallback_code, "<node_fallback>", "exec")
     parsed = ast.parse(fallback_code)
     assert len(parsed.body) == 1
     assert isinstance(parsed.body[0], ast.FunctionDef)
+
+
+def test_verifier_and_reviser_fallbacks_emit_structured_revision_state(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    monkeypatch.setattr(composer_module, "ChatOpenAI", DummyLLM)
+    composer = composer_module.NotebookComposer()
+
+    workflow_design = {
+        "architecture_type": "custom",
+        "state_schema": {
+            "draft_response": "Draft response awaiting verification",
+            "safety_passed": "Whether safety and realism checks passed",
+            "needs_revision": "Whether revision is required",
+            "historical_risk_notes": "Historical risk notes",
+            "realism_notes": "Realism notes",
+            "revision_instructions": "Instructions for reviser",
+            "revision_count": "Bounded revision count",
+            "revision_history": "Revision history",
+            "final_response": "Accepted final response",
+            "route": "Revision route",
+        },
+        "nodes": [
+            {"name": "historical_verifier", "purpose": "Verify anachronisms"},
+            {"name": "reviser", "purpose": "Revise failed outputs"},
+        ],
+    }
+
+    verifier_code = composer._generate_node_fallback(
+        {"name": "historical_verifier", "purpose": "Verify realism"},
+        workflow_design,
+    )
+    reviser_code = composer._generate_node_fallback(
+        {"name": "reviser", "purpose": "Revise failed outputs"},
+        workflow_design,
+    )
+
+    assert 'draft = str(state.get("draft_response")' in verifier_code
+    assert 'updates["safety_passed"] = safety_passed' in verifier_code
+    assert 'updates["needs_revision"] = needs_revision' in verifier_code
+    assert 'updates["historical_risk_notes"] = historical_risk_notes' in verifier_code
+    assert 'updates["realism_notes"] = realism_notes' in verifier_code
+    assert 'updates["revision_instructions"] = revision_instructions' in verifier_code
+    assert (
+        'updates["route"] = "revise" if needs_revision else "accept"' in verifier_code
+    )
+    assert 'updates["final_response"] = draft' in verifier_code
+    assert 'globals().get("ANACHRONISM_TERMS", (' in verifier_code
+    assert '"smartphone"' in verifier_code
+    assert '"star wars"' in verifier_code
+    assert 'revision_count = int(state.get("revision_count", 0)) + 1' in reviser_code
+    assert 'updates["draft_response"] = revised_draft' in reviser_code
+    assert 'updates["revision_count"] = revision_count' in reviser_code
+    assert 'updates["revision_history"] = revision_history' in reviser_code
+    assert 'updates["route"] = "verify"' in reviser_code
+    compile(verifier_code, "<verifier_fallback>", "exec")
+    compile(reviser_code, "<reviser_fallback>", "exec")
 
 
 def test_graph_fallback_uses_sanitized_function_references(
@@ -1914,6 +2235,29 @@ def test_graph_fallback_uses_sanitized_function_references(
     assert 'workflow.add_node("start node", start_node_node)' in graph_code
     assert 'workflow.add_node("9 result-node", _9_result_node_node)' in graph_code
     compile(graph_code, "<graph_fallback>", "exec")
+
+
+def test_chatbot_fallback_nodes_include_pattern_scaffold_handlers(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    monkeypatch.setattr(composer_module, "ChatOpenAI", DummyLLM)
+    composer = composer_module.NotebookComposer()
+    workflow_design = {
+        "architecture_type": "hybrid",
+        "state_schema": {"messages": "Conversation messages"},
+        "nodes": [
+            {"name": "persona_specialist", "purpose": "Draft in persona"},
+            {"name": "historical_verifier", "purpose": "Verify realism"},
+        ],
+    }
+
+    nodes = composer._with_required_pattern_scaffold_nodes(
+        workflow_design["nodes"],
+        workflow_design,
+    )
+
+    assert [node["name"] for node in nodes[:2]] == ["router", "supervisor"]
+    assert "persona_specialist" in {node["name"] for node in nodes}
 
 
 def test_graph_fallback_lowers_command_routes_to_conditional_edges(
@@ -1941,13 +2285,223 @@ def test_graph_fallback_lowers_command_routes_to_conditional_edges(
 
     assert "_command_route_from_planner_0_path_map" in graph_code
     assert '"reviewer": "reviewer"' in graph_code
-    assert '"__end__": END' in graph_code
+    assert '"END": END' in graph_code
     assert 'state.get("next_agent")' in graph_code
     assert (
         'workflow.add_conditional_edges("planner", _command_route_from_planner_0, '
         "_command_route_from_planner_0_path_map)"
     ) in graph_code
     compile(graph_code, "<graph_fallback_command_routes>", "exec")
+
+
+@pytest.mark.asyncio
+async def test_compose_notebook_renders_canonical_hybrid_graph_contract(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    monkeypatch.setattr(composer_module, "ChatOpenAI", DummyLLM)
+    composer = composer_module.NotebookComposer()
+
+    canonical_schema = {
+        "architecture_type": "hybrid",
+        "nodes": [
+            {"name": "router", "purpose": "Route the chat turn"},
+            {"name": "persona_specialist", "purpose": "Draft in persona"},
+            {"name": "historical_verifier", "purpose": "Verify the draft"},
+            {"name": "revision_specialist", "purpose": "Revise failed drafts"},
+            {"name": "finish", "purpose": "Finalize the answer"},
+        ],
+        "edges": [
+            {"from": "router", "to": "persona_specialist"},
+            {"from": "persona_specialist", "to": "historical_verifier"},
+            {"from": "revision_specialist", "to": "historical_verifier"},
+        ],
+        "conditional_edges": [
+            {
+                "from": "historical_verifier",
+                "condition": "Route failed drafts through revision.",
+                "branches": {
+                    "revise": "revision_specialist",
+                    "approved": "finish",
+                },
+                "guarded_cycle": True,
+            }
+        ],
+        "command_routes": [
+            {
+                "source": "revision_specialist",
+                "destinations": ["historical_verifier", "END"],
+                "update_fields": ["route", "revision_notes"],
+            }
+        ],
+        "entry_point": "router",
+        "terminal_nodes": ["finish"],
+        "compiled_graph_variable": "graph",
+        "checkpointing": True,
+    }
+
+    composition = await composer.compose_notebook(
+        notebook_plan=NotebookPlan(
+            title="Canonical Hybrid Chatbot",
+            sections=["Setup", "Workflow", "Execution"],
+            patterns_used=["hybrid"],
+            architecture_type="hybrid",
+        ),
+        workflow_design={
+            "architecture_type": "hybrid",
+            "state_schema": {"messages": "Conversation state"},
+            "nodes": canonical_schema["nodes"],
+            "graph_exports": {
+                "mermaid": "flowchart TD",
+                "schema": canonical_schema,
+            },
+        },
+        tools=[],
+        architecture={
+            "architecture_type": "hybrid",
+            "justification": "Canonical topology test.",
+        },
+    )
+
+    graph_cells = [
+        cell
+        for cell in composition.cells
+        if cell.section == "graph" and cell.cell_type == "code"
+    ]
+    assert graph_cells
+    graph_code = graph_cells[-1].content
+    all_code = "\n\n".join(
+        cell.content for cell in composition.cells if cell.cell_type == "code"
+    )
+
+    assert "CANONICAL_GRAPH_SPEC" in graph_code
+    assert all_code.count("def finish_node") == 1
+    assert (
+        'workflow.add_edge("persona_specialist", "historical_verifier")' in graph_code
+    )
+    assert (
+        'workflow.add_edge("revision_specialist", "historical_verifier")'
+        not in graph_code
+    )
+    assert '"revise": "revision_specialist"' in graph_code
+    assert '"approved": "finish"' in graph_code
+    assert '"END": END' in graph_code
+    assert '"__end__": END' not in graph_code
+    assert 'workflow.add_conditional_edges("revision_specialist"' in graph_code
+    assert 'workflow.add_edge("persona_specialist", "finish")' not in graph_code
+    assert "researcher" not in graph_code
+    assert "reviewer" not in graph_code
+    assert "def finish_node" in graph_code
+    assert 'state.get("task_results", {})' in graph_code
+    assert 'state.get("results", {})' in graph_code
+    compile(graph_code, "<canonical_graph_contract>", "exec")
+    metadata_schema = graph_cells[-1].metadata["canonical_graph_schema"]
+    assert metadata_schema["command_routes"] == canonical_schema["command_routes"]
+    assert metadata_schema["edges"] == [
+        {"from": "router", "to": "persona_specialist"},
+        {"from": "persona_specialist", "to": "historical_verifier"},
+    ]
+
+
+@pytest.mark.asyncio
+async def test_compose_notebook_custom_canonical_graph_uses_lowercase_refs_and_single_finish(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """Custom canonical graph cells should not add a second structural finish node."""
+
+    TrackingLLM.reset()
+    monkeypatch.setattr(composer_module, "ChatOpenAI", TrackingLLM)
+    composer = composer_module.NotebookComposer()
+    canonical_schema = {
+        "architecture_type": "custom",
+        "nodes": [
+            {"name": "Search Agent", "purpose": "Search documents"},
+            {"name": "finish", "purpose": "Finalize the answer"},
+        ],
+        "edges": [{"from": "Search Agent", "to": "finish"}],
+        "command_routes": [
+            {
+                "source": "Search Agent",
+                "destinations": ["finish", "END"],
+                "update_fields": ["next_agent"],
+            }
+        ],
+        "entry_point": "Search Agent",
+        "terminal_nodes": ["finish"],
+        "compiled_graph_variable": "graph",
+        "checkpointing": True,
+    }
+
+    composition = await composer.compose_notebook(
+        notebook_plan=NotebookPlan(
+            title="Custom Canonical Graph",
+            sections=["Setup", "Workflow", "Execution"],
+            patterns_used=["custom"],
+            architecture_type="custom",
+        ),
+        workflow_design={
+            "architecture_type": "custom",
+            "state_schema": {"messages": "Conversation state"},
+            "nodes": canonical_schema["nodes"],
+            "graph_exports": {
+                "mermaid": "flowchart TD",
+                "schema": canonical_schema,
+            },
+        },
+        tools=[],
+        architecture={
+            "architecture_type": "custom",
+            "justification": "Custom canonical topology test.",
+        },
+    )
+
+    code = "\n\n".join(
+        cell.content for cell in composition.cells if cell.cell_type == "code"
+    )
+    graph_code = next(
+        cell.content
+        for cell in composition.cells
+        if cell.section == "graph" and cell.cell_type == "code"
+    )
+
+    assert code.count("def finish_node") == 1
+    assert 'workflow.add_node("Search Agent", search_agent_node)' in graph_code
+    assert "def _route_from_search_agent_0" in graph_code
+    assert '"END": END' in graph_code
+    assert "Search_Agent_node" not in graph_code
+    assert "_route_from_Search_Agent" not in graph_code
+    compile(graph_code, "<custom_canonical_graph_contract>", "exec")
+
+
+def test_generate_canonical_graph_code_omits_checkpointer_when_disabled():
+    """Canonical notebook graph code should honor checkpointing=false."""
+
+    composer = composer_module.NotebookComposer.__new__(
+        composer_module.NotebookComposer
+    )
+    schema = {
+        "architecture_type": "custom",
+        "nodes": [
+            {"name": "router", "purpose": "Route requests"},
+            {"name": "finish", "purpose": "Finalize"},
+        ],
+        "edges": [{"from": "router", "to": "finish"}],
+        "entry_point": "router",
+        "terminal_nodes": ["finish"],
+        "compiled_graph_variable": "compiled_graph",
+        "checkpointing": False,
+    }
+
+    graph_code = composer._generate_canonical_graph_code(
+        {"architecture_type": "custom"},
+        schema,
+    )
+
+    assert "from langgraph.checkpoint.memory import InMemorySaver" not in graph_code
+    assert "InMemorySaver()" not in graph_code
+    assert "checkpointer=" not in graph_code
+    assert "compiled_graph = workflow.compile()" in graph_code
+    assert "'checkpointing': False" in graph_code
+    compile(graph_code, "<canonical_graph_without_checkpointing>", "exec")
 
 
 def test_split_hybrid_nodes_uses_role_metadata_for_worker_membership():
@@ -2047,10 +2601,11 @@ async def test_pattern_nodes_use_request_scoped_model_config(
     node_cells = [cell for cell in cells if cell.section == "nodes"]
     assert node_cells
     assert any(
-        "ChatOpenAI(model='gpt-5.2', temperature=0.3, base_url='https://example.test/v1', max_tokens=2048)"
-        in cell.content
+        "make_llm(temperature=0" in cell.content
+        or "make_llm(temperature=0.3" in cell.content
         for cell in node_cells
     )
+    assert not any("ChatOpenAI(model=" in cell.content for cell in node_cells)
 
     config_code_cells = [
         cell for cell in cells if cell.section == "config" and cell.cell_type == "code"
@@ -2062,5 +2617,6 @@ async def test_pattern_nodes_use_request_scoped_model_config(
         for cell in config_code_cells
     )
     assert any("MAX_TOKENS = 2048" in cell.content for cell in config_code_cells)
+    assert any("def make_llm(" in cell.content for cell in config_code_cells)
     assert composition.feedback.resolved_model == "gpt-5.2"
     assert composition.feedback.resolved_api_base == "https://example.test/v1"

@@ -3,8 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-from pathlib import Path
-from tempfile import TemporaryDirectory
 from typing import List
 
 from langchain_openai import ChatOpenAI
@@ -42,12 +40,11 @@ class QARepairAgent:
         """
         notebook_builder = NotebookFileComposer()
         validator = NotebookValidator()
-
-        with TemporaryDirectory() as temp_dir:
-            notebook = notebook_builder.build_notebook(cells)
-            notebook_path = Path(temp_dir) / "generated.ipynb"
-            notebook_builder.write(notebook, notebook_path)
-            return validator.validate_all(notebook_path)
+        notebook = notebook_builder.build_notebook(cells)
+        return await asyncio.to_thread(
+            validator.validate_notebook,
+            notebook,
+        )
 
     def _check_no_placeholders(self, cells: List[CellSpec]) -> QAReport:
         """Ensure no TODO or placeholder text in critical cells."""

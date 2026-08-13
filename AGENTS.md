@@ -111,14 +111,18 @@ That state is the integration contract between stages.
 
 Important patterns:
 
-- `constraints` and `docs_context` are accumulated lists.
+- `constraints` and `docs_context` are accumulated lists with bounded,
+  latest-unique reducers.
 - `requirements_feedback` is advisory metadata from intake. It should surface fallback/gap/conflict guidance without replacing `constraints` as the downstream source of truth.
+- `requirements_messages` is optional multi-turn intake context. When present,
+  `RequirementsAnalyst.analyze_dialog(...)` should refine constraints across
+  turns while keeping legacy single-prompt generation compatible.
 - `architecture_feedback` is advisory metadata from architecture selection. It should surface fallback, tradeoff, and validation guidance without replacing `architecture_type` or `selected_patterns` as the downstream contract.
 - `tools_plan` stays the backward-compatible downstream tool payload, while `tool_planning_feedback` carries fallback, environment, and dependency advisories for manifests and notebook warning surfaces.
 - `generated_cells` is authoritative for the current repair iteration and is
   replaced rather than concatenated.
 - `qa_reports` is the current QA snapshot for the active pass, while
-  `qa_history` preserves attempt-by-attempt QA and repair evidence.
+  `qa_history` preserves bounded attempt-by-attempt QA and repair evidence.
 - `repair_attempts` bounds retry behavior.
 - `artifacts_manifest` and `generation_complete` are the final packaging
   outputs expected by the CLI and API.
@@ -221,6 +225,34 @@ aligned when changing notebook assembly behavior:
 - keep deterministic pattern builders ordered and synchronous; only the
   LLM-backed tool and custom-node generation paths should use the internal
   parallel async flow
+- keep standalone pattern generators self-contained by default: generated
+  snippets should initialize `ChatOpenAI(...)` directly, including `base_url`
+  when an API base is provided
+- when pattern code is emitted into notebook-composed cells, opt into
+  notebook-scoped helpers explicitly with `use_notebook_helper=True` so node
+  code calls `make_llm(...)` and leaves model/API-base settings centralized in
+  the config cell
+- router pattern snippets should include a fallback/general route for greetings,
+  unsupported requests, and unclear routing decisions unless a composed
+  architecture supplies a stricter canonical graph contract
+- supervisor/subagent pattern snippets should use `Send(...)` fan-out when
+  dispatching multiple independent specialists and should keep result fields
+  reducer-backed
+- critique-loop snippets may opt into LangGraph static interrupts with
+  `require_human_approval=True`, compiling with `interrupt_before=["revise"]`
+  and a checkpointer
+- generated chatbot notebooks must remain non-blocking on top-to-bottom
+  execution by default; interactive input loops should run only when the
+  notebook-level `RUN_INTERACTIVE_LOOP` flag is enabled, while `chat_once(...)`
+  and repeatable same-thread helper calls remain available for tests and demos
+- generated chatbot verifier/reviser nodes should use the canonical draft,
+  safety, revision, and final-response fields so QA can prove bounded revision
+  routing instead of relying on prose-only verifier cells
+- generated tool claims should stay aligned with
+  `graph_exports.schema.tool_reachability`; manifests expose
+  `tool_contract_summary` to distinguish planned, executable, utility, and
+  unsupported tools, plus unclassified tools when reachability metadata is
+  missing or mismatched
 - register architecture-specific notebook assembly behavior through
   `src/langgraph_system_generator/generator/notebook_composer_registry.py`
   and `NOTEBOOK_COMPOSER_PLUGIN_MODULES` rather than adding more hardcoded
@@ -246,8 +278,9 @@ that shared engine, not a second repair implementation.
 - keep validator coverage aligned with official LangGraph notebook semantics:
   accumulated messages need reducer semantics, graph nodes should return
   partial state updates, tool descriptions must match reachable execution
-  paths, and domain-specific prompts should not render generic architecture
-  placeholders
+  paths, memory/persona fields need registered writers, chatbot verifier loops
+  need executable revise/accept routing, and domain-specific prompts should not
+  render generic architecture placeholders
 - prefer bounded deterministic repairs over free-form rewrites, especially in
   stub mode and CI-facing tests
 

@@ -75,6 +75,8 @@ the UI aligned with CLI/API generation behavior and artifact manifests.
 - Avoid frontend calls to external APIs; route generation through the backend.
 - Treat artifact manifest shape as a public contract and keep display resilient
   to optional fields.
+- Display `cell_count` as the final notebook cell count; keep raw generated
+  cell specs labeled separately so the UI does not imply they are identical.
 
 ## Verification
 

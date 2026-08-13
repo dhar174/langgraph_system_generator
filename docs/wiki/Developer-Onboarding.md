@@ -156,6 +156,10 @@ Every generation is expected to produce some combination of:
   `graph_design_feedback`, and `qa_repair_feedback`
 - warning surfaces and next-step hints
 - artifact paths for download APIs and manual inspection
+- `cell_count`, `cell_count_source`, and `generated_cell_spec_count` so
+  maintainers can distinguish serialized notebook cells from raw cell specs
+- `artifact_contract` and `qa_summary.validation_scope` for truthful artifact
+  availability and QA scope
 
 ## Cross-Cutting Workflow Examples
 

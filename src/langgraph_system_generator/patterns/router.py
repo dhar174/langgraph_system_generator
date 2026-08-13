@@ -13,10 +13,20 @@ from langgraph_system_generator.patterns.utils import (
 from langgraph_system_generator.utils.config import ModelConfig
 
 
-def _route_specs(routes: List[str]) -> List[tuple[str, str]]:
+def _route_specs(
+    routes: List[str],
+    *,
+    include_fallback: bool = True,
+    fallback_route: str = "fallback",
+) -> List[tuple[str, str]]:
     """Return ``(label, node_name)`` pairs for generated routes."""
     values = routes or ["default"]
-    return [(route, sanitize_identifier(route)) for route in values]
+    labels: List[str] = []
+    for route in [*values, *(["fallback"] if include_fallback else [])]:
+        label = fallback_route if route == "fallback" else route
+        if label not in labels:
+            labels.append(label)
+    return [(route, sanitize_identifier(route)) for route in labels]
 
 
 class RouterPattern:
@@ -57,8 +67,11 @@ class WorkflowState(TypedDict, total=False):
         routes: List[str],
         model_config: Optional[Union[ModelConfig, dict]] = None,
         use_structured_output: bool = True,
+        use_notebook_helper: bool = False,
+        include_fallback: bool = True,
+        fallback_route: str = "fallback",
     ) -> str:
-        """Generate a router node that returns ``Command``."""
+        """Generate a router node that returns state updates."""
         if model_config is None:
             config = ModelConfig()
         elif isinstance(model_config, dict):
@@ -66,10 +79,19 @@ class WorkflowState(TypedDict, total=False):
         else:
             config = model_config
 
-        specs = _route_specs(routes)
+        specs = _route_specs(
+            routes,
+            include_fallback=include_fallback,
+            fallback_route=fallback_route,
+        )
         route_literals = ", ".join(double_quoted_literal(label) for label, _ in specs)
         route_help = "\n".join(
-            f"- {label}: Handle {label}-specific requests." for label, _ in specs
+            (
+                f"- {label}: Handle unclear, conversational, unsupported, or out-of-domain requests."
+                if label == fallback_route
+                else f"- {label}: Handle {label}-specific requests."
+            )
+            for label, _ in specs
         )
         route_names = ", ".join(label for label, _ in specs)
         llm_init = build_llm_init(
@@ -77,6 +99,7 @@ class WorkflowState(TypedDict, total=False):
             0,
             config.api_base,
             config.max_tokens,
+            use_notebook_helper=use_notebook_helper,
         )
 
         if use_structured_output:
@@ -84,7 +107,6 @@ class WorkflowState(TypedDict, total=False):
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
-from langgraph.types import Command
 from pydantic import BaseModel, Field
 
 
@@ -122,6 +144,7 @@ def router_node(state: WorkflowState, window_size: int = 5) -> WorkflowState:
     system_prompt = SystemMessage(content="""You are a routing classifier.
 Analyze the recent conversation and select the most appropriate route.
 Resolve coreferences such as "it", "that", and "the one" using the conversation history.
+Use the {fallback_route} route for greetings, generic chat, unsupported requests, missing-tool requests, or anything that does not clearly belong to a specialist.
 Respond using the provided RouteDecision schema.""")
 
     classification_prompt = f"""Analyze the following conversation and determine which route should handle the user's latest request.
@@ -167,6 +190,7 @@ def router_node(state: WorkflowState, window_size: int = 5) -> WorkflowState:
     system_prompt = SystemMessage(content=f"""You are a routing classifier.
 Analyze the recent conversation and select the appropriate route from: {route_names}
 Resolve coreferences such as "it", "that", and "the one" using the conversation history.
+Use {fallback_route} for greetings, generic chat, unsupported requests, missing-tool requests, or anything that does not clearly belong to a specialist.
 Respond with ONLY the route name.""")
     
     user_prompt = HumanMessage(content=f"""Recent conversation (last {{window_size}} messages):
@@ -180,11 +204,11 @@ Route:""")
     selected_route = response.content.strip().lower()
     
     # Validate route
-    valid_routes = [r.lower() for r in routes]
+    valid_routes = [r.lower() for r in {repr([label for label, _ in specs])}]
     if not valid_routes:
         raise ValueError("Router configuration must include at least one route.")
     if selected_route not in valid_routes:
-        selected_route = valid_routes[0]  # Default to first route
+        selected_route = {double_quoted_literal(fallback_route)}  # Safe general route
     
     return {{
         "route": selected_route,
@@ -196,6 +220,7 @@ Route:""")
         route_name: str,
         route_purpose: str,
         model_config: Optional[Union[ModelConfig, dict]] = None,
+        use_notebook_helper: bool = False,
     ) -> str:
         """Generate a specialist node for a single route."""
         if model_config is None:
@@ -211,6 +236,7 @@ Route:""")
             config.temperature,
             config.api_base,
             config.max_tokens,
+            use_notebook_helper=use_notebook_helper,
         )
 
         return f'''from langchain_core.messages import AIMessage, SystemMessage
@@ -244,9 +270,15 @@ Responsibility:
         routes: List[str],
         entry_point: str = "router",
         use_conditional_edges: bool = True,
+        include_fallback: bool = True,
+        fallback_route: str = "fallback",
     ) -> str:
         """Generate a graph using dynamic ``Command``-based routing."""
-        specs = _route_specs(routes)
+        specs = _route_specs(
+            routes,
+            include_fallback=include_fallback,
+            fallback_route=fallback_route,
+        )
         entry_node = sanitize_identifier(entry_point or "router")
         node_additions = "\n".join(
             f'workflow.add_node("{node_name}", {node_name}_node)'
@@ -278,7 +310,7 @@ def route_decision(state: WorkflowState) -> str:
     """Determine next node based on router decision."""
     route = state.get("route", "")
     {route_conditions}
-    return END
+    return {double_quoted_literal(sanitize_identifier(fallback_route)) if include_fallback else "END"}
 
 
 # Create graph
@@ -312,7 +344,7 @@ graph = workflow.compile(checkpointer=memory)'''
 from langgraph.checkpoint.memory import InMemorySaver
 
 workflow = StateGraph(WorkflowState)
-memory = InMemorySaver()
+checkpointer = InMemorySaver()
 
 # Add router node
 workflow.add_node('router', router_node)
@@ -330,12 +362,22 @@ graph = workflow.compile(checkpointer=checkpointer)"""
         routes: List[str],
         route_purposes: Optional[Dict[str, str]] = None,
         model_config: Optional[Union[ModelConfig, dict]] = None,
+        include_fallback: bool = True,
+        fallback_route: str = "fallback",
     ) -> str:
         """Generate a full runnable router example."""
-        specs = _route_specs(routes)
+        specs = _route_specs(
+            routes,
+            include_fallback=include_fallback,
+            fallback_route=fallback_route,
+        )
         if route_purposes is None:
             route_purposes = {
-                label: f"Handle {label}-related tasks with clear specialist reasoning."
+                label: (
+                    "Handle general, unsupported, or unclear requests safely."
+                    if label == fallback_route
+                    else f"Handle {label}-related tasks with clear specialist reasoning."
+                )
                 for label, _ in specs
             }
 
@@ -343,13 +385,19 @@ graph = workflow.compile(checkpointer=checkpointer)"""
         router_code = RouterPattern.generate_router_node_code(
             [label for label, _ in specs],
             model_config=model_config,
+            include_fallback=include_fallback,
+            fallback_route=fallback_route,
         )
         route_nodes = "\n\n".join(
             RouterPattern.generate_route_node_code(
                 label,
                 route_purposes.get(
                     label,
-                    f"Handle {label}-related tasks with clear specialist reasoning.",
+                    (
+                        "Handle general, unsupported, or unclear requests safely."
+                        if label == fallback_route
+                        else f"Handle {label}-related tasks with clear specialist reasoning."
+                    ),
                 ),
                 model_config=model_config,
             )
@@ -357,6 +405,8 @@ graph = workflow.compile(checkpointer=checkpointer)"""
         )
         graph_code = RouterPattern.generate_graph_code(
             [label for label, _ in specs],
+            include_fallback=include_fallback,
+            fallback_route=fallback_route,
         )
 
         return f'''"""Router Pattern Example."""

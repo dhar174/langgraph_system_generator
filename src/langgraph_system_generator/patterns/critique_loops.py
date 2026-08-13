@@ -113,6 +113,7 @@ class WorkflowState(MessagesState):
     def generate_generation_node_code(
         task_description: str = "Generate an initial draft for the request.",
         model_config: Optional[Union[ModelConfig, dict]] = None,
+        use_notebook_helper: bool = False,
     ) -> str:
         """Generate the initial draft node."""
         if model_config is None:
@@ -127,6 +128,7 @@ class WorkflowState(MessagesState):
             config.temperature,
             config.api_base,
             config.max_tokens,
+            use_notebook_helper=use_notebook_helper,
         )
         safe_task_description = CritiqueLoopPattern._quote_string(task_description)
 
@@ -167,12 +169,11 @@ Return a polished draft that can be reviewed and revised."""
         model_config: Optional[Union[ModelConfig, dict]] = None,
         use_structured_output: bool = True,
         feedback_source: str = "automated",
+        use_notebook_helper: bool = False,
     ) -> str:
         """Generate code for critique/review node."""
         if feedback_source not in {"automated", "human"}:
-            raise ValueError(
-                "feedback_source must be either 'automated' or 'human'"
-            )
+            raise ValueError("feedback_source must be either 'automated' or 'human'")
 
         if model_config is None:
             config = ModelConfig()
@@ -270,6 +271,7 @@ Criteria Reviewed:
             0,
             config.api_base,
             config.max_tokens,
+            use_notebook_helper=use_notebook_helper,
         )
 
         if use_structured_output:
@@ -381,6 +383,7 @@ def critique_node(state: WorkflowState) -> dict:
     @staticmethod
     def generate_revise_node_code(
         model_config: Optional[Union[ModelConfig, dict]] = None,
+        use_notebook_helper: bool = False,
     ) -> str:
         """Generate the revision node."""
         if model_config is None:
@@ -395,6 +398,7 @@ def critique_node(state: WorkflowState) -> dict:
             config.temperature,
             config.api_base,
             config.max_tokens,
+            use_notebook_helper=use_notebook_helper,
         )
         return textwrap.dedent(
             f'''from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
@@ -490,12 +494,18 @@ Address the critique directly while preserving good parts of the draft."""
         max_revisions: int = 5,
         min_quality_score: float = 0.8,
         failure_conditions: Optional[dict[str, Any]] = None,
+        require_human_approval: bool = False,
     ) -> str:
         """Generate the graph wiring for the critique loop."""
         conditional_helper = CritiqueLoopPattern.generate_conditional_edge_code(
             max_revisions=max_revisions,
             min_quality_score=min_quality_score,
             failure_conditions=failure_conditions,
+        )
+        compile_args = (
+            'checkpointer=checkpointer, interrupt_before=["revise"]'
+            if require_human_approval
+            else "checkpointer=checkpointer"
         )
         return textwrap.dedent(
             f'''from langgraph.checkpoint.memory import InMemorySaver
@@ -563,7 +573,7 @@ workflow.add_conditional_edges(
 workflow.add_edge("revise", "critique")
 workflow.add_edge("finalize", END)
 
-graph = workflow.compile(checkpointer=checkpointer)
+graph = workflow.compile({compile_args})
 '''
         )
 
@@ -577,6 +587,7 @@ graph = workflow.compile(checkpointer=checkpointer)
         use_structured_output: bool = True,
         feedback_source: str = "automated",
         failure_conditions: Optional[dict[str, Any]] = None,
+        require_human_approval: bool = False,
     ) -> str:
         """Generate a complete, runnable critique-revise loop example."""
         if criteria is None:
@@ -612,6 +623,7 @@ graph = workflow.compile(checkpointer=checkpointer)
             max_revisions=max_revisions,
             min_quality_score=min_quality_score,
             failure_conditions=failure_conditions,
+            require_human_approval=require_human_approval,
         )
 
         human_feedback_example = ""
@@ -633,7 +645,9 @@ def collect_human_feedback(
         ),
     }
 '''
-            human_state_fields = '\n        "human_feedback_handler": collect_human_feedback,'
+            human_state_fields = (
+                '\n        "human_feedback_handler": collect_human_feedback,'
+            )
 
         failure_state_fields = ""
         if failure_conditions:

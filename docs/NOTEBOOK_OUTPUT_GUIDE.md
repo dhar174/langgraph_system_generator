@@ -131,13 +131,54 @@ curl -X POST http://localhost:8000/generate \
     "mode": "stub",
     "architecture_type": "router",
     "cell_count": 15,
+    "cell_count_source": "serialized_notebook",
+    "generated_cell_spec_count": 8,
     "plan_title": "LangGraph Workflow: Create a multi-agent system",
     "notebook_path": "./output/my_system/notebook.ipynb",
     "html_path": "./output/my_system/notebook.html",
     "docx_path": "./output/my_system/notebook.docx",
     "zip_path": "./output/my_system/notebook_bundle.zip",
     "plan_path": "./output/my_system/notebook_plan.json",
-    "cells_path": "./output/my_system/generated_cells.json"
+    "cells_path": "./output/my_system/generated_cells.json",
+    "artifact_contract": {
+      "path_semantics": "Legacy *_path fields are server-local filesystem paths under output_dir.",
+      "standalone_files": [
+        {
+          "manifest_key": "notebook_path",
+          "availability": "standalone",
+          "path_type": "server_local",
+          "relative_path": "notebook.ipynb"
+        }
+      ],
+      "zip_members": [
+        {
+          "name": "notebook.ipynb",
+          "availability": "standalone_and_bundle",
+          "source_manifest_key": "notebook_path"
+        }
+      ]
+    },
+    "tool_contract_summary": {
+      "counts": {
+        "planned": 2,
+        "executable": 1,
+        "utility": 0,
+        "unsupported": 1,
+        "unclassified": 0
+      },
+      "source_precedence": [
+        "graph_exports.schema.tool_reachability",
+        "tools_plan",
+        "qa_reports.tool_reachability"
+      ]
+    },
+    "qa_summary": {
+      "validation_scope": {
+        "validated": ["Static QA checked the generated notebook cells covered by qa_reports."],
+        "not_validated": ["Runtime QA did not execute the full generated notebook or verify prompt-specific behavior."],
+        "notes": ["See qa_reports for rule-level findings and evidence."]
+      }
+    }
   },
   "manifest_path": "./output/my_system/manifest.json",
   "output_dir": "./output/my_system"
@@ -165,9 +206,10 @@ artifacts = await generate_artifacts(
     formats=["ipynb", "html", "docx"]
 )
 
-# Access generated file paths
+# Access generated file paths and availability metadata
 notebook_path = artifacts["manifest"]["notebook_path"]
 html_path = artifacts["manifest"]["html_path"]
+artifact_contract = artifacts["manifest"]["artifact_contract"]
 ```
 
 ## Notebook Structure

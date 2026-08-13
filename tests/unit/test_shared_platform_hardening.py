@@ -282,7 +282,7 @@ def test_web_ui_avoids_innerhtml_for_manifest_values():
     forbidden_patterns = [
         'innerHTML = `<strong>Architecture:</strong>',
         'innerHTML = `<strong>Plan Title:</strong>',
-        'innerHTML = `<strong>Generated Cells:</strong>',
+        'innerHTML = `<strong>Notebook Cells:</strong>',
         'innerHTML = `<strong>Output Directory:</strong>',
     ]
     for pattern in forbidden_patterns:

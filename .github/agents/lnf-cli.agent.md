@@ -62,6 +62,12 @@ surface.
 - Advanced request settings are request-scoped and must not leak across runs.
 - Artifact manifests should expose graph/spec, QA, context-pack provenance, and
   notebook dependency/feedback metadata without breaking existing consumers.
+- `cell_count` describes the serialized notebook, while
+  `generated_cell_spec_count` preserves the raw generated-cell count.
+- `artifact_contract` is the canonical place to distinguish standalone files,
+  ZIP members, server-local path semantics, and download URLs.
+- `qa_summary.validation_scope` should say what static/runtime QA actually
+  validated and what remains outside runtime smoke-test scope.
 - Notebook invocation examples should standardize on `graph` plus
   `{"configurable": {"thread_id": "lnf-demo-thread"}, "recursion_limit": 25}`.
 - Stub mode must remain offline-friendly and clear about unavailable live

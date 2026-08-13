@@ -267,6 +267,9 @@ Generate a multi-agent system from a prompt.
   "manifest_path": "./output/api/manifest.json",
   "manifest": {
     "architecture_type": "router",
+    "cell_count": 15,
+    "cell_count_source": "serialized_notebook",
+    "generated_cell_spec_count": 8,
     "requirements_feedback": {"fallback_used": false},
     "architecture_feedback": {"fallback_used": false},
     "graph_design_feedback": {
@@ -336,6 +339,7 @@ Generate a multi-agent system from a prompt.
     "qa_summary": {
       "status": "passed",
       "artifacts_usable": true,
+      "validation_scope": "static_notebook_validation",
       "counts": {
         "total": 0,
         "passed": 0,
@@ -345,6 +349,21 @@ Generate a multi-agent system from a prompt.
         "informational": 0
       },
       "findings": []
+    },
+    "artifact_contract": {
+      "standalone_files": [
+        "./output/api/notebook.ipynb",
+        "./output/api/notebook.html",
+        "./output/api/manifest.json"
+      ],
+      "zip_members": [
+        "notebook.ipynb",
+        "notebook.html",
+        "manifest.json",
+        "notebook_plan.json",
+        "generated_cells.json"
+      ],
+      "path_semantics": "Legacy *_path fields are server-local filesystem paths under output_dir."
     },
     "warnings": [],
     "export_results": {
@@ -622,6 +641,9 @@ summaries, and non-fatal warnings:
   "mode": "stub | live",
   "architecture_type": "router | subagents | hybrid | autoagent | deepagents",
   "plan_title": "LangGraph Workflow: Example",
+  "cell_count": 15,
+  "cell_count_source": "serialized_notebook",
+  "generated_cell_spec_count": 8,
   "requirements_feedback": {"fallback_used": false},
   "architecture_feedback": {"fallback_used": false},
   "graph_design_feedback": {
@@ -741,6 +763,7 @@ summaries, and non-fatal warnings:
   "qa_summary": {
     "status": "passed",
     "artifacts_usable": true,
+    "validation_scope": "static_notebook_validation",
     "counts": {
       "total": 0,
       "passed": 0,
@@ -754,6 +777,21 @@ summaries, and non-fatal warnings:
   "notebook_path": "./output/api/notebook.ipynb",
   "html_path": "./output/api/notebook.html",
   "zip_path": "./output/api/notebook_bundle.zip",
+  "artifact_contract": {
+    "standalone_files": [
+      "./output/api/notebook.ipynb",
+      "./output/api/notebook.html",
+      "./output/api/manifest.json"
+    ],
+    "zip_members": [
+      "notebook.ipynb",
+      "notebook.html",
+      "manifest.json",
+      "notebook_plan.json",
+      "generated_cells.json"
+    ],
+    "path_semantics": "Legacy *_path fields are server-local filesystem paths under output_dir."
+  },
   "warnings": [
     {
       "code": "dependency_unavailable",

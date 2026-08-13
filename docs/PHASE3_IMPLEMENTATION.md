@@ -205,7 +205,8 @@ Settings via environment variables or `.env` file:
 ## Notes
 
 - All agent LLM calls are async for efficiency
-- State uses `operator.add` annotations for list accumulation
+- State uses bounded reducers/helpers for accumulated `constraints`,
+  `docs_context`, and QA history
 - Repair loop prevents infinite loops with attempt tracking
 - Fallback behaviors ensure system continues on LLM parsing errors
 - Documentation retrieval is optional (continues without RAG if unavailable)

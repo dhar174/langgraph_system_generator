@@ -79,6 +79,7 @@ This is product-runtime code, not contributor-agent scaffolding.
   selection, graph design, tool planning, notebook assembly, QA, repair, or
   packaging.
 - Communicate through typed shared state; do not add hidden globals.
+- Preserve bounded accumulation for requirements, docs context, and QA history.
 - Preserve CLI/API/web parity and offline-friendly stub mode.
 - Preserve bounded repair behavior and write recovery evidence to QA history.
 - Do not import `.github/agents`, `.github/skills`, `.codex/skills`, `.claude`,

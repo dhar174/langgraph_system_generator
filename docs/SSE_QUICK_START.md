@@ -182,8 +182,14 @@ eventSource.addEventListener('error', (e) => {
     "mode": "stub",
     "manifest": {
       "architecture_type": "router",
-      "cell_count": 12,
-      "plan_title": "Customer Support Chatbot"
+      "cell_count": 15,
+      "cell_count_source": "serialized_notebook",
+      "generated_cell_spec_count": 8,
+      "plan_title": "Customer Support Chatbot",
+      "artifact_contract": {
+        "standalone_files": [],
+        "zip_members": []
+      }
     },
     "output_dir": "/path/to/output"
   }

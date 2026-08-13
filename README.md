@@ -15,6 +15,9 @@ exports, and structured QA feedback.
   architecture, graph, tool, and notebook generation.
 - **Registry-backed planning**: Architecture, graph design, tool planning,
   notebook composition, and QA/repair stages expose structured feedback.
+- **Truthful graph and artifact contracts**: Manifests carry graph/schema
+  exports, actual serialized notebook cell counts, artifact availability, and
+  QA validation scope details.
 - **Portable notebooks**: Generated notebooks target local Jupyter and Google
   Colab.
 - **Multi-format export**: Write IPYNB, HTML, Markdown, DOCX, ZIP, and optional
@@ -190,7 +193,10 @@ The manifest includes advisory fields such as `requirements_feedback`,
 `tool_planning_feedback`, `generation_context_pack`,
 `notebook_composition_feedback`,
 `notebook_dependency_plan`, `qa_repair_feedback`, `qa_reports`, and
-`qa_summary`. These are response/output fields, not new request fields.
+`qa_summary`. It also distinguishes final serialized notebook cells from raw
+generated cell specs through `cell_count`, `cell_count_source`, and
+`generated_cell_spec_count`, and records file availability through
+`artifact_contract`. These are response/output fields, not new request fields.
 
 Use `manifest.json` as the primary summary for:
 
@@ -202,7 +208,8 @@ Use `manifest.json` as the primary summary for:
 - repair attempt history, QA findings, and next-step hints
 - exact QA advisory details, severity classification, and whether artifacts
   remain usable
-- artifact paths that can be downloaded through `GET /artifacts`
+- artifact paths and ZIP members, including which standalone paths can be
+  downloaded through `GET /artifacts`
 
 ## API And Web UI
 
@@ -238,8 +245,11 @@ curl -X POST http://localhost:8000/generate \
   }'
 ```
 
-Request fields are `prompt`, `mode`, `output_dir`, `formats`, `model`,
-`custom_endpoint`, `temperature`, `max_tokens`, and `agent_type`.
+Request fields are `prompt`, `messages`, `mode`, `output_dir`, `formats`,
+`model`, `custom_endpoint`, `temperature`, `max_tokens`, and `agent_type`.
+Use `prompt` for the legacy single-turn request shape. Use `messages` for an
+iterative requirements dialog; when `prompt` is omitted, the API derives the
+generation prompt from the latest user message.
 
 Current API request model snapshot:
 
@@ -247,6 +257,7 @@ Current API request model snapshot:
 classDiagram
   class GenerationRequest {
     prompt : Optional[str]
+    messages : Optional[list[DialogMessage]]
     mode : Optional[GenerationMode]
     output_dir : Optional[str]
     formats : Optional[list[str]]
@@ -255,6 +266,10 @@ classDiagram
     temperature : Optional[float]
     max_tokens : Optional[int]
     agent_type : Optional[str]
+  }
+  class DialogMessage {
+    role : Literal["system", "user", "assistant"]
+    content : str
   }
 ```
 
@@ -348,9 +363,10 @@ The workflow builds and pushes:
 
 Then it deploys that image to `GCP_CLOUD_RUN_SERVICE` and performs an
 authenticated `/health` smoke check against the deployed Cloud Run URL using a
-Google identity token with the service URL as its audience. A failed health
-check fails the GitHub Actions job so operators have an obvious signal that the
-deployed revision needs investigation or rollback.
+Google identity token minted by `google-github-actions/auth` with the service
+URL as its audience. A failed health check fails the GitHub Actions job so
+operators have an obvious signal that the deployed revision needs investigation
+or rollback.
 
 ## Colab Usage
 

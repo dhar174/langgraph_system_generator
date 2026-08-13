@@ -20,6 +20,9 @@ from langgraph_system_generator.generator.notebook_composer_registry import (
     NotebookComposerRegistry,
     get_notebook_composer_registry,
 )
+from langgraph_system_generator.generator.graph_design_registry import (
+    normalize_graph_schema_payload,
+)
 from langgraph_system_generator.generator.tool_dependency_utils import (
     DependencyAccumulator,
     accumulate_tool_dependencies,
@@ -44,6 +47,7 @@ from langgraph_system_generator.patterns import (
     RouterPattern,
     SubagentsPattern,
 )
+from langgraph_system_generator.patterns.utils import render_additional_fields
 from langgraph_system_generator.utils.config import ModelConfig, settings
 
 
@@ -132,6 +136,26 @@ class NotebookComposer:
         "finish",
         "final",
     }
+    _CHATBOT_STATE_FIELDS: dict[str, str] = {
+        "draft_response": "Draft chatbot response awaiting verification.",
+        "safety_passed": "Whether safety and realism checks passed.",
+        "needs_revision": "Whether the draft requires a bounded revision.",
+        "historical_risk_notes": "Historical anachronism or realism findings.",
+        "realism_notes": "Persona realism notes from verifier nodes.",
+        "revision_instructions": "Concrete instructions for the reviser node.",
+        "revision_count": "Number of revision attempts for the current turn.",
+        "revision_history": "Attempt-by-attempt revision notes.",
+        "verification_passed": "Whether verifier checks accepted the draft.",
+        "final_response": "Accepted final chatbot response.",
+        "turn_count": "Number of completed chat turns for the thread.",
+        "memory_summary": "Short running conversation memory summary.",
+        "conversation_memory": "Thread-scoped multi-turn conversation memory.",
+        "persona_profile": "Selected persona profile for the active character.",
+        "persona": "Selected 18th-century commoner persona.",
+        "persona_choice": "Selected persona choice for the active character.",
+        "selected_gender": "Selected male or female character gender.",
+        "gender_pending": "Whether character selection is still pending.",
+    }
 
     def __init__(
         self,
@@ -172,6 +196,12 @@ class NotebookComposer:
                 slug = "_identifier"
         return slug
 
+    @classmethod
+    def _safe_node_identifier(cls, value: Any, fallback: str) -> str:
+        """Return the lowercase function identifier used for generated graph nodes."""
+
+        return cls._safe_identifier(value, fallback).lower()
+
     def _state_schema_extensions(
         self,
         architecture_type: str,
@@ -190,6 +220,99 @@ class NotebookComposer:
                 continue
             extensions[str(field_name)] = str(description)
         return extensions
+
+    def _augment_chatbot_state_schema(
+        self,
+        workflow_design: Dict[str, Any],
+        notebook_plan: NotebookPlan | None = None,
+    ) -> Dict[str, Any]:
+        """Return state schema plus canonical chatbot/verifier memory fields."""
+
+        state_schema = dict(workflow_design.get("state_schema") or {})
+        if not self._is_chatbot_workflow(workflow_design, notebook_plan):
+            return state_schema
+        for field_name, description in self._CHATBOT_STATE_FIELDS.items():
+            state_schema.setdefault(field_name, description)
+        return state_schema
+
+    def _workflow_state_fields(
+        self,
+        workflow_design: Dict[str, Any],
+        notebook_plan: NotebookPlan | None = None,
+    ) -> set[str]:
+        """Return sanitized state field names expected by generated code."""
+
+        state_schema = self._augment_chatbot_state_schema(
+            workflow_design,
+            notebook_plan,
+        )
+        return {
+            self._safe_identifier(field_name, "field").lower()
+            for field_name in state_schema
+        }
+
+    def _nodes_for_generated_node_cells(
+        self,
+        workflow_design: Dict[str, Any],
+        nodes: List[Dict[str, Any]],
+    ) -> List[Dict[str, Any]]:
+        """Return nodes that need explicit node-cell implementations."""
+
+        canonical_schema = self._canonical_graph_schema(workflow_design)
+        if not canonical_schema:
+            return nodes
+        architecture_type = str(
+            canonical_schema.get("architecture_type")
+            or workflow_design.get("architecture_type")
+            or ""
+        ).lower()
+        if architecture_type not in {"subagents", "autoagent", "hybrid"}:
+            return nodes
+        node_names = {
+            str(node.get("name") or "") for node in canonical_schema.get("nodes", [])
+        }
+        if "finish" not in node_names:
+            return nodes
+        return [node for node in nodes if str(node.get("name") or "") != "finish"]
+
+    def _with_required_pattern_scaffold_nodes(
+        self,
+        nodes: List[Dict[str, Any]],
+        workflow_design: Dict[str, Any],
+    ) -> List[Dict[str, Any]]:
+        """Ensure fallback node cells define handlers referenced by pattern graphs."""
+
+        architecture_type = str(workflow_design.get("architecture_type") or "").lower()
+        required_by_architecture = {
+            "router": [
+                ("router", "Route the chat turn to the next workflow handler."),
+            ],
+            "subagents": [
+                ("supervisor", "Coordinate the generated chatbot subagents."),
+            ],
+            "hybrid": [
+                ("router", "Route direct chatbot turns or delegate to the team."),
+                ("supervisor", "Coordinate the generated chatbot worker team."),
+            ],
+            "autoagent": [
+                ("coordinator", "Coordinate generated chatbot worker agents."),
+            ],
+        }
+        required_nodes = required_by_architecture.get(architecture_type, [])
+        if not required_nodes:
+            return nodes
+
+        existing_names = {
+            str(node.get("name") or "").strip().lower()
+            for node in nodes
+            if isinstance(node, dict)
+        }
+        prepended_nodes: list[Dict[str, Any]] = []
+        for name, purpose in required_nodes:
+            if name not in existing_names:
+                prepended_nodes.append({"name": name, "purpose": purpose})
+                existing_names.add(name)
+        return [*prepended_nodes, *nodes]
 
     @staticmethod
     def _normalize_inline_text(value: Any, fallback: str) -> str:
@@ -453,6 +576,11 @@ class NotebookComposer:
             .lower()
         )
         workflow_design["architecture_type"] = architecture_type
+        if self._is_chatbot_workflow(workflow_design, notebook_plan):
+            workflow_design["state_schema"] = self._augment_chatbot_state_schema(
+                workflow_design,
+                notebook_plan,
+            )
         registration = self.registry.resolve(architecture_type)
         cells: List[CellSpec] = []
         for section_name in registration.section_order:
@@ -709,6 +837,8 @@ else:
         config_lines = [
             "import os",
             "",
+            "from langchain_openai import ChatOpenAI",
+            "",
             "# Configuration",
             f"MODEL = {json.dumps(self.model_config.model)}",
             f"TEMPERATURE = {self.model_config.temperature}",
@@ -723,9 +853,47 @@ else:
                 if self.model_config.api_base
                 else "API_BASE = None"
             ),
+            'THREAD_ID = "lnf-demo-thread"',
+            "SHOW_UPDATES = False",
+            "RUN_INTERACTIVE_LOOP = False",
+            "RUN_DEMO_TURNS = False",
+            "CHARACTER_GENDER = None  # Set to 'male' or 'female' to skip the first-turn prompt.",
+            "ANACHRONISM_TERMS = (",
+            '    "smartphone",',
+            '    "internet",',
+            '    "television",',
+            '    "movie",',
+            '    "star wars",',
+            '    "computer",',
+            '    "airplane",',
+            '    "radio",',
+            '    "electricity",',
+            ")",
             "",
             "# Credentials",
             "# Prefer environment variables over hardcoded secrets in notebooks.",
+            "def _load_env_var(name: str) -> str:",
+            '    """Load a credential from env, Colab secrets, or an interactive prompt."""',
+            "    value = os.environ.get(name, '')",
+            "    if value:",
+            "        return value",
+            "    try:",
+            "        from google.colab import userdata  # type: ignore",
+            "        value = userdata.get(name) or ''",
+            "    except Exception:",
+            "        value = ''",
+            "    if value:",
+            "        os.environ[name] = value",
+            "        return value",
+            "    try:",
+            "        from getpass import getpass",
+            "        value = getpass(f'Enter {name}: ')",
+            "    except (EOFError, KeyboardInterrupt):",
+            "        value = ''",
+            "    if value:",
+            "        os.environ[name] = value",
+            "    return value",
+            "",
         ]
         for env_var in dependency_plan.provider_env_vars:
             safe_env_var = self._normalize_provider_env_var(env_var)
@@ -733,12 +901,9 @@ else:
                 continue
             config_lines.extend(
                 [
-                    f'{safe_env_var} = os.environ.get("{safe_env_var}", "")',
+                    f'{safe_env_var} = _load_env_var("{safe_env_var}")',
                     f"if not {safe_env_var}:",
-                    f'    print("{safe_env_var} is not set. Configure it in your environment before running live model cells.")',
-                    "    # Optional interactive fallback for local notebook sessions:",
-                    "    # from getpass import getpass",
-                    f'    # os.environ["{safe_env_var}"] = getpass("Enter {safe_env_var}: ")',
+                    f'    print("{safe_env_var} is not set. Configure it before running live model cells.")',
                     "",
                 ]
             )
@@ -746,6 +911,27 @@ else:
             config_lines.append(
                 "# No provider-specific credential environment variables were required for this notebook."
             )
+        config_lines.extend(
+            [
+                "",
+                "def make_llm(",
+                "    *,",
+                "    model: str = MODEL,",
+                "    temperature: float = TEMPERATURE,",
+                "    max_tokens: int | None = MAX_TOKENS,",
+                "):",
+                '    """Construct a ChatOpenAI client from notebook-level settings."""',
+                "    kwargs: dict[str, object] = {",
+                '        "model": model,',
+                '        "temperature": temperature,',
+                "    }",
+                "    if API_BASE:",
+                '        kwargs["base_url"] = API_BASE',
+                "    if max_tokens is not None:",
+                '        kwargs["max_tokens"] = max_tokens',
+                "    return ChatOpenAI(**kwargs)",
+            ]
+        )
         config_content = "\n".join(config_lines)
 
         return [
@@ -762,9 +948,10 @@ else:
         architecture_type = str(
             workflow_design.get("architecture_type", "router")
         ).lower()
+        augmented_state_schema = self._augment_chatbot_state_schema(workflow_design)
         state_schema = self._state_schema_extensions(
             architecture_type,
-            workflow_design.get("state_schema", {}),
+            augmented_state_schema,
         )
 
         # Use pattern library for known architectures
@@ -782,10 +969,19 @@ else:
             state_content = CritiqueLoopPattern.generate_state_code(state_schema)
         else:
             # Fallback to custom state generation
-            fields = "\n    ".join(
-                [f"{name}: str  # {desc}" for name, desc in state_schema.items()]
+            fields = render_additional_fields(
+                {
+                    name: str(desc)
+                    for name, desc in state_schema.items()
+                    if self._safe_identifier(name, "field").lower() != "messages"
+                }
             )
-            state_content = f"""from langgraph.graph import MessagesState
+            state_content = f"""import operator
+from typing import Annotated, Dict, List
+
+from langchain_core.messages import BaseMessage
+from langgraph.graph import MessagesState
+from langgraph.graph.message import add_messages
 
 
 class WorkflowState(MessagesState):
@@ -793,7 +989,7 @@ class WorkflowState(MessagesState):
 
     Inherits from MessagesState to maintain conversation history.
     \"\"\"
-    {fields if fields else "pass"}"""
+{fields if fields else "    pass"}"""
 
         return [
             CellSpec(
@@ -804,10 +1000,177 @@ class WorkflowState(MessagesState):
             CellSpec(cell_type="code", content=state_content, section="state"),
         ]
 
+    @classmethod
+    def _tool_contract_ids(cls, tool: Dict[str, Any]) -> set[str]:
+        """Return normalized identifiers that may link a tool to graph reachability."""
+
+        identifiers = {
+            str(tool.get("tool_id") or "").strip(),
+            str(tool.get("name") or "").strip(),
+            cls._safe_identifier(tool.get("name") or "", "tool"),
+        }
+        return {identifier for identifier in identifiers if identifier}
+
+    @staticmethod
+    def _executable_tool_ids(workflow_design: Dict[str, Any] | None) -> set[str]:
+        """Return tool IDs whose graph contract claims executable tool wiring."""
+
+        executable_paths = {
+            "tool_node",
+            "manual_loop",
+            "create_agent",
+            "create_react_agent",
+        }
+        executable_ids: set[str] = set()
+        for entry in NotebookComposer._tool_reachability_entries(workflow_design):
+            if not isinstance(entry, dict):
+                continue
+            execution_path = str(entry.get("execution_path") or "").strip()
+            if execution_path not in executable_paths:
+                continue
+            tool_id = str(
+                entry.get("tool_id")
+                or entry.get("name")
+                or entry.get("tool_name")
+                or ""
+            ).strip()
+            if tool_id:
+                executable_ids.add(tool_id)
+        return executable_ids
+
+    @staticmethod
+    def _tool_reachability_entries(
+        workflow_design: Dict[str, Any] | None,
+    ) -> list[dict[str, Any]]:
+        """Return graph tool reachability entries when a workflow declares them."""
+
+        if not workflow_design:
+            return []
+        graph_exports = workflow_design.get("graph_exports") or {}
+        schema = graph_exports.get("schema") if isinstance(graph_exports, dict) else {}
+        if not isinstance(schema, dict):
+            schema = {}
+        entries = schema.get("tool_reachability") or workflow_design.get(
+            "tool_reachability",
+            [],
+        )
+        return [entry for entry in entries or [] if isinstance(entry, dict)]
+
+    @staticmethod
+    def _as_utility_helper_code(tool_code: str) -> str:
+        """Render generated helper code without claiming LangChain tool reachability."""
+
+        utility_notice = [
+            "# Utility helper only: this function is not registered as a LangChain tool.",
+            "# The graph contract did not declare an executable tool path for it.",
+        ]
+        source_lines = NotebookComposer._strip_tool_import_scaffold(
+            tool_code.splitlines()
+        )
+        lines: list[str] = []
+        if source_lines and source_lines[0].startswith("# WARNING:"):
+            lines.append(source_lines[0])
+            lines.extend(utility_notice)
+            source_lines = source_lines[1:]
+        else:
+            lines.extend(utility_notice)
+        for line in source_lines:
+            if line.strip() == "@tool":
+                continue
+            if line.strip() == "from langchain_core.tools import tool":
+                continue
+            lines.append(line)
+        return "\n".join(lines).strip() + "\n"
+
+    @staticmethod
+    def _strip_tool_import_scaffold(source_lines: list[str]) -> list[str]:
+        """Remove local @tool import guards when a generated tool becomes a helper."""
+
+        source = "\n".join(source_lines)
+        try:
+            tree = ast.parse(source)
+        except SyntaxError:
+            return source_lines
+
+        remove_lines: set[int] = set()
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Try):
+                continue
+            meaningful_body = [
+                statement
+                for statement in node.body
+                if not (
+                    isinstance(statement, ast.Expr)
+                    and isinstance(statement.value, ast.Constant)
+                    and isinstance(statement.value.value, str)
+                )
+            ]
+            imports_tool = any(
+                isinstance(statement, ast.ImportFrom)
+                and statement.module == "langchain_core.tools"
+                and any(alias.name == "tool" for alias in statement.names)
+                for statement in meaningful_body
+            )
+            if not imports_tool:
+                continue
+            handlers_are_noop = bool(node.handlers) and all(
+                NotebookComposer._handler_only_suppresses_tool_import(handler)
+                for handler in node.handlers
+            )
+            if not handlers_are_noop:
+                continue
+            end_lineno = getattr(node, "end_lineno", node.lineno)
+            remove_lines.update(range(node.lineno, end_lineno + 1))
+
+        if remove_lines:
+            return [
+                line
+                for lineno, line in enumerate(source_lines, start=1)
+                if lineno not in remove_lines
+            ]
+        return source_lines
+
+    @staticmethod
+    def _handler_only_suppresses_tool_import(handler: ast.ExceptHandler) -> bool:
+        """Return True for except handlers that only neutralize a missing tool import."""
+
+        meaningful_body = [
+            statement
+            for statement in handler.body
+            if not (
+                isinstance(statement, ast.Expr)
+                and isinstance(statement.value, ast.Constant)
+                and isinstance(statement.value.value, str)
+            )
+        ]
+        if not meaningful_body:
+            return False
+        for statement in meaningful_body:
+            if isinstance(statement, ast.Pass):
+                continue
+            if isinstance(statement, ast.Assign):
+                targets = [
+                    target.id
+                    for target in statement.targets
+                    if isinstance(target, ast.Name)
+                ]
+                if targets == ["tool"] and isinstance(statement.value, ast.Constant):
+                    continue
+            if (
+                isinstance(statement, ast.AnnAssign)
+                and isinstance(statement.target, ast.Name)
+                and statement.target.id == "tool"
+                and isinstance(statement.value, ast.Constant)
+            ):
+                continue
+            return False
+        return True
+
     async def _create_tool_cells(
         self,
         tools: List[Dict[str, Any]],
         feedback: NotebookCompositionFeedback,
+        workflow_design: Dict[str, Any] | None = None,
     ) -> List[CellSpec]:
         """Create tool implementation cells with tracked fallback behavior."""
         cells = [
@@ -817,24 +1180,65 @@ class WorkflowState(MessagesState):
                 section="tools",
             )
         ]
+        split_by_contract = bool(self._tool_reachability_entries(workflow_design))
+        executable_tool_ids = (
+            self._executable_tool_ids(workflow_design) if split_by_contract else set()
+        )
+        executable_tools: list[Dict[str, Any]] = []
+        utility_tools: list[Dict[str, Any]] = []
+        for tool in tools:
+            tool_ids = self._tool_contract_ids(tool)
+            if not split_by_contract or tool_ids & executable_tool_ids:
+                executable_tools.append(tool)
+            else:
+                utility_tools.append(tool)
 
         async def build_tool_code(
             tool: Dict[str, Any],
+            *,
+            executable: bool,
         ) -> tuple[str, NotebookCompositionFeedback]:
             tool_feedback = NotebookCompositionFeedback()
             tool_code = await self._generate_tool_implementation(
                 tool,
                 feedback=tool_feedback,
             )
+            if not executable:
+                tool_code = self._as_utility_helper_code(tool_code)
             return tool_code, tool_feedback
 
         tool_results = await self._execute_llm_tasks_in_order(
-            tools,
-            build_tool_code,
+            executable_tools,
+            lambda tool: build_tool_code(tool, executable=True),
         )
+        utility_results = await self._execute_llm_tasks_in_order(
+            utility_tools,
+            lambda tool: build_tool_code(tool, executable=False),
+        )
+        tool_function_names: list[str] = []
         for tool_code, tool_feedback in tool_results:
             self._merge_feedback(feedback, tool_feedback)
             cells.append(CellSpec(cell_type="code", content=tool_code, section="tools"))
+            tool_function_names.append(
+                self._tool_function_name(tool_code, "unknown_tool")
+            )
+        for tool_code, tool_feedback in utility_results:
+            self._merge_feedback(feedback, tool_feedback)
+            cells.append(CellSpec(cell_type="code", content=tool_code, section="tools"))
+
+        tool_function_names = [
+            name for name in dict.fromkeys(tool_function_names) if name
+        ]
+        if tool_function_names:
+            tools_list = ", ".join(tool_function_names)
+            registry_code = f"""from langgraph.prebuilt import ToolNode
+
+TOOLS = [{tools_list}]
+TOOLS_BY_NAME = {{tool.name: tool for tool in TOOLS}}
+tool_node = ToolNode(TOOLS, handle_tool_errors=True)"""
+            cells.append(
+                CellSpec(cell_type="code", content=registry_code, section="tools")
+            )
 
         return cells
 
@@ -866,11 +1270,14 @@ Generate a complete, production-ready Python function implementation for the spe
 
 Requirements:
 - The function should be fully implemented (no 'pass' statements)
+- Decorate runnable LangChain tools with @tool from langchain_core.tools
 - Include proper error handling
 - Add helpful docstrings
 - Import necessary libraries at the function level
 - Use best practices for the tool's category
 - Make it immediately runnable
+- In custom StateGraph workflows, execute tools through ToolNode or an explicit ToolMessage loop.
+- For a standard prebuilt agent loop, prefer langchain.agents.create_agent over deprecated langgraph.prebuilt.create_react_agent.
 
 Common tool categories and approaches:
 - **search**: Use DuckDuckGoSearchRun or similar
@@ -909,6 +1316,8 @@ Generate the complete Python function implementation."""
                     reason=f"LLM tool generation returned invalid Python: {syntax_error}.",
                     feedback=feedback,
                 )
+
+            generated_code = self._ensure_langchain_tool_code(generated_code)
 
             # Add header comment
             header = f"""# Tool: {tool_name}
@@ -1054,13 +1463,16 @@ Generate the complete Python function implementation."""
         "kwargs": kwargs,
     }}'''
 
-        return header + implementation
+        return (
+            header + "from langchain_core.tools import tool\n\n@tool\n" + implementation
+        )
 
     async def _create_node_cells(
         self,
         workflow_design: Dict[str, Any],
         feedback: NotebookCompositionFeedback,
         tools: Optional[List[Dict[str, Any]]] = None,
+        notebook_plan: NotebookPlan | None = None,
     ) -> List[CellSpec]:
         """Create node implementation cells with tracked fallback behavior."""
         cells = [
@@ -1071,23 +1483,54 @@ Generate the complete Python function implementation."""
             )
         ]
 
-        nodes = workflow_design.get("nodes", [])
+        nodes = self._nodes_for_generated_node_cells(
+            workflow_design,
+            list(workflow_design.get("nodes", [])),
+        )
         architecture_type = workflow_design.get("architecture_type", "router")
+        is_chatbot_workflow = self._is_chatbot_workflow(
+            workflow_design,
+            notebook_plan,
+        )
+        if is_chatbot_workflow:
+            nodes = self._with_required_pattern_scaffold_nodes(
+                nodes,
+                workflow_design,
+            )
+        use_pattern_nodes = (
+            architecture_type
+            in [
+                "router",
+                "subagents",
+                "hybrid",
+                "autoagent",
+                "deepagents",
+                "critique_loop",
+            ]
+            and not is_chatbot_workflow
+        )
 
         # Check if we should use pattern-based generation
-        if architecture_type in [
-            "router",
-            "subagents",
-            "hybrid",
-            "autoagent",
-            "deepagents",
-            "critique_loop",
-        ]:
+        if use_pattern_nodes:
             # Use pattern library for architecture-specific nodes
             pattern_cells = self._create_pattern_node_cells(
                 nodes, architecture_type, workflow_design, tools=tools
             )
             cells.extend(pattern_cells)
+        elif is_chatbot_workflow:
+            for node in nodes:
+                cells.append(
+                    CellSpec(
+                        cell_type="code",
+                        content=self._generate_node_fallback(
+                            node,
+                            workflow_design,
+                            reason="Chatbot workflows use deterministic contract nodes for memory, verifier, and revision semantics.",
+                            feedback=feedback,
+                        ),
+                        section="nodes",
+                    )
+                )
         else:
             # Use LLM for custom node generation
             async def build_node_code(
@@ -1131,7 +1574,7 @@ Generate the complete Python function implementation."""
         """
         node_name = node.get("name", "unknown")
         node_purpose = node.get("purpose", "")
-        safe_node_identifier = self._safe_identifier(node_name, "unknown")
+        safe_node_identifier = self._safe_node_identifier(node_name, "unknown")
         state_schema = workflow_design.get("state_schema", {})
         function_signature = (
             f"def {safe_node_identifier}_node(state: WorkflowState) -> WorkflowState"
@@ -1147,12 +1590,14 @@ Generate a complete, production-ready Python function for a LangGraph node.
 Requirements:
 - Function signature: {function_signature}
 - The function MUST return a partial state update dictionary (not a full state copy or 'return state')
-- Include proper LLM initialization and invocation if needed
+- Use the notebook-level make_llm(...) helper for LLM initialization if needed
 - Use MessagesState pattern with proper message handling
 - Import necessary libraries at the function level
 - Add comprehensive docstring
 - Implement actual logic based on the purpose (no 'pass' statements)
 - Handle state fields appropriately
+- For verifier/checker nodes, write structured pass/fail and revision fields such as needs_revision, historical_risk_notes, realism_notes, and revision_instructions
+- For reviser nodes, consume revision_instructions and clear needs_revision when the response has been revised
 
 Return ONLY the Python function code, nothing else."""
             )
@@ -1231,7 +1676,7 @@ Generate the complete Python function implementation."""
         node_name = node.get("name", "unknown")
         node_purpose = node.get("purpose", "")
         architecture_type = workflow_design.get("architecture_type", "")
-        safe_node_identifier = self._safe_identifier(node_name, "unknown")
+        safe_node_identifier = self._safe_node_identifier(node_name, "unknown")
         safe_node_name = self._normalize_inline_text(node_name, "unknown node")
         safe_node_purpose = self._normalize_docstring_text(
             node_purpose,
@@ -1258,6 +1703,8 @@ Generate the complete Python function implementation."""
         node_purpose_literal = json.dumps(
             self._normalize_inline_text(node_purpose, safe_node_name)
         )
+        lowered_node_context = f"{safe_node_name} {node_purpose}".lower()
+        state_fields = self._workflow_state_fields(workflow_design)
 
         update_lines = [
             "    updates: dict[str, object] = {}",
@@ -1266,6 +1713,12 @@ Generate the complete Python function implementation."""
             f'    node_summary = {node_name_literal} + " completed: " + (last_content or {node_purpose_literal})',
             '    updates["messages"] = messages + [HumanMessage(content=node_summary)]',
         ]
+        written_state_fields: set[str] = {"messages"}
+
+        def add_if_state_field(field_name: str, *lines: str) -> None:
+            if field_name in state_fields and field_name not in written_state_fields:
+                update_lines.extend(lines)
+                written_state_fields.add(field_name)
 
         if architecture_type == "router" and node_name == "router":
             update_lines.extend(
@@ -1314,6 +1767,195 @@ Generate the complete Python function implementation."""
                     '    updates["approved"] = bool(state.get("approved", False))',
                 ]
             )
+        elif any(
+            marker in lowered_node_context
+            for marker in {"verify", "verifier", "verification", "check", "realism"}
+        ):
+            update_lines.extend(
+                [
+                    '    draft = str(state.get("draft_response") or state.get("final_response") or last_content)',
+                    "    lowered_draft = draft.lower()",
+                    '    configured_terms = globals().get("ANACHRONISM_TERMS", (',
+                    '        "smartphone", "internet", "television", "movie", "star wars", "computer", "airplane"',
+                    "    ))",
+                    "    anachronism_terms = tuple(str(term).lower() for term in configured_terms if str(term).strip())",
+                    "    findings = [term for term in anachronism_terms if term in lowered_draft]",
+                    '    revision_count = int(state.get("revision_count", 0))',
+                    "    max_revisions = int(globals().get('MAX_ITERATIONS', 3) or 3)",
+                    "    needs_revision = bool(findings) and revision_count < max_revisions",
+                    "    safety_passed = not findings",
+                    "    historical_risk_notes = (",
+                    '        "Potential anachronisms detected: " + ", ".join(findings)',
+                    "        if findings",
+                    '        else "No obvious anachronisms detected."',
+                    "    )",
+                    '    realism_notes = "Checked response against persona and historical-realism constraints."',
+                    "    revision_instructions = (",
+                    '        "Revise the draft to avoid future knowledge or out-of-period references: " + ", ".join(findings)',
+                    "        if needs_revision",
+                    '        else ""',
+                    "    )",
+                    '    updates["safety_passed"] = safety_passed',
+                    '    updates["needs_revision"] = needs_revision',
+                    '    updates["historical_risk_notes"] = historical_risk_notes',
+                    '    updates["realism_notes"] = realism_notes',
+                    '    updates["revision_instructions"] = revision_instructions',
+                    '    updates["verification_passed"] = safety_passed',
+                    '    updates["route"] = "revise" if needs_revision else "accept"',
+                    "    if not needs_revision:",
+                    '        updates["final_response"] = draft',
+                ]
+            )
+        elif any(marker in lowered_node_context for marker in {"revise", "revision"}):
+            update_lines.extend(
+                [
+                    '    revision_history = list(state.get("revision_history", []))',
+                    '    instructions = state.get("revision_instructions", "")',
+                    '    draft = str(state.get("draft_response") or state.get("final_response") or last_content)',
+                    '    revision_count = int(state.get("revision_count", 0)) + 1',
+                    "    revised_draft = (",
+                    '        draft + "\\n\\nRevision note: " + str(instructions or "Keep the answer in-period and in persona.")',
+                    "    )",
+                    '    revision_history.append(instructions or "No revision required.")',
+                    '    updates["draft_response"] = revised_draft',
+                    '    updates["revision_count"] = revision_count',
+                    '    updates["revision_history"] = revision_history',
+                    '    updates["needs_revision"] = False',
+                    '    updates["revision_instructions"] = ""',
+                    '    updates["route"] = "verify"',
+                ]
+            )
+        elif any(
+            marker in lowered_node_context
+            for marker in {
+                "persona",
+                "character",
+                "chat",
+                "draft",
+                "response",
+                "commoner",
+                "memory",
+            }
+        ):
+            update_lines.extend(
+                [
+                    '    selected_gender = str(state.get("selected_gender") or state.get("character_sex") or "female").lower()',
+                    '    if selected_gender not in {"male", "female"}:',
+                    '        selected_gender = "female"',
+                    "    persona_profile = {",
+                    '        "gender": selected_gender,',
+                    '        "role": "18th-century conversational character",',
+                    '        "style": "period-appropriate, plainspoken, and historically grounded",',
+                    "    }",
+                    "    draft = node_summary",
+                ]
+            )
+            add_if_state_field(
+                "selected_gender", '    updates["selected_gender"] = selected_gender'
+            )
+            add_if_state_field(
+                "character_sex", '    updates["character_sex"] = selected_gender'
+            )
+            add_if_state_field(
+                "character_gender",
+                '    updates["character_gender"] = selected_gender',
+            )
+            add_if_state_field(
+                "persona_choice",
+                '    updates["persona_choice"] = f"{selected_gender}_commoner"',
+            )
+            add_if_state_field(
+                "persona",
+                '    updates["persona"] = f"{selected_gender}_commoner"',
+            )
+            add_if_state_field(
+                "persona_id",
+                '    updates["persona_id"] = f"{selected_gender}_commoner"',
+            )
+            add_if_state_field(
+                "gender_pending", '    updates["gender_pending"] = False'
+            )
+            add_if_state_field(
+                "persona_profile", '    updates["persona_profile"] = persona_profile'
+            )
+            add_if_state_field(
+                "character_profile",
+                '    updates["character_profile"] = persona_profile',
+            )
+            add_if_state_field(
+                "draft_response", '    updates["draft_response"] = draft'
+            )
+            add_if_state_field(
+                "final_response", '    updates["final_response"] = draft'
+            )
+            add_if_state_field(
+                "turn_count",
+                '    updates["turn_count"] = int(state.get("turn_count", 0)) + 1',
+            )
+            add_if_state_field(
+                "memory_summary",
+                '    updates["memory_summary"] = (',
+                '        str(state.get("memory_summary") or "").strip()',
+                '        + ("\\n" if state.get("memory_summary") else "")',
+                "        + node_summary",
+                "    )[-1200:]",
+            )
+            add_if_state_field(
+                "persona_memory",
+                '    updates["persona_memory"] = (',
+                '        str(state.get("persona_memory") or "").strip()',
+                '        + ("\\n" if state.get("persona_memory") else "")',
+                "        + node_summary",
+                "    )[-1200:]",
+            )
+            add_if_state_field(
+                "conversation_summary",
+                '    updates["conversation_summary"] = (',
+                '        str(state.get("conversation_summary") or "").strip()',
+                '        + ("\\n" if state.get("conversation_summary") else "")',
+                "        + node_summary",
+                "    )[-1200:]",
+            )
+            add_if_state_field(
+                "conversation_memory",
+                '    updates["conversation_memory"] = (',
+                '        str(state.get("conversation_memory") or "").strip()',
+                '        + ("\\n" if state.get("conversation_memory") else "")',
+                "        + node_summary",
+                "    )[-1200:]",
+            )
+            for field_name in sorted(state_fields - written_state_fields):
+                lowered_field = field_name.lower()
+                field_literal = json.dumps(field_name)
+                if "profile" in lowered_field:
+                    update_lines.append(
+                        f"    updates[{field_literal}] = persona_profile"
+                    )
+                    written_state_fields.add(field_name)
+                elif (
+                    "memories" in lowered_field
+                    or "conversation_history" in lowered_field
+                ):
+                    update_lines.append(
+                        f"    updates[{field_literal}] = [node_summary]"
+                    )
+                    written_state_fields.add(field_name)
+                elif "memory" in lowered_field:
+                    update_lines.extend(
+                        [
+                            f"    updates[{field_literal}] = (",
+                            f"        str(state.get({field_literal}) or '').strip()",
+                            f"        + ('\\n' if state.get({field_literal}) else '')",
+                            "        + node_summary",
+                            "    )[-1200:]",
+                        ]
+                    )
+                    written_state_fields.add(field_name)
+                elif "persona" in lowered_field:
+                    update_lines.append(
+                        f'    updates[{field_literal}] = f"{{selected_gender}}_commoner"'
+                    )
+                    written_state_fields.add(field_name)
         else:
             update_lines.extend(
                 [
@@ -1380,9 +2022,7 @@ def {safe_node_identifier}_node(state: WorkflowState) -> WorkflowState:
             if name in seen:
                 continue
             seen.add(name)
-            purpose = str(
-                node.get("purpose") or f"Handle {name} requests"
-            ).strip()
+            purpose = str(node.get("purpose") or f"Handle {name} requests").strip()
             specs.append((name, purpose or f"Handle {name} requests"))
 
         if specs:
@@ -1495,13 +2135,8 @@ def {safe_node_identifier}_node(state: WorkflowState) -> WorkflowState:
         team_workers = [
             worker for worker in team_workers if worker not in direct_specialists
         ]
-        if len(team_workers) < 2:
-            fallback_workers = [
-                name
-                for name in ["researcher", "reviewer"]
-                if name not in direct_specialists and name not in team_workers
-            ]
-            team_workers.extend(fallback_workers[: 2 - len(team_workers)])
+        if not team_workers and "worker" not in direct_specialists:
+            team_workers.append("worker")
 
         direct_descriptions = {
             str(node.get("name")): str(node.get("purpose", ""))
@@ -1555,10 +2190,19 @@ def {safe_node_identifier}_node(state: WorkflowState) -> WorkflowState:
         if architecture_type == "router":
             route_specs = self._router_route_specs(nodes, workflow_design)
             routes = [name for name, _ in route_specs]
+            fallback_route_spec = (
+                "fallback",
+                "Handle general, unsupported, or unclear requests safely.",
+            )
+            if fallback_route_spec[0] not in routes:
+                route_specs = [*route_specs, fallback_route_spec]
+                routes = [name for name, _ in route_specs]
 
             # Generate router node
             router_code = RouterPattern.generate_router_node_code(
-                routes, model_config=model_config
+                routes,
+                model_config=model_config,
+                use_notebook_helper=True,
             )
             cells.append(
                 CellSpec(cell_type="code", content=router_code, section="nodes")
@@ -1570,6 +2214,7 @@ def {safe_node_identifier}_node(state: WorkflowState) -> WorkflowState:
                     route_name,
                     route_purpose,
                     model_config=model_config,
+                    use_notebook_helper=True,
                 )
                 cells.append(
                     CellSpec(cell_type="code", content=route_code, section="nodes")
@@ -1582,7 +2227,10 @@ def {safe_node_identifier}_node(state: WorkflowState) -> WorkflowState:
 
             # Generate supervisor node
             supervisor_code = SubagentsPattern.generate_supervisor_code(
-                subagents, subagent_descriptions, model_config=model_config
+                subagents,
+                subagent_descriptions,
+                model_config=model_config,
+                use_notebook_helper=True,
             )
             cells.append(
                 CellSpec(cell_type="code", content=supervisor_code, section="nodes")
@@ -1594,6 +2242,7 @@ def {safe_node_identifier}_node(state: WorkflowState) -> WorkflowState:
                     subagent_name,
                     subagent_purpose,
                     model_config=model_config,
+                    use_notebook_helper=True,
                 )
                 cells.append(
                     CellSpec(cell_type="code", content=subagent_code, section="nodes")
@@ -1609,6 +2258,7 @@ def {safe_node_identifier}_node(state: WorkflowState) -> WorkflowState:
             router_code = HybridPattern.generate_router_node_code(
                 direct_specialists,
                 model_config=model_config,
+                use_notebook_helper=True,
             )
             cells.append(
                 CellSpec(cell_type="code", content=router_code, section="nodes")
@@ -1622,6 +2272,7 @@ def {safe_node_identifier}_node(state: WorkflowState) -> WorkflowState:
                         f"Handle {specialist} requests directly.",
                     ),
                     model_config=model_config,
+                    use_notebook_helper=True,
                 )
                 cells.append(
                     CellSpec(cell_type="code", content=specialist_code, section="nodes")
@@ -1631,6 +2282,7 @@ def {safe_node_identifier}_node(state: WorkflowState) -> WorkflowState:
                 team_workers,
                 worker_descriptions,
                 model_config=model_config,
+                use_notebook_helper=True,
             )
             cells.append(
                 CellSpec(cell_type="code", content=supervisor_code, section="nodes")
@@ -1644,6 +2296,7 @@ def {safe_node_identifier}_node(state: WorkflowState) -> WorkflowState:
                         f"{worker} specialist for the worker team.",
                     ),
                     model_config=model_config,
+                    use_notebook_helper=True,
                 )
                 cells.append(
                     CellSpec(cell_type="code", content=worker_code, section="nodes")
@@ -1654,7 +2307,10 @@ def {safe_node_identifier}_node(state: WorkflowState) -> WorkflowState:
             worker_descriptions = dict(worker_specs)
 
             coordinator_code = AutoAgentPattern.generate_coordinator_code(
-                workers, worker_descriptions, model_config=model_config
+                workers,
+                worker_descriptions,
+                model_config=model_config,
+                use_notebook_helper=True,
             )
             cells.append(
                 CellSpec(cell_type="code", content=coordinator_code, section="nodes")
@@ -1665,6 +2321,7 @@ def {safe_node_identifier}_node(state: WorkflowState) -> WorkflowState:
                     worker_name,
                     worker_purpose,
                     model_config=model_config,
+                    use_notebook_helper=True,
                 )
                 cells.append(
                     CellSpec(cell_type="code", content=worker_code, section="nodes")
@@ -1712,21 +2369,24 @@ def {safe_node_identifier}_node(state: WorkflowState) -> WorkflowState:
         elif architecture_type == "critique_loop":
             # Generate critique loop nodes
             generate_code = CritiqueLoopPattern.generate_generation_node_code(
-                model_config=model_config
+                model_config=model_config,
+                use_notebook_helper=True,
             )
             cells.append(
                 CellSpec(cell_type="code", content=generate_code, section="nodes")
             )
 
             critique_code = CritiqueLoopPattern.generate_critique_node_code(
-                model_config=model_config
+                model_config=model_config,
+                use_notebook_helper=True,
             )
             cells.append(
                 CellSpec(cell_type="code", content=critique_code, section="nodes")
             )
 
             revise_code = CritiqueLoopPattern.generate_revise_node_code(
-                model_config=model_config
+                model_config=model_config,
+                use_notebook_helper=True,
             )
             cells.append(
                 CellSpec(cell_type="code", content=revise_code, section="nodes")
@@ -1740,6 +2400,13 @@ def {safe_node_identifier}_node(state: WorkflowState) -> WorkflowState:
         max_iterations: int,
     ) -> List[CellSpec]:
         """Create graph construction cells using pattern library or custom generation."""
+        canonical_schema = self._canonical_graph_schema(workflow_design)
+        if canonical_schema:
+            return self._wrap_graph_cells(
+                self._generate_canonical_graph_code(workflow_design, canonical_schema),
+                canonical_schema=canonical_schema,
+            )
+
         architecture_type = workflow_design.get("architecture_type", "router")
         if architecture_type in {
             "router",
@@ -1770,6 +2437,8 @@ def {safe_node_identifier}_node(state: WorkflowState) -> WorkflowState:
             routes = [
                 name for name, _ in self._router_route_specs(nodes, workflow_design)
             ]
+            if "fallback" not in routes:
+                routes.append("fallback")
             graph_code = RouterPattern.generate_graph_code(routes)
         elif architecture_type == "subagents":
             subagents = [
@@ -1807,8 +2476,16 @@ def {safe_node_identifier}_node(state: WorkflowState) -> WorkflowState:
         return self._wrap_graph_cells(graph_code)
 
     @staticmethod
-    def _wrap_graph_cells(graph_code: str) -> List[CellSpec]:
+    def _wrap_graph_cells(
+        graph_code: str,
+        *,
+        canonical_schema: Dict[str, Any] | None = None,
+    ) -> List[CellSpec]:
         """Wrap graph code with the standard notebook graph section cells."""
+
+        code_metadata: Dict[str, Any] = {}
+        if canonical_schema:
+            code_metadata["canonical_graph_schema"] = canonical_schema
 
         return [
             CellSpec(
@@ -1816,8 +2493,354 @@ def {safe_node_identifier}_node(state: WorkflowState) -> WorkflowState:
                 content="## Build Graph\n\nDefine the LangGraph workflow structure.",
                 section="graph",
             ),
-            CellSpec(cell_type="code", content=graph_code, section="graph"),
+            CellSpec(
+                cell_type="code",
+                content=graph_code,
+                metadata=code_metadata,
+                section="graph",
+            ),
         ]
+
+    @staticmethod
+    def _canonical_graph_schema(workflow_design: Dict[str, Any]) -> Dict[str, Any]:
+        """Return the canonical graph schema when topology is explicit enough."""
+
+        graph_exports = workflow_design.get("graph_exports")
+        if hasattr(graph_exports, "model_dump"):
+            graph_exports = graph_exports.model_dump(by_alias=True)
+
+        schema: Dict[str, Any] = {}
+        if isinstance(graph_exports, dict) and isinstance(
+            graph_exports.get("schema"), dict
+        ):
+            schema = dict(graph_exports["schema"])
+        elif any(
+            workflow_design.get(key)
+            for key in ("edges", "conditional_edges", "command_routes")
+        ):
+            schema = {
+                "architecture_type": workflow_design.get("architecture_type"),
+                "state_schema": workflow_design.get("state_schema", {}),
+                "nodes": workflow_design.get("nodes", []),
+                "edges": workflow_design.get("edges", []),
+                "conditional_edges": workflow_design.get("conditional_edges", []),
+                "command_routes": workflow_design.get("command_routes", []),
+                "tool_reachability": workflow_design.get("tool_reachability", []),
+                "domain_terms": workflow_design.get("domain_terms", []),
+                "compiled_graph_variable": workflow_design.get(
+                    "compiled_graph_variable", "graph"
+                ),
+                "entry_point": workflow_design.get("entry_point"),
+                "checkpointing": workflow_design.get("checkpointing", True),
+                "terminal_nodes": workflow_design.get("terminal_nodes", []),
+            }
+
+        nodes = schema.get("nodes")
+        if not isinstance(nodes, list) or not nodes:
+            return {}
+
+        schema.setdefault("architecture_type", workflow_design.get("architecture_type"))
+        schema.setdefault("state_schema", workflow_design.get("state_schema", {}))
+        schema.setdefault("edges", workflow_design.get("edges", []))
+        schema.setdefault(
+            "conditional_edges", workflow_design.get("conditional_edges", [])
+        )
+        schema.setdefault("command_routes", workflow_design.get("command_routes", []))
+        schema.setdefault(
+            "tool_reachability", workflow_design.get("tool_reachability", [])
+        )
+        schema.setdefault("domain_terms", workflow_design.get("domain_terms", []))
+        schema.setdefault(
+            "compiled_graph_variable",
+            workflow_design.get("compiled_graph_variable", "graph"),
+        )
+        schema.setdefault("entry_point", workflow_design.get("entry_point"))
+        schema.setdefault("checkpointing", workflow_design.get("checkpointing", True))
+        schema.setdefault("terminal_nodes", workflow_design.get("terminal_nodes", []))
+        return normalize_graph_schema_payload(schema)
+
+    def _generate_canonical_graph_code(
+        self, workflow_design: Dict[str, Any], schema: Dict[str, Any]
+    ) -> str:
+        """Render executable graph wiring from canonical graph schema."""
+
+        nodes = [node for node in schema.get("nodes", []) if isinstance(node, dict)]
+        node_names = [
+            str(node.get("name") or "").strip()
+            for node in nodes
+            if str(node.get("name") or "").strip()
+        ]
+        entry_point = str(
+            schema.get("entry_point")
+            or workflow_design.get("entry_point")
+            or (node_names[0] if node_names else "router")
+        )
+        compiled_graph_variable = str(
+            schema.get("compiled_graph_variable")
+            or workflow_design.get("compiled_graph_variable")
+            or "graph"
+        )
+        if not compiled_graph_variable.isidentifier() or keyword.iskeyword(
+            compiled_graph_variable
+        ):
+            compiled_graph_variable = "graph"
+
+        def _target_expr(value: Any) -> str:
+            normalized = str(value or "").strip()
+            if normalized in {"START", "__start__"}:
+                return "START"
+            if normalized in {"END", "__end__"}:
+                return "END"
+            return json.dumps(normalized)
+
+        def _branch_key(value: Any) -> str:
+            normalized = str(value or "").strip()
+            return "END" if normalized in {"END", "__end__"} else normalized
+
+        def _branch_target(value: Any) -> str:
+            normalized = str(value or "").strip()
+            return "END" if normalized in {"END", "__end__"} else json.dumps(normalized)
+
+        node_additions = "\n".join(
+            f"workflow.add_node({json.dumps(node_name)}, {self._safe_node_identifier(node_name, 'node')}_node)"
+            for node_name in node_names
+        )
+        architecture_type = str(
+            schema.get("architecture_type")
+            or workflow_design.get("architecture_type")
+            or ""
+        ).strip()
+        structural_node_definitions = self._canonical_finish_node_definition(
+            architecture_type,
+            node_names,
+        )
+
+        direct_edge_pairs: list[tuple[str, str]] = []
+        for edge in schema.get("edges", []) or []:
+            if not isinstance(edge, dict):
+                continue
+            source = str(edge.get("from") or edge.get("source") or "").strip()
+            target = str(edge.get("to") or edge.get("target") or "").strip()
+            if source and target:
+                direct_edge_pairs.append((source, target))
+
+        route_specs: dict[str, dict[str, Any]] = {}
+        route_sources_with_end: set[str] = set()
+
+        def _route_spec(source: str) -> dict[str, Any]:
+            return route_specs.setdefault(
+                source,
+                {
+                    "path_entries": [],
+                    "route_keys": [],
+                    "target_values": set(),
+                    "field_names": ["next_agent", "route", "decision", "status"],
+                },
+            )
+
+        def _add_route_entry(
+            source: str,
+            label: Any,
+            target: Any,
+            *,
+            dedupe_target: bool = False,
+        ) -> None:
+            spec = _route_spec(source)
+            key = _branch_key(label)
+            target_value = _branch_target(target)
+            if dedupe_target and target_value in spec["target_values"]:
+                return
+            if target_value == "END":
+                route_sources_with_end.add(source)
+            spec["path_entries"].append((key, target_value))
+            spec["route_keys"].append(key)
+            spec["target_values"].add(target_value)
+
+        for conditional_edge in schema.get("conditional_edges", []) or []:
+            if not isinstance(conditional_edge, dict):
+                continue
+            source = str(
+                conditional_edge.get("from") or conditional_edge.get("source") or ""
+            ).strip()
+            branches = conditional_edge.get("branches")
+            if not source or not isinstance(branches, dict) or not branches:
+                continue
+            for label, target in branches.items():
+                _add_route_entry(source, label, target)
+
+        for command_route in schema.get("command_routes", []) or []:
+            if not isinstance(command_route, dict):
+                continue
+            source = str(
+                command_route.get("source") or command_route.get("from") or ""
+            ).strip()
+            destinations = command_route.get("destinations")
+            if isinstance(destinations, str):
+                destinations = [destinations]
+            if not source or not destinations:
+                continue
+            for destination in destinations:
+                _add_route_entry(
+                    source,
+                    destination,
+                    destination,
+                    dedupe_target=True,
+                )
+            update_fields = command_route.get("update_fields")
+            if isinstance(update_fields, str):
+                update_fields = [update_fields]
+            spec = _route_spec(source)
+            for field_name in [
+                str(field).strip()
+                for field in (update_fields or [])
+                if str(field).strip()
+            ]:
+                if field_name not in spec["field_names"]:
+                    spec["field_names"].append(field_name)
+            if "goto" not in spec["field_names"]:
+                spec["field_names"].append("goto")
+
+        route_blocks: list[str] = []
+        for index, (source, spec) in enumerate(route_specs.items()):
+            path_entries = [
+                f"{json.dumps(key)}: {target_value}"
+                for key, target_value in spec["path_entries"]
+            ]
+            if not path_entries:
+                continue
+            route_name = (
+                f"_route_from_{self._safe_node_identifier(source, 'node')}_{index}"
+            )
+            path_map = "{" + ", ".join(path_entries) + "}"
+            field_names = spec["field_names"]
+            field_tuple = ", ".join(json.dumps(field) for field in field_names)
+            if len(field_names) == 1:
+                field_tuple += ","
+            default_key = json.dumps(spec["route_keys"][0])
+            route_blocks.append(
+                f"""def {route_name}(state: WorkflowState) -> str:
+    path_map = {path_map}
+    for field_name in ({field_tuple}):
+        value = state.get(field_name)
+        if value in path_map:
+            return value
+    return {default_key}
+
+workflow.add_conditional_edges({json.dumps(source)}, {route_name}, {path_map})"""
+            )
+
+        direct_edge_set = set(direct_edge_pairs)
+        terminal_nodes = [
+            str(node).strip()
+            for node in (schema.get("terminal_nodes") or [])
+            if str(node).strip()
+        ]
+        terminal_nodes_without_explicit_end = [
+            node
+            for node in terminal_nodes
+            if (node, "END") not in direct_edge_set
+            and (node, "__end__") not in direct_edge_set
+            and node not in route_sources_with_end
+        ]
+        direct_edge_pairs.extend(
+            (node, "END") for node in terminal_nodes_without_explicit_end
+        )
+
+        edge_additions = "\n".join(
+            f"workflow.add_edge({_target_expr(source)}, {_target_expr(target)})"
+            for source, target in direct_edge_pairs
+        )
+        start_edge = (
+            ""
+            if ("START", entry_point) in direct_edge_set
+            or ("__start__", entry_point) in direct_edge_set
+            else f"workflow.add_edge(START, {json.dumps(entry_point)})"
+        )
+        route_code = "\n\n".join(route_blocks)
+        schema_literal = repr(schema)
+        checkpointing_enabled = bool(schema.get("checkpointing", True))
+        checkpoint_import = (
+            "from langgraph.checkpoint.memory import InMemorySaver\n"
+            if checkpointing_enabled
+            else ""
+        )
+        checkpoint_setup = (
+            "checkpointer = InMemorySaver()\n" if checkpointing_enabled else ""
+        )
+        compile_statement = (
+            f"{compiled_graph_variable} = workflow.compile(checkpointer=checkpointer)"
+            if checkpointing_enabled
+            else f"{compiled_graph_variable} = workflow.compile()"
+        )
+
+        return f"""from langgraph.graph import END, START, StateGraph
+{checkpoint_import}
+
+CANONICAL_GRAPH_SPEC = {schema_literal}
+{structural_node_definitions}
+
+# Create graph from canonical graph/spec metadata.
+workflow = StateGraph(WorkflowState)
+{checkpoint_setup}
+
+# Add nodes.
+{node_additions if node_additions else "# No canonical nodes were provided."}
+
+# Connect entry point and canonical direct edges.
+{start_edge}
+{edge_additions if edge_additions else "# No direct graph edges were provided."}
+
+# Add canonical conditional and Command-route destinations.
+{route_code if route_code else "# No conditional or Command routes were provided."}
+
+# Compile graph with the canonical variable name.
+{compile_statement}"""
+
+    @staticmethod
+    def _canonical_finish_node_definition(
+        architecture_type: str,
+        node_names: list[str],
+    ) -> str:
+        """Return architecture-owned finish node logic for canonical graph cells."""
+
+        if "finish" not in node_names:
+            return ""
+        if architecture_type in {"subagents", "autoagent"}:
+            return '''
+
+def finish_node(state: WorkflowState) -> dict:
+    """Synthesize a final answer from the accumulated specialist outputs."""
+    results = state.get("task_results", {})
+    if results:
+        final_output = "\\n\\n".join(
+            f"## {agent}\\n{output}" for agent, output in results.items()
+        )
+    else:
+        final_output = "No specialist results were produced."
+    return {
+        "final_output": final_output,
+        "messages": [],
+    }
+'''
+        if architecture_type == "hybrid":
+            return '''
+
+def finish_node(state: WorkflowState) -> dict:
+    """Merge direct specialist and worker-team outputs into a final answer."""
+    direct_results = state.get("results", {})
+    team_results = state.get("task_results", {})
+    sections = []
+    for agent, output in direct_results.items():
+        sections.append(f"## {agent}\\n{output}")
+    for agent, output in team_results.items():
+        sections.append(f"## {agent}\\n{output}")
+    final_output = "\\n\\n".join(sections) if sections else "No workflow results were produced."
+    return {
+        "final_output": final_output,
+        "messages": [],
+    }
+'''
+        return ""
 
     def _generate_graph_fallback(self, workflow_design: Dict[str, Any]) -> str:
         """Generate fallback graph construction code.
@@ -1855,7 +2878,7 @@ def {safe_node_identifier}_node(state: WorkflowState) -> WorkflowState:
         node_bindings = [
             (
                 json.dumps(str(node.get("name", "unknown"))),
-                self._safe_identifier(node.get("name", "unknown"), "unknown"),
+                self._safe_node_identifier(node.get("name", "unknown"), "unknown"),
             )
             for node in nodes
         ]
@@ -1880,21 +2903,16 @@ def {safe_node_identifier}_node(state: WorkflowState) -> WorkflowState:
             conditional_blocks = []
             for ce in conditional_edges:
                 source = ce.get("from", "node")
-                # Produce a valid Python identifier: replace every non-alphanumeric
-                # character with '_' and ensure the result doesn't start with a digit.
-                source_slug = re.sub(r"[^a-zA-Z0-9]", "_", source)
-                if source_slug and source_slug[0].isdigit():
-                    source_slug = "_" + source_slug
-                source_slug = source_slug or "node"
+                source_slug = self._safe_node_identifier(source, "node")
                 function_name = f"_route_from_{source_slug}"
                 # Serialize source safely for use inside a string literal in the
                 # generated code (handles quotes, backslashes, newlines, etc.).
                 safe_source = json.dumps(source)
                 conditional_blocks.append(
                     f"""def {function_name}(state: WorkflowState) -> str:
-    return "__end__"
+    return "END"
 
-workflow.add_conditional_edges({safe_source}, {function_name}, {{"__end__": END}})"""
+workflow.add_conditional_edges({safe_source}, {function_name}, {{"END": END}})"""
                 )
             conditional_code = "\n\n# Add conditional edges\n" + "\n\n".join(
                 conditional_blocks
@@ -1915,8 +2933,8 @@ workflow.add_conditional_edges({safe_source}, {function_name}, {{"__end__": END}
                 route_keys: list[str] = []
                 for destination in destinations:
                     if destination in {"END", "__end__"}:
-                        route_key = "__end__"
-                        path_items.append('"__end__": END')
+                        route_key = "END"
+                        path_items.append('"END": END')
                     else:
                         route_key = destination
                         path_items.append(
@@ -1927,7 +2945,7 @@ workflow.add_conditional_edges({safe_source}, {function_name}, {{"__end__": END}
                     continue
                 path_map_literal = "{" + ", ".join(path_items) + "}"
                 default_route = json.dumps(route_keys[0])
-                source_slug = self._safe_identifier(source, "node")
+                source_slug = self._safe_node_identifier(source, "node")
                 function_name = f"_command_route_from_{source_slug}_{index}"
                 path_map_name = f"{function_name}_path_map"
                 field_checks = "\n".join(
@@ -1978,11 +2996,294 @@ workflow.add_edge(START, "{entry_point}")
 # Compile graph
 graph = workflow.compile(checkpointer=memory)"""
 
+    @staticmethod
+    def _workflow_search_text(
+        workflow_design: Dict[str, Any],
+        notebook_plan: NotebookPlan | None = None,
+    ) -> str:
+        """Return lower-cased text used to infer notebook execution affordances."""
+
+        parts: list[str] = []
+        if notebook_plan is not None:
+            parts.append(notebook_plan.title)
+            parts.extend(notebook_plan.sections)
+            parts.extend(notebook_plan.patterns_used)
+        parts.extend(str(value) for value in workflow_design.values() if value)
+        for node in workflow_design.get("nodes", []) or []:
+            if isinstance(node, dict):
+                parts.extend(
+                    str(node.get(key, "")) for key in ("name", "purpose", "role")
+                )
+        state_schema = workflow_design.get("state_schema", {})
+        if isinstance(state_schema, dict):
+            for key, value in state_schema.items():
+                parts.append(str(key))
+                parts.append(str(value))
+        return " ".join(parts).lower()
+
+    @classmethod
+    def _is_chatbot_workflow(
+        cls,
+        workflow_design: Dict[str, Any],
+        notebook_plan: NotebookPlan | None = None,
+    ) -> bool:
+        """Return whether the workflow should render an interactive chat loop."""
+
+        text = cls._workflow_search_text(workflow_design, notebook_plan)
+        state_schema = workflow_design.get("state_schema", {})
+        state_fields = set(state_schema) if isinstance(state_schema, dict) else set()
+        high_signal_terms = {
+            "chatbot",
+            "chat bot",
+            "turn-taking",
+            "conversation loop",
+            "interactive chat",
+            "chat loop",
+        }
+        if any(term in text for term in high_signal_terms):
+            return True
+        if {"user_message", "selected_gender", "persona_profile"} & state_fields:
+            return True
+        return "chat" in text and any(
+            term in text for term in {"user input", "conversation", "message"}
+        )
+
+    @classmethod
+    def _requires_character_selection(
+        cls,
+        workflow_design: Dict[str, Any],
+        notebook_plan: NotebookPlan | None = None,
+    ) -> bool:
+        """Return whether generated execution should prompt for character gender."""
+
+        text = cls._workflow_search_text(workflow_design, notebook_plan)
+        state_schema = workflow_design.get("state_schema", {})
+        state_fields = set(state_schema) if isinstance(state_schema, dict) else set()
+        if {"selected_gender", "gender_pending"} & state_fields:
+            return True
+        return ("male" in text and "female" in text) or "gender" in text
+
+    def _create_chat_execution_content(
+        self,
+        workflow_design: Dict[str, Any],
+        notebook_plan: NotebookPlan | None,
+    ) -> str:
+        """Create a reusable chat-loop execution cell."""
+
+        requires_character = self._requires_character_selection(
+            workflow_design,
+            notebook_plan,
+        )
+        state_fields_literal = repr(
+            sorted(self._workflow_state_fields(workflow_design, notebook_plan))
+        )
+        first_turn_gender = (
+            "    selected_gender = select_character_gender(CHARACTER_GENDER)\n"
+            "    if first_message:\n"
+            "        chat_once(first_message, thread_id=thread_id, character_gender=selected_gender, show_updates=show_updates)"
+            if requires_character
+            else "    if first_message:\n"
+            "        chat_once(first_message, thread_id=thread_id, show_updates=show_updates)"
+        )
+
+        next_turn_gender = (
+            "        chat_once(user_input, thread_id=thread_id, character_gender=selected_gender, show_updates=show_updates)"
+            if requires_character
+            else "        chat_once(user_input, thread_id=thread_id, show_updates=show_updates)"
+        )
+
+        return f'''from langchain_core.messages import BaseMessage, HumanMessage
+
+
+_MISSING = object()
+WORKFLOW_STATE_FIELDS = set({state_fields_literal})
+
+
+def _find_nested_key(value, target_key: str, default=_MISSING):
+    """Find a key in nested dict/list values without treating falsey values as absent."""
+    if isinstance(value, dict):
+        if target_key in value:
+            return value[target_key]
+        for nested_value in value.values():
+            found = _find_nested_key(nested_value, target_key, default)
+            if found is not _MISSING:
+                return found
+    elif isinstance(value, list):
+        for item in value:
+            found = _find_nested_key(item, target_key, default)
+            if found is not _MISSING:
+                return found
+    return default
+
+
+def _message_content(value) -> str:
+    if isinstance(value, BaseMessage):
+        return str(value.content)
+    if isinstance(value, dict) and "content" in value:
+        return str(value["content"])
+    return str(value)
+
+
+def _extract_final_output(state: dict) -> str:
+    for key in ("final_output", "final_response", "revised_response", "draft_response"):
+        value = _find_nested_key(state, key, "")
+        if isinstance(value, str) and value.strip():
+            return value
+    task_results = _find_nested_key(state, "task_results", {{}})
+    if isinstance(task_results, dict) and task_results:
+        return str(next(reversed(task_results.values())))
+    messages = _find_nested_key(state, "messages", [])
+    if isinstance(messages, list) and messages:
+        return _message_content(messages[-1])
+    return ""
+
+
+def _set_state_field(payload: dict, field_name: str, value) -> None:
+    if field_name in WORKFLOW_STATE_FIELDS:
+        payload[field_name] = value
+
+
+def select_character_gender(value: str | None = CHARACTER_GENDER) -> str:
+    """Resolve the requested character gender before the first chat turn."""
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in {{"male", "female"}}:
+            return normalized
+    while True:
+        selected = input("Choose character gender ('male' or 'female'): ").strip().lower()
+        if selected in {{"male", "female"}}:
+            return selected
+        print("Please enter 'male' or 'female'.")
+
+
+def _chat_input(user_text: str, character_gender: str | None = None) -> dict:
+    payload: dict[str, object] = {{"messages": [HumanMessage(content=user_text)]}}
+    _set_state_field(payload, "user_message", user_text)
+    _set_state_field(payload, "user_request", user_text)
+    if character_gender:
+        persona_profile = {{
+            "gender": character_gender,
+            "role": "18th-century conversational character",
+            "style": "period-appropriate, plainspoken, and historically grounded",
+        }}
+        if "selected_gender" in WORKFLOW_STATE_FIELDS:
+            payload["selected_gender"] = character_gender
+        if "character_sex" in WORKFLOW_STATE_FIELDS:
+            payload["character_sex"] = character_gender
+        if "character_gender" in WORKFLOW_STATE_FIELDS:
+            payload["character_gender"] = character_gender
+        if "persona_choice" in WORKFLOW_STATE_FIELDS:
+            payload["persona_choice"] = f"{{character_gender}}_commoner"
+        if "persona" in WORKFLOW_STATE_FIELDS:
+            payload["persona"] = f"{{character_gender}}_commoner"
+        if "persona_id" in WORKFLOW_STATE_FIELDS:
+            payload["persona_id"] = f"{{character_gender}}_commoner"
+        if "gender_pending" in WORKFLOW_STATE_FIELDS:
+            payload["gender_pending"] = False
+        if "needs_character_selection" in WORKFLOW_STATE_FIELDS:
+            payload["needs_character_selection"] = False
+        if "persona_profile" in WORKFLOW_STATE_FIELDS:
+            payload["persona_profile"] = persona_profile
+        if "character_profile" in WORKFLOW_STATE_FIELDS:
+            payload["character_profile"] = persona_profile
+    return payload
+
+
+def chat_once(
+    user_text: str,
+    *,
+    thread_id: str = THREAD_ID,
+    character_gender: str | None = None,
+    show_updates: bool = SHOW_UPDATES,
+) -> dict:
+    """Run one chat turn while preserving thread-scoped graph memory."""
+    config = {{"configurable": {{"thread_id": thread_id}}, "recursion_limit": 25}}
+    inputs = _chat_input(user_text, character_gender=character_gender)
+    stream_mode = "updates" if show_updates else "values"
+    latest_state: dict = {{}}
+    for step in graph.stream(inputs, config, stream_mode=stream_mode):
+        if show_updates:
+            print(step)
+        elif isinstance(step, dict):
+            latest_state = step
+    final_state = graph.get_state(config).values
+    response_text = _extract_final_output(final_state or latest_state)
+    if response_text:
+        print(response_text)
+    return final_state or latest_state
+
+
+def run_chat_loop(
+    *,
+    first_message: str = "Hello! How do we start?",
+    thread_id: str = THREAD_ID,
+    show_updates: bool = SHOW_UPDATES,
+) -> None:
+{first_turn_gender}
+    while True:
+        user_input = input("\\nEnter next message (or type 'quit' to exit): ").strip()
+        if user_input.lower() in {{"quit", "exit", "q"}}:
+            break
+{next_turn_gender}
+
+
+def run_demo_turns(
+    turns: list[str] | None = None,
+    *,
+    thread_id: str = THREAD_ID,
+    character_gender: str | None = None,
+    show_updates: bool = SHOW_UPDATES,
+) -> list[dict]:
+    """Run repeatable same-thread turns without blocking for input."""
+    selected_gender = (
+        select_character_gender(character_gender or CHARACTER_GENDER)
+        if {requires_character!r}
+        else None
+    )
+    states: list[dict] = []
+    for user_text in turns or [
+        "Good day. Who are you?",
+        "What would you think of a smartphone?",
+    ]:
+        states.append(
+            chat_once(
+                user_text,
+                thread_id=thread_id,
+                character_gender=selected_gender,
+                show_updates=show_updates,
+            )
+        )
+    return states
+
+
+if RUN_INTERACTIVE_LOOP:
+    run_chat_loop()
+elif RUN_DEMO_TURNS:
+    run_demo_turns()
+else:
+    print("Chat helpers ready. Call chat_once(...) or run_chat_loop() when ready.")'''
+
     def _create_execution_cells(
-        self, workflow_design: Dict[str, Any]
+        self,
+        workflow_design: Dict[str, Any],
+        notebook_plan: NotebookPlan | None = None,
     ) -> List[CellSpec]:
         """Create execution cells aligned with the generated workflow state."""
         architecture_type = workflow_design.get("architecture_type", "router")
+
+        if self._is_chatbot_workflow(workflow_design, notebook_plan):
+            exec_content = self._create_chat_execution_content(
+                workflow_design,
+                notebook_plan,
+            )
+            return [
+                CellSpec(
+                    cell_type="markdown",
+                    content="## Execution\n\nRun the interactive chat loop:",
+                    section="execution",
+                ),
+                CellSpec(cell_type="code", content=exec_content, section="execution"),
+            ]
 
         if architecture_type == "router":
             initial_state_block = """initial_state: WorkflowState = {
@@ -2056,11 +3357,11 @@ graph = workflow.compile(checkpointer=memory)"""
 config = {{"configurable": {{"thread_id": "lnf-demo-thread"}}, "recursion_limit": 25}}
 {initial_state_block}
 
-print("Streaming state updates:")
-for step in graph.stream(initial_state, config, stream_mode="updates"):
+print("Streaming workflow state:")
+for step in graph.stream(initial_state, config, stream_mode="values"):
     print(step)
 
-final_state = graph.invoke(initial_state, config)
+final_state = graph.get_state(config).values
 print(final_state)"""
 
         return [
@@ -2091,7 +3392,9 @@ print(final_state)"""
         try:
             ast.parse(content)
         except SyntaxError as exc:
-            location = f"line {exc.lineno}" if exc.lineno is not None else "unknown line"
+            location = (
+                f"line {exc.lineno}" if exc.lineno is not None else "unknown line"
+            )
             return f"{exc.msg} at {location}"
         return None
 
@@ -2109,6 +3412,62 @@ print(final_state)"""
             return False
         placeholder_markers = ["todo", "implement your", "placeholder"]
         return not any(marker in lowered for marker in placeholder_markers)
+
+    @staticmethod
+    def _tool_function_name(content: str, fallback: str) -> str:
+        """Return the first top-level tool function name from generated code."""
+
+        try:
+            parsed = ast.parse(content)
+        except SyntaxError:
+            return fallback
+        for node in parsed.body:
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                return node.name
+        return fallback
+
+    @staticmethod
+    def _ensure_langchain_tool_code(content: str) -> str:
+        """Ensure generated tool code is decorated as a LangChain tool."""
+
+        normalized = content.strip()
+        try:
+            parsed = ast.parse(normalized)
+        except SyntaxError:
+            return normalized
+
+        first_function = next(
+            (
+                node
+                for node in parsed.body
+                if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+            ),
+            None,
+        )
+        if first_function is None:
+            return normalized
+
+        has_tool_import = (
+            "from langchain_core.tools import tool" in normalized
+            or "from langchain.tools import tool" in normalized
+        )
+        decorators = set()
+        for decorator in first_function.decorator_list:
+            if isinstance(decorator, ast.Name):
+                decorators.add(decorator.id)
+            elif isinstance(decorator, ast.Call) and isinstance(
+                decorator.func, ast.Name
+            ):
+                decorators.add(decorator.func.id)
+        has_tool_decorator = "tool" in decorators
+
+        lines = normalized.splitlines()
+        if not has_tool_decorator:
+            insert_at = max(first_function.lineno - 1, 0)
+            lines.insert(insert_at, "@tool")
+        if not has_tool_import:
+            lines.insert(0, "from langchain_core.tools import tool")
+        return "\n".join(lines)
 
     @staticmethod
     def _is_meaningful_node_code(content: str) -> bool:

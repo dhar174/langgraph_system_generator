@@ -164,11 +164,11 @@ This document provides a visual guide to the enhanced LangGraph System Generator
 │                                                                        │
 │  Architecture: router                                                  │
 │  Plan Title: LangGraph Workflow: Create a customer support...        │
-│  Generated Cells: 15                                                  │
+│  Notebook Cells: 15                                                   │
 │  Output Directory: ./output/web_generated                             │
 │                                                                        │
 │  Notebook Plan: ./output/web_generated/notebook_plan.json            │
-│  Generated Cells: ./output/web_generated/generated_cells.json        │
+│  Generated Cells JSON: ./output/web_generated/generated_cells.json   │
 │                                                                        │
 │  ┌────────────────────────────────────────────────────────────────┐  │
 │  │  📝 Next Steps:                                                │  │

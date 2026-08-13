@@ -26,8 +26,17 @@
 - The local deterministic release evaluation script is
   `scripts/run_release_eval.py`; it writes a JSON report and defaults to
   no-upload behavior for CI/release PR use.
-- The current full release-readiness verification command is `python -m pytest
-  --asyncio-mode=auto`; the latest branch run reported 625 passed and 4 skipped.
+- The current full verification command is `python -m pytest
+  --asyncio-mode=auto`. The latest documented full run from the generated-output
+  artifact-manifest branch reported 721 passed and 3 skipped; targeted PR #357
+  unit verification reported 609 passed. PR #359 review-fix slices reported 96
+  pattern tests, 102 composer/validator tests, and 142 generator/API-node tests
+  passing; the post-refresh broad unit gate reported 622 passed and 4 warnings.
+  Current Wave 4 focused slices report 111 composer/validator tests, 143
+  generator/API-node tests, and 98 pattern tests passing. The Wave 4 broad unit
+  gate reports 634 passed and 4 warnings, and the headed/live UI gate completed
+  with `gpt-5.4-mini`, working notebook, HTML, and manifest downloads, no
+  browser errors, and advisory-only generated-artifact QA.
 - The CI fatal-error lint gate is `python -m flake8 . --count
   --select=E9,F63,F7,F82 --show-source --statistics`; the broader
   `--exit-zero` flake8 statistics command is informational and still reports

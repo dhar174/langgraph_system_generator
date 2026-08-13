@@ -5,8 +5,8 @@ from __future__ import annotations
 import zipfile
 from pathlib import Path
 
+import nbformat
 import pytest
-
 
 
 @pytest.mark.asyncio
@@ -172,6 +172,118 @@ async def test_generate_zip_bundle(tmp_path: Path, monkeypatch: pytest.MonkeyPat
         assert "notebook.ipynb" in names
         # Should also include JSON artifacts
         assert any("json" in name for name in names)
+
+
+@pytest.mark.asyncio
+async def test_manifest_cell_count_matches_serialized_notebook(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """Manifest cell_count should describe the emitted notebook, not raw specs."""
+    monkeypatch.setenv("LNF_OUTPUT_BASE", "test_manifest_cell_count_truth")
+
+    import importlib
+    import langgraph_system_generator.constants as constants_module
+    import langgraph_system_generator.notebook.exporters as exporters_module
+    import langgraph_system_generator.cli as cli_module
+
+    importlib.reload(constants_module)
+    importlib.reload(exporters_module)
+    importlib.reload(cli_module)
+
+    artifacts = await cli_module.generate_artifacts(
+        "Create a manifest truth test system",
+        output_dir=str(constants_module._BASE_OUTPUT / "cell_count_truth"),
+        mode="stub",
+        formats=["ipynb"],
+    )
+
+    manifest = artifacts["manifest"]
+    notebook_path = constants_module.resolve_under_base(Path(manifest["notebook_path"]))
+    notebook = nbformat.read(notebook_path, as_version=4)
+
+    assert manifest["cell_count"] == len(notebook.cells)
+    assert manifest["cell_count_source"] == "serialized_notebook"
+    assert manifest["generated_cell_spec_count"] == len(
+        artifacts["result"]["generated_cells"]
+    )
+
+
+@pytest.mark.asyncio
+async def test_manifest_artifact_contract_marks_standalone_files_and_zip_members(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """Manifest artifact metadata should match files and bundle contents."""
+    monkeypatch.setenv("LNF_OUTPUT_BASE", "test_manifest_artifact_contract")
+
+    import importlib
+    import langgraph_system_generator.constants as constants_module
+    import langgraph_system_generator.notebook.exporters as exporters_module
+    import langgraph_system_generator.cli as cli_module
+
+    importlib.reload(constants_module)
+    importlib.reload(exporters_module)
+    importlib.reload(cli_module)
+
+    artifacts = await cli_module.generate_artifacts(
+        "Create an artifact contract test system",
+        output_dir=str(constants_module._BASE_OUTPUT / "artifact_contract"),
+        mode="stub",
+        formats=["ipynb", "html", "zip"],
+    )
+
+    manifest = artifacts["manifest"]
+    contract = manifest["artifact_contract"]
+    standalone_by_key = {
+        entry["manifest_key"]: entry for entry in contract["standalone_files"]
+    }
+
+    for manifest_key in [
+        "plan_path",
+        "cells_path",
+        "notebook_path",
+        "html_path",
+        "zip_path",
+    ]:
+        entry = standalone_by_key[manifest_key]
+        assert entry["availability"] == "standalone"
+        assert entry["path_type"] == "server_local"
+        assert entry["exists"] is True
+        assert constants_module.resolve_under_base(Path(entry["path"])).is_file()
+        assert entry["relative_path"]
+
+    zip_path = constants_module.resolve_under_base(Path(manifest["zip_path"]))
+    with zipfile.ZipFile(zip_path, "r") as zf:
+        actual_members = set(zf.namelist())
+
+    manifest_members = {entry["name"]: entry for entry in contract["zip_members"]}
+    assert set(manifest_members).issubset(actual_members)
+    assert manifest_members["notebook.ipynb"]["availability"] in {
+        "standalone_and_bundle",
+        "bundle_only",
+    }
+    assert manifest_members["notebook_plan.json"]["source_manifest_key"] == "plan_path"
+    assert (
+        manifest_members["generated_cells.json"]["source_manifest_key"] == "cells_path"
+    )
+
+
+def test_artifact_contract_does_not_inspect_nonstandard_manifest_zip(tmp_path: Path):
+    """Only the generator-owned bundle name is inspected for ZIP members."""
+    import langgraph_system_generator.cli as cli_module
+
+    output_dir = tmp_path / "artifact_contract"
+    output_dir.mkdir()
+    alternate_zip = output_dir / "user_named_bundle.zip"
+    with zipfile.ZipFile(alternate_zip, "w") as zf:
+        zf.writestr("unexpected.txt", "not a generated bundle member")
+
+    contract = cli_module._build_artifact_contract(
+        {"zip_path": str(alternate_zip)},
+        output_dir,
+    )
+
+    assert contract["standalone_files"][0]["exists"] is True
+    assert contract["zip_members"] == []
 
 
 @pytest.mark.asyncio

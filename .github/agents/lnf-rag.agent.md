@@ -70,6 +70,8 @@ stub mode require live network access.
 ## Implementation Rules
 
 - Keep retrieval deterministic and cacheable by default.
+- Preserve the process-local retriever/vector-store cache shared by RAG
+  retrieval and architecture selection; use reset hooks only for tests.
 - Store stable metadata such as source URL/path, heading/section when available,
   source kind, and score.
 - Keep vector indexes and generated outputs out of source edits unless the task
