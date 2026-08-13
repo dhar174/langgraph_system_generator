@@ -110,7 +110,6 @@ jobs:
         shell: bash
         env:
           SERVICE_URL: ${{ steps.deploy.outputs.url }}
-          GCP_SERVICE_ACCOUNT: ${{ secrets.GCP_SERVICE_ACCOUNT }}
           IDENTITY_TOKEN: ${{ steps.health-auth.outputs.id_token }}
         run: |
           set -euo pipefail
@@ -124,8 +123,6 @@ jobs:
           fi
 
           for attempt in {1..30}; do
-            # Added --impersonate-service-account and --include-email flags
-            identity_token="$(gcloud auth print-identity-token --audiences="${SERVICE_URL}" --impersonate-service-account="${GCP_SERVICE_ACCOUNT}" --include-email)"
             http_status="$(
               curl --fail --silent --show-error --max-time 10 \
                 --output /tmp/cloud-run-health.json \
