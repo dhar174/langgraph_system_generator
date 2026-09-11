@@ -88,3 +88,18 @@ def test_api_package_surfaces_missing_api_extra(monkeypatch):
         _ = api_module.app
 
     assert '".[api]"' in str(exc_info.value)
+
+
+def test_qa_package_exposes_public_helpers_lazily(monkeypatch):
+    """The QA package should resolve public helpers only when accessed."""
+    qa_module = importlib.import_module("langgraph_system_generator.qa")
+    imported_modules = []
+
+    def fake_import(name):
+        imported_modules.append(name)
+        return SimpleNamespace(NotebookValidator="sentinel-validator")
+
+    monkeypatch.setattr(qa_module, "import_module", fake_import)
+
+    assert qa_module.NotebookValidator == "sentinel-validator"
+    assert imported_modules == ["langgraph_system_generator.qa.validators"]
