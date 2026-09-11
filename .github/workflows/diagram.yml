@@ -47,7 +47,7 @@ jobs:
 
       - name: Checkout code
         if: steps.diagram-token.outputs.available == 'true'
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7.0.1
         with:
           ref: main
           fetch-depth: 0

@@ -14,7 +14,7 @@ jobs:
       contents: write  # Required to push to wiki
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7.0.1
       
       - name: Create Release Notes
         uses: docker://decathlon/release-notes-generator-action:2.0.0
@@ -34,7 +34,7 @@ jobs:
           REPO_NAME: langgraph_system_generator
       
       - name: GitHub Wiki Action
-        uses: Andrew-Chen-Wang/github-wiki-action@v5.0.3
+        uses: Andrew-Chen-Wang/github-wiki-action@v5.0.6
         with:
           # Select from 'clone' or 'init' to determine which method to use to push changes to the GitHub wiki. 'clone' will clone the .wiki.git repo and add an additional commit. 'init' will create a new repo with a single commit and force push to the .wiki.git. 'init' involves a force-push! The default is 'clone'.
           strategy: # default is clone
