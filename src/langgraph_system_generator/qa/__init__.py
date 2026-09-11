@@ -5,8 +5,8 @@ from __future__ import annotations
 from importlib import import_module
 
 __all__ = [
-    "NotebookValidator",
     "NotebookRepairAgent",
+    "NotebookValidator",
     "QARepairRegistry",
     "RepairRoutineRegistration",
     "get_qa_repair_registry",

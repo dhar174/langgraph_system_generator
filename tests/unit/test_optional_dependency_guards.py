@@ -30,7 +30,9 @@ def test_require_optional_module_mentions_requested_extra(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_generate_artifacts_raises_friendly_error_when_full_extra_missing(monkeypatch, tmp_path):
+async def test_generate_artifacts_raises_friendly_error_when_full_extra_missing(
+    monkeypatch, tmp_path
+):
     """Artifact generation should fail with an actionable optional-deps message."""
 
     def guarded_import(name):
@@ -80,7 +82,9 @@ def test_api_package_surfaces_missing_api_extra(monkeypatch):
     api_module = importlib.import_module("langgraph_system_generator.api")
 
     def raise_optional_error(*_args, **_kwargs):
-        raise optional_deps.OptionalDependencyError("Install with pip install -e \".[api]\"")
+        raise optional_deps.OptionalDependencyError(
+            'Install with pip install -e ".[api]"'
+        )
 
     monkeypatch.setattr(api_module, "require_optional_module", raise_optional_error)
 
