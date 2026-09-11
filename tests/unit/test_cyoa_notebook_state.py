@@ -9,7 +9,7 @@ import re
 import textwrap
 import time
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 
 NOTEBOOK_PATH = (
@@ -58,6 +58,35 @@ def _load_function(source: str, name: str, namespace: dict[str, Any]):
     module = ast.fix_missing_locations(ast.Module(body=[node], type_ignores=[]))
     exec(compile(module, str(NOTEBOOK_PATH), "exec"), namespace)
     return namespace[name]
+
+
+def test_make_llm_applies_temperature_and_response_token_limit() -> None:
+    captured: dict[str, Any] = {}
+
+    class FakeChatOpenAI:
+        def __init__(self, **kwargs: Any):
+            captured.update(kwargs)
+
+    make_llm = _load_function(
+        _cell_source("def make_llm"),
+        "make_llm",
+        {"ChatOpenAI": FakeChatOpenAI, "Optional": Optional, "os": os},
+    )
+
+    llm = make_llm(
+        model="test-model",
+        temperature=1.2,
+        max_tokens=321,
+        timeout=12.0,
+    )
+
+    assert isinstance(llm, FakeChatOpenAI)
+    assert captured["model"] == "test-model"
+    assert captured["temperature"] == 1.2
+    assert captured["max_completion_tokens"] == 321
+    assert captured["timeout"] == 12.0
+    assert captured["use_responses_api"] is True
+    assert captured["output_version"] == "responses/v1"
 
 
 def test_story_generation_uses_canonical_config_and_preserves_turn() -> None:
