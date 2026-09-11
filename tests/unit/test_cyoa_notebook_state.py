@@ -155,7 +155,7 @@ def test_ui_initial_state_keeps_canonical_story_keys() -> None:
 
 def test_choice_application_owns_turn_increment_and_max_turn_end() -> None:
     source = _cell_source("def apply_choice_node")
-    advance_turn = _load_function(source, "_advance_turn_after_choice", {})
+    advance_turn = _load_function(source, "_advance_turn_after_choice", {"Any": Any, "Dict": Dict})
 
     assert advance_turn(0, 3) == {
         "turn_index": 1,
