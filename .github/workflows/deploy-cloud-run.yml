@@ -27,8 +27,8 @@ jobs:
 
     steps:
       - name: Checkout repository
-        # actions/checkout v4
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        # actions/checkout v7.0.1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
 
       - name: Validate required configuration
         shell: bash
@@ -58,15 +58,15 @@ jobs:
           fi
 
       - name: Authenticate to Google Cloud
-        # google-github-actions/auth v2
-        uses: google-github-actions/auth@c200f3691d83b41bf9bbd8638997a462592937ed
+        # google-github-actions/auth v3
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093
         with:
           workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
           service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
 
       - name: Set up gcloud
-        # google-github-actions/setup-gcloud v2
-        uses: google-github-actions/setup-gcloud@e427ad8a34f8676edf47cf7d7925499adf3eb74f
+        # google-github-actions/setup-gcloud v3.0.1
+        uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db
         with:
           project_id: ${{ env.PROJECT_ID }}
 
@@ -85,8 +85,8 @@ jobs:
 
       - name: Deploy to Cloud Run
         id: deploy
-        # google-github-actions/deploy-cloudrun v2
-        uses: google-github-actions/deploy-cloudrun@251330ba9a8a34bfbc1622895f42e1d53fd14522
+        # google-github-actions/deploy-cloudrun v3.0.1
+        uses: google-github-actions/deploy-cloudrun@2028e2d7d30a78c6910e0632e48dd561b064884d
         with:
           service: ${{ env.SERVICE }}
           region: ${{ env.REGION }}
@@ -98,8 +98,8 @@ jobs:
 
       - name: Mint Cloud Run health identity token
         id: health-auth
-        # google-github-actions/auth v2
-        uses: google-github-actions/auth@c200f3691d83b41bf9bbd8638997a462592937ed
+        # google-github-actions/auth v3
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093
         with:
           workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
           service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}

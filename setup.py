@@ -7,47 +7,48 @@ BASE_DIR = Path(__file__).parent
 README = (BASE_DIR / "README.md").read_text(encoding="utf-8")
 
 CORE_DEPENDENCIES = [
-    "pydantic>=2.5.0",
-    "pydantic-settings>=2.1.0",
-    "python-dotenv>=1.0.0",
+    "pydantic>=2.13.5",
+    "pydantic-settings>=2.15.0",
+    "python-dotenv>=1.2.3",
 ]
 
 API_DEPENDENCIES = [
-    "fastapi>=0.115.0",
-    "uvicorn>=0.30.0",
-    "sse-starlette>=2.0.0",
+    "fastapi>=0.141.1",
+    "uvicorn>=0.52.4",
+    "sse-starlette>=3.4.11",
 ]
 
 FULL_DEPENDENCIES = [
-    "langgraph>=1.0.0,<2.0.0",
-    "langchain>=1.0.0,<2.0.0",
-    "langchain-openai>=1.0.0,<2.0.0",
-    "langchain-community>=0.4.1,<1.0.0",
-    "nbformat>=5.9.0",
-    "nbconvert>=7.14.0",
-    "jupyter_client>=8.0.0",
-    "nbclient>=0.8.0",
-    "ipykernel>=6.0.0",
-    "python-docx>=1.1.0",
-    "reportlab>=4.0.0",
-    "faiss-cpu>=1.7.4",
-    "chromadb>=0.4.0",
-    "sentence-transformers>=2.2.0",
-    "aiohttp>=3.9.0",
-    "beautifulsoup4>=4.12.0",
-    "httpx>=0.28.0",
+    "langgraph>=1.2.11,<2.0.0",
+    "langchain>=1.4.0,<2.0.0",
+    "langchain-openai>=1.6.2,<2.0.0",
+    "langchain-text-splitters>=0.3.0,<2.0.0",
+    "langchain-community>=0.4.2,<1.0.0"
+    "nbformat>=5.11.1",
+    "nbconvert>=7.17.1",
+    "jupyter_client>=8.10.0",
+    "nbclient>=0.11.0",
+    "ipykernel>=7.3.0",
+    "python-docx>=1.2.0",
+    "reportlab>=5.0.1",
+    "faiss-cpu>=1.15.0",
+    "chromadb>=1.5.9",
+    "sentence-transformers>=6.0.1",
+    "aiohttp>=3.14.3",
+    "beautifulsoup4>=4.15.0",
+    "httpx>=0.28.1",
     *API_DEPENDENCIES,
 ]
 
 DEV_DEPENDENCIES = [
     *FULL_DEPENDENCIES,
-    "black>=23.0.0",
-    "ruff>=0.1.0",
-    "mypy>=1.7.0",
-    "pytest>=7.4.0",
-    "pytest-asyncio>=0.21.0",
-    "pytest-cov>=4.1.0",
-    "httpx-sse>=0.4.0",
+    "black>=26.5.1",
+    "ruff>=0.16.7",
+    "mypy>=2.3.1",
+    "pytest>=9.1.1",
+    "pytest-asyncio>=1.4.0",
+    "pytest-cov>=7.1.0",
+    "httpx-sse>=0.4.3",
 ]
 
 

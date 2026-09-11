@@ -127,7 +127,7 @@ def test_diagram_workflow_authenticates_checkout_before_diagram_generation() -> 
 
     assert token_check_index < checkout_index < update_index
     assert "if: steps.diagram-token.outputs.available == 'true'" in workflow
-    assert "uses: actions/checkout@v4" in workflow
+    assert "uses: actions/checkout@v7.0.1" in workflow
     assert "persist-credentials: true" in workflow
 
 
