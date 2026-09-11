@@ -89,6 +89,25 @@ def test_make_llm_applies_temperature_and_response_token_limit() -> None:
     assert captured["output_version"] == "responses/v1"
 
 
+def test_make_llm_omits_temperature_for_reasoning_models() -> None:
+    captured: dict[str, Any] = {}
+
+    class FakeChatOpenAI:
+        def __init__(self, **kwargs: Any):
+            captured.update(kwargs)
+
+    make_llm = _load_function(
+        _cell_source("def make_llm"),
+        "make_llm",
+        {"ChatOpenAI": FakeChatOpenAI, "Optional": Optional, "os": os},
+    )
+
+    make_llm(model="gpt-5-nano", temperature=0.6)
+
+    assert captured["model"] == "gpt-5-nano"
+    assert "temperature" not in captured
+
+
 def test_story_generation_uses_canonical_config_and_preserves_turn() -> None:
     captured: dict[str, Any] = {}
 
