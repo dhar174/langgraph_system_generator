@@ -7,11 +7,7 @@
 ## Form Structure
 
 ```tsx
-{
-  {
-    FORM_EXAMPLE;
-  }
-}
+{{FORM_EXAMPLE}}
 ```
 
 ## Rules
