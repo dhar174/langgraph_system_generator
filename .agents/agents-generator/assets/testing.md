@@ -6,7 +6,7 @@
 
 | Command           | Purpose |
 | ----------------- | ------- |
-| {{TEST_COMMANDS}} |
+{{TEST_COMMANDS}}
 
 ## Test Files
 

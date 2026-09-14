@@ -162,11 +162,9 @@ If no AI action steps are found across all workflows, report "No AI action steps
 
 After identifying AI action steps, check for `uses:` references that may contain hidden AI agents:
 
-1. **Step-level `uses:` with local paths** (`./path/to/action`): Resolve the composite action's `action.yml` and scan its `runs.steps[]` for AI action steps
-2. **Job-level `uses:`**: Resolve the reusable workflow (local or remote) and analyze it through Steps 2-4
-3. **Depth limit**: Only resolve one level deep. References found inside resolved files are logged as unresolved, not followed
-
-For the complete resolution procedures including `uses:` format classification, composite action type discrimination, input mapping traces, remote fetching, and edge cases, see {baseDir}/references/cross-file-resolution.md.
+1. **Step-level `uses:` with local paths** (`./path/to/action`): Resolve the composite action's `action.yml` or `action.yaml`. Inspect `runs.using: 'composite'` and scan `runs.steps[]` for nested AI action steps or scripts invoking agent CLI tools (`gemini`, `claude`, `codex`). Trace caller inputs from `with:` to composite `inputs:`.
+2. **Job-level `uses:`**: Resolve the reusable workflow (local `./.github/workflows/...` or remote `owner/repo/.github/workflows/...@ref`). Trace inputs passed via `with:` to `on.workflow_call.inputs` in the called workflow, then analyze its steps. For remote workflows, fetch using `gh api repos/{owner}/{repo}/contents/.github/workflows/{filename}?ref={ref}`.
+3. **Depth limit**: Only resolve one level deep. If a composite action or reusable workflow itself references another external action or workflow, record it as an unresolved reference rather than recursing.
 
 ### Step 3: Capture Security Context
 
@@ -234,23 +232,37 @@ Include the security context captured for each instance in the detailed output.
 
 ### Step 4: Analyze for Attack Vectors
 
-First, read {baseDir}/references/foundations.md to understand the attacker-controlled input model, env block mechanics, and data flow paths.
+#### 4a. Attacker-Controlled Input Foundations
 
-Then check each vector against the security context captured in Step 3:
+Attackers exploit AI actions in CI/CD by injecting untrusted data into prompts, environment variables, or tool execution paths. Understand the core threat model:
 
-| Vector | Name | Quick Check | Reference |
-|--------|------|-------------|-----------|
-| A | Env Var Intermediary | `env:` block with `${{ github.event.* }}` value + prompt reads that env var name | {baseDir}/references/vector-a-env-var-intermediary.md |
-| B | Direct Expression Injection | `${{ github.event.* }}` inside prompt or system-prompt field | {baseDir}/references/vector-b-direct-expression-injection.md |
-| C | CLI Data Fetch | `gh issue view`, `gh pr view`, or `gh api` commands in prompt text | {baseDir}/references/vector-c-cli-data-fetch.md |
-| D | PR Target + Checkout | `pull_request_target` trigger + checkout with `ref:` pointing to PR head | {baseDir}/references/vector-d-pr-target-checkout.md |
-| E | Error Log Injection | CI logs, build output, or `workflow_dispatch` inputs passed to AI prompt | {baseDir}/references/vector-e-error-log-injection.md |
-| F | Subshell Expansion | Tool restriction list includes commands supporting `$()` expansion | {baseDir}/references/vector-f-subshell-expansion.md |
-| G | Eval of AI Output | `eval`, `exec`, or `$()` in `run:` step consuming `steps.*.outputs.*` | {baseDir}/references/vector-g-eval-of-ai-output.md |
-| H | Dangerous Sandbox Configs | `danger-full-access`, `Bash(*)`, `--yolo`, `safety-strategy: unsafe` | {baseDir}/references/vector-h-dangerous-sandbox-configs.md |
-| I | Wildcard Allowlists | `allowed_non_write_users: "*"`, `allow-users: "*"` | {baseDir}/references/vector-i-wildcard-allowlists.md |
+1. **Untrusted Event Sources**:
+   - **Issues & Comments**: `${{ github.event.issue.title }}`, `${{ github.event.issue.body }}`, `${{ github.event.comment.body }}` can be crafted by any GitHub user with read/comment access.
+   - **Pull Requests**: `${{ github.event.pull_request.title }}`, `${{ github.event.pull_request.body }}`, `${{ github.head_ref }}`, commit messages, and PR branch code are attacker-controlled in public or fork PRs.
+   - **Dispatches & External**: `${{ github.event.inputs.* }}` or webhook payloads can contain arbitrary strings.
 
-For each vector, read the referenced file and apply its detection heuristic against the security context captured in Step 3. For each finding, record: the vector letter and name, the specific evidence from the workflow, the data flow path from attacker input to AI agent, and the affected workflow file and step.
+2. **Execution Trust Boundaries**:
+   - Workflows triggered by `pull_request` run in the context of the fork without access to repository secrets or write tokens.
+   - Workflows triggered by `pull_request_target`, `issue_comment`, or `issues` run in the context of the base repository and possess repository secrets and write permissions. If such a workflow evaluates untrusted PR/issue content, an attacker can compromise repository secrets or write to protected branches.
+
+3. **Intermediary Mechanics**:
+   - Setting an environment variable (`env:`) does not sanitize strings. If the AI prompt or an inline script consumes that variable, the untrusted input directly enters the agent's context or shell environment.
+
+#### 4b. Vector Detection Matrix
+
+| Vector | Name | Detection Heuristic & Vulnerable Pattern |
+|--------|------|------------------------------------------|
+| **A** | **Env Var Intermediary** | An `env:` block (at workflow, job, or step level) assigns an untrusted GitHub event expression (e.g. `${{ github.event.issue.body }}`), and the AI action's `with.prompt`, `with.system-prompt`, or command arguments read that environment variable (e.g. `$ISSUE_BODY`). |
+| **B** | **Direct Expression Injection** | Direct interpolation of `${{ github.event.* }}` or `${{ github.head_ref }}` inside the `with.prompt`, `with.system-prompt`, or CLI arguments of the AI action step. |
+| **C** | **CLI Data Fetch** | The prompt instructs the agent to execute CLI commands (`gh issue view`, `gh pr view`, `gh api`, `curl`) to dynamically retrieve untrusted issue or PR text without schema validation or isolation. |
+| **D** | **PR Target + Checkout** | The workflow triggers on `pull_request_target` AND includes an `actions/checkout` step configured with `ref: ${{ github.event.pull_request.head.sha }}` or `ref: ${{ github.head_ref }}`. This executes untrusted fork code with base-repository secret access. |
+| **E** | **Error Log / Output Injection** | Build, linter, or test failure logs (which reflect attacker-modified code or comments) are passed directly from a previous step's output (`${{ steps.<id>.outputs.* }}`) into the AI prompt. |
+| **F** | **Subshell Expansion in Tool Restrictions** | The agent's allowed tool list permits commands that evaluate subshell expressions (`$()`, backticks), such as `echo`, `printf`, or shell interpreters, allowing tool restriction bypass. |
+| **G** | **Eval of AI Output** | Subsequent workflow steps execute the output of the AI action using `eval`, `bash`, `sh`, or direct command substitution without strict sandboxing or human-in-the-loop review. |
+| **H** | **Dangerous Sandbox Configs** | The agent sandbox is disabled or granted elevated capabilities (`sandbox: danger-full-access`, `safety-strategy: unsafe`, `--yolo`, or unconstrained root container execution). |
+| **I** | **Wildcard Allowlists** | The AI trigger policy permits arbitrary users to run actions with write or secret access (e.g. `allowed_non_write_users: "*"`, `allow-users: "*"`). |
+
+Apply each vector's detection heuristic against the security context captured in Step 3. For each finding, record: the vector letter and name, the specific evidence from the workflow, the data flow path from attacker input to AI agent, and the affected workflow file and step.
 
 ### Step 5: Report Findings
 
@@ -267,9 +279,29 @@ Each finding uses this section order:
 - **Impact:** One sentence stating what an attacker can achieve
 - **Evidence:** YAML code snippet from the workflow showing the vulnerable pattern, with line number comments
 - **Data Flow:** Annotated numbered steps (see 5c for format)
-- **Remediation:** Action-specific guidance. For action-specific remediation details (exact field names, safe defaults, dangerous patterns), consult {baseDir}/references/action-profiles.md to look up the affected action's secure configuration defaults, dangerous patterns, and recommended fixes.
+- **Remediation:** Action-specific guidance following the Action Security Profiles below.
 
-#### 5b. Severity Judgment
+#### 5b. Action Security Profiles & Safe Defaults
+
+Consult these profiles for action-specific remediation details:
+
+1. **Claude Code Action (`anthropics/claude-code-action`)**:
+   - **Safe Defaults**: Restrict `--allowedTools` to explicit read-only tools (e.g. `GlobTool,GrepTool,ViewTool`). Avoid `Bash(*)` or unrestricted shell execution.
+   - **User Permissions**: Never set `allowed_non_write_users: "*"`. Require maintainer approval or use `allowed_non_write_users` with specific trusted handles.
+   - **Prompt Inputs**: Avoid embedding raw `${{ github.event.* }}` in prompts; pass structured identifiers instead and use clean extraction scripts.
+
+2. **Gemini CLI (`google-github-actions/run-gemini-cli`)**:
+   - **Safe Defaults**: Enforce restrictive `settings` JSON; disable untrusted extensions.
+   - **Execution Context**: Run in isolated containers without ambient GCP credentials or repository write tokens unless explicitly required and restricted.
+
+3. **OpenAI Codex (`openai/codex-action`)**:
+   - **Safe Defaults**: Set `sandbox: workspace-write` or `sandbox: read-only`. Use `safety-strategy: unprivileged-user` or `safety-strategy: drop-sudo`.
+   - **Dangerous Patterns**: Never set `sandbox: danger-full-access` or `safety-strategy: unsafe`. Never use `allow-users: "*"`.
+
+4. **GitHub AI Inference (`actions/ai-inference`)**:
+   - **Safe Defaults**: Restrict GitHub tokens to read-only (`permissions: contents: read`). Do not interpolate raw untrusted event strings into system prompts.
+
+#### 5c. Severity Judgment
 
 Severity is context-dependent. The same vector can be High or Low depending on the surrounding workflow configuration. Evaluate these factors for each finding:
 
@@ -282,7 +314,7 @@ Severity is context-dependent. The same vector can be High or Low depending on t
 
 Vectors H (Dangerous Sandbox Configs) and I (Wildcard Allowlists) are configuration weaknesses that amplify co-occurring injection vectors (A through G). They are not standalone injection paths. Vector H or I without any co-occurring injection vector is Info or Low -- a dangerous configuration with no demonstrated injection path.
 
-#### 5c. Data Flow Traces
+#### 5d. Data Flow Traces
 
 Each finding includes a numbered data flow trace. Follow these rules:
 
@@ -293,7 +325,7 @@ Each finding includes a numbered data flow trace. Follow these rules:
 
 For Vectors H and I (configuration findings), replace the data flow section with an impact amplification note explaining what the configuration weakness enables if a co-occurring injection vector is present.
 
-#### 5d. Report Layout
+#### 5e. Report Layout
 
 Structure the full report as follows:
 
@@ -301,7 +333,7 @@ Structure the full report as follows:
 2. **Summary table:** One row per workflow file with columns: Workflow File | Findings | Highest Severity
 3. **Findings by workflow:** Group findings under per-workflow headings (e.g., `### .github/workflows/review.yml`). Within each group, order findings by severity descending: High, Medium, Low, Info.
 
-#### 5e. Clean-Repo Output
+#### 5f. Clean-Repo Output
 
 When no findings are detected, produce a substantive report rather than a bare "0 findings" statement:
 
@@ -310,26 +342,15 @@ When no findings are detected, produce a substantive report rather than a bare "
 3. **AI Actions Found table:** Action Type | Count (one row per action type discovered)
 4. **Closing statement:** "No security findings identified."
 
-#### 5f. Cross-References
+#### 5g. Cross-References & Remote Analysis
 
 When multiple findings affect the same workflow, briefly note interactions. In particular, when a configuration weakness (Vector H or I) co-occurs with an injection vector (A through G) in the same step, note that the configuration weakness amplifies the injection finding's severity.
 
-#### 5g. Remote Analysis Output
-
-When analyzing a remote repository, add these elements to the report:
-
+When analyzing a remote repository, add these elements:
 - **Header:** Begin with `## Remote Analysis: owner/repo (@ref)` (omit `(@ref)` if using default branch)
-- **File links:** Each finding's File field includes a clickable GitHub link: `https://github.com/owner/repo/blob/{ref}/.github/workflows/{filename}`
-- **Source attribution:** Each finding includes `Source: owner/repo/.github/workflows/{filename}`
-- **Summary:** Uses the same format as local analysis with repo context: "Analyzed N workflows, M AI action instances, P findings in owner/repo"
-
-## Detailed References
-
-For complete documentation beyond this methodology overview:
-
-- **Action Security Profiles:** See {baseDir}/references/action-profiles.md for per-action security field documentation, default configurations, and dangerous configuration patterns.
-- **Detection Vectors:** See {baseDir}/references/foundations.md for the shared attacker-controlled input model, and individual vector files `{baseDir}/references/vector-{a..i}-*.md` for per-vector detection heuristics.
-- **Cross-File Resolution:** See {baseDir}/references/cross-file-resolution.md for `uses:` reference classification, composite action and reusable workflow resolution procedures, input mapping traces, and depth-1 limit.
+- **File links:** Clickable GitHub link `https://github.com/owner/repo/blob/{ref}/.github/workflows/{filename}`
+- **Source attribution:** `Source: owner/repo/.github/workflows/{filename}`
+- **Summary:** "Analyzed N workflows, M AI action instances, P findings in owner/repo"
 
 ## Example
 

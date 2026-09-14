@@ -12,7 +12,7 @@
 
 | Layer           | Technology | Version |
 | --------------- | ---------- | ------- |
-| {{STACK_TABLE}} |
+{{STACK_TABLE}}
 
 ## {{ROUTING_SECTION_TITLE}}
 
