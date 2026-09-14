@@ -55,7 +55,7 @@ function verifyAccessToken(token, signingKey) {
 }
 function readBearer(header) {
   if (typeof header !== 'string' || header.length > 8192) return null;
-  const match = /^Bearer ([A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+)$/i.exec(header);
+  const match = /^Bearer\s+(.+)$/i.exec(header);
   return match ? match[1] : null;
 }
 ```

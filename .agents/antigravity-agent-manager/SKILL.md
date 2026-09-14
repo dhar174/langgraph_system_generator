@@ -81,7 +81,7 @@ git status
 git diff
 
 # Commit stable checkpoints so both agents stay in sync with main branch
-git add .
+git add -- path/to/reviewed/file
 git commit -m "feat: synchronize parallel front-end and back-end agent changes"
 ```
 
