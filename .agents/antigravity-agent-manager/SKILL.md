@@ -38,7 +38,7 @@ Starting with version 2.0, Google decoupled the Agent Manager from the main IDE 
 ### Step 2: Dual-Workspace Setup
 
 1. Open both the **Antigravity IDE** and **Antigravity 2.0** applications.
-2. Load the same project directory (e.g., `C:/Users/erwinpzocikk/Dev/GroupProjects/intIntercatedraAdmin`) in both apps.
+2. Load the same project directory (e.g., `<project-root>`) in both apps.
 3. In the Agent Manager (white icon), configure your Agent pool. Assign specialized roles (e.g., `frontend-agent`, `backend-agent`, `qa-validator`).
 
 ### Step 3: Coordinating Agent Execution
