@@ -94,40 +94,49 @@ jobs:
           secrets: |-
             OPENAI_API_KEY=${{ env.OPENAI_API_KEY_SECRET }}:latest
           secrets_update_strategy: merge
-          flags: --port=8000 --memory=2Gi
-
-      - name: Mint Cloud Run health identity token
-        id: health-auth
-        # google-github-actions/auth v3
-        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093
-        with:
-          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
-          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
-          token_format: id_token
-          id_token_audience: ${{ steps.deploy.outputs.url }}
+          flags: --port=8000 --memory=2Gi --iap --no-allow-unauthenticated
 
       - name: Verify Cloud Run health
         shell: bash
         env:
           SERVICE_URL: ${{ steps.deploy.outputs.url }}
-          IDENTITY_TOKEN: ${{ steps.health-auth.outputs.id_token }}
+          HEALTH_SERVICE_ACCOUNT: ${{ secrets.GCP_SERVICE_ACCOUNT }}
         run: |
           set -euo pipefail
           if [ -z "${SERVICE_URL:-}" ]; then
             echo "::error::Deploy step did not return a Cloud Run service URL"
             exit 1
           fi
-          if [ -z "${IDENTITY_TOKEN:-}" ]; then
-            echo "::error::Cloud Run health identity token was not minted"
+          if [ -z "${HEALTH_SERVICE_ACCOUNT:-}" ]; then
+            echo "::error::Health service account was not provided"
             exit 1
           fi
+
+          trap 'rm -f /tmp/iap-health-claim.json /tmp/iap-health.jwt /tmp/cloud-run-health.json' EXIT
+
+          issued_at="$(date +%s)"
+          expires_at="$((issued_at + 600))"
+
+          jq -n \
+            --arg iss "$HEALTH_SERVICE_ACCOUNT" \
+            --arg sub "$HEALTH_SERVICE_ACCOUNT" \
+            --arg aud "${SERVICE_URL}/*" \
+            --argjson iat "$issued_at" \
+            --argjson exp "$expires_at" \
+            '{iss:$iss, sub:$sub, aud:$aud, iat:$iat, exp:$exp}' \
+            > /tmp/iap-health-claim.json
+
+          gcloud iam service-accounts sign-jwt \
+            --iam-account="$HEALTH_SERVICE_ACCOUNT" \
+            /tmp/iap-health-claim.json \
+            /tmp/iap-health.jwt
 
           for attempt in {1..30}; do
             http_status="$(
               curl --fail --silent --show-error --max-time 10 \
                 --output /tmp/cloud-run-health.json \
                 --write-out "%{http_code}" \
-                --header "Authorization: Bearer ${IDENTITY_TOKEN}" \
+                --header "Authorization: Bearer $(cat /tmp/iap-health.jwt)" \
                 "${SERVICE_URL}/health" || true
             )"
 

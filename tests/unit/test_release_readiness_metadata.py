@@ -62,7 +62,10 @@ def test_cloud_run_workflow_mounts_openai_key_from_secret_manager() -> None:
     ) in workflow
     assert "OPENAI_API_KEY=${{ env.OPENAI_API_KEY_SECRET }}:latest" in workflow
     assert "secrets_update_strategy: merge" in workflow
-    assert "flags: --port=8000 --memory=2Gi" in workflow
+    assert (
+        "flags: --port=8000 --memory=2Gi --iap --no-allow-unauthenticated"
+        in workflow
+    )
     assert "secrets.OPENAI_API_KEY" not in workflow
 
 
@@ -70,22 +73,55 @@ def test_cloud_run_workflow_smoke_checks_private_service_after_deploy() -> None:
     workflow = _read(".github/workflows/deploy-cloud-run.yml")
 
     deploy_index = workflow.index("- name: Deploy to Cloud Run")
-    token_index = workflow.index("- name: Mint Cloud Run health identity token")
     health_index = workflow.index("- name: Verify Cloud Run health")
     show_url_index = workflow.index("- name: Show service URL")
 
-    assert deploy_index < token_index < health_index < show_url_index
-    assert "SERVICE_URL" in workflow
-    assert "steps.deploy.outputs.url" in workflow
-    assert "token_format: id_token" in workflow
-    assert "id_token_audience" in workflow
-    assert "steps.health-auth.outputs.id_token" in workflow
+    assert deploy_index < health_index < show_url_index
+
+    # Deploy contract flags retain port/memory and enforce direct IAP with private access
+    assert "--port=8000" in workflow
+    assert "--memory=2Gi" in workflow
+    assert "--iap" in workflow
+    assert "--no-allow-unauthenticated" in workflow
+
+    # Obsolete direct Cloud Run ID-token health step and outputs must be absent
+    assert "Mint Cloud Run health identity token" not in workflow
+    assert "token_format: id_token" not in workflow
+    assert "id_token_audience" not in workflow
+    assert "steps.health-auth.outputs.id_token" not in workflow
+
+    # Short-lived service-account-signed JWT via IAM Service Account Credentials API
+    assert "gcloud iam service-accounts sign-jwt" in workflow
+    assert "--arg iss" in workflow
+    assert "--arg sub" in workflow
+    assert "--arg aud" in workflow
+    assert "--argjson iat" in workflow
+    assert "--argjson exp" in workflow
+    assert '"${SERVICE_URL}/*"' in workflow
+    assert "HEALTH_SERVICE_ACCOUNT: ${{ secrets.GCP_SERVICE_ACCOUNT }}" in workflow
+
+    # Health verification and retry semantics
     assert "Authorization: Bearer" in workflow
-    assert "/health" in workflow
+    assert '"${SERVICE_URL}/health"' in workflow
     assert "--fail" in workflow
+    assert '"200"' in workflow
+    assert '"status"[[:space:]]*:[[:space:]]*"ok"' in workflow
+    assert "for attempt in {1..30}; do" in workflow
+
+    # Banned proxies, unauthenticated access, and long-lived keys
     assert "gcloud run services proxy" not in workflow
     assert "gcloud auth print-identity-token" not in workflow
-    assert '"status"[[:space:]]*:[[:space:]]*"ok"' in workflow
+    assert "--allow-unauthenticated" not in workflow.replace(
+        "--no-allow-unauthenticated", ""
+    )
+    assert "GOOGLE_APPLICATION_CREDENTIALS" not in workflow
+    assert "GCP_SERVICE_ACCOUNT_KEY" not in workflow
+    assert "private_key" not in workflow
+
+
+test_cloud_run_workflow_smoke_checks_iap_service_after_deploy = (
+    test_cloud_run_workflow_smoke_checks_private_service_after_deploy
+)
 
 
 def test_cloud_run_requirements_include_live_runtime_qa_dependencies() -> None:
