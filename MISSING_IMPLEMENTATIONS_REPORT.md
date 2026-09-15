@@ -77,3 +77,21 @@ Based on a heuristic scan of all remaining closed issues (excluding #4-#10), the
 *   **#40 (NotebookComposer Pattern Library Integration):** The notebook composer seems to use pattern library integrations, though fallbacks aren't fully robust if LLM synthesis fails in all edge cases without explicit fallback template overrides.
 *   **#205 (Test Suite Enhancements):** Some integration tests exist but comprehensive cross-agent unit, integration, and regression coverage appears light based on the tests directory scanning.
 *   **#244 (Docs Updates):** Documentation updates for LangGraph releases might be incomplete across all examples and `SYSTEM_SPEC.md`, needing a thorough review.
+
+## Extended Analysis of 40 Additional High-Priority Issues
+Continuing the heuristic scan for the next 40 highest-scoring closed issues (excluding #4-#10) revealed the following status.
+
+### Verified Implemented (Complete or Substantially Complete)
+*   **#38 & #39 (Critique-Revise & Subagents Pattern):** Both patterns exist in `src/langgraph_system_generator/patterns/` and support full code generation.
+*   **#41 (Pattern Unit Tests):** `tests/unit/test_patterns.py` provides comprehensive coverage for the pattern generation modules.
+*   **#44 & #45 (Advanced Options & UI Refresh):** The web UI in `api/static/index.html` includes an "Advanced Options" panel.
+*   **#260 (/generate-async concurrency):** The `LNF_MAX_CONCURRENT_GENERATIONS` environment variable and `asyncio.Lock` are implemented in `api/server.py`.
+*   **#184 (NotebookComposer modularity):** The `NotebookComposerRegistry` in `notebook_composer_registry.py` provides the required modularity for pattern and edge section builders.
+*   **#86, #207, #213, #241 (Documentation, AGENTS.md, Wiki):** Substantial documentation exists, including `AGENTS.md` and several deep-dive markdown guides.
+*   **#331, #343, #344, #345, #346 (Specialists QA gates & topology):** Validators like `LangGraphTopologyRule` and `ToolReachabilityRule` are present in `qa/validators.py`.
+*   **#167 (ToolchainEngineer Fallback):** The `toolchain_engineer.py` agent explicitly implements `_infer_fallback_tools()` heuristics if LLM payload parsing fails.
+*   **#199 & #201 (RequirementsAnalyst Fallback & Feedback):** The `RequirementsFeedback` payload handles structured advisory feedback from user constraints in `requirements_analyst.py`.
+*   **#192 (ArchitectureSelector explanations):** The `ArchitectureAlternative` schema supports scoring and descriptions for tradeoff analysis.
+
+### Partially Implemented / Gaps Identified
+*   **#71, #81 (make_llm() ignores temperature):** The template blocks for `make_llm` in `notebook_composer.py` hardcode `temperature` and `max_tokens` conditionally, but there are instances where direct instantiation might still omit user-passed temperature configurations.
