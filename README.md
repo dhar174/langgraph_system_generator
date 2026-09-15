@@ -293,6 +293,16 @@ in API requests.
 This repository includes `.github/workflows/deploy-cloud-run.yml` to deploy the
 containerized FastAPI app to Google Cloud Run on every push to `main`.
 
+The deployment uses **direct Cloud Run Identity-Aware Proxy (IAP)** rather than
+an external HTTPS load balancer or public endpoints:
+- The Cloud Run service remains private (`--no-allow-unauthenticated`).
+- The Cloud Run Invoker IAM check remains enabled.
+- End-user browser traffic goes directly to the service URL and authenticates
+  via Google/IAP sign-in instead of requiring `gcloud run services proxy`.
+- Post-deploy CI `/health` verification authenticates keylessly through IAP using
+  a short-lived service-account-signed JWT minted via the IAM Service Account
+  Credentials API. No service-account JSON key is required.
+
 ### 1) Configure GitHub repository variables
 
 Add these **Repository Variables** in GitHub:
@@ -321,14 +331,147 @@ Add these **Repository Secrets** in GitHub:
 - `GCP_SERVICE_ACCOUNT`: Service account email used by GitHub Actions, for
   example `github-actions-deployer@my-project.iam.gserviceaccount.com`
 
-### 3) Grant the service account required IAM roles
+### 3) One-time direct IAP and IAM prerequisites
+
+Before the first deployment, complete these one-time configuration steps in Google Cloud.
+The deployment workflow does not attempt to recreate or mutate these project-wide IAM
+bindings on every run.
+
+#### A. Set environment variables for configuration
+
+```bash
+PROJECT_ID="your-gcp-project-id"        # e.g., vars.GCP_PROJECT_ID
+REGION="your-cloud-run-region"          # e.g., vars.GCP_REGION
+SERVICE="your-cloud-run-service"        # e.g., vars.GCP_CLOUD_RUN_SERVICE
+DEPLOY_SA="your-deploy-sa@..."          # e.g., secrets.GCP_SERVICE_ACCOUNT
+```
+
+> [!NOTE]
+> Example current deployment context:
+> - `PROJECT_ID`: `llm-text-adventure-464222`
+> - `REGION`: `us-west1`
+> - `SERVICE`: `langgraph-system-generator`
+> - `DEPLOY_SA`: `github-cloudrun-deployer@llm-text-adventure-464222.iam.gserviceaccount.com`
+
+#### B. Enable required Google Cloud APIs
+
+Direct IAP requires `iap.googleapis.com`, and keyless CI JWT signing requires
+`iamcredentials.googleapis.com`:
+
+```bash
+gcloud services enable \
+  iap.googleapis.com \
+  iamcredentials.googleapis.com \
+  --project="$PROJECT_ID"
+```
+
+#### C. Create the IAP service agent
+
+Create the project's IAP service identity. Some Google Cloud SDK versions
+(such as in Cloud Shell) may require the `beta` track:
+
+```bash
+# Preferred / current form where available:
+gcloud services identity create \
+  --service=iap.googleapis.com \
+  --project="$PROJECT_ID"
+
+# Fallback observed on some Cloud Shell SDK versions if the above reports "Invalid choice: 'identity'":
+gcloud beta services identity create \
+  --service=iap.googleapis.com \
+  --project="$PROJECT_ID"
+```
+
+#### D. Enable direct IAP on the Cloud Run service
+
+Enable direct IAP on the service while preserving private access:
+
+```bash
+gcloud run services update "$SERVICE" \
+  --region="$REGION" \
+  --iap \
+  --no-allow-unauthenticated \
+  --project="$PROJECT_ID"
+```
+
+#### E. Grant the IAP service agent backend Invoker permission
+
+The IAP service agent (`service-PROJECT_NUMBER@gcp-sa-iap.iam.gserviceaccount.com`)
+must have `roles/run.invoker` on the Cloud Run service so IAP can invoke the backend
+container after user authentication:
+
+```bash
+PROJECT_NUMBER="$(gcloud projects describe "$PROJECT_ID" \
+  --format='value(projectNumber)')"
+
+gcloud run services add-iam-policy-binding "$SERVICE" \
+  --region="$REGION" \
+  --member="serviceAccount:service-${PROJECT_NUMBER}@gcp-sa-iap.iam.gserviceaccount.com" \
+  --role="roles/run.invoker" \
+  --project="$PROJECT_ID"
+```
+
+#### F. Grant human browser users IAP access
+
+Authorized users require `roles/iap.httpsResourceAccessor` on the IAP-protected
+Cloud Run resource to access the web UI:
+
+```bash
+gcloud iap web add-iam-policy-binding \
+  --member="user:USER_EMAIL" \
+  --role="roles/iap.httpsResourceAccessor" \
+  --region="$REGION" \
+  --resource-type="cloud-run" \
+  --service="$SERVICE" \
+  --project="$PROJECT_ID"
+```
+
+Browser users can simply navigate to the normal `*.run.app` service URL and will be
+redirected through Google sign-in/IAP instead of using `gcloud run services proxy`.
+
+> [!IMPORTANT]
+> First-time IAP/OAuth configuration (such as the OAuth consent screen and OAuth brand)
+> may need to be completed through the Google Cloud Console, particularly for projects
+> outside a Google Cloud organization, and external/no-org users may require a custom
+> OAuth client configured in the Console. Do not attempt to automate browser OAuth
+> client creation in GitHub Actions.
+
+#### G. Authorize the GitHub deployment service account for IAP and keyless JWT signing
+
+For GitHub Actions post-deploy `/health` verification through IAP, the deployment service
+account requires two specific permissions:
+1. `roles/iap.httpsResourceAccessor` on the Cloud Run resource to traverse IAP.
+2. `roles/iam.serviceAccountTokenCreator` on **itself** (scoped specifically to the deployer
+   service account resource, not project-wide) so it can sign short-lived JWTs via IAM
+   `signJwt`.
+
+```bash
+# Allow deployer service account to access the service through IAP
+gcloud iap web add-iam-policy-binding \
+  --member="serviceAccount:${DEPLOY_SA}" \
+  --role="roles/iap.httpsResourceAccessor" \
+  --region="$REGION" \
+  --resource-type="cloud-run" \
+  --service="$SERVICE" \
+  --project="$PROJECT_ID"
+
+# Allow deployer service account to sign JWTs for itself (keyless)
+gcloud iam service-accounts add-iam-policy-binding "$DEPLOY_SA" \
+  --member="serviceAccount:${DEPLOY_SA}" \
+  --role="roles/iam.serviceAccountTokenCreator" \
+  --project="$PROJECT_ID"
+```
+
+No service account private key or JSON key file is needed.
+
+### 4) Grant the service account required deployment roles
 
 At minimum, grant roles needed to push images and deploy Cloud Run:
 
-- Artifact Registry write access
-- Cloud Run admin/developer access
-- Service account user (for the Cloud Run runtime service account if needed)
-- Secret Manager Secret Accessor on the configured OpenAI key secret for the
+- Artifact Registry write access (`roles/artifactregistry.writer`)
+- Cloud Run admin/developer access (`roles/run.developer` or `roles/run.admin`)
+- Service account user (`roles/iam.serviceAccountUser` for the Cloud Run runtime service account if needed)
+- Secret Manager Secret Accessor (`roles/secretmanager.secretAccessor`) on the configured OpenAI key secret for the
   deploy identity and Cloud Run runtime service account.
 
 Live mode in Cloud Run reads `OPENAI_API_KEY` from Google Secret Manager at
@@ -341,12 +484,12 @@ The deployment workflow sets the Cloud Run memory limit to `2Gi`. Live
 generation can exceed the Cloud Run default of `512Mi` while loading the app,
 running model-backed generation, and packaging notebook artifacts.
 
-### 4) Trigger deployment
+### 5) Trigger deployment
 
 - Push to `main` (automatic), or
 - Run the **Deploy to Cloud Run** workflow manually from GitHub Actions.
 
-### 5) Configure GitHub Actions environment protections (optional)
+### 6) Configure GitHub Actions environment protections (optional)
 
 The deploy job targets the GitHub Actions environment `production`.
 
@@ -361,12 +504,14 @@ The workflow builds and pushes:
 
 `$GCP_REGION-docker.pkg.dev/$GCP_PROJECT_ID/$GCP_ARTIFACT_REGISTRY_REPOSITORY/langgraph-system-generator:$GITHUB_SHA`
 
-Then it deploys that image to `GCP_CLOUD_RUN_SERVICE` and performs an
-authenticated `/health` smoke check against the deployed Cloud Run URL using a
-Google identity token minted by `google-github-actions/auth` with the service
-URL as its audience. A failed health check fails the GitHub Actions job so
-operators have an obvious signal that the deployed revision needs investigation
-or rollback.
+Then it deploys that image to `GCP_CLOUD_RUN_SERVICE` with direct IAP enabled
+(`--port=8000 --memory=2Gi --iap --no-allow-unauthenticated`) and performs an
+authenticated `/health` smoke check against the deployed Cloud Run URL. The health
+check authenticates through IAP using a short-lived service-account-signed JWT
+(scoped to `${SERVICE_URL}/*`) generated keylessly via the IAM Service Account
+Credentials API (`gcloud iam service-accounts sign-jwt`). A failed health check fails
+the GitHub Actions job so operators have an obvious signal that the deployed revision
+needs investigation or rollback.
 
 ## Colab Usage
 
