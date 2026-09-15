@@ -527,6 +527,41 @@ class TestSubagentsPattern:
         )
         assert len(summary) + len(recent) <= max_chars
 
+    def test_context_window_bounds_summarizer_prompt(self, monkeypatch):
+        """Verify that older results are bounded before summarizer invocation."""
+        prompts = []
+        mock_llm = MagicMock()
+
+        def capture_invoke(messages):
+            prompts.append(messages[-1].content)
+            response = MagicMock()
+            response.content = "Bounded summary"
+            return response
+
+        mock_llm.invoke.side_effect = capture_invoke
+        monkeypatch.setattr(
+            "langchain_openai.ChatOpenAI",
+            MagicMock(return_value=mock_llm),
+        )
+
+        code = SubagentsPattern.generate_supervisor_code(
+            [f"agent_{i}" for i in range(20)]
+        )
+        namespace: dict = {}
+        exec(code, namespace)
+        task_results = {
+            f"agent_{i}": f"Large result {i} " * 1000 for i in range(20)
+        }
+        versions = {f"agent_{i}": i for i in range(20)}
+
+        namespace["_prepare_task_results_context"](
+            task_results,
+            task_result_versions=versions,
+        )
+
+        assert len(prompts) == 1
+        assert len(prompts[0]) <= namespace["MAX_TOTAL_RESULT_CHARS"] + 100
+
     def test_context_window_summarizer_construction_failure_safe_fallback(
         self, monkeypatch: pytest.MonkeyPatch
     ):
@@ -624,6 +659,14 @@ class TestAutoAgentPattern:
 
 class TestHybridPattern:
     """Tests for HybridPattern code generation."""
+
+    def test_generate_state_code_includes_supervisor_context_channels(self):
+        """Hybrid state must persist the delegated supervisor's context fields."""
+        code = HybridPattern.generate_state_code()
+
+        assert "task_result_versions: Annotated[Dict[str, int], merge_dicts]" in code
+        assert "task_results_summary: str" in code
+        assert "task_results_summary_fingerprint: str" in code
 
     def test_generate_graph_code_uses_sanitized_ids_for_direct_and_worker_nodes(self):
         """Hybrid graph wiring should align sanitized node ids with routing targets."""

@@ -21,7 +21,7 @@
   `task_results_summary: str` state, bounded context preparation with
   summarized older results and recent full results, functional `summary_model`
   selection and overrides, `make_llm(...)` notebook helper compliance, and
-  unaltered Send-based parallel fan-out. Addressed all 4 review findings:
+  unaltered Send-based parallel fan-out. Addressed all 5 review findings:
   (1) credential-free `NotebookComposer` tests via `DummyLLM` monkeypatching;
   (2) minimal scalar fingerprint state `task_results_summary_fingerprint: str` to skip
   re-summarizing unchanged older results; (3) specialist recency tracking via

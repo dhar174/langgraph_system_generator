@@ -2657,3 +2657,32 @@ def test_subagents_task_results_summary_is_builtin_not_duplicate_extension(
     assert code_content.count("task_results_summary_fingerprint: str") == 1
     assert code_content.count("task_result_versions: Annotated[Dict[str, int], merge_dicts]") == 1
 
+
+def test_shared_supervisor_context_fields_are_reserved_for_autoagent_and_hybrid(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Delegated supervisor fields must not be duplicated in generated schemas."""
+    monkeypatch.setattr(composer_module, "ChatOpenAI", DummyLLM)
+    composer = composer_module.NotebookComposer()
+    state_schema = {
+        "task_results_summary": "Summary",
+        "task_results_summary_fingerprint": "Fingerprint",
+        "task_result_versions": "Versions",
+    }
+
+    for architecture_type in ("autoagent", "hybrid"):
+        extensions = composer._state_schema_extensions(
+            architecture_type,
+            state_schema,
+        )
+        assert not extensions
+
+    execution = composer._create_execution_cells(
+        {
+            "architecture_type": "hybrid",
+            "nodes": [],
+        }
+    )[1].content
+    assert '"task_result_versions": {}' in execution
+    assert '"task_results_summary": ""' in execution
+    assert '"task_results_summary_fingerprint": ""' in execution

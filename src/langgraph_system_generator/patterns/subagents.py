@@ -191,6 +191,11 @@ def _prepare_task_results_context(
     recent_items = ordered_items[-RECENT_FULL_RESULTS:]
     older_items = ordered_items[:-RECENT_FULL_RESULTS]
     older_results_text = _format_results(older_items)
+    summary_input_budget = max(
+        MAX_TOTAL_RESULT_CHARS - len(existing_summary),
+        MAX_TOTAL_RESULT_CHARS // 2,
+    )
+    older_results_text = _truncate_result(older_results_text, summary_input_budget)
     fingerprint = hashlib.sha256(older_results_text.encode("utf-8")).hexdigest()[:16]
 
     if existing_fingerprint and existing_fingerprint == fingerprint and existing_summary:
