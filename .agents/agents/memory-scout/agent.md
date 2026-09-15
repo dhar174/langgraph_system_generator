@@ -5,11 +5,6 @@ description: >
   memory-bank/ for past architectural decisions, known gotchas, active milestones, and regression history before
   substantive planning.
 tools:
-  - view_file
-  - list_dir
-  - grep_search
-  - find_by_name
-  - call_mcp_tool
 mainAgent: false
 subagent: true
 model: flash
