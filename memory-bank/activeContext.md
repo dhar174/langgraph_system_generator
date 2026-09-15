@@ -16,13 +16,6 @@
 
 ## Recent Changes Reflected in the Codebase
 
-- Established Antigravity 2.0+ native custom subagents under `.agents/agents/`,
-  modular coordination rules in `.agents/rules/` and `.agent/rules/`, and the
-  authoritative root entrypoint `GEMINI.md`. Configured `lnf-repo-coordinator`
-  with 8 specialized subagents (`memory-scout`, `generator-graph-architect`,
-  `pattern-synthesis-specialist`, `notebook-export-specialist`, `qa-repair-gatekeeper`,
-  `rag-vector-engineer`, `api-streaming-specialist`, `memory-steward`) enforcing a
-  strict 5-stage orchestration lifecycle and one-production-writer discipline.
 - PR #356 merged the runtime pipeline reliability cluster for issues #351-#355:
   bounded state accumulation, in-memory notebook validation, reduced repair
   copying, shared retriever caching, and async offloading. Those issues are now
