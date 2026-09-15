@@ -390,6 +390,7 @@ Enable direct IAP on the service while preserving private access:
 gcloud run services update "$SERVICE" \
   --region="$REGION" \
   --iap \
+  --no-allow-unauthenticated \
   --project="$PROJECT_ID"
 ```
 

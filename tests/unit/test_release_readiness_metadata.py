@@ -118,12 +118,6 @@ def test_cloud_run_workflow_smoke_checks_private_service_after_deploy() -> None:
     assert "GCP_SERVICE_ACCOUNT_KEY" not in workflow
     assert "private_key" not in workflow
 
-
-test_cloud_run_workflow_smoke_checks_iap_service_after_deploy = (
-    test_cloud_run_workflow_smoke_checks_private_service_after_deploy
-)
-
-
 def test_cloud_run_requirements_include_live_runtime_qa_dependencies() -> None:
     requirements = _read("requirements.txt")
 
