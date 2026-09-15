@@ -114,3 +114,20 @@ Continuing the heuristical scan, the next 40 issues were analyzed for their comp
 
 ### Partially Implemented / Gaps Identified
 *   All high-priority items in this batch appear fully or substantially addressed by the current codebase state.
+
+## Extended Analysis of the Final Batch of 32 Issues (Rank 101+)
+The final batch of heuristic issues was analyzed to close out the repository review.
+
+### Verified Implemented (Complete or Substantially Complete)
+*   **#187 (GraphDesigner cycle checks):** `GraphStructureRule` in `qa/validators.py` handles graph connectivity and syntax structure checking.
+*   **#257 (Duplicate _pytest_is_active):** The `_pytest_is_active` implementation in `config.py` is present and consolidates environment test-flag leakage.
+*   **#60 & #61 (Router Context & Fallback):** The `include_fallback` toggle is actively generated in `router.py`.
+*   **#62 (Draft History & Rollback):** The `historyToggleBtn` and `historyCard` UI components exist in `index.html`.
+*   **#125 & #126 (Plan-and-Execute & REWOO examples):** Python code and notebooks for `planning_and_execute_example.py` and `rewoo_example.py` exist in the `examples/` directory.
+*   **#262 (CLI Default Export):** Markdown export natively triggers via `exporter.export_to_markdown` in `cli.py`.
+*   **#119 (Examples Folder):** The `examples/` directory is robust, holding examples for multiple LangGraph patterns.
+
+### Partially Implemented / Gaps Identified
+*   **#194 & #196 (ArchitectureSelector Errors & Validation):** Fallback warnings and strict validation parsing appear lightweight or missing directly inside `architecture_selector.py`, often leaving error logging up to the orchestrating graph.
+*   **#261 & #267 (SSE Progress Streaming Reconnects):** `progress_streaming.py` manages jobs via `JobRecord` arrays. While it broadcasts events, the implementation might still struggle with true multi-consumer retention caps under high load, as bounded replay caps were not explicitly identified in the `JobRecord` schema.
+*   **#351, #352 (State limits and deep copying):** Strict bounding of history arrays (like `qa_history`) to prevent unbounded growth during repair loops was not transparently surfaced in the default state schemas.
