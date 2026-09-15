@@ -16,6 +16,27 @@
 
 ## Recent Changes Reflected in the Codebase
 
+- Restored bounded supervisor context-window management (Issue #65 / PR #374)
+  adapted surgically to the modern LangGraph v1 architecture: scalar
+  `task_results_summary: str` state, bounded context preparation with
+  summarized older results and recent full results, functional `summary_model`
+  selection and overrides, `make_llm(...)` notebook helper compliance, and
+  unaltered Send-based parallel fan-out. Addressed all review findings:
+  (1) credential-free `NotebookComposer` tests via `DummyLLM` monkeypatching;
+  (2) minimal scalar fingerprint state `task_results_summary_fingerprint: str`
+  calculated from the complete logical older snapshot (`agent:version:sha256`)
+  before truncation or chunking, avoiding stale-fingerprint reuse when displaced
+  or tail results change; (3) hierarchical/chunked summarization (`_chunk_items`,
+  `_summarize_chunk`) with bounded reduction tree consolidation (`_consolidate_summaries_tree`)
+  so that large numbers of older specialists are summarized in bounded chunks without
+  prefix truncation of intermediate summaries, converging within 3 reduction rounds or
+  falling back deterministically to proportional budget allocation across all summaries;
+  (4) specialist recency tracking via reducer-backed `task_result_versions` (`max(iterations, max_prev + 1)`)
+  with version-sorted partitioning; (5) failure-safe summarizer construction inside
+  `try: ... except Exception:`; and (6) eviction of superseded specialist outputs
+  without recursive compounding of `existing_summary`. Bounded regression tests
+  prove invalidation on changes beyond the first chunk boundary and prove that tail
+  chunk summaries survive into multi-chunk consolidation prompts.
 - Established Antigravity 2.0+ native custom subagents under `.agents/agents/`,
   modular coordination rules in `.agents/rules/` and `.agent/rules/`, and the
   authoritative root entrypoint `GEMINI.md`. Configured `lnf-repo-coordinator`
