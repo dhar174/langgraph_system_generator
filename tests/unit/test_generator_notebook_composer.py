@@ -776,6 +776,7 @@ async def test_custom_registry_can_override_graph_section_builder(
                 '"next_agent": "supervisor"',
                 '"instructions": ""',
                 '"task_results": {}',
+                '"task_results_summary": ""',
             ],
         ),
         (
@@ -2620,3 +2621,28 @@ async def test_pattern_nodes_use_request_scoped_model_config(
     assert any("def make_llm(" in cell.content for cell in config_code_cells)
     assert composition.feedback.resolved_model == "gpt-5.2"
     assert composition.feedback.resolved_api_base == "https://example.test/v1"
+
+
+def test_subagents_task_results_summary_is_builtin_not_duplicate_extension():
+    """Verify task_results_summary is recognized as a built-in subagents state field."""
+    composer = composer_module.NotebookComposer()
+    state_schema = {
+        "user_input": "User question",
+        "task_results_summary": "Existing supervisor summary field",
+        "custom_domain_field": "Extra domain metadata",
+    }
+    extensions = composer._state_schema_extensions("subagents", state_schema)
+    assert "task_results_summary" not in extensions
+    assert "custom_domain_field" in extensions
+    assert "user_input" in extensions
+
+    # Also test generated state code does not duplicate task_results_summary
+    state_cells = composer._create_state_cells(
+        {
+            "architecture_type": "subagents",
+            "state_schema": state_schema,
+        }
+    )
+    code_content = state_cells[1].content
+    assert code_content.count("task_results_summary") == 1
+

@@ -16,6 +16,12 @@
 
 ## Recent Changes Reflected in the Codebase
 
+- Restored bounded supervisor context-window management (Issue #65 / PR #229)
+  adapted surgically to the modern LangGraph v1 architecture: scalar
+  `task_results_summary: str` state, bounded context preparation with
+  summarized older results and recent full results, functional `summary_model`
+  selection and overrides, `make_llm(...)` notebook helper compliance, and
+  unaltered Send-based parallel fan-out.
 - Established Antigravity 2.0+ native custom subagents under `.agents/agents/`,
   modular coordination rules in `.agents/rules/` and `.agent/rules/`, and the
   authoritative root entrypoint `GEMINI.md`. Configured `lnf-repo-coordinator`

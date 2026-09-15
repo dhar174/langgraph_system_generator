@@ -50,6 +50,7 @@ class WorkflowState(TypedDict, total=False):
     iterations: int
     dispatch_log: Annotated[List[str], operator.add]
     task_results: Annotated[Dict[str, str], merge_dicts]
+    task_results_summary: str
     final_output: str
 {additional}'''
 
@@ -89,6 +90,120 @@ class WorkflowState(TypedDict, total=False):
             config.max_tokens,
             use_notebook_helper=use_notebook_helper,
         )
+        summary_model = config.summary_model or (
+            "gpt-4o-mini" if config.api_base is None else config.model
+        )
+        if use_notebook_helper:
+            params = []
+            if summary_model != config.model or config.summary_model is not None:
+                params.append(f"model={summary_model!r}")
+            params.append("temperature=0")
+            if config.max_tokens is not None:
+                params.append(f"max_tokens={config.max_tokens}")
+            summary_llm_init = f"make_llm({', '.join(params)})"
+        else:
+            summary_llm_init = build_llm_init(
+                summary_model,
+                0,
+                config.api_base,
+                config.max_tokens,
+                use_notebook_helper=False,
+            )
+
+        context_window_helpers = f'''MAX_RESULT_CHARS = 2000
+MAX_TOTAL_RESULT_CHARS = 8000
+RECENT_FULL_RESULTS = 2
+
+
+def _truncate_result(text: str, limit: int) -> str:
+    """Truncate text cleanly at character budget with indicator."""
+    if len(text) <= limit:
+        return text
+    indicator = "... [truncated]"
+    return text[: max(0, limit - len(indicator))] + indicator
+
+
+def _format_results(items: list) -> str:
+    """Format a list of (agent, result) tuples into bullet items."""
+    if not items:
+        return "No specialist results yet."
+    return "\\n".join(
+        f"- {{agent}}: {{_truncate_result(str(result), MAX_RESULT_CHARS)}}"
+        for agent, result in items
+    )
+
+
+def _summarize_older_results(
+    existing_summary: str,
+    older_results_text: str,
+) -> str:
+    """Condense older results using the lightweight summarizer model."""
+    if not older_results_text:
+        return existing_summary
+
+    summarizer = {summary_llm_init}
+    summary_prompt = (
+        "Summarize the older agent results into concise supervisor context. "
+        "Preserve completed work, important findings, unresolved issues, "
+        "and constraints that future agents should know."
+    )
+    summary_input = "\\n\\n".join(
+        [
+            section
+            for section in [
+                f"Existing summary:\\n{{existing_summary}}" if existing_summary else "",
+                f"Older agent results:\\n{{older_results_text}}",
+            ]
+            if section
+        ]
+    )
+
+    try:
+        response = summarizer.invoke(
+            [
+                SystemMessage(content=summary_prompt),
+                HumanMessage(content=summary_input),
+            ]
+        )
+        return _truncate_result(str(getattr(response, "content", response)).strip(), MAX_TOTAL_RESULT_CHARS)
+    except Exception:
+        fallback_sections = [
+            existing_summary,
+            _truncate_result(older_results_text, MAX_TOTAL_RESULT_CHARS // 2),
+        ]
+        fallback = "\\n\\n".join([section for section in fallback_sections if section])
+        return _truncate_result(fallback, MAX_TOTAL_RESULT_CHARS)
+
+
+def _prepare_task_results_context(task_results: dict, existing_summary: str):
+    """Return summarized older results plus recent full results."""
+    items = list(task_results.items())
+    all_results = _format_results(items)
+
+    if len(existing_summary) + len(all_results) <= MAX_TOTAL_RESULT_CHARS:
+        return existing_summary, all_results
+
+    if len(items) <= RECENT_FULL_RESULTS:
+        truncated_recent = _truncate_result(all_results, MAX_TOTAL_RESULT_CHARS // 2)
+        updated_summary = _truncate_result(existing_summary, MAX_TOTAL_RESULT_CHARS // 2)
+        if not updated_summary:
+            updated_summary = (
+                "Earlier results were truncated to fit the supervisor context window."
+            )
+        return updated_summary, truncated_recent
+
+    recent_items = items[-RECENT_FULL_RESULTS:]
+    older_items = items[:-RECENT_FULL_RESULTS]
+    updated_summary = _summarize_older_results(
+        existing_summary,
+        _format_results(older_items),
+    )
+    recent_results = _format_results(recent_items)
+    remaining_summary_budget = max(MAX_TOTAL_RESULT_CHARS - len(recent_results), 0)
+    if remaining_summary_budget == 0:
+        return "", _truncate_result(recent_results, MAX_TOTAL_RESULT_CHARS)
+    updated_summary = _truncate_result(updated_summary, remaining_summary_budget)
+    return updated_summary, recent_results'''
 
         if use_structured_output:
             return f'''from typing import List, Literal
@@ -112,13 +227,15 @@ class SupervisorDecision(BaseModel):
     )
 
 
+{context_window_helpers}
+
+
 def supervisor_node(state: WorkflowState) -> dict:
     """Choose the next specialist batch and pass along instructions."""
     route_map = {{
         {route_map_lines}
     }}
     messages = state.get("messages", [])
-    results = state.get("task_results", {{}})
     iterations = state.get("iterations", 0)
     if iterations >= MAX_ITERATIONS:
         return {{
@@ -129,10 +246,12 @@ def supervisor_node(state: WorkflowState) -> dict:
         }}
     llm = {llm_init}
 
-    result_summary = "\\n".join(
-        f"- {{agent}}: {{output[:160]}}"
-        for agent, output in results.items()
-    ) or "No specialist results yet."
+    task_results = state.get("task_results", {{}})
+    task_results_summary = state.get("task_results_summary", "")
+    task_results_summary, recent_results = _prepare_task_results_context(
+        task_results,
+        task_results_summary,
+    )
 
     decision = llm.with_structured_output(SupervisorDecision).invoke([
         SystemMessage(
@@ -147,7 +266,8 @@ Select FINISH only when the accumulated results are ready to synthesize.
         ),
         HumanMessage(
             content=f"Latest request: {{messages[-1].content if messages else 'Start the workflow.'}}\\n\\n"
-            f"Current results:\\n{{result_summary}}"
+            f"Older summarized results:\\n{{task_results_summary or 'No summarized results yet.'}}\\n\\n"
+            f"Recent full results:\\n{{recent_results}}"
         ),
     ])
 
@@ -171,6 +291,7 @@ Select FINISH only when the accumulated results are ready to synthesize.
         "next_agents": next_agents,
         "instructions": decision.instructions,
         "iterations": iterations + (0 if next_agents == ["FINISH"] else 1),
+        "task_results_summary": task_results_summary,
         "dispatch_log": [
             f"Supervisor -> {{dispatch_targets}}: {{decision.reasoning}}"
         ],
@@ -187,6 +308,8 @@ Select FINISH only when the accumulated results are ready to synthesize.
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
 
+{context_window_helpers}
+
 
 def supervisor_node(state: WorkflowState) -> dict:
     """Fallback supervisor that emits one or more route instructions."""
@@ -202,11 +325,24 @@ def supervisor_node(state: WorkflowState) -> dict:
             "dispatch_log": ["Supervisor stopped after reaching MAX_ITERATIONS."],
         }}
     llm = {llm_init}
+
+    task_results = state.get("task_results", {{}})
+    task_results_summary = state.get("task_results_summary", "")
+    task_results_summary, recent_results = _prepare_task_results_context(
+        task_results,
+        task_results_summary,
+    )
+
     response = llm.invoke([
         SystemMessage(
             content="Reply with AGENT[,AGENT...]|INSTRUCTIONS where AGENT is one of: {', '.join(label for label, _ in specs)}, FINISH."
         ),
-        HumanMessage(content=f"Latest request: {{state.get('messages', [])[-1].content if state.get('messages') else 'Start the workflow.'}}"),
+        HumanMessage(
+            content=f"Latest request: {{state.get('messages', [])[-1].content if state.get('messages') else 'Start the workflow.'}}\\n\\n"
+            f"Older summarized results:\\n{{task_results_summary or 'No summarized results yet.'}}\\n\\n"
+            f"Recent full results:\\n{{recent_results}}\\n\\n"
+            "Decision:"
+        ),
     ])
 
     raw = response.content.strip()
@@ -232,6 +368,7 @@ def supervisor_node(state: WorkflowState) -> dict:
         "next_agents": next_agents,
         "instructions": instructions.strip(),
         "iterations": iterations + (0 if next_agents == ["FINISH"] else 1),
+        "task_results_summary": task_results_summary,
         "dispatch_log": [f"Supervisor -> {{dispatch_targets}}"],
         "messages": [AIMessage(content=f"Supervisor selected {{dispatch_targets}}")],
     }}'''
@@ -451,6 +588,7 @@ def build_initial_state(user_request: str) -> WorkflowState:
     return {{
         "messages": [HumanMessage(content=user_request)],
         "task_results": {{}},
+        "task_results_summary": "",
         "dispatch_log": [],
         "next_agents": [],
         "iterations": 0,

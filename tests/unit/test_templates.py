@@ -47,3 +47,13 @@ def test_build_graph_cells_uses_create_agent_system_prompt():
     assert "router = create_agent(" in code
     assert "system_prompt=" in code
     assert "            prompt=" not in code
+
+
+def test_run_graph_cells_subagents_includes_task_results_summary():
+    """Ensure the subagents run graph cells initialize task_results_summary."""
+    cells = templates.run_graph_cells(architecture_type="subagents")
+    code = cells[1].content
+
+    assert '"task_results": {}' in code
+    assert '"task_results_summary": ""' in code
+

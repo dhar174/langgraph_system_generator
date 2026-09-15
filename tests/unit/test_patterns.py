@@ -112,6 +112,7 @@ class TestSubagentsPattern:
         assert "next_agent: str" in code
         assert "instructions: str" in code
         assert "task_results: Annotated[Dict[str, str], merge_dicts]" in code
+        assert "task_results_summary: str" in code
         assert "dispatch_log: Annotated[List[str], operator.add]" in code
 
     def test_generate_state_code_with_additional_fields(self):
@@ -120,6 +121,7 @@ class TestSubagentsPattern:
         code = SubagentsPattern.generate_state_code(additional_fields=additional)
 
         assert "priority: str  # Task priority level" in code
+        assert "task_results_summary: str" in code
 
     def test_generate_supervisor_code_structured(self):
         """Test supervisor node generation with structured output."""
@@ -143,6 +145,9 @@ class TestSubagentsPattern:
         assert "ChatOpenAI(" in code
         assert "dispatch_log" in code
         assert "MAX_ITERATIONS" in code
+        assert "Older summarized results:" in code
+        assert "Recent full results:" in code
+        assert '"task_results_summary": task_results_summary' in code
 
     def test_generate_supervisor_code_simple(self):
         """Test supervisor node generation without structured output."""
@@ -156,6 +161,9 @@ class TestSubagentsPattern:
         assert "ChatOpenAI(" in code
         assert "dispatch_log" in code
         assert "MAX_ITERATIONS" in code
+        assert "Older summarized results:" in code
+        assert "Recent full results:" in code
+        assert '"task_results_summary": task_results_summary' in code
 
     def test_generate_subagent_code(self):
         """Test subagent node generation."""
@@ -198,9 +206,17 @@ class TestSubagentsPattern:
         """Test supervisor code includes bounded task result context management."""
         code = SubagentsPattern.generate_supervisor_code(["researcher", "writer"])
 
-        assert "MAX_ITERATIONS" in code
-        assert "if iterations >= MAX_ITERATIONS" in code
-        assert '"dispatch_log": [' in code
+        assert "MAX_RESULT_CHARS = 2000" in code
+        assert "MAX_TOTAL_RESULT_CHARS = 8000" in code
+        assert "RECENT_FULL_RESULTS = 2" in code
+        assert "def _truncate_result" in code
+        assert "def _format_results" in code
+        assert "def _summarize_older_results" in code
+        assert "def _prepare_task_results_context" in code
+        assert "Older summarized results:" in code
+        assert "Recent full results:" in code
+        assert '"task_results_summary": task_results_summary' in code
+        compile(code, "<test_supervisor>", "exec")
 
     def test_generate_supervisor_code_supports_summary_model_override(self):
         """Test supervisor summarization model can be configured explicitly."""
@@ -212,7 +228,110 @@ class TestSubagentsPattern:
             model_config=config,
         )
 
-        assert "ChatOpenAI(" in code
+        assert "model='gpt-5-nano'" in code
+        assert "model='gpt-5-mini'" in code
+
+    def test_generate_supervisor_code_summary_model_defaults(self):
+        """Test summary model resolution for standard and custom endpoints."""
+        from langgraph_system_generator.utils.config import ModelConfig
+
+        # Default OpenAI endpoint without summary_model -> defaults to gpt-4o-mini
+        default_code = SubagentsPattern.generate_supervisor_code(
+            ["researcher"],
+            model_config=ModelConfig(model="gpt-4o"),
+        )
+        assert "model='gpt-4o-mini'" in default_code
+
+        # Custom api_base without summary_model -> falls back to primary model
+        custom_endpoint_code = SubagentsPattern.generate_supervisor_code(
+            ["researcher"],
+            model_config=ModelConfig(
+                model="local-model",
+                api_base="https://custom.endpoint/v1",
+            ),
+        )
+        assert "model='local-model'" in custom_endpoint_code
+        assert "gpt-4o-mini" not in custom_endpoint_code
+
+        # Explicit summary_model override wins even with custom api_base
+        override_code = SubagentsPattern.generate_supervisor_code(
+            ["researcher"],
+            model_config=ModelConfig(
+                model="local-model",
+                api_base="https://custom.endpoint/v1",
+                summary_model="local-summarizer",
+            ),
+        )
+        assert "model='local-summarizer'" in override_code
+
+    def test_generate_supervisor_code_notebook_helper(self):
+        """Test notebook helper mode delegates to make_llm and passes summary model override."""
+        from langgraph_system_generator.utils.config import ModelConfig
+
+        # Standard config: primary is gpt-4o, summary is gpt-4o-mini
+        config = ModelConfig(model="gpt-4o")
+        code = SubagentsPattern.generate_supervisor_code(
+            ["researcher"],
+            model_config=config,
+            use_notebook_helper=True,
+        )
+
+        assert "make_llm(" in code
+        assert "make_llm(model='gpt-4o-mini', temperature=0)" in code
+        assert "ChatOpenAI(" not in code
+
+        # Explicit override
+        config_override = ModelConfig(model="gpt-5-mini", summary_model="gpt-5-nano")
+        override_code = SubagentsPattern.generate_supervisor_code(
+            ["researcher"],
+            model_config=config_override,
+            use_notebook_helper=True,
+        )
+        assert "make_llm(model='gpt-5-nano', temperature=0)" in override_code
+        assert "ChatOpenAI(" not in override_code
+
+        # Custom api_base where summary_model defaults to primary: no extra model= needed in make_llm
+        config_custom = ModelConfig(
+            model="custom-model",
+            api_base="https://custom.endpoint/v1",
+        )
+        custom_code = SubagentsPattern.generate_supervisor_code(
+            ["researcher"],
+            model_config=config_custom,
+            use_notebook_helper=True,
+        )
+        assert "make_llm(temperature=0)" in custom_code
+        assert "ChatOpenAI(" not in custom_code
+
+    def test_generate_supervisor_code_structured_and_unstructured_parity(self):
+        """Verify both structured and unstructured supervisor modes prepare bounded context and persist summary."""
+        for structured in (True, False):
+            code = SubagentsPattern.generate_supervisor_code(
+                ["researcher", "writer"],
+                use_structured_output=structured,
+            )
+            assert "_prepare_task_results_context(" in code
+            assert "Older summarized results:" in code
+            assert "Recent full results:" in code
+            assert '"task_results_summary": task_results_summary' in code
+            assert "next_agents" in code
+            compile(code, "<test_parity>", "exec")
+
+    def test_generate_graph_code_fanout_and_reducers(self):
+        """Ensure Send-based fan-out, multi-agent dispatch, and merge_dicts reducer are preserved."""
+        subagents = ["researcher", "writer"]
+        graph_code = SubagentsPattern.generate_graph_code(subagents)
+        state_code = SubagentsPattern.generate_state_code()
+
+        assert "from langgraph.types import Send" in graph_code
+        assert "[Send(destination, state) for destination in destinations]" in graph_code
+        assert "supervisor_router" in graph_code
+        assert "finish_node" in graph_code
+        assert "def merge_dicts(" in state_code
+        assert "task_results: Annotated[Dict[str, str], merge_dicts]" in state_code
+        assert "task_results_summary: str" in state_code
+        compile(graph_code, "<test_graph>", "exec")
+        compile(state_code, "<test_state>", "exec")
 
     def test_generate_complete_example(self):
         """Test complete example generation."""
@@ -222,10 +341,14 @@ class TestSubagentsPattern:
 
         assert "Subagents Pattern Example" in code
         assert "class WorkflowState" in code
+        assert "task_results_summary: str" in code
+        assert '"task_results_summary": ""' in code
         assert "def supervisor_node" in code
         assert "def researcher_node" in code
         assert "def writer_node" in code
         assert "workflow = StateGraph" in code
+        assert "Send(" in code
+        compile(code, "<test_complete>", "exec")
 
 
 class TestAutoAgentPattern:
