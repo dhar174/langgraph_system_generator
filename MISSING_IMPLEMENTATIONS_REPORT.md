@@ -53,3 +53,27 @@ This report analyzes the repository's main branch against the subtasks and deliv
   - Packaging files (`setup.py`, `Dockerfile`) are present.
 - **Missing/Deviations**:
   - Issue 10 called for `src/cli.py` to use `click` (e.g., `import click`). The implemented `src/langgraph_system_generator/cli.py` uses Python's standard `argparse` instead of `click`. Although it is functionally a CLI, it deviates from the explicitly detailed implementation plan subtasks in Issue 10.
+
+## Extended Analysis of 20 High-Priority Issues
+Based on a heuristic scan of all remaining closed issues (excluding #4-#10), the following 20 issues were selected as most likely to contain missing or incomplete implementations.
+
+### Verified Implemented (Complete or Substantially Complete)
+*   **#34 (Notebook exports):** Export functionalities (HTML, PDF, DOCX, ZIP) are fully present in `src/langgraph_system_generator/notebook/exporters.py`.
+*   **#36 & #37 (Pattern Library Gen & Router Pattern):** The `router.py` pattern implementation exposes full code generation functions (`generate_state_code`, `generate_router_node_code`, etc.).
+*   **#186 & #188 (GraphDesigner composability):** The codebase uses `GraphDesignRegistry` in `graph_design_registry.py` instead of purely monolithic generation.
+*   **#78 (GEMINI.md):** The file `GEMINI.md` exists in the repository root.
+*   **#152 (pytest-asyncio):** The dependency `pytest-asyncio>=1.4.0` is present in `requirements.txt`.
+*   **#345 (Chatbot notebooks):** Validator logic for chatbot execution contract (`ChatbotNotebookContractRule`) is fully implemented in `validators.py`.
+*   **#63 (Human-in-the-Loop):** The `critique_loops.py` module fully supports `human_feedback_handler` generation.
+*   **#198 & #200 (RequirementsAnalyst constraints):** The `Constraint` schema with `confidence` scores and explicit types is defined in `state.py`.
+*   **#171 (ToolchainEngineer deduplication):** Explicit deduplication logic (`_deduplicate_tools`) is implemented in `toolchain_engineer.py`.
+*   **#46 (Progress and Logging):** The `progress_streaming.py` and frontend UI (`app.js`, `index.html`) implement SSE streaming progress.
+*   **#322 (Custom agents/skills):** Directories for `.github/`, `.claude/`, and `.codex/` exist and are structured with agent files and skills.
+
+### Partially Implemented / Gaps Identified
+*   **#83 (Fix Cell 44: Rewrite apply_choice_node):** The `apply_choice_node` referenced in the cyoa notebook does not appear in the generated code template blocks within `src/` (such as `templates.py`). While it might have been fixed in the artifact or notebook examples, there is no explicit `apply_choice_node` generation template in the core python src.
+*   **#195 (ArchitectureSelector context handling):** The config system mentions `ARCHITECTURE_PATTERN_DOC_QUERIES`, but the issue asked to refactor doc context ingest. It appears partially implemented via config overrides, but may lack a fully pluggable interface as requested.
+*   **#190 (GraphDesigner error reporting):** While `graph_design_registry.py` is present, it's difficult to ascertain if all silent failures were removed and fully actioned without deeper runtime traces, though structural improvements were made.
+*   **#40 (NotebookComposer Pattern Library Integration):** The notebook composer seems to use pattern library integrations, though fallbacks aren't fully robust if LLM synthesis fails in all edge cases without explicit fallback template overrides.
+*   **#205 (Test Suite Enhancements):** Some integration tests exist but comprehensive cross-agent unit, integration, and regression coverage appears light based on the tests directory scanning.
+*   **#244 (Docs Updates):** Documentation updates for LangGraph releases might be incomplete across all examples and `SYSTEM_SPEC.md`, needing a thorough review.
