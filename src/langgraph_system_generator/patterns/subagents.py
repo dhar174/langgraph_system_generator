@@ -178,11 +178,65 @@ def _summarize_chunk(text_to_summarize: str) -> str:
         return _truncate_result(text_to_summarize, MAX_TOTAL_RESULT_CHARS // 2)
 
 
+def _consolidate_summaries_tree(
+    summaries: list,
+    target_budget: int,
+    max_rounds: int = 3,
+) -> str:
+    """Consolidate a list of chunk summaries using a bounded reduction tree."""
+    current = [s for s in summaries if s]
+    if not current:
+        return ""
+    if len(current) == 1:
+        return _truncate_result(current[0], target_budget)
+
+    combined = "\\n\\n".join(current)
+    if len(combined) <= target_budget:
+        return combined
+
+    for _ in range(max_rounds):
+        groups = []
+        curr_group = []
+        curr_len = 0
+        for s in current:
+            item_len = len(s) + (2 if curr_group else 0)
+            if curr_group and (curr_len + item_len > MAX_TOTAL_RESULT_CHARS):
+                groups.append("\\n\\n".join(curr_group))
+                curr_group = [s]
+                curr_len = len(s)
+            else:
+                curr_group.append(s)
+                curr_len += item_len
+        if curr_group:
+            groups.append("\\n\\n".join(curr_group))
+
+        if len(groups) == 1:
+            consolidated = _summarize_chunk(groups[0])
+            return _truncate_result(consolidated, target_budget)
+
+        # Multiple groups: summarize each group independently to reduce
+        current = [_summarize_chunk(g) for g in groups]
+        combined = "\\n\\n".join(current)
+        if len(combined) <= target_budget:
+            return combined
+
+    # Deterministic proportional fallback if reduction rounds do not converge
+    k = len(current)
+    sep_overhead = 2 * (k - 1)
+    available_budget = max(target_budget - sep_overhead, k * 20)
+    total_len = sum(len(s) for s in current) or 1
+    proportional = []
+    for s in current:
+        allocated = max(20, int(available_budget * (len(s) / total_len)))
+        proportional.append(_truncate_result(s, allocated))
+    return _truncate_result("\\n\\n".join(proportional), target_budget)
+
+
 def _summarize_older_results(
     older_items_or_text,
     target_budget: int = MAX_TOTAL_RESULT_CHARS // 2,
 ) -> str:
-    """Condense older results using chunked summarization and bounded consolidation."""
+    """Condense older results using chunked summarization and bounded tree consolidation."""
     if not older_items_or_text:
         return ""
 
@@ -213,11 +267,7 @@ def _summarize_older_results(
         return _truncate_result(_summarize_chunk(chunks[0]), target_budget)
 
     chunk_summaries = [_summarize_chunk(chunk) for chunk in chunks]
-    combined = "\\n\\n".join([s for s in chunk_summaries if s])
-    if len(combined) <= target_budget:
-        return combined
-    consolidated = _summarize_chunk(_truncate_result(combined, MAX_TOTAL_RESULT_CHARS))
-    return _truncate_result(consolidated, target_budget)
+    return _consolidate_summaries_tree(chunk_summaries, target_budget)
 
 
 def _prepare_task_results_context(

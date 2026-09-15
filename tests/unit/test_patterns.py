@@ -656,6 +656,71 @@ class TestSubagentsPattern:
         assert any("agent 8" in p for p in invoked_prompts)
         assert "agent_0" in recent3
 
+    def test_context_window_hierarchical_consolidation_preserves_last_chunk_in_reduction_tree(
+        self, monkeypatch: pytest.MonkeyPatch
+    ):
+        """Verify that multi-chunk consolidation uses a reduction tree so the last chunk is not truncated."""
+        prompts = []
+
+        def capture_invoke(messages):
+            prompt_content = messages[-1].content
+            prompts.append(prompt_content)
+            # Check if this prompt contains the tail specialist marker
+            if "UNIQUE_TAIL_SPECIALIST_MARKER_XYZ" in prompt_content:
+                # Return ~3,000 chars preserving the marker
+                body = "Summary preserving UNIQUE_TAIL_SPECIALIST_MARKER_XYZ: " + ("x" * 2900)
+            else:
+                body = "Summary of intermediate chunk: " + ("y" * 2920)
+            mock_resp = MagicMock()
+            mock_resp.content = body
+            return mock_resp
+
+        mock_llm = MagicMock()
+        mock_llm.invoke.side_effect = capture_invoke
+        monkeypatch.setattr(
+            "langchain_openai.ChatOpenAI",
+            MagicMock(return_value=mock_llm),
+        )
+
+        # 14 specialists: agents 0-11 are older; agents 12-13 are recent.
+        # 12 older specialists * 2000 chars = 24,000 chars.
+        # With MAX_TOTAL_RESULT_CHARS = 8000, older items span multiple chunks.
+        # The tail older specialist (agent_11) is placed in the last chunk.
+        code = SubagentsPattern.generate_supervisor_code([f"agent_{i}" for i in range(14)])
+        ns: dict = {}
+        exec(code, ns)
+        prepare_context = ns["_prepare_task_results_context"]
+
+        task_results = {
+            f"agent_{i}": f"Standard output from agent {i} " * 65 for i in range(11)
+        }
+        task_results["agent_11"] = "UNIQUE_TAIL_SPECIALIST_MARKER_XYZ " * 60
+        task_results["agent_12"] = "Recent output from agent 12"
+        task_results["agent_13"] = "Recent output from agent 13"
+        versions = {f"agent_{i}": i for i in range(14)}
+
+        summary, recent, fp = prepare_context(
+            task_results,
+            task_result_versions=versions,
+        )
+
+        # 1. First stage produced multiple chunks (at least 3 chunks).
+        assert len(prompts) >= 4
+
+        # 2. Every single prompt (both chunking and consolidation) was strictly bounded <= MAX_TOTAL_RESULT_CHARS + 100
+        assert all(len(p) <= ns["MAX_TOTAL_RESULT_CHARS"] + 100 for p in prompts)
+
+        # 3. In the later-stage consolidation prompts (prompts invoked after the initial chunk stage),
+        # the tail marker from the last chunk MUST appear, proving it was not dropped by prefix truncation.
+        initial_chunk_prompts = [p for p in prompts if "Older agent results:\n-" in p]
+        consolidation_prompts = [p for p in prompts if "Older agent results:\n-" not in p]
+        assert len(initial_chunk_prompts) >= 3
+        assert len(consolidation_prompts) >= 1
+        assert any("UNIQUE_TAIL_SPECIALIST_MARKER_XYZ" in p for p in consolidation_prompts)
+
+        # 4. Total context size remains bounded
+        assert len(summary) + len(recent) <= ns["MAX_TOTAL_RESULT_CHARS"]
+
     def test_context_window_summarizer_construction_failure_safe_fallback(
         self, monkeypatch: pytest.MonkeyPatch
     ):
