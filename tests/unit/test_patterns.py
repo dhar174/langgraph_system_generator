@@ -488,8 +488,8 @@ class TestSubagentsPattern:
             existing_summary="",
             task_result_versions=versions,
         )
-        assert len(invoked_prompts) == 1
-        assert "OLD_STALE_OUTPUT_A" in invoked_prompts[0]
+        assert len(invoked_prompts) >= 1
+        assert any("OLD_STALE_OUTPUT_A" in p for p in invoked_prompts)
 
         # Now specialist A is updated to version 6 with new content
         task_results["a"] = "NEW_FRESH_OUTPUT_A " * 150
@@ -504,9 +504,9 @@ class TestSubagentsPattern:
             existing_fingerprint=fp1,
         )
         # Summarizer was re-invoked because older items changed (now b, c, d)
-        assert len(invoked_prompts) == 1
+        assert len(invoked_prompts) >= 1
         # The prompt for older items must NOT contain OLD_STALE_OUTPUT_A or existing_summary
-        assert "OLD_STALE_OUTPUT_A" not in invoked_prompts[0]
+        assert all("OLD_STALE_OUTPUT_A" not in p for p in invoked_prompts)
         assert "NEW_FRESH_OUTPUT_A" in recent2
 
     def test_context_window_bounded_total_chars(self):
@@ -559,8 +559,102 @@ class TestSubagentsPattern:
             task_result_versions=versions,
         )
 
-        assert len(prompts) == 1
-        assert len(prompts[0]) <= namespace["MAX_TOTAL_RESULT_CHARS"] + 100
+        assert len(prompts) >= 1
+        assert all(len(p) <= namespace["MAX_TOTAL_RESULT_CHARS"] + 100 for p in prompts)
+
+    def test_context_window_invalidates_and_represents_change_beyond_first_chunk(
+        self, monkeypatch: pytest.MonkeyPatch
+    ):
+        """Verify that changes beyond the first summary chunk invalidate the summary and remain represented."""
+        invoked_prompts = []
+
+        def capture_invoke(messages):
+            prompt_content = messages[-1].content
+            invoked_prompts.append(prompt_content)
+            mock_resp = MagicMock()
+            mock_resp.content = f"Summary chunk representing: {prompt_content[:60]}"
+            return mock_resp
+
+        mock_llm = MagicMock()
+        mock_llm.invoke.side_effect = capture_invoke
+        monkeypatch.setattr(
+            "langchain_openai.ChatOpenAI",
+            MagicMock(return_value=mock_llm),
+        )
+
+        # 10 specialists, each generating 1500 chars.
+        # Target budget is 4000 chars, so 8 older specialists (~12,000 chars) span multiple chunks.
+        code = SubagentsPattern.generate_supervisor_code([f"agent_{i}" for i in range(10)])
+        ns: dict = {}
+        exec(code, ns)
+        prepare_context = ns["_prepare_task_results_context"]
+
+        task_results = {
+            f"agent_{i}": f"Initial output from agent {i} " * 50 for i in range(10)
+        }
+        # agent_0 through agent_7 are older; agent_8 and agent_9 are recent.
+        versions = {f"agent_{i}": i for i in range(10)}
+
+        # Initial summarization
+        summary1, recent1, fp1 = prepare_context(
+            task_results,
+            task_result_versions=versions,
+        )
+        assert fp1 != ""
+        assert len(invoked_prompts) >= 2  # Proves older results span multiple chunks
+        # agent_7 is in a late chunk beyond the first chunk boundary
+        assert any("agent 7" in p for p in invoked_prompts)
+
+        # Unchanged call must reuse summary and fingerprint
+        invoked_prompts.clear()
+        summary1_cached, _, fp1_cached = prepare_context(
+            task_results,
+            existing_summary=summary1,
+            task_result_versions=versions,
+            existing_fingerprint=fp1,
+        )
+        assert fp1_cached == fp1
+        assert summary1_cached == summary1
+        assert len(invoked_prompts) == 0  # Reused without invoking LLM
+
+        # Now, modify agent_7 which is beyond the first summary chunk boundary
+        task_results["agent_7"] = "CRITICAL_UPDATED_FINDING_FROM_AGENT_7 " * 50
+        versions["agent_7"] = 7
+        invoked_prompts.clear()
+
+        summary2, recent2, fp2 = prepare_context(
+            task_results,
+            existing_summary=summary1,
+            task_result_versions=versions,
+            existing_fingerprint=fp1,
+        )
+
+        # 1. Summary MUST be invalidated because full snapshot is fingerprinted
+        assert fp2 != fp1
+        # 2. Summarizer MUST be re-invoked
+        assert len(invoked_prompts) >= 2
+        # 3. The change beyond the first chunk boundary MUST be included in the summarizer input
+        assert any("CRITICAL_UPDATED_FINDING_FROM_AGENT_7" in p for p in invoked_prompts)
+
+        # Next, verify displaced specialist from recent slice into older slice:
+        # agent_0 runs again with a new version, becoming recent.
+        # agent_8 (previously recent) is displaced into older items.
+        task_results["agent_0"] = "AGENT_0_FRESH_UPDATE " * 50
+        versions["agent_0"] = 20
+        invoked_prompts.clear()
+
+        summary3, recent3, fp3 = prepare_context(
+            task_results,
+            existing_summary=summary2,
+            task_result_versions=versions,
+            existing_fingerprint=fp2,
+        )
+        # Fingerprint must be invalidated by the displaced specialist
+        assert fp3 != fp2
+        assert len(invoked_prompts) >= 2
+        # agent_8 was displaced into older items and must be represented in the chunked input
+        assert any("agent 8" in p for p in invoked_prompts)
+        assert "agent_0" in recent3
 
     def test_context_window_summarizer_construction_failure_safe_fallback(
         self, monkeypatch: pytest.MonkeyPatch

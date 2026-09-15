@@ -135,12 +135,28 @@ def _format_results(items: list) -> str:
     )
 
 
-def _summarize_older_results(
-    older_results_text: str = "",
-    existing_summary: str = "",
-) -> str:
-    """Condense older results using the lightweight summarizer model."""
-    text_to_summarize = older_results_text or existing_summary
+def _chunk_items(items: list, max_chunk_chars: int) -> list:
+    """Group (agent, result) items into text chunks of at most max_chunk_chars."""
+    chunks = []
+    current_chunk = []
+    current_len = 0
+    for agent, result in items:
+        item_text = f"- {{agent}}: {{_truncate_result(str(result), MAX_RESULT_CHARS)}}"
+        item_len = len(item_text) + (1 if current_chunk else 0)
+        if current_chunk and (current_len + item_len > max_chunk_chars):
+            chunks.append("\\n".join(current_chunk))
+            current_chunk = [item_text]
+            current_len = len(item_text)
+        else:
+            current_chunk.append(item_text)
+            current_len += item_len
+    if current_chunk:
+        chunks.append("\\n".join(current_chunk))
+    return chunks
+
+
+def _summarize_chunk(text_to_summarize: str) -> str:
+    """Summarize a single text chunk with safe fallback."""
     if not text_to_summarize:
         return ""
 
@@ -160,6 +176,48 @@ def _summarize_older_results(
         return _truncate_result(str(getattr(response, "content", response)).strip(), MAX_TOTAL_RESULT_CHARS)
     except Exception:
         return _truncate_result(text_to_summarize, MAX_TOTAL_RESULT_CHARS // 2)
+
+
+def _summarize_older_results(
+    older_items_or_text,
+    target_budget: int = MAX_TOTAL_RESULT_CHARS // 2,
+) -> str:
+    """Condense older results using chunked summarization and bounded consolidation."""
+    if not older_items_or_text:
+        return ""
+
+    if isinstance(older_items_or_text, str):
+        if len(older_items_or_text) <= MAX_TOTAL_RESULT_CHARS:
+            return _truncate_result(_summarize_chunk(older_items_or_text), target_budget)
+        lines = older_items_or_text.strip().split("\\n")
+        chunks = []
+        curr = []
+        curr_len = 0
+        for line in lines:
+            line_len = len(line) + (1 if curr else 0)
+            if curr and (curr_len + line_len > MAX_TOTAL_RESULT_CHARS):
+                chunks.append("\\n".join(curr))
+                curr = [line]
+                curr_len = len(line)
+            else:
+                curr.append(line)
+                curr_len += line_len
+        if curr:
+            chunks.append("\\n".join(curr))
+    else:
+        chunks = _chunk_items(older_items_or_text, MAX_TOTAL_RESULT_CHARS)
+
+    if not chunks:
+        return ""
+    if len(chunks) == 1:
+        return _truncate_result(_summarize_chunk(chunks[0]), target_budget)
+
+    chunk_summaries = [_summarize_chunk(chunk) for chunk in chunks]
+    combined = "\\n\\n".join([s for s in chunk_summaries if s])
+    if len(combined) <= target_budget:
+        return combined
+    consolidated = _summarize_chunk(_truncate_result(combined, MAX_TOTAL_RESULT_CHARS))
+    return _truncate_result(consolidated, target_budget)
 
 
 def _prepare_task_results_context(
@@ -190,23 +248,28 @@ def _prepare_task_results_context(
 
     recent_items = ordered_items[-RECENT_FULL_RESULTS:]
     older_items = ordered_items[:-RECENT_FULL_RESULTS]
-    older_results_text = _format_results(older_items)
-    summary_input_budget = max(
-        MAX_TOTAL_RESULT_CHARS - len(existing_summary),
-        MAX_TOTAL_RESULT_CHARS // 2,
-    )
-    older_results_text = _truncate_result(older_results_text, summary_input_budget)
-    fingerprint = hashlib.sha256(older_results_text.encode("utf-8")).hexdigest()[:16]
+
+    # Calculate fingerprint from complete logical older snapshot before any truncation or chunking
+    snapshot_parts = [
+        f"{{agent}}:{{versions.get(agent, 0)}}:"
+        f"{{hashlib.sha256(str(result).encode('utf-8')).hexdigest()}}"
+        for agent, result in older_items
+    ]
+    fingerprint = hashlib.sha256(
+        "\\n".join(snapshot_parts).encode("utf-8")
+    ).hexdigest()[:16]
+
+    recent_results = _format_results(recent_items)
+    remaining_summary_budget = max(MAX_TOTAL_RESULT_CHARS - len(recent_results), 0)
 
     if existing_fingerprint and existing_fingerprint == fingerprint and existing_summary:
         updated_summary = existing_summary
         updated_fingerprint = existing_fingerprint
     else:
-        updated_summary = _summarize_older_results(older_results_text)
+        target_budget = max(remaining_summary_budget, MAX_TOTAL_RESULT_CHARS // 2)
+        updated_summary = _summarize_older_results(older_items, target_budget=target_budget)
         updated_fingerprint = fingerprint
 
-    recent_results = _format_results(recent_items)
-    remaining_summary_budget = max(MAX_TOTAL_RESULT_CHARS - len(recent_results), 0)
     if remaining_summary_budget == 0:
         return "", _truncate_result(recent_results, MAX_TOTAL_RESULT_CHARS), updated_fingerprint
     updated_summary = _truncate_result(updated_summary, remaining_summary_budget)
