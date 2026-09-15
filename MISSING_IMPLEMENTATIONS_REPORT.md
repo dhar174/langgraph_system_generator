@@ -131,3 +131,22 @@ The final batch of heuristic issues was analyzed to close out the repository rev
 *   **#194 & #196 (ArchitectureSelector Errors & Validation):** Fallback warnings and strict validation parsing appear lightweight or missing directly inside `architecture_selector.py`, often leaving error logging up to the orchestrating graph.
 *   **#261 & #267 (SSE Progress Streaming Reconnects):** `progress_streaming.py` manages jobs via `JobRecord` arrays. While it broadcasts events, the implementation might still struggle with true multi-consumer retention caps under high load, as bounded replay caps were not explicitly identified in the `JobRecord` schema.
 *   **#351, #352 (State limits and deep copying):** Strict bounding of history arrays (like `qa_history`) to prevent unbounded growth during repair loops was not transparently surfaced in the default state schemas.
+
+## Extended Analysis of 50 Closed Pull Requests
+To complete the audit, the final step evaluates the top 50 closed Pull Requests (prioritizing the 26 PRs that were closed *without* being merged, as they are the most likely to represent abandoned or missing features in the `main` branch).
+
+### Verified Implemented (Alternative Implementations)
+Despite being closed unmerged, the features requested by many of these PRs exist in the codebase through alternative commits or PRs:
+*   **PR #309 (Repo diagram):** The file `diagram.svg` exists.
+*   **PR #163 (Architecture assessment report):** Available at `docs/wiki/Architecture-Deep-Dive.md`.
+*   **PR #160 (CodeQL workflow):** The `.github/workflows/codeql.yml` exists.
+*   **PR #150 (Memory-bank docs):** The `memory-bank/` directory is fully populated with `activeContext.md`, `projectbrief.md`, etc.
+*   **PR #100 & #90 (Copilot and Gemini docs):** `.github/copilot-instructions.md` and `GEMINI.md` exist.
+*   **PR #31 (Notebook generation export):** As established previously, `exporters.py` handles exports.
+*   **PR #18, #19, #20 (Doc pre-cache scripts):** `scripts/build_index.py` handles this.
+
+### Partially Implemented / Gaps Identified (Unmerged Features)
+The following PRs were closed without being merged, and their core intent does not appear to be implemented in the `main` branch, indicating true missing functionality:
+*   **PR #212 & #215 (Delete skills directory):** These PRs proposed deleting the `skills/` directory. The `skills/` directory still exists and is fully populated.
+*   **PR #76 (Replace gpt-5-mini with gpt-4o-mini):** The configuration and CLI still heavily default to `gpt-5-mini`. `gpt-4o-mini` is only mentioned in a single fallback comment.
+*   **PR #118 (PR issue relevance analyzer):** No trace of a PR relevance ranking tool or analyzer exists in the main source files.
