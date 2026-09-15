@@ -35,6 +35,7 @@ start with `README.md` and `CONTRIBUTING.md`.
 | --- | --- | --- |
 | Runtime product agents | Turn a natural-language prompt into a notebook, exported artifacts, and QA results | `src/langgraph_system_generator/generator/agents/` plus adjacent `generator/`, `patterns/`, `qa/`, `notebook/`, and `rag/` modules |
 | Contributor-facing Copilot assets | Help contributors plan, implement, review, document, and validate changes | `.github/agents/`, `.github/skills/`, `.github/prompts/`, `.github/instructions/`, plus some mirrored skills under `skills/` |
+| Antigravity / Gemini skills & plugins | Provide local capability definitions and plugin bundles for Google Antigravity and Gemini CLI | `.agents/` and `.agents/plugins/` (tracked in `.agents/.antigravity-install-manifest.json`) |
 
 ## Repository surfaces that agents must respect
 
