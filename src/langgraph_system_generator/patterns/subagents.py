@@ -26,14 +26,14 @@ class SubagentsPattern:
         """Generate a TypedDict state schema for supervisor workflows."""
         additional = render_additional_fields(additional_fields)
         return f'''import operator
-from typing import Annotated, Dict, List
+from typing import Annotated, Any, Dict, List
 from typing_extensions import TypedDict
 
 from langchain_core.messages import BaseMessage
 from langgraph.graph.message import add_messages
 
 
-def merge_dicts(left: Dict[str, str], right: Dict[str, str]) -> Dict[str, str]:
+def merge_dicts(left: Dict[str, Any], right: Dict[str, Any]) -> Dict[str, Any]:
     """Reducer used to merge per-agent outputs into shared state."""
     merged = dict(left or {{}})
     merged.update(right or {{}})
@@ -50,7 +50,9 @@ class WorkflowState(TypedDict, total=False):
     iterations: int
     dispatch_log: Annotated[List[str], operator.add]
     task_results: Annotated[Dict[str, str], merge_dicts]
+    task_result_versions: Annotated[Dict[str, int], merge_dicts]
     task_results_summary: str
+    task_results_summary_fingerprint: str
     final_output: str
 {additional}'''
 
@@ -134,79 +136,80 @@ def _format_results(items: list) -> str:
 
 
 def _summarize_older_results(
-    existing_summary: str,
-    older_results_text: str,
+    older_results_text: str = "",
+    existing_summary: str = "",
 ) -> str:
     """Condense older results using the lightweight summarizer model."""
-    if not older_results_text:
-        return existing_summary
-
-    summarizer = {summary_llm_init}
-    summary_prompt = (
-        "Summarize the older agent results into concise supervisor context. "
-        "Preserve completed work, important findings, unresolved issues, "
-        "and constraints that future agents should know."
-    )
-    summary_input = "\\n\\n".join(
-        [
-            section
-            for section in [
-                f"Existing summary:\\n{{existing_summary}}" if existing_summary else "",
-                f"Older agent results:\\n{{older_results_text}}",
-            ]
-            if section
-        ]
-    )
+    text_to_summarize = older_results_text or existing_summary
+    if not text_to_summarize:
+        return ""
 
     try:
+        summarizer = {summary_llm_init}
+        summary_prompt = (
+            "Summarize the older agent results into concise supervisor context. "
+            "Preserve completed work, important findings, unresolved issues, "
+            "and constraints that future agents should know."
+        )
         response = summarizer.invoke(
             [
                 SystemMessage(content=summary_prompt),
-                HumanMessage(content=summary_input),
+                HumanMessage(content=f"Older agent results:\\n{{text_to_summarize}}"),
             ]
         )
         return _truncate_result(str(getattr(response, "content", response)).strip(), MAX_TOTAL_RESULT_CHARS)
     except Exception:
-        fallback_sections = [
-            existing_summary,
-            _truncate_result(older_results_text, MAX_TOTAL_RESULT_CHARS // 2),
-        ]
-        fallback = "\\n\\n".join([section for section in fallback_sections if section])
-        return _truncate_result(fallback, MAX_TOTAL_RESULT_CHARS)
+        return _truncate_result(text_to_summarize, MAX_TOTAL_RESULT_CHARS // 2)
 
 
-def _prepare_task_results_context(task_results: dict, existing_summary: str):
-    """Return summarized older results plus recent full results."""
-    items = list(task_results.items())
-    all_results = _format_results(items)
+def _prepare_task_results_context(
+    task_results: dict,
+    existing_summary: str = "",
+    task_result_versions: dict = None,
+    existing_fingerprint: str = "",
+):
+    """Return summarized older results plus recent full results and summary fingerprint."""
+    if not task_results:
+        return "", "No specialist results yet.", ""
 
-    if len(existing_summary) + len(all_results) <= MAX_TOTAL_RESULT_CHARS:
-        return existing_summary, all_results
-
-    if len(items) <= RECENT_FULL_RESULTS:
-        truncated_recent = _truncate_result(all_results, MAX_TOTAL_RESULT_CHARS // 2)
-        updated_summary = _truncate_result(existing_summary, MAX_TOTAL_RESULT_CHARS // 2)
-        if not updated_summary:
-            updated_summary = (
-                "Earlier results were truncated to fit the supervisor context window."
-            )
-        return updated_summary, truncated_recent
-
-    recent_items = items[-RECENT_FULL_RESULTS:]
-    older_items = items[:-RECENT_FULL_RESULTS]
-    updated_summary = _summarize_older_results(
-        existing_summary,
-        _format_results(older_items),
+    versions = task_result_versions or {{}}
+    ordered_items = sorted(
+        task_results.items(),
+        key=lambda item: versions.get(item[0], 0),
     )
+    all_results = _format_results(ordered_items)
+
+    if len(all_results) <= MAX_TOTAL_RESULT_CHARS:
+        return "", all_results, ""
+
+    if len(ordered_items) <= RECENT_FULL_RESULTS:
+        notice = "Earlier results were truncated to fit the supervisor context window."
+        available_budget = max(MAX_TOTAL_RESULT_CHARS - len(notice) - 2, MAX_TOTAL_RESULT_CHARS // 2)
+        truncated_recent = _truncate_result(all_results, available_budget)
+        return notice, truncated_recent, ""
+
+    recent_items = ordered_items[-RECENT_FULL_RESULTS:]
+    older_items = ordered_items[:-RECENT_FULL_RESULTS]
+    older_results_text = _format_results(older_items)
+    fingerprint = hashlib.sha256(older_results_text.encode("utf-8")).hexdigest()[:16]
+
+    if existing_fingerprint and existing_fingerprint == fingerprint and existing_summary:
+        updated_summary = existing_summary
+        updated_fingerprint = existing_fingerprint
+    else:
+        updated_summary = _summarize_older_results(older_results_text)
+        updated_fingerprint = fingerprint
+
     recent_results = _format_results(recent_items)
     remaining_summary_budget = max(MAX_TOTAL_RESULT_CHARS - len(recent_results), 0)
     if remaining_summary_budget == 0:
-        return "", _truncate_result(recent_results, MAX_TOTAL_RESULT_CHARS)
+        return "", _truncate_result(recent_results, MAX_TOTAL_RESULT_CHARS), updated_fingerprint
     updated_summary = _truncate_result(updated_summary, remaining_summary_budget)
-    return updated_summary, recent_results'''
+    return updated_summary, recent_results, updated_fingerprint'''
 
         if use_structured_output:
-            return f'''from typing import List, Literal
+            return f'''import hashlib
+from typing import List, Literal
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
@@ -248,9 +251,13 @@ def supervisor_node(state: WorkflowState) -> dict:
 
     task_results = state.get("task_results", {{}})
     task_results_summary = state.get("task_results_summary", "")
-    task_results_summary, recent_results = _prepare_task_results_context(
+    task_result_versions = state.get("task_result_versions", {{}})
+    task_results_summary_fingerprint = state.get("task_results_summary_fingerprint", "")
+    task_results_summary, recent_results, task_results_summary_fingerprint = _prepare_task_results_context(
         task_results,
         task_results_summary,
+        task_result_versions=task_result_versions,
+        existing_fingerprint=task_results_summary_fingerprint,
     )
 
     decision = llm.with_structured_output(SupervisorDecision).invoke([
@@ -292,6 +299,7 @@ Select FINISH only when the accumulated results are ready to synthesize.
         "instructions": decision.instructions,
         "iterations": iterations + (0 if next_agents == ["FINISH"] else 1),
         "task_results_summary": task_results_summary,
+        "task_results_summary_fingerprint": task_results_summary_fingerprint,
         "dispatch_log": [
             f"Supervisor -> {{dispatch_targets}}: {{decision.reasoning}}"
         ],
@@ -303,7 +311,8 @@ Select FINISH only when the accumulated results are ready to synthesize.
     }}'''
 
         default_agent = specs[0][0]
-        return f'''from typing import List, Literal
+        return f'''import hashlib
+from typing import List, Literal
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
@@ -328,9 +337,13 @@ def supervisor_node(state: WorkflowState) -> dict:
 
     task_results = state.get("task_results", {{}})
     task_results_summary = state.get("task_results_summary", "")
-    task_results_summary, recent_results = _prepare_task_results_context(
+    task_result_versions = state.get("task_result_versions", {{}})
+    task_results_summary_fingerprint = state.get("task_results_summary_fingerprint", "")
+    task_results_summary, recent_results, task_results_summary_fingerprint = _prepare_task_results_context(
         task_results,
         task_results_summary,
+        task_result_versions=task_result_versions,
+        existing_fingerprint=task_results_summary_fingerprint,
     )
 
     response = llm.invoke([
@@ -369,6 +382,7 @@ def supervisor_node(state: WorkflowState) -> dict:
         "instructions": instructions.strip(),
         "iterations": iterations + (0 if next_agents == ["FINISH"] else 1),
         "task_results_summary": task_results_summary,
+        "task_results_summary_fingerprint": task_results_summary_fingerprint,
         "dispatch_log": [f"Supervisor -> {{dispatch_targets}}"],
         "messages": [AIMessage(content=f"Supervisor selected {{dispatch_targets}}")],
     }}'''
@@ -432,8 +446,14 @@ Role:
         *messages,
     ])
 
+    current_version = max(
+        state.get("iterations", 0),
+        max(state.get("task_result_versions", {{}}).values(), default=0) + 1,
+    )
+
     return {{
         "task_results": {{"{agent_name}": getattr(response, "content", str(response))}},
+        "task_result_versions": {{"{agent_name}": current_version}},
         "messages": [
             AIMessage(content=f"{agent_name} completed the assigned task.")
         ],
@@ -588,7 +608,9 @@ def build_initial_state(user_request: str) -> WorkflowState:
     return {{
         "messages": [HumanMessage(content=user_request)],
         "task_results": {{}},
+        "task_result_versions": {{}},
         "task_results_summary": "",
+        "task_results_summary_fingerprint": "",
         "dispatch_log": [],
         "next_agents": [],
         "iterations": 0,

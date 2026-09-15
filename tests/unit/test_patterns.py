@@ -5,6 +5,9 @@ from __future__ import annotations
 import ast
 import importlib.util
 from pathlib import Path
+from unittest.mock import MagicMock
+
+import pytest
 
 from langgraph_system_generator.patterns import (
     AutoAgentPattern,
@@ -112,7 +115,9 @@ class TestSubagentsPattern:
         assert "next_agent: str" in code
         assert "instructions: str" in code
         assert "task_results: Annotated[Dict[str, str], merge_dicts]" in code
+        assert "task_result_versions: Annotated[Dict[str, int], merge_dicts]" in code
         assert "task_results_summary: str" in code
+        assert "task_results_summary_fingerprint: str" in code
         assert "dispatch_log: Annotated[List[str], operator.add]" in code
 
     def test_generate_state_code_with_additional_fields(self):
@@ -175,6 +180,8 @@ class TestSubagentsPattern:
         assert "Research and gather information" in code
         assert "ChatOpenAI" in code
         assert '"researcher": getattr(response, "content", str(response))' in code
+        assert '"task_result_versions": {"researcher": current_version}' in code
+        assert "current_version = max(" in code
 
     def test_generate_subagent_code_with_tools(self):
         """Test subagent node generation with tool binding."""
@@ -314,6 +321,7 @@ class TestSubagentsPattern:
             assert "Older summarized results:" in code
             assert "Recent full results:" in code
             assert '"task_results_summary": task_results_summary' in code
+            assert '"task_results_summary_fingerprint": task_results_summary_fingerprint' in code
             assert "next_agents" in code
             compile(code, "<test_parity>", "exec")
 
@@ -329,7 +337,9 @@ class TestSubagentsPattern:
         assert "finish_node" in graph_code
         assert "def merge_dicts(" in state_code
         assert "task_results: Annotated[Dict[str, str], merge_dicts]" in state_code
+        assert "task_result_versions: Annotated[Dict[str, int], merge_dicts]" in state_code
         assert "task_results_summary: str" in state_code
+        assert "task_results_summary_fingerprint: str" in state_code
         compile(graph_code, "<test_graph>", "exec")
         compile(state_code, "<test_state>", "exec")
 
@@ -342,13 +352,239 @@ class TestSubagentsPattern:
         assert "Subagents Pattern Example" in code
         assert "class WorkflowState" in code
         assert "task_results_summary: str" in code
+        assert "task_results_summary_fingerprint: str" in code
+        assert "task_result_versions: Annotated[Dict[str, int], merge_dicts]" in code
         assert '"task_results_summary": ""' in code
+        assert '"task_results_summary_fingerprint": ""' in code
+        assert '"task_result_versions": {}' in code
         assert "def supervisor_node" in code
         assert "def researcher_node" in code
         assert "def writer_node" in code
         assert "workflow = StateGraph" in code
         assert "Send(" in code
         compile(code, "<test_complete>", "exec")
+
+    def test_context_window_unchanged_older_results_summarized_only_once(
+        self, monkeypatch: pytest.MonkeyPatch
+    ):
+        """Verify that unchanged older results are summarized once and reused via fingerprint."""
+        mock_llm_instance = MagicMock()
+        mock_response = MagicMock()
+        mock_response.content = "Concise summary of older specialist results"
+        mock_llm_instance.invoke.return_value = mock_response
+        MockChatOpenAI = MagicMock(return_value=mock_llm_instance)
+        monkeypatch.setattr("langchain_openai.ChatOpenAI", MockChatOpenAI)
+
+        code = SubagentsPattern.generate_supervisor_code(["a", "b", "c", "d"])
+        ns: dict = {}
+        exec(code, ns)
+        prepare_context = ns["_prepare_task_results_context"]
+
+        task_results = {
+            "a": "Agent A output " * 250,
+            "b": "Agent B output " * 250,
+            "c": "Agent C output " * 250,
+            "d": "Agent D output " * 250,
+        }
+        versions = {"a": 1, "b": 2, "c": 3, "d": 4}
+
+        # First iteration: initial summarization of older agents (a and b)
+        summary1, recent1, fp1 = prepare_context(
+            task_results,
+            existing_summary="",
+            task_result_versions=versions,
+            existing_fingerprint="",
+        )
+        assert summary1 == "Concise summary of older specialist results"
+        assert fp1 != ""
+        assert mock_llm_instance.invoke.call_count == 1
+
+        # Second iteration: identical older results with same fingerprint
+        summary2, recent2, fp2 = prepare_context(
+            task_results,
+            existing_summary=summary1,
+            task_result_versions=versions,
+            existing_fingerprint=fp1,
+        )
+        assert summary2 == summary1
+        assert fp2 == fp1
+        # Summarizer LLM invoke must NOT be called again
+        assert mock_llm_instance.invoke.call_count == 1
+
+    def test_context_window_early_inserted_specialist_update_makes_it_recent(self):
+        """Verify that an early-inserted specialist updating with a newer version becomes recent."""
+        code = SubagentsPattern.generate_supervisor_code(["a", "b", "c", "d", "e"])
+        ns: dict = {}
+        exec(code, ns)
+        prepare_context = ns["_prepare_task_results_context"]
+
+        # 5 specialists exceeding MAX_TOTAL_RESULT_CHARS
+        task_results = {
+            "a": "initial output from specialist A " * 100,
+            "b": "output from specialist B " * 100,
+            "c": "output from specialist C " * 100,
+            "d": "output from specialist D " * 100,
+            "e": "output from specialist E " * 100,
+        }
+        # Initially, versions are 1 to 5. RECENT_FULL_RESULTS = 2, so d and e are recent, a is older.
+        initial_versions = {"a": 1, "b": 2, "c": 3, "d": 4, "e": 5}
+        _, initial_recent, _ = prepare_context(
+            task_results,
+            task_result_versions=initial_versions,
+        )
+        assert "specialist D" in initial_recent
+        assert "specialist E" in initial_recent
+        assert "specialist A" not in initial_recent
+
+        # Now specialist A runs again and updates with version 6
+        task_results["a"] = "updated fresh output from specialist A " * 100
+        updated_versions = {"a": 6, "b": 2, "c": 3, "d": 4, "e": 5}
+        _, updated_recent, _ = prepare_context(
+            task_results,
+            task_result_versions=updated_versions,
+        )
+        # Specialist A is now the most recent and must appear in recent_results
+        assert "specialist A" in updated_recent
+        assert "updated fresh output" in updated_recent
+        assert "specialist E" in updated_recent
+        assert "specialist D" not in updated_recent
+
+    def test_context_window_superseded_old_output_not_retained_in_summary(
+        self, monkeypatch: pytest.MonkeyPatch
+    ):
+        """Verify that when a specialist updates, its old output is evicted and not compounded."""
+        invoked_prompts = []
+
+        def fake_invoke(messages):
+            prompt_str = " ".join(str(m.content) for m in messages)
+            invoked_prompts.append(prompt_str)
+            mock_resp = MagicMock()
+            mock_resp.content = "Summary of older specialists"
+            return mock_resp
+
+        mock_llm_instance = MagicMock()
+        mock_llm_instance.invoke.side_effect = fake_invoke
+        MockChatOpenAI = MagicMock(return_value=mock_llm_instance)
+        monkeypatch.setattr("langchain_openai.ChatOpenAI", MockChatOpenAI)
+
+        code = SubagentsPattern.generate_supervisor_code(["a", "b", "c", "d", "e"])
+        ns: dict = {}
+        exec(code, ns)
+        prepare_context = ns["_prepare_task_results_context"]
+
+        task_results = {
+            "a": "OLD_STALE_OUTPUT_A " * 150,
+            "b": "OUTPUT_B_CONTENT_LONG " * 150,
+            "c": "OUTPUT_C_CONTENT_LONG " * 150,
+            "d": "OUTPUT_D_CONTENT_LONG " * 150,
+            "e": "OUTPUT_E_CONTENT_LONG " * 150,
+        }
+        # Initially, 'a' (v1), 'b' (v2), 'c' (v3) are older; 'd' (v4), 'e' (v5) are recent
+        versions = {"a": 1, "b": 2, "c": 3, "d": 4, "e": 5}
+
+        # First summarization when A is older
+        summary1, _, fp1 = prepare_context(
+            task_results,
+            existing_summary="",
+            task_result_versions=versions,
+        )
+        assert len(invoked_prompts) == 1
+        assert "OLD_STALE_OUTPUT_A" in invoked_prompts[0]
+
+        # Now specialist A is updated to version 6 with new content
+        task_results["a"] = "NEW_FRESH_OUTPUT_A " * 150
+        versions["a"] = 6
+        invoked_prompts.clear()
+
+        # Older items are now b, c, d. Recent items are e, a.
+        summary2, recent2, fp2 = prepare_context(
+            task_results,
+            existing_summary=summary1,
+            task_result_versions=versions,
+            existing_fingerprint=fp1,
+        )
+        # Summarizer was re-invoked because older items changed (now b, c, d)
+        assert len(invoked_prompts) == 1
+        # The prompt for older items must NOT contain OLD_STALE_OUTPUT_A or existing_summary
+        assert "OLD_STALE_OUTPUT_A" not in invoked_prompts[0]
+        assert "NEW_FRESH_OUTPUT_A" in recent2
+
+    def test_context_window_bounded_total_chars(self):
+        """Verify that total context (summary + recent) stays bounded under MAX_TOTAL_RESULT_CHARS."""
+        code = SubagentsPattern.generate_supervisor_code([f"agent_{i}" for i in range(6)])
+        ns: dict = {}
+        exec(code, ns)
+        prepare_context = ns["_prepare_task_results_context"]
+        max_chars = ns["MAX_TOTAL_RESULT_CHARS"]
+
+        # Generate large results across 6 specialists (6 * 5000 = 30,000 chars)
+        task_results = {f"agent_{i}": f"Data {i} " * 800 for i in range(6)}
+        versions = {f"agent_{i}": i for i in range(6)}
+
+        summary, recent, _ = prepare_context(
+            task_results,
+            task_result_versions=versions,
+        )
+        assert len(summary) + len(recent) <= max_chars
+
+    def test_context_window_summarizer_construction_failure_safe_fallback(
+        self, monkeypatch: pytest.MonkeyPatch
+    ):
+        """Verify that summarizer constructor failure falls back safely without raising an error."""
+        def failing_init(*args, **kwargs):
+            raise RuntimeError("API key missing or provider network error during init")
+
+        monkeypatch.setattr("langchain_openai.ChatOpenAI", failing_init)
+
+        code = SubagentsPattern.generate_supervisor_code(["a", "b", "c", "d"])
+        ns: dict = {}
+        exec(code, ns)
+        prepare_context = ns["_prepare_task_results_context"]
+
+        task_results = {
+            "a": "Data A " * 400,
+            "b": "Data B " * 400,
+            "c": "Data C " * 400,
+            "d": "Data D " * 400,
+        }
+        versions = {"a": 1, "b": 2, "c": 3, "d": 4}
+
+        # Should complete without exception and return truncated fallback
+        summary, recent, fp = prepare_context(
+            task_results,
+            task_result_versions=versions,
+        )
+        assert summary != ""
+        assert len(summary) + len(recent) <= ns["MAX_TOTAL_RESULT_CHARS"]
+
+    def test_context_window_summarizer_invoke_failure_safe_fallback(
+        self, monkeypatch: pytest.MonkeyPatch
+    ):
+        """Verify that summarizer invoke failure falls back safely without raising an error."""
+        mock_llm_instance = MagicMock()
+        mock_llm_instance.invoke.side_effect = RuntimeError("Rate limit or timeout during invoke")
+        MockChatOpenAI = MagicMock(return_value=mock_llm_instance)
+        monkeypatch.setattr("langchain_openai.ChatOpenAI", MockChatOpenAI)
+
+        code = SubagentsPattern.generate_supervisor_code(["a", "b", "c", "d"])
+        ns: dict = {}
+        exec(code, ns)
+        prepare_context = ns["_prepare_task_results_context"]
+
+        task_results = {
+            "a": "Data A " * 400,
+            "b": "Data B " * 400,
+            "c": "Data C " * 400,
+            "d": "Data D " * 400,
+        }
+        versions = {"a": 1, "b": 2, "c": 3, "d": 4}
+
+        summary, recent, fp = prepare_context(
+            task_results,
+            task_result_versions=versions,
+        )
+        assert summary != ""
+        assert len(summary) + len(recent) <= ns["MAX_TOTAL_RESULT_CHARS"]
 
 
 class TestAutoAgentPattern:

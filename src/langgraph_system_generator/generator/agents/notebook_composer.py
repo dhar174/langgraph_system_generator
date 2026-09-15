@@ -82,6 +82,8 @@ class NotebookComposer:
             "dispatch_log",
             "task_results",
             "task_results_summary",
+            "task_results_summary_fingerprint",
+            "task_result_versions",
             "final_output",
         },
         "autoagent": {
@@ -3299,7 +3301,9 @@ else:
     "next_agent": "supervisor",
     "instructions": "",
     "task_results": {},
+    "task_result_versions": {},
     "task_results_summary": "",
+    "task_results_summary_fingerprint": "",
     "dispatch_log": [],
     "iterations": 0,
 }"""

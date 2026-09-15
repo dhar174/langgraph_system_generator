@@ -55,5 +55,7 @@ def test_run_graph_cells_subagents_includes_task_results_summary():
     code = cells[1].content
 
     assert '"task_results": {}' in code
+    assert '"task_result_versions": {}' in code
     assert '"task_results_summary": ""' in code
+    assert '"task_results_summary_fingerprint": ""' in code
 
