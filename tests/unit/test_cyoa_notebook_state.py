@@ -129,7 +129,7 @@ def test_story_generation_uses_canonical_config_and_preserves_turn() -> None:
             "memory_summary": "memory",
             "facts": {"clue": "found"},
         },
-        "llm_storywriter": story_writer,
+        "LLM_StoryWriter": story_writer,
         "WorkflowState": dict,
         "llm_continuity_editor": lambda segment, **_kwargs: segment,
         "llm_safety_guard": lambda segment, **_kwargs: segment,
