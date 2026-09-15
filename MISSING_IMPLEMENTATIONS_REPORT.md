@@ -95,3 +95,22 @@ Continuing the heuristic scan for the next 40 highest-scoring closed issues (exc
 
 ### Partially Implemented / Gaps Identified
 *   **#71, #81 (make_llm() ignores temperature):** The template blocks for `make_llm` in `notebook_composer.py` hardcode `temperature` and `max_tokens` conditionally, but there are instances where direct instantiation might still omit user-passed temperature configurations.
+
+## Extended Analysis of the Third Batch of 40 Issues (Rank 61-100)
+Continuing the heuristical scan, the next 40 issues were analyzed for their completeness in the main branch.
+
+### Verified Implemented (Complete or Substantially Complete)
+*   **#49 (gpt-5-nano):** The `gpt-5-nano` model is registered in `generation_options.py` and selectable in the UI.
+*   **#189 (GraphDesigner Visual Export):** `GraphDesignRegistry` natively supports exports (`export_label_defaults` and `build_graph_exports` logic for Mermaid/JSON).
+*   **#193 (ArchitectureSelector Hybrid pattern):** `hybrid.py` is present in the `patterns` library, confirming it was implemented.
+*   **#327 (LangGraph State Reducers):** `StateReducerSemanticsRule` exists in `qa/validators.py` for verifying notebook updates.
+*   **#328 (Validated Graph/Spec IR):** `GraphExportBundle` is fully defined as an IR serialization target in `state.py`.
+*   **#64 & #180 (Parallel execution & asyncio.gather):** Code generation parallelism is supported via `NOTEBOOK_COMPOSER_PARALLELISM_MODE` configuration and `asyncio.gather` in the composer agent.
+*   **#110 (.github/agents/ infer: true):** A large volume of agent markdown files in `.github/agents/` contain the `infer: true` frontmatter hook.
+*   **#178 (QARepairAgent test suite):** Extensive testing exists (`test_repair.py` and `test_qa_repair_regressions.py`).
+*   **#259 (Advanced live-mode options):** Handled via `generation_options.py` advanced logic mapping.
+*   **#310 (v1.0.0 web UI syntax):** UI static assets including `app.js` and `index.html` exist and have been functionally patched.
+*   **#127 & #130 (HITL, LLM-Judge, LLMCompiler examples):** Python examples exist in `examples/` (`human_approval_pattern.py`, `llm_judge_example.py`, `llm_compiler_example.py`).
+
+### Partially Implemented / Gaps Identified
+*   All high-priority items in this batch appear fully or substantially addressed by the current codebase state.
