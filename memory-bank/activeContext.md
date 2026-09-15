@@ -16,12 +16,19 @@
 
 ## Recent Changes Reflected in the Codebase
 
-- Restored bounded supervisor context-window management (Issue #65 / PR #229)
+- Restored bounded supervisor context-window management (Issue #65 / PR #374)
   adapted surgically to the modern LangGraph v1 architecture: scalar
   `task_results_summary: str` state, bounded context preparation with
   summarized older results and recent full results, functional `summary_model`
   selection and overrides, `make_llm(...)` notebook helper compliance, and
-  unaltered Send-based parallel fan-out.
+  unaltered Send-based parallel fan-out. Addressed all 4 review findings:
+  (1) credential-free `NotebookComposer` tests via `DummyLLM` monkeypatching;
+  (2) minimal scalar fingerprint state `task_results_summary_fingerprint: str` to skip
+  re-summarizing unchanged older results; (3) specialist recency tracking via
+  reducer-backed `task_result_versions` (`max(iterations, max_prev + 1)`) with
+  version-sorted partitioning; (4) failure-safe summarizer construction inside
+  `try: ... except Exception:`; and (5) eviction of superseded specialist outputs
+  without recursive compounding of `existing_summary`.
 - Established Antigravity 2.0+ native custom subagents under `.agents/agents/`,
   modular coordination rules in `.agents/rules/` and `.agent/rules/`, and the
   authoritative root entrypoint `GEMINI.md`. Configured `lnf-repo-coordinator`

@@ -60,6 +60,14 @@
   Wave 5 broad unit gate reports 646 passed and 4 warnings. After updating a
   stale integration assertion from Command routing to Send fan-out, the full
   local CI-style gate reports 764 passed, 3 skipped, and 4 warnings.
+- Bounded supervisor context-window management from Issue #65 is restored on
+  PR #374 (`fix/restore-supervisor-context-window`) with all review findings resolved:
+  credential-free `NotebookComposer` tests, scalar `task_results_summary_fingerprint`
+  to avoid redundant summarization, `task_result_versions` recency tracking,
+  failure-safe summarizer initialization in `_summarize_older_results`, and eviction
+  of superseded specialist outputs. Local verification: 104 pattern unit tests,
+  82 pattern integration tests, 676 unit tests, and offline CLI stub smoke tests
+  for router and subagents patterns all pass cleanly.
 - Stale completed release-plan issues were closed with evidence during the
   release-readiness pass, reducing that older open issue inventory from 49 to
   26 while keeping true residual items open.
