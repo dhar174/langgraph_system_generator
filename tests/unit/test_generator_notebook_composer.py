@@ -776,6 +776,9 @@ async def test_custom_registry_can_override_graph_section_builder(
                 '"next_agent": "supervisor"',
                 '"instructions": ""',
                 '"task_results": {}',
+                '"task_result_versions": {}',
+                '"task_results_summary": ""',
+                '"task_results_summary_fingerprint": ""',
             ],
         ),
         (
@@ -2620,3 +2623,66 @@ async def test_pattern_nodes_use_request_scoped_model_config(
     assert any("def make_llm(" in cell.content for cell in config_code_cells)
     assert composition.feedback.resolved_model == "gpt-5.2"
     assert composition.feedback.resolved_api_base == "https://example.test/v1"
+
+
+def test_subagents_task_results_summary_is_builtin_not_duplicate_extension(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Verify task_results_summary, task_result_versions, and task_results_summary_fingerprint are recognized as built-in subagents state fields."""
+    monkeypatch.setattr(composer_module, "ChatOpenAI", DummyLLM)
+    composer = composer_module.NotebookComposer()
+    state_schema = {
+        "user_input": "User question",
+        "task_results_summary": "Existing supervisor summary field",
+        "task_results_summary_fingerprint": "Existing summary fingerprint",
+        "task_result_versions": "Existing task result versions",
+        "custom_domain_field": "Extra domain metadata",
+    }
+    extensions = composer._state_schema_extensions("subagents", state_schema)
+    assert "task_results_summary" not in extensions
+    assert "task_results_summary_fingerprint" not in extensions
+    assert "task_result_versions" not in extensions
+    assert "custom_domain_field" in extensions
+    assert "user_input" in extensions
+
+    # Also test generated state code does not duplicate task_results_summary or other context fields
+    state_cells = composer._create_state_cells(
+        {
+            "architecture_type": "subagents",
+            "state_schema": state_schema,
+        }
+    )
+    code_content = state_cells[1].content
+    assert code_content.count("task_results_summary: str") == 1
+    assert code_content.count("task_results_summary_fingerprint: str") == 1
+    assert code_content.count("task_result_versions: Annotated[Dict[str, int], merge_dicts]") == 1
+
+
+def test_shared_supervisor_context_fields_are_reserved_for_autoagent_and_hybrid(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Delegated supervisor fields must not be duplicated in generated schemas."""
+    monkeypatch.setattr(composer_module, "ChatOpenAI", DummyLLM)
+    composer = composer_module.NotebookComposer()
+    state_schema = {
+        "task_results_summary": "Summary",
+        "task_results_summary_fingerprint": "Fingerprint",
+        "task_result_versions": "Versions",
+    }
+
+    for architecture_type in ("autoagent", "hybrid"):
+        extensions = composer._state_schema_extensions(
+            architecture_type,
+            state_schema,
+        )
+        assert not extensions
+
+    execution = composer._create_execution_cells(
+        {
+            "architecture_type": "hybrid",
+            "nodes": [],
+        }
+    )[1].content
+    assert '"task_result_versions": {}' in execution
+    assert '"task_results_summary": ""' in execution
+    assert '"task_results_summary_fingerprint": ""' in execution

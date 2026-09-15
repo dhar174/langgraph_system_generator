@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Union
 
 from langgraph_system_generator.patterns.router import RouterPattern
 from langgraph_system_generator.patterns.subagents import SubagentsPattern
@@ -40,7 +40,7 @@ from langchain_core.messages import BaseMessage
 from langgraph.graph.message import add_messages
 
 
-def merge_dicts(left: Dict[str, str], right: Dict[str, str]) -> Dict[str, str]:
+def merge_dicts(left: Dict[str, Any], right: Dict[str, Any]) -> Dict[str, Any]:
     """Reducer used to merge hybrid workflow outputs."""
     merged = dict(left or {{}})
     merged.update(right or {{}})
@@ -61,6 +61,9 @@ class WorkflowState(TypedDict, total=False):
     dispatch_log: Annotated[List[str], operator.add]
     results: Annotated[Dict[str, str], merge_dicts]
     task_results: Annotated[Dict[str, str], merge_dicts]
+    task_result_versions: Annotated[Dict[str, int], merge_dicts]
+    task_results_summary: str
+    task_results_summary_fingerprint: str
     final_output: str
 {additional}'''
 

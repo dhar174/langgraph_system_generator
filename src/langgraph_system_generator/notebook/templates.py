@@ -171,6 +171,9 @@ def run_graph_cells(architecture_type: str | None = None) -> List[CellSpec]:
                 "next": "supervisor",
                 "instructions": "",
                 "task_results": {},
+                "task_result_versions": {},
+                "task_results_summary": "",
+                "task_results_summary_fingerprint": "",
             }
             """).strip()
     elif architecture_type == "autoagent":
