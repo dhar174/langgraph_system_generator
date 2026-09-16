@@ -23,6 +23,7 @@ from langgraph_system_generator.generator.state import (
     ArchitectureSelectionResult,
     Constraint,
     DocSnippet,
+    DocsRetrievalFeedback,
 )
 from langgraph_system_generator.generator.utils import extract_json_from_llm_response
 from langgraph_system_generator.rag.retriever import DocsRetriever
@@ -45,6 +46,7 @@ class ArchitectureSelector:
         model_config: ModelConfig | None = None,
         architecture_registry: ArchitectureRegistry | None = None,
         docs_service: Any | None = None,
+        docs_mode: str = "live",
     ):
         self.llm = build_chat_llm(
             model=model,
@@ -52,6 +54,8 @@ class ArchitectureSelector:
             chat_openai_class=ChatOpenAI,
         )
         self.docs_retriever = docs_service if docs_service is not None else docs_retriever
+        self.docs_mode = docs_mode
+        self.docs_retrieval_feedback_delta: DocsRetrievalFeedback | None = None
         self.architecture_registry = (
             architecture_registry.clone()
             if architecture_registry is not None
@@ -59,11 +63,16 @@ class ArchitectureSelector:
         )
 
     async def select_architecture(
-        self, constraints: List[Constraint], docs_context: List[DocSnippet]
+        self,
+        constraints: List[Constraint],
+        docs_context: List[DocSnippet],
+        *,
+        mode: str | None = None,
     ) -> ArchitectureSelectionResult:
         """Select router vs subagents vs hybrid vs autoagent pattern."""
 
-        prompt_docs = await self._select_prompt_docs(docs_context)
+        effective_mode = mode or self.docs_mode
+        prompt_docs = await self._select_prompt_docs(docs_context, mode=effective_mode)
         docs_considered = [self._doc_label(doc) for doc in prompt_docs]
 
         constraints_text = "\n".join(
@@ -276,6 +285,8 @@ Recommend the best architecture."""
     async def _select_prompt_docs(
         self,
         docs_context: List[DocSnippet],
+        *,
+        mode: str = "live",
     ) -> List[Dict[str, Any]]:
         """Collect, weight, dedupe, and cap selector prompt docs."""
 
@@ -298,14 +309,66 @@ Recommend the best architecture."""
                     query_specs.append((query, weight))
 
             if query_specs:
+                attempted: list[str] = []
+                statuses: dict[str, str] = {}
+                used: list[str] = []
+                feedback_warnings: list[str] = []
+                fallback_used = False
+
                 async def _retrieve_query_docs(query: str) -> List[Any]:
+                    nonlocal fallback_used
                     if hasattr(self.docs_retriever, "aretrieve"):
-                        res = await self.docs_retriever.aretrieve(query, k=prompt_limit)
+                        try:
+                            res = await self.docs_retriever.aretrieve(query, k=prompt_limit, mode=mode)
+                        except Exception as exc:  # noqa: BLE001
+                            logger.warning(
+                                "Docs retrieval failed in ArchitectureSelector for query '%s': %s",
+                                query,
+                                exc,
+                            )
+                            return []
+
+                        feedback = getattr(res, "feedback", None)
+                        if feedback is not None:
+                            for s in getattr(feedback, "attempted_sources", []):
+                                if s not in attempted:
+                                    attempted.append(s)
+                            statuses.update(getattr(feedback, "source_statuses", {}))
+                            for s in getattr(feedback, "used_sources", []):
+                                if s not in used:
+                                    used.append(s)
+                            if getattr(feedback, "fallback_used", False):
+                                fallback_used = True
+                            for w in getattr(feedback, "warnings", []):
+                                if w not in feedback_warnings and len(feedback_warnings) < 10:
+                                    feedback_warnings.append(w)
+                        else:
+                            for s in getattr(res, "attempted_sources", []):
+                                if s not in attempted:
+                                    attempted.append(s)
+                            statuses.update(getattr(res, "source_statuses", {}))
+                            for s in getattr(res, "used_sources", []):
+                                if s not in used:
+                                    used.append(s)
+                            if getattr(res, "fallback_used", False):
+                                fallback_used = True
+                            for w in getattr(res, "warnings", []):
+                                if w not in feedback_warnings and len(feedback_warnings) < 10:
+                                    feedback_warnings.append(w)
+
                         if hasattr(res, "snippets"):
                             return res.snippets
                         return res or []
                     if hasattr(self.docs_retriever, "retrieve"):
-                        res = await asyncio.to_thread(self.docs_retriever.retrieve, query, prompt_limit)
+                        try:
+                            res = await asyncio.to_thread(self.docs_retriever.retrieve, query, prompt_limit)
+                        except Exception as exc:  # noqa: BLE001
+                            logger.warning(
+                                "Docs retrieval failed in ArchitectureSelector for query '%s': %s",
+                                query,
+                                exc,
+                            )
+                            return []
                         if hasattr(res, "snippets"):
                             return res.snippets
                         return res or []
@@ -319,6 +382,15 @@ Recommend the best architecture."""
                         normalized = self._normalize_doc(doc)
                         normalized["weighted_relevance_score"] = self._doc_score(normalized) * weight
                         normalized_docs.append(normalized)
+
+                if attempted or statuses or used or feedback_warnings or fallback_used:
+                    self.docs_retrieval_feedback_delta = DocsRetrievalFeedback(
+                        attempted_sources=attempted,
+                        source_statuses=statuses,
+                        used_sources=used,
+                        fallback_used=fallback_used,
+                        warnings=feedback_warnings,
+                    )
 
         if not normalized_docs:
             normalized_docs = [self._normalize_doc(doc) for doc in docs_context]

@@ -17,9 +17,7 @@ Tests:
 
 from __future__ import annotations
 
-import asyncio
-from typing import Any, List
-from unittest.mock import AsyncMock, patch
+from typing import List
 
 import pytest
 
@@ -353,6 +351,15 @@ async def test_architecture_selector_bypass_regression(monkeypatch):
     service.registry.register(primary)
     service.registry.register(fallback)
 
+    class StubLLM:
+        def __init__(self, *_args, **_kwargs):
+            pass
+
+    monkeypatch.setattr(
+        "langgraph_system_generator.generator.agents.architecture_selector.ChatOpenAI",
+        StubLLM,
+    )
+
     # Pass the provider-neutral service as docs_service to ArchitectureSelector
     selector = ArchitectureSelector(docs_service=service)
 
@@ -493,3 +500,445 @@ def test_import_isolation():
     assert hasattr(rag_pkg, "LangChainDocsLocalProvider")
     assert hasattr(rag_pkg, "Context7DocsProvider")
     assert hasattr(gen_pkg, "DocsRetrievalFeedback")
+
+
+@pytest.mark.asyncio
+async def test_architecture_selector_docs_mode_stub_canary(monkeypatch):
+    """ArchitectureSelector in stub mode must not call live providers during prompt docs selection."""
+    from langgraph_system_generator.generator.agents.architecture_selector import ArchitectureSelector
+    from langgraph_system_generator.generator.state import Constraint
+
+    primary = StubProvider("langchain-docs-local", available=True, raise_on_call=True)
+    secondary = StubProvider("context7", available=True, raise_on_call=True)
+    cached_snippet = DocSnippet(
+        content="Offline doc for selector",
+        source="cache:offline",
+        source_kind="cached_repo_docs",
+        relevance_score=0.9,
+    )
+    fallback = StubProvider("cached_repo_docs", available=True, snippets=[cached_snippet])
+
+    service = DocsRetrievalService(precedence=["langchain-docs-local", "context7", "cached_repo_docs"])
+    service.registry.register(primary)
+    service.registry.register(secondary)
+    service.registry.register(fallback)
+
+    selector = ArchitectureSelector(
+        docs_service=service,
+        docs_mode="stub",
+    )
+    monkeypatch.setattr(
+        "langgraph_system_generator.generator.agents.architecture_selector.ChatOpenAI",
+        StubLLM,
+    )
+
+    await selector.select_architecture(
+        constraints=[Constraint(type="goal", value="support router")],
+        docs_context=[],
+        mode="stub",
+    )
+    assert primary.call_count == 0
+    assert secondary.call_count == 0
+    assert fallback.call_count > 0
+    assert selector.docs_retrieval_feedback_delta is not None
+    assert selector.docs_retrieval_feedback_delta.fallback_used is True
+
+
+@pytest.mark.asyncio
+async def test_provider_exception_boundary():
+    """Uncaught exceptions in provider is_available or aretrieve must be trapped safely."""
+    exploding_avail = StubProvider("langchain-docs-local", available=True)
+
+    def boom_avail(mode="live"):
+        raise RuntimeError("Fatal availability crash")
+
+    exploding_avail.is_available = boom_avail
+
+    exploding_retrieval = StubProvider("context7", available=True)
+
+    async def boom_retrieve(query, k=5, mode="live"):
+        raise ValueError("Fatal retrieval crash")
+
+    exploding_retrieval.aretrieve = boom_retrieve
+
+    safe_snippet = DocSnippet(
+        content="Safe fallback content",
+        source="cache:safe",
+        source_kind="cached_repo_docs",
+        relevance_score=0.8,
+    )
+    fallback = StubProvider("cached_repo_docs", available=True, snippets=[safe_snippet])
+
+    service = DocsRetrievalService(precedence=["langchain-docs-local", "context7", "cached_repo_docs"])
+    service.registry.register(exploding_avail)
+    service.registry.register(exploding_retrieval)
+    service.registry.register(fallback)
+
+    result = await service.aretrieve("Crash test", k=5, mode="live")
+
+    assert result.source_statuses["langchain-docs-local"] == "failed"
+    assert result.source_statuses["context7"] == "failed"
+    assert result.source_statuses["cached_repo_docs"] == "success"
+    assert result.used_sources == ["cached_repo_docs"]
+    assert len(result.warnings) >= 2
+    assert any("Fatal availability crash" in w for w in result.warnings)
+    assert any("Fatal retrieval crash" in w for w in result.warnings)
+
+
+@pytest.mark.asyncio
+async def test_cache_non_eviction_on_live_provider_exception(monkeypatch):
+    """RAG retrieval node errors must not evict healthy DocsRetriever cache entries."""
+    from langgraph_system_generator.generator.nodes import rag_retrieval_node
+    import langgraph_system_generator.generator.nodes as nodes_mod
+
+    mock_retriever = object()
+    nodes_mod._DOCS_RETRIEVER_CACHE["default"] = mock_retriever
+
+    class BrokenService:
+        async def aretrieve(self, *args, **kwargs):
+            raise ConnectionError("Live network timeout")
+
+    monkeypatch.setattr(nodes_mod, "get_default_docs_retrieval_service", lambda: BrokenService())
+
+    state = {
+        "user_prompt": "Hello test",
+        "generation_mode": "live",
+    }
+    result = await rag_retrieval_node(state)
+
+    assert result["docs_context"] == []
+    assert result["docs_retrieval_feedback"].fallback_used is True
+    assert "default" in nodes_mod._DOCS_RETRIEVER_CACHE
+    assert nodes_mod._DOCS_RETRIEVER_CACHE["default"] is mock_retriever
+
+
+@pytest.mark.asyncio
+async def test_crosscheck_control_flow_primary_success_never_falls_back(monkeypatch):
+    """When primary succeeds, Context7 failure/unavailability must NEVER trigger cached fallback."""
+    monkeypatch.setattr(settings, "docs_context7_crosscheck", True)
+
+    primary_snippet = DocSnippet(
+        content="Primary LangChain documentation",
+        source="langchain:docs",
+        source_kind="langchain-docs-local",
+        relevance_score=0.95,
+    )
+    primary = StubProvider("langchain-docs-local", available=True, snippets=[primary_snippet])
+    secondary = StubProvider(
+        "context7",
+        available=True,
+        status=DocsSourceStatus.FAILED,
+        error_message="Rate limit 429",
+    )
+    fallback = StubProvider(
+        "cached_repo_docs",
+        available=True,
+        snippets=[
+            DocSnippet(
+                content="Cached fallback",
+                source="cache:doc",
+                source_kind="cached_repo_docs",
+                relevance_score=0.5,
+            )
+        ],
+    )
+
+    service = DocsRetrievalService(precedence=["langchain-docs-local", "context7", "cached_repo_docs"])
+    service.registry.register(primary)
+    service.registry.register(secondary)
+    service.registry.register(fallback)
+
+    result = await service.aretrieve("Query", k=5, mode="live")
+
+    assert result.used_sources == ["langchain-docs-local"]
+    assert result.fallback_used is False
+    assert fallback.call_count == 0
+    assert result.source_statuses.get("cached_repo_docs") == "skipped"
+
+
+@pytest.mark.asyncio
+async def test_crosscheck_capping_survival(monkeypatch):
+    """Context7 crosscheck snippet must survive capping when primary fills quota."""
+    monkeypatch.setattr(settings, "docs_context7_crosscheck", True)
+
+    primary_snippets = [
+        DocSnippet(
+            content=f"Primary doc content {i}",
+            source=f"langchain:doc{i}",
+            source_kind="langchain-docs-local",
+            relevance_score=0.9,
+        )
+        for i in range(5)
+    ]
+    primary = StubProvider("langchain-docs-local", available=True, snippets=primary_snippets)
+    c7_snippet = DocSnippet(
+        content="Context7 freshest API updates",
+        source="context7:freshest",
+        source_kind="context7",
+        relevance_score=0.85,
+    )
+    secondary = StubProvider("context7", available=True, snippets=[c7_snippet])
+    fallback = StubProvider("cached_repo_docs", available=True, snippets=[])
+
+    service = DocsRetrievalService(precedence=["langchain-docs-local", "context7", "cached_repo_docs"])
+    service.registry.register(primary)
+    service.registry.register(secondary)
+    service.registry.register(fallback)
+
+    result = await service.aretrieve("LangGraph updates", k=5, mode="live")
+
+    assert len(result.snippets) == 5
+    assert any(s.source_kind == "context7" for s in result.snippets)
+    assert "context7" in result.used_sources
+    assert "langchain-docs-local" in result.used_sources
+    assert result.fallback_used is False
+
+
+@pytest.mark.asyncio
+async def test_plugin_prepend_ordering():
+    """Prepended custom provider must execute ahead of cached fallback and satisfy retrieval."""
+    plugin_snippet = DocSnippet(
+        content="High priority internal wiki snippet",
+        source="wiki:priority",
+        source_kind="custom_wiki",
+        relevance_score=0.99,
+    )
+    plugin_provider = StubProvider("custom_wiki", available=True, snippets=[plugin_snippet])
+    cached_provider = StubProvider(
+        "cached_repo_docs",
+        available=True,
+        snippets=[
+            DocSnippet(
+                content="Cached doc",
+                source="cache:1",
+                source_kind="cached_repo_docs",
+                relevance_score=0.5,
+            )
+        ],
+    )
+
+    service = DocsRetrievalService(precedence=[])
+    service.registry.register(cached_provider)
+    service.registry.register(plugin_provider, prepend=True)
+
+    result = await service.aretrieve("Internal question", k=5, mode="live")
+
+    assert result.used_sources == ["custom_wiki"]
+    assert result.fallback_used is False
+    assert cached_provider.call_count == 0
+    assert result.attempted_sources[0] == "custom_wiki"
+
+
+def test_faiss_distance_ordering_and_fields():
+    """FAISS distance ordering converts smaller distance to higher similarity without 1.0 clamping."""
+    from langgraph_system_generator.rag.retriever import RetrievedSnippet
+    from langgraph_system_generator.rag.providers.cached_vector import CachedVectorDocsProvider
+
+    snippet = RetrievedSnippet(
+        content="Some text",
+        source="file.md",
+        relevance_score=0.9,
+        distance=0.1,
+        score_kind="distance",
+    )
+    assert snippet.distance == 0.1
+    assert snippet.score_kind == "distance"
+
+    provider = CachedVectorDocsProvider()
+    score_small_dist = provider._normalize_score(0.1, is_dist=True)
+    score_large_dist = provider._normalize_score(2.0, is_dist=True)
+
+    assert score_small_dist > score_large_dist
+    assert 0.0 <= score_small_dist <= 1.0
+    assert 0.0 <= score_large_dist <= 1.0
+
+
+@pytest.mark.asyncio
+async def test_zero_score_preservation():
+    """Scores of 0.0 must be preserved rather than truth-value defaulting to 1.0."""
+    from langgraph_system_generator.rag.providers.langchain_local import LangChainDocsLocalProvider
+    from langgraph_system_generator.rag.providers.context7 import Context7DocsProvider
+
+    local_provider = LangChainDocsLocalProvider()
+    norm_local = local_provider._normalize_snippet({
+        "content": "Zero score doc",
+        "url": "https://python.langchain.com/zero",
+        "score": 0.0,
+    })
+    assert norm_local.relevance_score == 0.0
+
+    c7_provider = Context7DocsProvider()
+    norm_c7 = c7_provider._normalize_snippet({
+        "snippet": "Zero score c7",
+        "url": "https://context7.ai/doc",
+        "score": 0.0,
+    })
+    assert norm_c7.relevance_score == 0.0
+
+
+def test_context7_explicit_endpoint_availability(monkeypatch):
+    """Context7 is available when explicit endpoint is given even if api_key is omitted."""
+    from langgraph_system_generator.rag.providers.context7 import Context7DocsProvider
+
+    monkeypatch.delenv("CONTEXT7_API_KEY", raising=False)
+    monkeypatch.delenv("CONTEXT7_MCP_URL", raising=False)
+
+    provider = Context7DocsProvider(api_key=None, endpoint_url="http://localhost:8080/mcp")
+    assert provider.is_available("live") is True
+
+
+def test_custom_provider_provenance_in_context_pack():
+    """Custom provider source_kind must be preserved and counted in GenerationContextPack."""
+    from langgraph_system_generator.generator.nodes import _build_generation_context_pack
+
+    state = {
+        "user_prompt": "Enterprise agent",
+        "generation_mode": "live",
+        "constraints": [],
+        "docs_context": [
+            DocSnippet(
+                content="Enterprise internal docs",
+                source="wiki://enterprise",
+                source_kind="custom_enterprise_wiki",
+                relevance_score=0.98,
+            )
+        ],
+        "docs_retrieval_feedback": {
+            "attempted_sources": ["custom_enterprise_wiki"],
+            "source_statuses": {"custom_enterprise_wiki": "success"},
+            "used_sources": ["custom_enterprise_wiki"],
+            "fallback_used": False,
+            "warnings": [],
+        },
+    }
+
+    pack = _build_generation_context_pack(state)
+
+    assert len(pack.docs_snippets) == 1
+    assert pack.docs_snippets[0]["source_kind"] == "custom_enterprise_wiki"
+    assert pack.source_summary["source_counts"].get("custom_enterprise_wiki") == 1
+    assert "custom_enterprise_wiki" in pack.source_summary["source_precedence"]
+    assert pack.source_summary["fallback_used"] is False
+
+
+@pytest.mark.asyncio
+async def test_architecture_retrieval_feedback_merges_into_state(monkeypatch):
+    """Architecture selection node merges docs retrieval feedback delta into state."""
+    from langgraph_system_generator.generator.nodes import architecture_selection_node
+    from langgraph_system_generator.generator.state import DocsRetrievalFeedback
+
+    initial_feedback = DocsRetrievalFeedback(
+        attempted_sources=["langchain-docs-local"],
+        source_statuses={"langchain-docs-local": "success"},
+        used_sources=["langchain-docs-local"],
+        fallback_used=False,
+        warnings=["Initial warning"],
+    )
+
+    state = {
+        "user_prompt": "Customer support router",
+        "generation_mode": "stub",
+        "constraints": [],
+        "docs_context": [],
+        "docs_retrieval_feedback": initial_feedback,
+    }
+
+    monkeypatch.setattr(
+        "langgraph_system_generator.generator.agents.architecture_selector.ChatOpenAI",
+        StubLLM,
+    )
+
+    result = await architecture_selection_node(state)
+
+    assert "docs_retrieval_feedback" in result
+    merged = result["docs_retrieval_feedback"]
+    assert "langchain-docs-local" in merged.attempted_sources
+    assert "cached_repo_docs" in merged.attempted_sources
+    assert "Initial warning" in merged.warnings
+
+
+@pytest.mark.asyncio
+async def test_context7_resolve_library_id_to_query_docs_workflow(monkeypatch):
+    """Context7 queries resolve-library-id then query-docs with unmasked Bearer header."""
+    from langgraph_system_generator.rag.providers.context7 import Context7DocsProvider
+    import httpx
+
+    calls = []
+
+    def mock_post(url, headers=None, json=None, timeout=None):
+        calls.append({"url": url, "headers": headers, "json": json})
+        method = json.get("params", {}).get("name")
+        req_id = json.get("id", 1)
+        if method == "resolve-library-id":
+            res_content = '{"libraries": [{"library_id": "langgraph-core-id"}]}'
+            return httpx.Response(
+                200,
+                json={
+                    "jsonrpc": "2.0",
+                    "id": req_id,
+                    "result": {"content": [{"text": res_content}]},
+                },
+            )
+        elif method == "query-docs":
+            res_content = '{"snippets": [{"snippet": "Query docs snippet", "url": "https://c7.ai/docs", "score": 0.9}]}'
+            return httpx.Response(
+                200,
+                json={
+                    "jsonrpc": "2.0",
+                    "id": req_id,
+                    "result": {"content": [{"text": res_content}]},
+                },
+            )
+        return httpx.Response(404)
+
+    provider = Context7DocsProvider(api_key="secret-c7-key-123", endpoint_url="http://context7.mock/mcp")
+    monkeypatch.setattr(provider._http_client, "post", mock_post)
+
+    res = await provider.aretrieve("LangGraph graph", k=2, mode="live")
+
+    assert res.status == DocsSourceStatus.SUCCESS
+    assert len(res.snippets) == 1
+    assert res.snippets[0].content == "Query docs snippet"
+    assert len(calls) == 2
+    assert calls[0]["headers"]["Authorization"] == "Bearer secret-c7-key-123"
+    assert calls[1]["headers"]["Authorization"] == "Bearer secret-c7-key-123"
+    assert calls[0]["json"]["params"]["name"] == "resolve-library-id"
+    assert calls[1]["json"]["params"]["name"] == "query-docs"
+
+
+def test_sanitized_warnings_redaction():
+    """Warnings must redact Bearer tokens and API keys and bound lengths."""
+    from langgraph_system_generator.rag.orchestrator import _sanitize_warning, _add_warning
+
+    dirty = "Failed with Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9 and api_key=sk-1234567890abcdef"
+    clean = _sanitize_warning(dirty)
+    assert "[REDACTED]" in clean
+    assert "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9" not in clean
+    assert "sk-1234567890abcdef" not in clean
+
+    warnings = []
+    for i in range(15):
+        _add_warning(warnings, f"Warning {i}")
+    assert len(warnings) == 10
+
+
+@pytest.mark.asyncio
+async def test_langchain_local_connection_error_breaks_loop(monkeypatch):
+    """Network connection failure breaks tool compatibility loop immediately."""
+    from langgraph_system_generator.rag.providers.langchain_local import LangChainDocsLocalProvider
+    import httpx
+
+    call_count = 0
+
+    def mock_post(*args, **kwargs):
+        nonlocal call_count
+        call_count += 1
+        raise httpx.ConnectError("Connection refused")
+
+    provider = LangChainDocsLocalProvider(endpoint_url="http://127.0.0.1:9999/mcp")
+    monkeypatch.setattr(provider._http_client, "post", mock_post)
+
+    res = await provider.aretrieve("Query", k=3, mode="live")
+    assert res.status == DocsSourceStatus.FAILED
+    assert call_count == 1
+    assert "Connection refused" in (res.error_message or "")

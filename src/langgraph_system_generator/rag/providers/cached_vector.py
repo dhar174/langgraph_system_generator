@@ -16,7 +16,6 @@ from langgraph_system_generator.rag.base import (
 )
 from langgraph_system_generator.rag.normalizer import create_normalized_doc_snippet
 from langgraph_system_generator.rag.retriever import DocsRetriever
-from langgraph_system_generator.utils.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -86,13 +85,28 @@ class CachedVectorDocsProvider(DocsSourceProvider):
         snippets: List[DocSnippet] = []
         for item in raw_results:
             if isinstance(item, DocSnippet):
+                if not item.source_kind:
+                    item = create_normalized_doc_snippet(
+                        content=item.content,
+                        source=item.source,
+                        source_kind=self.source_id,
+                        relevance_score=item.relevance_score,
+                        heading=item.heading,
+                    )
                 snippets.append(item)
             elif isinstance(item, dict):
-                score = item.get("relevance_score")
-                is_dist = False
-                if score is None:
-                    score = item.get("distance", item.get("score", 0.0))
-                    is_dist = "distance" in item
+                score_kind = item.get("score_kind")
+                if score_kind == "similarity":
+                    is_dist = False
+                    score = item.get("relevance_score", item.get("score", 0.0))
+                else:
+                    is_dist = True
+                    if "distance" in item:
+                        score = item["distance"]
+                    elif item.get("relevance_score") is not None:
+                        score = item["relevance_score"]
+                    else:
+                        score = item.get("score", 0.0)
                 snippets.append(
                     create_normalized_doc_snippet(
                         content=item.get("content", ""),
@@ -108,11 +122,18 @@ class CachedVectorDocsProvider(DocsSourceProvider):
                 metadata = getattr(item, "metadata", {})
                 source = metadata.get("source", "") if isinstance(metadata, dict) else ""
                 heading = metadata.get("heading") or metadata.get("title") if isinstance(metadata, dict) else None
-                score = getattr(item, "relevance_score", None)
-                is_dist = False
-                if score is None:
-                    score = getattr(item, "distance", getattr(item, "score", 0.0))
-                    is_dist = hasattr(item, "distance")
+                score_kind = getattr(item, "score_kind", None)
+                if score_kind == "similarity":
+                    is_dist = False
+                    score = getattr(item, "relevance_score", getattr(item, "score", 0.0))
+                else:
+                    is_dist = True
+                    if hasattr(item, "distance"):
+                        score = getattr(item, "distance")
+                    elif getattr(item, "relevance_score", None) is not None:
+                        score = getattr(item, "relevance_score")
+                    else:
+                        score = getattr(item, "score", 0.0)
                 snippets.append(
                     create_normalized_doc_snippet(
                         content=content,

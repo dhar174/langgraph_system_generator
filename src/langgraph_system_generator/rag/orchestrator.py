@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import importlib
 import logging
+import re
 from threading import Lock
 from typing import Any, Dict, List, Optional
 
@@ -22,6 +23,44 @@ from langgraph_system_generator.rag.providers.langchain_local import LangChainDo
 from langgraph_system_generator.utils.config import settings
 
 logger = logging.getLogger(__name__)
+
+
+def _sanitize_warning(msg: str, max_chars: int = 200) -> str:
+    """Sanitize provider error messages by redacting secrets and bounding length."""
+    if not msg:
+        return ""
+    cleaned = re.sub(r'(bearer\s+)[A-Za-z0-9_\-\.]+', r'\1[REDACTED]', str(msg), flags=re.IGNORECASE)
+    cleaned = re.sub(r'([?&](?:api_key|key|token|secret)=)[^&\s]+', r'\1[REDACTED]', cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r'(["\'](?:api_key|key|token|password|secret)["\']\s*:\s*["\'])[^"\']+', r'\1[REDACTED]', cleaned, flags=re.IGNORECASE)
+    compact = " ".join(cleaned.split())
+    if len(compact) > max_chars:
+        return compact[: max(0, max_chars - 3)].rstrip() + "..."
+    return compact
+
+
+def _add_warning(warnings_list: List[str], warning: str, max_warnings: int = 10, max_chars: int = 200) -> None:
+    """Safely append a bounded, deduplicated warning."""
+    if len(warnings_list) >= max_warnings:
+        return
+    sanitized = _sanitize_warning(warning, max_chars=max_chars)
+    if sanitized and sanitized not in warnings_list:
+        warnings_list.append(sanitized)
+
+
+def _load_docs_source_plugin(module_name: str, registry: DocsSourceRegistry) -> None:
+    """Load a documentation source plugin module into the registry.
+
+    Supports canonical 'register_docs_source_plugins' and backward-compatible 'register_docs_sources'.
+    """
+    try:
+        mod = importlib.import_module(module_name)
+        for fn_name in ("register_docs_source_plugins", "register_docs_sources"):
+            register_func = getattr(mod, fn_name, None)
+            if callable(register_func):
+                register_func(registry)
+                break
+    except Exception as exc:
+        logger.warning("Failed loading docs source plugin module '%s': %s", module_name, exc)
 
 
 class DocsRetrievalResult(BaseModel):
@@ -52,13 +91,7 @@ class DocsSourceRegistry:
     def _load_plugin_modules(self) -> None:
         """Load optional plugin modules from settings to register custom sources."""
         for module_name in settings.docs_source_plugin_modules:
-            try:
-                mod = importlib.import_module(module_name)
-                register_func = getattr(mod, "register_docs_source_plugins", None)
-                if callable(register_func):
-                    register_func(self)
-            except Exception as exc:
-                logger.warning("Failed loading docs source plugin module '%s': %s", module_name, exc)
+            _load_docs_source_plugin(module_name, self)
 
     def list_providers(self) -> List[DocsSourceProvider]:
         return list(self._providers)
@@ -97,20 +130,12 @@ class DocsRetrievalService:
         self.registry = registry or DocsSourceRegistry()
         if plugin_modules:
             for module_name in plugin_modules:
-                try:
-                    mod = importlib.import_module(module_name)
-                    for fn_name in ("register_docs_sources", "register_docs_source_plugins"):
-                        fn = getattr(mod, fn_name, None)
-                        if callable(fn):
-                            fn(self.registry)
-                except Exception as exc:
-                    logger.warning("Failed loading docs source plugin module '%s': %s", module_name, exc)
-        self.precedence = list(precedence) if precedence is not None else [
-            "langchain-docs-local",
-            "context7",
-            "cached_repo_docs",
-            "rag_index",
-        ]
+                _load_docs_source_plugin(module_name, self.registry)
+        self._explicit_precedence = precedence is not None
+        if precedence is not None:
+            self.precedence = list(precedence)
+        else:
+            self.precedence = [p.source_id for p in self.registry.list_providers()]
 
     async def aretrieve(
         self,
@@ -121,7 +146,7 @@ class DocsRetrievalService:
         """Execute documentation retrieval following declared source precedence.
 
         Precedence in live mode:
-            1. langchain-docs-local
+            1. langchain-docs-local (or prepended plugins)
             2. context7
             3. cached / local vector store (cached_repo_docs / rag_index)
 
@@ -133,12 +158,14 @@ class DocsRetrievalService:
         statuses: Dict[str, str] = {}
         warnings: List[str] = []
         accumulated_snippets: List[DocSnippet] = []
-        fallback_used = False
 
-        ordered_source_ids = list(self.precedence)
-        for p in self.registry.list_providers():
-            if p.source_id not in ordered_source_ids:
-                ordered_source_ids.append(p.source_id)
+        if self._explicit_precedence:
+            ordered_source_ids = list(self.precedence)
+            for p in self.registry.list_providers():
+                if p.source_id not in ordered_source_ids:
+                    ordered_source_ids.append(p.source_id)
+        else:
+            ordered_source_ids = [p.source_id for p in self.registry.list_providers()]
 
         if mode == "stub":
             # Stub mode: strictly bypass live providers
@@ -149,45 +176,122 @@ class DocsRetrievalService:
                 if source_id in ("langchain-docs-local", "context7"):
                     statuses[source_id] = DocsSourceStatus.SKIPPED.value
                 else:
-                    if provider.is_available(mode=mode):
+                    try:
+                        is_avail = provider.is_available(mode=mode)
+                    except Exception as exc:
+                        statuses[source_id] = DocsSourceStatus.FAILED.value
+                        _add_warning(warnings, f"{source_id} availability check failed: {exc}")
+                        continue
+
+                    if is_avail:
                         attempted.append(source_id)
-                        res = await provider.aretrieve(query, k=k, mode=mode)
-                        statuses[source_id] = res.status.value
-                        if res.status == DocsSourceStatus.SUCCESS and res.snippets:
-                            used.append(source_id)
-                            accumulated_snippets.extend(res.snippets)
-                            fallback_used = True
-                            break
-                        elif res.status == DocsSourceStatus.FAILED and res.error_message:
-                            warnings.append(f"Cached docs retrieval failed: {res.error_message}")
-                            fallback_used = True
+                        try:
+                            res = await provider.aretrieve(query, k=k, mode=mode)
+                            statuses[source_id] = res.status.value
+                            if res.status == DocsSourceStatus.SUCCESS and res.snippets:
+                                used.append(source_id)
+                                accumulated_snippets.extend(res.snippets)
+                                break
+                            elif res.status == DocsSourceStatus.FAILED and res.error_message:
+                                _add_warning(warnings, f"Cached docs retrieval failed: {res.error_message}")
+                        except Exception as exc:
+                            statuses[source_id] = DocsSourceStatus.FAILED.value
+                            _add_warning(warnings, f"{source_id} retrieval error: {exc}")
                     else:
                         statuses[source_id] = DocsSourceStatus.UNAVAILABLE.value
 
+            # Deduplicate and cap
+            deduped: Dict[str, DocSnippet] = {}
+            for s in accumulated_snippets:
+                key = f"{s.source}#{s.heading or ''}#{s.content[:60]}"
+                if key not in deduped:
+                    deduped[key] = s
+            final_snippets = list(deduped.values())[:k]
+
+            final_used = [
+                src for src in attempted
+                if any(s.source_kind == src or s.source.startswith(f"{src}:") or s.source == src for s in final_snippets)
+            ]
+            fallback_used = any(s in ("cached_repo_docs", "rag_index") for s in final_used)
+
+            for source_id in ordered_source_ids:
+                if source_id not in statuses:
+                    statuses[source_id] = DocsSourceStatus.SKIPPED.value
+
             return DocsRetrievalResult(
-                snippets=accumulated_snippets[:k],
+                snippets=final_snippets,
                 attempted_sources=attempted,
-                used_sources=used,
+                used_sources=final_used,
                 source_statuses=statuses,
-                fallback_used=fallback_used or not bool(accumulated_snippets),
+                fallback_used=fallback_used,
                 warnings=warnings,
             )
 
         # Live mode: execute precedence order
         found_useful_live = False
+        crosscheck_snippets: List[DocSnippet] = []
 
         for source_id in ordered_source_ids:
             provider = self.registry.get_provider(source_id)
             if provider is None:
                 continue
 
-            attempted.append(source_id)
+            # If useful primary live docs were already found:
+            if found_useful_live:
+                # We only probe Context7 if crosscheck is enabled and source_id is context7
+                if settings.docs_context7_crosscheck and source_id == "context7":
+                    if source_id not in attempted:
+                        attempted.append(source_id)
+                    try:
+                        is_avail = provider.is_available(mode=mode)
+                    except Exception as exc:
+                        statuses[source_id] = DocsSourceStatus.FAILED.value
+                        _add_warning(warnings, f"{source_id} availability check failed: {exc}")
+                        break
+                    if not is_avail:
+                        statuses[source_id] = DocsSourceStatus.UNAVAILABLE.value
+                        _add_warning(warnings, f"{source_id} is unavailable for cross-check.")
+                        break
 
-            if not provider.is_available(mode=mode):
-                statuses[source_id] = DocsSourceStatus.UNAVAILABLE.value
+                    try:
+                        res = await provider.aretrieve(query, k=k, mode=mode)
+                        statuses[source_id] = res.status.value
+                        if res.status == DocsSourceStatus.SUCCESS and res.snippets:
+                            used.append(source_id)
+                            crosscheck_snippets = res.snippets
+                        elif res.status == DocsSourceStatus.FAILED and res.error_message:
+                            _add_warning(warnings, f"{source_id} cross-check failed: {res.error_message}")
+                    except Exception as exc:
+                        statuses[source_id] = DocsSourceStatus.FAILED.value
+                        _add_warning(warnings, f"{source_id} cross-check error: {exc}")
+                # STOP! Regardless of whether Context7 succeeded, failed, was empty, or unavailable,
+                # we MUST break immediately and NEVER fall through to cached fallback!
+                break
+
+            # Normal precedence loop (found_useful_live is False)
+            if source_id not in attempted:
+                attempted.append(source_id)
+
+            try:
+                is_avail = provider.is_available(mode=mode)
+            except Exception as exc:
+                statuses[source_id] = DocsSourceStatus.FAILED.value
+                _add_warning(warnings, f"{source_id} availability check failed: {exc}")
                 continue
 
-            res = await provider.aretrieve(query, k=k, mode=mode)
+            if not is_avail:
+                statuses[source_id] = DocsSourceStatus.UNAVAILABLE.value
+                if source_id in ("langchain-docs-local", "context7"):
+                    _add_warning(warnings, f"{source_id} is unavailable in live mode; proceeding to next source.")
+                continue
+
+            try:
+                res = await provider.aretrieve(query, k=k, mode=mode)
+            except Exception as exc:
+                statuses[source_id] = DocsSourceStatus.FAILED.value
+                _add_warning(warnings, f"{source_id} retrieval error: {exc}")
+                continue
+
             statuses[source_id] = res.status.value
 
             if res.status == DocsSourceStatus.SUCCESS and res.snippets:
@@ -203,20 +307,14 @@ class DocsRetrievalService:
                     found_useful_live = True
                     break
                 else:
-                    fallback_used = True
                     break
 
             elif res.status == DocsSourceStatus.EMPTY:
                 continue
             elif res.status == DocsSourceStatus.FAILED:
                 if res.error_message:
-                    warnings.append(f"{source_id} retrieval failed: {res.error_message}")
+                    _add_warning(warnings, f"{source_id} retrieval failed: {res.error_message}")
                 continue
-
-        if any(s in ("cached_repo_docs", "rag_index") for s in used):
-            fallback_used = True
-        if not accumulated_snippets and attempted:
-            fallback_used = True
 
         # Mark any remaining unattempted providers as skipped
         for source_id in ordered_source_ids:
@@ -224,18 +322,44 @@ class DocsRetrievalService:
                 statuses[source_id] = DocsSourceStatus.SKIPPED.value
 
         # Cap and deduplicate snippets
+        # If crosscheck_snippets exist, reserve quota so at least one Context7 snippet survives final cap (Finding 6)
+        if crosscheck_snippets and accumulated_snippets:
+            reserve_crosscheck = min(len(crosscheck_snippets), max(1, k // 3))
+            primary_quota = max(1, k - reserve_crosscheck)
+            candidate_snippets = accumulated_snippets[:primary_quota] + crosscheck_snippets[:reserve_crosscheck]
+        elif crosscheck_snippets:
+            candidate_snippets = crosscheck_snippets
+        else:
+            candidate_snippets = accumulated_snippets
+
         deduped: Dict[str, DocSnippet] = {}
-        for s in accumulated_snippets:
+        for s in candidate_snippets:
             key = f"{s.source}#{s.heading or ''}#{s.content[:60]}"
             if key not in deduped:
                 deduped[key] = s
 
         final_snippets = list(deduped.values())[:k]
 
+        # If crosscheck returned snippets and k >= 1, guarantee representation in final_snippets
+        if crosscheck_snippets and not any(s.source_kind == "context7" for s in final_snippets):
+            if final_snippets:
+                final_snippets[-1] = crosscheck_snippets[0]
+            else:
+                final_snippets.append(crosscheck_snippets[0])
+
+        # Recompute used_sources strictly from final snippets (Finding 16)
+        final_used = [
+            src for src in attempted
+            if any(s.source_kind == src or s.source.startswith(f"{src}:") or s.source == src for s in final_snippets)
+        ]
+
+        # fallback_used is True iff cached/local fallback actually participated and provided snippets (Finding 17)
+        fallback_used = any(s in ("cached_repo_docs", "rag_index") for s in final_used)
+
         return DocsRetrievalResult(
             snippets=final_snippets,
             attempted_sources=attempted,
-            used_sources=used,
+            used_sources=final_used,
             source_statuses=statuses,
             fallback_used=fallback_used,
             warnings=warnings,

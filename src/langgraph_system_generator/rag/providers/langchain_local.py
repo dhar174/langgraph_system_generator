@@ -99,7 +99,7 @@ class LangChainDocsLocalProvider(DocsSourceProvider):
                         )
                     except httpx.RequestError as req_err:
                         last_error = f"HTTP request failed: {req_err}"
-                        continue
+                        break
 
                     if response.status_code != 200:
                         last_error = f"HTTP {response.status_code}: {response.text[:200]}"
@@ -188,12 +188,18 @@ class LangChainDocsLocalProvider(DocsSourceProvider):
                         if isinstance(sub_parsed, list):
                             for sub_item in sub_parsed:
                                 if isinstance(sub_item, dict):
+                                    sub_score = sub_item.get("score")
+                                    if sub_score is None:
+                                        sub_score = sub_item.get("relevance_score")
+                                    if sub_score is None:
+                                        sub_score = 0.95
                                     snippets.append(
                                         create_normalized_doc_snippet(
                                             content=sub_item.get("content") or sub_item.get("text") or "",
                                             source=sub_item.get("url") or sub_item.get("source") or fallback_url,
                                             source_kind=self.source_id,
                                             heading=sub_item.get("title") or sub_item.get("heading"),
+                                            relevance_score=sub_score,
                                         )
                                     )
                             continue
@@ -202,7 +208,11 @@ class LangChainDocsLocalProvider(DocsSourceProvider):
 
                 source = item.get("url") or item.get("source") or fallback_url
                 heading = item.get("title") or item.get("heading")
-                score = item.get("score") or item.get("relevance_score") or 0.95
+                score = item.get("score")
+                if score is None:
+                    score = item.get("relevance_score")
+                if score is None:
+                    score = 0.95
                 if text:
                     snippets.append(
                         create_normalized_doc_snippet(
