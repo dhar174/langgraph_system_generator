@@ -9,19 +9,18 @@ tools:
   - view_file
   - write_to_file
   - replace_file_content
+  - multi_replace_file_content
   - list_dir
   - grep_search
-  - find_by_name
   - run_command
   - invoke_subagent
   - send_message
   - manage_subagents
   - define_subagent
-  - call_mcp_tool
 mainAgent: true
 subagent: false
-model: pro
-commandExecutionPolicy: sandbox
+model: flash
+commandExecutionPolicy: auto
 inheritMcp: true
 skills:
   - multi-agent-architect
