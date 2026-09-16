@@ -96,17 +96,18 @@ class CachedVectorDocsProvider(DocsSourceProvider):
                 snippets.append(item)
             elif isinstance(item, dict):
                 score_kind = item.get("score_kind")
-                if score_kind == "similarity":
+                if score_kind == "distance":
+                    is_dist = True
+                    score = item.get("distance", item.get("relevance_score", 0.0))
+                elif score_kind == "similarity":
                     is_dist = False
                     score = item.get("relevance_score", item.get("score", 0.0))
-                else:
+                elif "distance" in item and "relevance_score" not in item:
                     is_dist = True
-                    if "distance" in item:
-                        score = item["distance"]
-                    elif item.get("relevance_score") is not None:
-                        score = item["relevance_score"]
-                    else:
-                        score = item.get("score", 0.0)
+                    score = item["distance"]
+                else:
+                    is_dist = False
+                    score = item.get("relevance_score", item.get("score", 0.0))
                 snippets.append(
                     create_normalized_doc_snippet(
                         content=item.get("content", ""),
@@ -123,17 +124,18 @@ class CachedVectorDocsProvider(DocsSourceProvider):
                 source = metadata.get("source", "") if isinstance(metadata, dict) else ""
                 heading = metadata.get("heading") or metadata.get("title") if isinstance(metadata, dict) else None
                 score_kind = getattr(item, "score_kind", None)
-                if score_kind == "similarity":
+                if score_kind == "distance":
+                    is_dist = True
+                    score = getattr(item, "distance", getattr(item, "relevance_score", 0.0))
+                elif score_kind == "similarity":
                     is_dist = False
                     score = getattr(item, "relevance_score", getattr(item, "score", 0.0))
-                else:
+                elif hasattr(item, "distance") and not hasattr(item, "relevance_score"):
                     is_dist = True
-                    if hasattr(item, "distance"):
-                        score = getattr(item, "distance")
-                    elif getattr(item, "relevance_score", None) is not None:
-                        score = getattr(item, "relevance_score")
-                    else:
-                        score = getattr(item, "score", 0.0)
+                    score = getattr(item, "distance")
+                else:
+                    is_dist = False
+                    score = getattr(item, "relevance_score", getattr(item, "score", 0.0))
                 snippets.append(
                     create_normalized_doc_snippet(
                         content=content,

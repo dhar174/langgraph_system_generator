@@ -30,7 +30,7 @@ def _sanitize_warning(msg: str, max_chars: int = 200) -> str:
     if not msg:
         return ""
     cleaned = re.sub(r'(bearer\s+)[A-Za-z0-9_\-\.]+', r'\1[REDACTED]', str(msg), flags=re.IGNORECASE)
-    cleaned = re.sub(r'([?&](?:api_key|key|token|secret)=)[^&\s]+', r'\1[REDACTED]', cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r'((?:[?&]|\b)(?:api_key|key|token|secret)=)[^&\s]+', r'\1[REDACTED]', cleaned, flags=re.IGNORECASE)
     cleaned = re.sub(r'(["\'](?:api_key|key|token|password|secret)["\']\s*:\s*["\'])[^"\']+', r'\1[REDACTED]', cleaned, flags=re.IGNORECASE)
     compact = " ".join(cleaned.split())
     if len(compact) > max_chars:
@@ -212,7 +212,7 @@ class DocsRetrievalService:
                 src for src in attempted
                 if any(s.source_kind == src or s.source.startswith(f"{src}:") or s.source == src for s in final_snippets)
             ]
-            fallback_used = any(s in ("cached_repo_docs", "rag_index") for s in final_used)
+            fallback_used = True
 
             for source_id in ordered_source_ids:
                 if source_id not in statuses:
@@ -353,8 +353,11 @@ class DocsRetrievalService:
             if any(s.source_kind == src or s.source.startswith(f"{src}:") or s.source == src for s in final_snippets)
         ]
 
-        # fallback_used is True iff cached/local fallback actually participated and provided snippets (Finding 17)
-        fallback_used = any(s in ("cached_repo_docs", "rag_index") for s in final_used)
+        # fallback_used is True if cached/local fallback was used or attempted (Finding 8 & 17)
+        fallback_used = (
+            any(s in ("cached_repo_docs", "rag_index") for s in final_used)
+            or any(s in ("cached_repo_docs", "rag_index") for s in attempted)
+        )
 
         return DocsRetrievalResult(
             snippets=final_snippets,

@@ -59,6 +59,8 @@ class Context7DocsProvider(DocsSourceProvider):
         if isinstance(result, dict):
             if result.get("libraryId"):
                 return str(result["libraryId"]).strip()
+            if result.get("library_id"):
+                return str(result["library_id"]).strip()
             content = result.get("content") or []
             if isinstance(content, list):
                 for c in content:
@@ -67,8 +69,20 @@ class Context7DocsProvider(DocsSourceProvider):
                         if text.startswith("{"):
                             try:
                                 parsed = json.loads(text)
-                                if isinstance(parsed, dict) and parsed.get("libraryId"):
-                                    return str(parsed["libraryId"]).strip()
+                                if isinstance(parsed, dict):
+                                    if parsed.get("libraryId"):
+                                        return str(parsed["libraryId"]).strip()
+                                    if parsed.get("library_id"):
+                                        return str(parsed["library_id"]).strip()
+                                    libs = parsed.get("libraries") or parsed.get("results")
+                                    if isinstance(libs, list) and libs:
+                                        first = libs[0]
+                                        if isinstance(first, dict):
+                                            val = first.get("library_id") or first.get("libraryId") or first.get("id")
+                                            if val:
+                                                return str(val).strip()
+                                        elif isinstance(first, str):
+                                            return first.strip()
                             except Exception:
                                 pass
                         match = re.search(r"(/[A-Za-z0-9_\-\.]+(?:/[A-Za-z0-9_\-\.]+)+)", text)
@@ -251,6 +265,53 @@ class Context7DocsProvider(DocsSourceProvider):
         for item in items:
             if isinstance(item, dict):
                 text = item.get("text") or item.get("content") or ""
+                if isinstance(text, str) and (text.strip().startswith("[") or text.strip().startswith("{")):
+                    try:
+                        sub_parsed = json.loads(text.strip())
+                        if isinstance(sub_parsed, dict):
+                            sub_items = (
+                                sub_parsed.get("snippets")
+                                or sub_parsed.get("documents")
+                                or sub_parsed.get("content")
+                            )
+                            if isinstance(sub_items, list):
+                                for sub_item in sub_items:
+                                    if isinstance(sub_item, dict):
+                                        sub_score = sub_item.get("score")
+                                        if sub_score is None:
+                                            sub_score = sub_item.get("relevance_score")
+                                        if sub_score is None:
+                                            sub_score = 0.9
+                                        snippets.append(
+                                            create_normalized_doc_snippet(
+                                                content=sub_item.get("content") or sub_item.get("snippet") or sub_item.get("text") or "",
+                                                source=sub_item.get("url") or sub_item.get("source") or fallback_source,
+                                                source_kind=self.source_id,
+                                                relevance_score=sub_score,
+                                                heading=sub_item.get("title") or sub_item.get("heading"),
+                                            )
+                                        )
+                                continue
+                        elif isinstance(sub_parsed, list):
+                            for sub_item in sub_parsed:
+                                if isinstance(sub_item, dict):
+                                    sub_score = sub_item.get("score")
+                                    if sub_score is None:
+                                        sub_score = sub_item.get("relevance_score")
+                                    if sub_score is None:
+                                        sub_score = 0.9
+                                    snippets.append(
+                                        create_normalized_doc_snippet(
+                                            content=sub_item.get("content") or sub_item.get("snippet") or sub_item.get("text") or "",
+                                            source=sub_item.get("url") or sub_item.get("source") or fallback_source,
+                                            source_kind=self.source_id,
+                                            relevance_score=sub_score,
+                                            heading=sub_item.get("title") or sub_item.get("heading"),
+                                        )
+                                    )
+                            continue
+                    except Exception:
+                        pass
                 source = item.get("url") or item.get("source") or fallback_source
                 heading = item.get("title") or item.get("heading")
                 score = item.get("score")

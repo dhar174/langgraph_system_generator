@@ -33,8 +33,9 @@
   `GenerationContextPack` and CLI/API manifests for strict provenance truthfulness (`attempted_sources`,
   `source_statuses`, `used_sources`, `fallback_used`);
   (7) Preserved 100% offline, deterministic stub mode with zero mandatory package additions in `setup.py`;
-  (8) Added 12 comprehensive tests in `tests/unit/test_rag_source_precedence.py` covering all precedence,
-  fallback, bypass prevention, caching, and isolation requirements.
+  (8) Added 26 comprehensive tests in `tests/unit/test_rag_source_precedence.py` covering all precedence,
+  fallback, bypass prevention, caching, credential-free isolation, warning redaction, Context7 endpoint availability,
+  library ID resolution, zero-score preservation, and FAISS distance ordering requirements (resolving all 20 review findings).
 - Restored bounded supervisor context-window management (Issue #65 / PR #374)
   adapted surgically to the modern LangGraph v1 architecture: scalar
   `task_results_summary: str` state, bounded context preparation with

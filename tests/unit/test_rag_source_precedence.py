@@ -17,8 +17,6 @@ Tests:
 
 from __future__ import annotations
 
-from typing import List
-
 import pytest
 
 from langgraph_system_generator.generator.agents.architecture_selector import (
@@ -28,7 +26,6 @@ from langgraph_system_generator.generator.nodes import (
     _build_generation_context_pack,
     _reset_docs_retriever_cache_for_tests,
     architecture_selection_node,
-    get_cached_docs_retriever,
     rag_retrieval_node,
 )
 from langgraph_system_generator.generator.state import (
@@ -44,13 +41,11 @@ from langgraph_system_generator.rag.base import (
 from langgraph_system_generator.rag.normalizer import (
     create_normalized_doc_snippet,
     normalize_relevance_score,
-    normalize_snippet_content,
 )
 from langgraph_system_generator.rag.orchestrator import (
     DocsRetrievalService,
     DocsSourceRegistry,
     _reset_docs_retrieval_service_for_tests,
-    get_default_docs_retrieval_service,
 )
 from langgraph_system_generator.rag.providers.cached_vector import (
     CachedVectorDocsProvider,
@@ -71,16 +66,18 @@ class StubProvider(DocsSourceProvider):
         self,
         source_id: str,
         available: bool = True,
-        snippets: List[DocSnippet] | None = None,
+        snippets: list[DocSnippet] | None = None,
         status: DocsSourceStatus = DocsSourceStatus.SUCCESS,
         error: str | None = None,
+        error_message: str | None = None,
         raise_on_call: bool = False,
     ):
         self.source_id = source_id
         self.available = available
         self.snippets = snippets or []
         self.status = status
-        self.error = error
+        self.error = error or error_message
+        self.error_message = self.error
         self.raise_on_call = raise_on_call
         self.call_count = 0
         self.last_query: str | None = None
@@ -111,6 +108,28 @@ class StubProvider(DocsSourceProvider):
             status=self.status,
             snippets=self.snippets[:k],
         )
+
+
+class StubLLM:
+    """Stub LLM for tests avoiding network calls or API keys."""
+
+    def __init__(self, *_args, **_kwargs):
+        pass
+
+    def with_structured_output(self, *_args, **_kwargs):
+        return None
+
+    async def ainvoke(self, *_args, **_kwargs):
+        import json
+
+        from langchain_core.messages import AIMessage
+        payload = {
+            "architecture_type": "router",
+            "patterns": {"primary": "router", "secondary": []},
+            "justification": "Stub router justification",
+            "feedback": {"confidence": 1.0, "alternatives": [], "tradeoffs": []},
+        }
+        return AIMessage(content=json.dumps(payload))
 
 
 @pytest.fixture(autouse=True)
@@ -491,8 +510,8 @@ async def test_custom_plugin_module_registration(monkeypatch):
 
 def test_import_isolation():
     """Core package and RAG module imports work cleanly without live MCP adapters."""
-    import langgraph_system_generator.rag as rag_pkg
     import langgraph_system_generator.generator as gen_pkg
+    import langgraph_system_generator.rag as rag_pkg
 
     assert hasattr(rag_pkg, "DocsRetrievalService")
     assert hasattr(rag_pkg, "DocsSourceRegistry")
@@ -505,8 +524,9 @@ def test_import_isolation():
 @pytest.mark.asyncio
 async def test_architecture_selector_docs_mode_stub_canary(monkeypatch):
     """ArchitectureSelector in stub mode must not call live providers during prompt docs selection."""
-    from langgraph_system_generator.generator.agents.architecture_selector import ArchitectureSelector
-    from langgraph_system_generator.generator.state import Constraint
+    from langgraph_system_generator.generator.agents.architecture_selector import (
+        ArchitectureSelector,
+    )
 
     primary = StubProvider("langchain-docs-local", available=True, raise_on_call=True)
     secondary = StubProvider("context7", available=True, raise_on_call=True)
@@ -588,7 +608,6 @@ async def test_provider_exception_boundary():
 @pytest.mark.asyncio
 async def test_cache_non_eviction_on_live_provider_exception(monkeypatch):
     """RAG retrieval node errors must not evict healthy DocsRetriever cache entries."""
-    from langgraph_system_generator.generator.nodes import rag_retrieval_node
     import langgraph_system_generator.generator.nodes as nodes_mod
 
     mock_retriever = object()
@@ -732,7 +751,6 @@ async def test_plugin_prepend_ordering():
 def test_faiss_distance_ordering_and_fields():
     """FAISS distance ordering converts smaller distance to higher similarity without 1.0 clamping."""
     from langgraph_system_generator.rag.retriever import RetrievedSnippet
-    from langgraph_system_generator.rag.providers.cached_vector import CachedVectorDocsProvider
 
     snippet = RetrievedSnippet(
         content="Some text",
@@ -741,12 +759,12 @@ def test_faiss_distance_ordering_and_fields():
         distance=0.1,
         score_kind="distance",
     )
-    assert snippet.distance == 0.1
-    assert snippet.score_kind == "distance"
+    assert snippet["distance"] == 0.1
+    assert snippet["score_kind"] == "distance"
 
-    provider = CachedVectorDocsProvider()
-    score_small_dist = provider._normalize_score(0.1, is_dist=True)
-    score_large_dist = provider._normalize_score(2.0, is_dist=True)
+
+    score_small_dist = normalize_relevance_score(0.1, is_distance=True)
+    score_large_dist = normalize_relevance_score(2.0, is_distance=True)
 
     assert score_small_dist > score_large_dist
     assert 0.0 <= score_small_dist <= 1.0
@@ -756,41 +774,39 @@ def test_faiss_distance_ordering_and_fields():
 @pytest.mark.asyncio
 async def test_zero_score_preservation():
     """Scores of 0.0 must be preserved rather than truth-value defaulting to 1.0."""
-    from langgraph_system_generator.rag.providers.langchain_local import LangChainDocsLocalProvider
-    from langgraph_system_generator.rag.providers.context7 import Context7DocsProvider
-
     local_provider = LangChainDocsLocalProvider()
-    norm_local = local_provider._normalize_snippet({
-        "content": "Zero score doc",
-        "url": "https://python.langchain.com/zero",
-        "score": 0.0,
-    })
-    assert norm_local.relevance_score == 0.0
+    snippets_local = local_provider._extract_snippets_from_payload(
+        {"snippets": [{"content": "Zero score doc", "url": "https://python.langchain.com/zero", "score": 0.0}]},
+        fallback_url="https://python.langchain.com",
+    )
+    assert len(snippets_local) == 1
+    assert snippets_local[0].relevance_score == 0.0
 
     c7_provider = Context7DocsProvider()
-    norm_c7 = c7_provider._normalize_snippet({
-        "snippet": "Zero score c7",
-        "url": "https://context7.ai/doc",
-        "score": 0.0,
-    })
-    assert norm_c7.relevance_score == 0.0
+    snippets_c7 = c7_provider._parse_snippets(
+        {"snippets": [{"text": "Zero score c7", "url": "https://context7.ai/doc", "score": 0.0}]},
+        fallback_source="https://context7.ai",
+    )
+    assert len(snippets_c7) == 1
+    assert snippets_c7[0].relevance_score == 0.0
 
 
 def test_context7_explicit_endpoint_availability(monkeypatch):
     """Context7 is available when explicit endpoint is given even if api_key is omitted."""
-    from langgraph_system_generator.rag.providers.context7 import Context7DocsProvider
-
+    monkeypatch.setattr(settings, "docs_live_sources_enabled", True)
+    monkeypatch.setattr(settings, "context7_docs_enabled", True)
     monkeypatch.delenv("CONTEXT7_API_KEY", raising=False)
     monkeypatch.delenv("CONTEXT7_MCP_URL", raising=False)
 
     provider = Context7DocsProvider(api_key=None, endpoint_url="http://localhost:8080/mcp")
     assert provider.is_available("live") is True
 
+    provider_none = Context7DocsProvider(api_key=None, endpoint_url=None)
+    assert provider_none.is_available("live") is False
+
 
 def test_custom_provider_provenance_in_context_pack():
     """Custom provider source_kind must be preserved and counted in GenerationContextPack."""
-    from langgraph_system_generator.generator.nodes import _build_generation_context_pack
-
     state = {
         "user_prompt": "Enterprise agent",
         "generation_mode": "live",
@@ -824,9 +840,6 @@ def test_custom_provider_provenance_in_context_pack():
 @pytest.mark.asyncio
 async def test_architecture_retrieval_feedback_merges_into_state(monkeypatch):
     """Architecture selection node merges docs retrieval feedback delta into state."""
-    from langgraph_system_generator.generator.nodes import architecture_selection_node
-    from langgraph_system_generator.generator.state import DocsRetrievalFeedback
-
     initial_feedback = DocsRetrievalFeedback(
         attempted_sources=["langchain-docs-local"],
         source_statuses={"langchain-docs-local": "success"},
@@ -860,15 +873,17 @@ async def test_architecture_retrieval_feedback_merges_into_state(monkeypatch):
 @pytest.mark.asyncio
 async def test_context7_resolve_library_id_to_query_docs_workflow(monkeypatch):
     """Context7 queries resolve-library-id then query-docs with unmasked Bearer header."""
-    from langgraph_system_generator.rag.providers.context7 import Context7DocsProvider
     import httpx
+
+    monkeypatch.setattr(settings, "docs_live_sources_enabled", True)
+    monkeypatch.setattr(settings, "context7_docs_enabled", True)
 
     calls = []
 
-    def mock_post(url, headers=None, json=None, timeout=None):
-        calls.append({"url": url, "headers": headers, "json": json})
-        method = json.get("params", {}).get("name")
-        req_id = json.get("id", 1)
+    async def mock_post(self, url, headers=None, json=None, timeout=None):
+        calls.append({"url": str(url), "headers": headers or {}, "json": json or {}})
+        method = (json or {}).get("params", {}).get("name")
+        req_id = (json or {}).get("id", 1)
         if method == "resolve-library-id":
             res_content = '{"libraries": [{"library_id": "langgraph-core-id"}]}'
             return httpx.Response(
@@ -891,8 +906,9 @@ async def test_context7_resolve_library_id_to_query_docs_workflow(monkeypatch):
             )
         return httpx.Response(404)
 
+    monkeypatch.setattr(httpx.AsyncClient, "post", mock_post)
+
     provider = Context7DocsProvider(api_key="secret-c7-key-123", endpoint_url="http://context7.mock/mcp")
-    monkeypatch.setattr(provider._http_client, "post", mock_post)
 
     res = await provider.aretrieve("LangGraph graph", k=2, mode="live")
 
@@ -900,15 +916,18 @@ async def test_context7_resolve_library_id_to_query_docs_workflow(monkeypatch):
     assert len(res.snippets) == 1
     assert res.snippets[0].content == "Query docs snippet"
     assert len(calls) == 2
-    assert calls[0]["headers"]["Authorization"] == "Bearer secret-c7-key-123"
-    assert calls[1]["headers"]["Authorization"] == "Bearer secret-c7-key-123"
+    assert calls[0]["headers"].get("Authorization") == "Bearer secret-c7-key-123"
+    assert calls[1]["headers"].get("Authorization") == "Bearer secret-c7-key-123"
     assert calls[0]["json"]["params"]["name"] == "resolve-library-id"
     assert calls[1]["json"]["params"]["name"] == "query-docs"
 
 
 def test_sanitized_warnings_redaction():
     """Warnings must redact Bearer tokens and API keys and bound lengths."""
-    from langgraph_system_generator.rag.orchestrator import _sanitize_warning, _add_warning
+    from langgraph_system_generator.rag.orchestrator import (
+        _add_warning,
+        _sanitize_warning,
+    )
 
     dirty = "Failed with Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9 and api_key=sk-1234567890abcdef"
     clean = _sanitize_warning(dirty)
@@ -925,19 +944,20 @@ def test_sanitized_warnings_redaction():
 @pytest.mark.asyncio
 async def test_langchain_local_connection_error_breaks_loop(monkeypatch):
     """Network connection failure breaks tool compatibility loop immediately."""
-    from langgraph_system_generator.rag.providers.langchain_local import LangChainDocsLocalProvider
     import httpx
+
+    monkeypatch.setattr(settings, "docs_live_sources_enabled", True)
 
     call_count = 0
 
-    def mock_post(*args, **kwargs):
+    async def mock_post(self, *args, **kwargs):
         nonlocal call_count
         call_count += 1
         raise httpx.ConnectError("Connection refused")
 
-    provider = LangChainDocsLocalProvider(endpoint_url="http://127.0.0.1:9999/mcp")
-    monkeypatch.setattr(provider._http_client, "post", mock_post)
+    monkeypatch.setattr(httpx.AsyncClient, "post", mock_post)
 
+    provider = LangChainDocsLocalProvider(endpoint_url="http://127.0.0.1:9999/mcp")
     res = await provider.aretrieve("Query", k=3, mode="live")
     assert res.status == DocsSourceStatus.FAILED
     assert call_count == 1

@@ -1,6 +1,6 @@
 ## What Works
 
-- Actual runtime docs-source precedence for generation context (Issue #375):
+- Actual runtime docs-source precedence for generation context (Issue #375 / PR #377):
   provider-neutral `DocsRetrievalService` with `LangChainDocsLocalProvider`
   (live local MCP/Mintlify search), `Context7DocsProvider` (live secondary/cross-check),
   and `CachedVectorDocsProvider` (resilient process-local cached fallback).
@@ -8,7 +8,9 @@
   eliminating the architecture selection bypass. State contract includes
   `DocsRetrievalFeedback` with truthful provenance in `GenerationContextPack` and
   manifests (`attempted_sources`, `source_statuses`, `used_sources`, `fallback_used`).
-  Stub mode remains 100% offline and deterministic.
+  All 20 review findings resolved and covered by 26 unit tests in
+  `tests/unit/test_rag_source_precedence.py`. Full unit test suite (707 tests) and
+  pattern test suite (82 tests) pass 100%. Stub mode remains 100% offline and deterministic.
 - CLI-based generation supports both deterministic stub output and live
   generator-graph execution.
 - The FastAPI server exposes synchronous generation, async generation startup,
