@@ -370,10 +370,6 @@ async def test_architecture_selector_bypass_regression(monkeypatch):
     service.registry.register(primary)
     service.registry.register(fallback)
 
-    class StubLLM:
-        def __init__(self, *_args, **_kwargs):
-            pass
-
     monkeypatch.setattr(
         "langgraph_system_generator.generator.agents.architecture_selector.ChatOpenAI",
         StubLLM,
@@ -543,13 +539,14 @@ async def test_architecture_selector_docs_mode_stub_canary(monkeypatch):
     service.registry.register(secondary)
     service.registry.register(fallback)
 
-    selector = ArchitectureSelector(
-        docs_service=service,
-        docs_mode="stub",
-    )
     monkeypatch.setattr(
         "langgraph_system_generator.generator.agents.architecture_selector.ChatOpenAI",
         StubLLM,
+    )
+
+    selector = ArchitectureSelector(
+        docs_service=service,
+        docs_mode="stub",
     )
 
     await selector.select_architecture(
