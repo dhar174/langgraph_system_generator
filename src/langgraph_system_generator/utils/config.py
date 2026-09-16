@@ -192,6 +192,46 @@ class Settings(BaseSettings):
             "Optional QA/repair plugin modules loaded to extend internal validator and repair registries."
         ),
     )
+    docs_live_sources_enabled: bool = Field(
+        default=False,
+        description="Whether live docs sources (MCP, Context7) are enabled for generation.",
+    )
+    langchain_docs_mcp_url: Optional[str] = Field(
+        default=None,
+        description="Optional URL or endpoint for local LangChain docs MCP server or proxy.",
+    )
+    context7_docs_enabled: bool = Field(
+        default=False,
+        description="Whether Context7 live docs integration is enabled.",
+    )
+    context7_api_key: Optional[str] = Field(
+        default=None,
+        description="API key for Context7 documentation lookup.",
+    )
+    context7_mcp_url: Optional[str] = Field(
+        default=None,
+        description="Optional URL or endpoint for Context7 MCP server.",
+    )
+    docs_context7_crosscheck: bool = Field(
+        default=False,
+        description="Whether to query Context7 as a cross-check even when primary source succeeds.",
+    )
+    docs_source_plugin_modules: Annotated[list[str], NoDecode] = Field(
+        default_factory=list,
+        description=(
+            "Optional docs source plugin modules loaded to extend internal docs sources."
+        ),
+    )
+    docs_max_snippet_chars: int = Field(
+        default=1200,
+        ge=100,
+        description="Maximum character count per retrieved documentation snippet.",
+    )
+    docs_max_total_snippets: int = Field(
+        default=10,
+        ge=1,
+        description="Maximum total snippets to keep in docs context.",
+    )
 
     @field_validator("requirements_constraint_types", mode="before")
     @classmethod
@@ -437,6 +477,40 @@ class Settings(BaseSettings):
                 normalized.append(module_name)
         return normalized
 
+    @field_validator("docs_source_plugin_modules", mode="before")
+    @classmethod
+    def _parse_docs_source_plugin_modules(cls, value):
+        """Accept JSON arrays or comma-separated plugin module strings."""
+        if value in (None, ""):
+            return []
+        if isinstance(value, list):
+            raw_items = value
+        elif isinstance(value, str):
+            stripped = value.strip()
+            if not stripped:
+                return []
+            if stripped.startswith("["):
+                try:
+                    parsed = json.loads(stripped)
+                except json.JSONDecodeError as exc:
+                    raise ValueError(
+                        f"Invalid JSON in docs_source_plugin_modules: {exc}"
+                    ) from exc
+                if not isinstance(parsed, list):
+                    raise ValueError("docs_source_plugin_modules must decode to a list")
+                raw_items = parsed
+            else:
+                raw_items = stripped.split(",")
+        else:
+            return value
+
+        normalized: list[str] = []
+        for raw_item in raw_items:
+            module_name = str(raw_item or "").strip()
+            if module_name and module_name not in normalized:
+                normalized.append(module_name)
+        return normalized
+
     @field_validator("notebook_composer_parallelism_mode", mode="before")
     @classmethod
     def _validate_notebook_composer_parallelism_mode(cls, value):
@@ -473,6 +547,15 @@ _TEST_SETTINGS_ENV_KEYS = (
     "TOOLCHAIN_ENGINEER_PLUGIN_MODULES",
     "GRAPH_DESIGNER_PLUGIN_MODULES",
     "QA_REPAIR_PLUGIN_MODULES",
+    "DOCS_LIVE_SOURCES_ENABLED",
+    "LANGCHAIN_DOCS_MCP_URL",
+    "CONTEXT7_DOCS_ENABLED",
+    "CONTEXT7_API_KEY",
+    "CONTEXT7_MCP_URL",
+    "DOCS_CONTEXT7_CROSSCHECK",
+    "DOCS_SOURCE_PLUGIN_MODULES",
+    "DOCS_MAX_SNIPPET_CHARS",
+    "DOCS_MAX_TOTAL_SNIPPETS",
 )
 
 

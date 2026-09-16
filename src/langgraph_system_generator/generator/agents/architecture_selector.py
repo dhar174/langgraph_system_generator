@@ -40,17 +40,18 @@ class ArchitectureSelector:
 
     def __init__(
         self,
-        docs_retriever: DocsRetriever | None = None,
+        docs_retriever: Any | None = None,
         model: str | None = None,
         model_config: ModelConfig | None = None,
         architecture_registry: ArchitectureRegistry | None = None,
+        docs_service: Any | None = None,
     ):
         self.llm = build_chat_llm(
             model=model,
             model_config=model_config,
             chat_openai_class=ChatOpenAI,
         )
-        self.docs_retriever = docs_retriever
+        self.docs_retriever = docs_service if docs_service is not None else docs_retriever
         self.architecture_registry = (
             architecture_registry.clone()
             if architecture_registry is not None
@@ -297,11 +298,21 @@ Recommend the best architecture."""
                     query_specs.append((query, weight))
 
             if query_specs:
+                async def _retrieve_query_docs(query: str) -> List[Any]:
+                    if hasattr(self.docs_retriever, "aretrieve"):
+                        res = await self.docs_retriever.aretrieve(query, k=prompt_limit)
+                        if hasattr(res, "snippets"):
+                            return res.snippets
+                        return res or []
+                    if hasattr(self.docs_retriever, "retrieve"):
+                        res = await asyncio.to_thread(self.docs_retriever.retrieve, query, prompt_limit)
+                        if hasattr(res, "snippets"):
+                            return res.snippets
+                        return res or []
+                    return []
+
                 retrieved_groups = await asyncio.gather(
-                    *[
-                        asyncio.to_thread(self.docs_retriever.retrieve, query, prompt_limit)
-                        for query, _weight in query_specs
-                    ]
+                    *[_retrieve_query_docs(query) for query, _weight in query_specs]
                 )
                 for (_query, weight), docs in zip(query_specs, retrieved_groups):
                     for doc in docs or []:

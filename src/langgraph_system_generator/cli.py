@@ -24,6 +24,7 @@ from langgraph_system_generator.generator.state import (
     build_constraint_type_registry,
     CellSpec,
     Constraint,
+    DocsRetrievalFeedback,
     GenerationContextPack,
     GraphDesignFeedback,
     GraphExportBundle,
@@ -166,9 +167,13 @@ def _build_cli_context_pack(
                 "cached_repo_docs",
                 "rag_index",
             ],
+            "attempted_sources": [],
+            "source_statuses": {},
+            "used_sources": [],
             "docs_snippet_count": 0,
             "source_counts": {},
             "docs_live_required": False,
+            "fallback_used": True,
         },
         fallback_used=True,
         warnings=[
@@ -208,6 +213,15 @@ def _default_state(
         "qa_repair_feedback": QARepairFeedback(),
         "selected_patterns": {},
         "docs_context": [],
+        "docs_retrieval_feedback": DocsRetrievalFeedback(
+            attempted_sources=[],
+            source_statuses={},
+            used_sources=[],
+            fallback_used=True,
+            warnings=[
+                "Shortcut generation path used static repo context facts; live docs retrieval is not required for stub mode."
+            ] if generation_mode == "stub" else [],
+        ),
         "generation_context_pack": _build_cli_context_pack(
             prompt,
             generation_mode=generation_mode,
@@ -1433,6 +1447,15 @@ def _build_stub_result(prompt: str, agent_type: str | None = None) -> Dict[str, 
             "secondary": secondary_patterns,
         },
         "docs_context": [],
+        "docs_retrieval_feedback": DocsRetrievalFeedback(
+            attempted_sources=[],
+            source_statuses={},
+            used_sources=[],
+            fallback_used=True,
+            warnings=[
+                "Shortcut generation path used static repo context facts; live docs retrieval is not required for stub mode."
+            ],
+        ),
         "generation_context_pack": _build_cli_context_pack(
             prompt,
             architecture_type=architecture_type,

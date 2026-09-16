@@ -16,6 +16,25 @@
 
 ## Recent Changes Reflected in the Codebase
 
+- Implemented actual runtime docs-source precedence for generation context (Issue #375 / branch `fix/375-runtime-docs-source-precedence`):
+  (1) Provider-neutral architecture under `src/langgraph_system_generator/rag/` featuring
+  `DocsSourceProvider` ABC, `DocsSourceStatus` (success, empty, unavailable, failed, skipped),
+  `DocsProviderResult`, `DocsRetrievalResult`, `DocsSourceRegistry`, and `DocsRetrievalService`;
+  (2) Providers implemented: `LangChainDocsLocalProvider` (primary live source querying local MCP/Mintlify
+  standard `search` or fallback compatibility endpoints with lazy `httpx`), `Context7DocsProvider`
+  (secondary live source and cross-check with lazy `httpx`), and `CachedVectorDocsProvider` (resilient
+  process-local vector store cache fallback via `_DOCS_RETRIEVER_CACHE` off the event loop via `asyncio.to_thread`);
+  (3) Configurable precedence chain (`langchain-docs-local` -> `context7` -> `cached_repo_docs` / `rag_index`),
+  stop-on-first-useful with optional Context7 cross-check (`docs_context7_crosscheck`), and plugin module discovery;
+  (4) Bounded snippet content truncation (`docs_max_snippet_chars`) and relevance score normalization;
+  (5) Integrated into `rag_retrieval_node` and eliminated the direct `ArchitectureSelector` bypass so pattern
+  selection consumes live documentation context when available;
+  (6) Enhanced `GeneratorState` with `docs_retrieval_feedback: DocsRetrievalFeedback` and wired
+  `GenerationContextPack` and CLI/API manifests for strict provenance truthfulness (`attempted_sources`,
+  `source_statuses`, `used_sources`, `fallback_used`);
+  (7) Preserved 100% offline, deterministic stub mode with zero mandatory package additions in `setup.py`;
+  (8) Added 12 comprehensive tests in `tests/unit/test_rag_source_precedence.py` covering all precedence,
+  fallback, bypass prevention, caching, and isolation requirements.
 - Restored bounded supervisor context-window management (Issue #65 / PR #374)
   adapted surgically to the modern LangGraph v1 architecture: scalar
   `task_results_summary: str` state, bounded context preparation with

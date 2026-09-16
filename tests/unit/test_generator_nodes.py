@@ -408,7 +408,8 @@ async def test_rag_retrieval_node_returns_empty_on_failure(monkeypatch, failure_
 
     result = await rag_retrieval_node({"user_prompt": "Find docs"})
 
-    assert result == {"docs_context": []}
+    assert result["docs_context"] == []
+    assert result["docs_retrieval_feedback"].fallback_used is True
 
 
 @pytest.mark.asyncio
@@ -451,12 +452,14 @@ async def test_rag_retrieval_node_maps_snippets(monkeypatch):
         DocSnippet(
             content="Content A",
             source="source-a",
+            source_kind="cached_repo_docs",
             relevance_score=0.9,
             heading="Heading A",
         ),
         DocSnippet(
             content="Content B",
             source="source-b",
+            source_kind="cached_repo_docs",
             relevance_score=0.5,
             heading=None,
         ),
