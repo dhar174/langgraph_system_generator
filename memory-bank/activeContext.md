@@ -33,18 +33,21 @@
   `GenerationContextPack` and CLI/API manifests for strict provenance truthfulness (`attempted_sources`,
   `source_statuses`, `used_sources`, `fallback_used`);
   (7) Preserved 100% offline, deterministic stub mode with zero mandatory package additions in `setup.py`;
-  (8) Completed 6 PR #377 review correctness fixes:
+  (8) Completed all PR #377 review correctness fixes and P1 MCP protocol updates:
       - Shared MCP Streamable HTTP transport helper `src/langgraph_system_generator/rag/mcp_transport.py`
-        with protocol version `2026-07-28`, `Mcp-Method: tools/call`, `Mcp-Name`, `_meta`, JSON/SSE stream parsing,
-        and connection failure discrimination;
+        with protocol version `2026-07-28`, `Mcp-Method: tools/call`, `Mcp-Name`, Tier-1 namespaced `_meta` keys
+        (`io.modelcontextprotocol/protocolVersion`, `io.modelcontextprotocol/clientCapabilities`, `io.modelcontextprotocol/clientInfo`),
+        omitting un-namespaced `protocolVersion`, JSON/SSE stream parsing, and connection failure discrimination;
+      - Transport error discrimination: `MCPTransportError` (HTTP 4xx/5xx, timeouts, network drops) terminates compatibility tool probing in `LangChainDocsLocalProvider` immediately and fails `Context7DocsProvider` immediately without fallback to `search`;
       - Context7 two-step flow (`resolve-library-id` -> `query-docs`) returning `EMPTY` on empty library ID
         and falling back to `search` only when tools are explicitly rejected as unknown, with Option A default endpoint availability;
-      - LangChain provider immediate loop termination on network/connection failure without retry storm;
       - Strict `fallback_used` semantics (`True` iff a cached/local fallback source actually contributed at least one final snippet);
       - ArchitectureSelector transient docs isolation: `stage_source_statuses` and `consulted_sources` populated while keeping `used_sources` unpolluted and `fallback_used` unflipped;
       - Deterministic concurrent query feedback aggregation in `query_specs` order with strict status reduction rule;
-  (9) 34 comprehensive unit tests in `tests/unit/test_rag_source_precedence.py`, 715 unit tests passing,
-  82 pattern tests passing, flake8 0 issues, mypy 0 issues.
+  (9) 36 comprehensive unit tests in `tests/unit/test_rag_source_precedence.py`, 717 unit tests passing,
+  82 pattern tests passing, flake8 0 issues, mypy 0 issues, deterministic offline stub verified, live wire smoke against `https://docs.langchain.com/mcp` verified (5 snippets, `SUCCESS`).
+  Committed as `eb40bd4` on `fix/375-runtime-docs-source-precedence` and PR #377 updated.
+
 - Restored bounded supervisor context-window management (Issue #65 / PR #374)
   adapted surgically to the modern LangGraph v1 architecture: scalar
   `task_results_summary: str` state, bounded context preparation with
