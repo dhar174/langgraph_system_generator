@@ -1,5 +1,23 @@
 ## What Works
 
+- Actual runtime docs-source precedence for generation context (Issue #375 / PR #377):
+  provider-neutral `DocsRetrievalService` with `LangChainDocsLocalProvider`
+  (live local MCP/Mintlify search), `Context7DocsProvider` (live secondary/cross-check),
+  and `CachedVectorDocsProvider` (resilient process-local cached fallback).
+  `rag_retrieval_node` and `ArchitectureSelector` both route through this service,
+  eliminating the architecture selection bypass. State contract includes
+  `DocsRetrievalFeedback` with truthful provenance in `GenerationContextPack` and
+  manifests (`attempted_sources`, `source_statuses`, `used_sources`, `fallback_used`,
+  `stage_source_statuses`, `consulted_sources`).
+  All review findings resolved:
+  - Shared MCP Streamable HTTP transport helper `mcp_transport.py` with protocol `2026-07-28` and streamable headers.
+  - Context7 two-step flow (`resolve-library-id` -> `query-docs`) and bounded fallback to `search`.
+  - LangChain provider immediate loop termination on network/connection failure.
+  - Strict `fallback_used` semantics (`True` iff fallback actually contributed final snippets).
+  - ArchitectureSelector transient docs provenance isolation without polluting `used_sources` or flipping `fallback_used`.
+  - Deterministic concurrent query feedback aggregation in `query_specs` order.
+  All 34 tests in `tests/unit/test_rag_source_precedence.py` pass. Full unit test suite (715 tests)
+  and pattern test suite (82 tests) pass 100%. Flake8 and mypy pass 100%. Stub mode remains 100% offline and deterministic.
 - CLI-based generation supports both deterministic stub output and live
   generator-graph execution.
 - The FastAPI server exposes synchronous generation, async generation startup,

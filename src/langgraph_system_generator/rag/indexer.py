@@ -216,7 +216,7 @@ class DocsIndexer:
 
         documents: List[Document] = []
         for url, result in zip(self.urls, responses):
-            if isinstance(result, Exception):
+            if isinstance(result, BaseException):
                 logging.warning("Failed to fetch %s: %s", url, result)
                 continue
             doc = self._html_to_document(result, url)
@@ -243,7 +243,7 @@ class DocsIndexer:
         return splitter.split_documents(docs)
 
     async def _fetch(self, session: aiohttp.ClientSession, url: str) -> str:
-        async with session.get(url, timeout=self.request_timeout) as response:
+        async with session.get(url, timeout=aiohttp.ClientTimeout(total=self.request_timeout)) as response:
             response.raise_for_status()
             return await response.text()
 

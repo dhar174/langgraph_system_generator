@@ -7,11 +7,13 @@ from typing import List, Optional, TypedDict
 from langgraph_system_generator.rag.embeddings import VectorStoreManager
 
 
-class RetrievedSnippet(TypedDict):
+class RetrievedSnippet(TypedDict, total=False):
     content: str
     source: str
     heading: Optional[str]
     relevance_score: float
+    distance: float
+    score_kind: str
 
 
 class DocsRetriever:
@@ -43,6 +45,8 @@ class DocsRetriever:
                     source=doc.metadata.get("source", ""),
                     heading=doc.metadata.get("heading") or doc.metadata.get("title"),
                     relevance_score=score,
+                    distance=score,
+                    score_kind="distance",
                 )
             )
         return results

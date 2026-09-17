@@ -591,6 +591,39 @@ class ToolPlanningResult(BaseModel):
         return [tool.model_dump() for tool in self.tools]
 
 
+class DocsRetrievalFeedback(BaseModel):
+    """Advisory feedback captured during documentation retrieval."""
+
+    attempted_sources: List[str] = Field(
+        default_factory=list,
+        description="Documentation sources that were queried in precedence order.",
+    )
+    source_statuses: Dict[str, str] = Field(
+        default_factory=dict,
+        description="Status outcome per attempted source (success, empty, unavailable, failed, skipped).",
+    )
+    used_sources: List[str] = Field(
+        default_factory=list,
+        description="Documentation sources that contributed snippets to docs_context.",
+    )
+    fallback_used: bool = Field(
+        default=False,
+        description="Whether documentation retrieval fell back to cached/local docs.",
+    )
+    warnings: List[str] = Field(
+        default_factory=list,
+        description="Advisory retrieval warnings or provider error descriptions.",
+    )
+    stage_source_statuses: Dict[str, Dict[str, str]] = Field(
+        default_factory=dict,
+        description="Status outcome per source categorized by generator stage (e.g., 'rag', 'architecture_selection').",
+    )
+    consulted_sources: List[str] = Field(
+        default_factory=list,
+        description="All documentation sources consulted across any generator stage.",
+    )
+
+
 class DocSnippet(BaseModel):
     """Retrieved documentation snippet."""
 
@@ -851,6 +884,7 @@ class GeneratorState(TypedDict):
 
     # RAG context
     docs_context: Annotated[List[DocSnippet], bounded_docs_context_reducer]
+    docs_retrieval_feedback: DocsRetrievalFeedback
     generation_context_pack: GenerationContextPack
 
     # Planning
