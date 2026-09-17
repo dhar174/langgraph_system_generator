@@ -484,6 +484,8 @@ async def rag_retrieval_node(state: GeneratorState) -> Dict[str, Any]:
             used_sources=retrieval_result.used_sources,
             fallback_used=retrieval_result.fallback_used,
             warnings=retrieval_result.warnings,
+            stage_source_statuses={"rag": dict(retrieval_result.source_statuses)},
+            consulted_sources=list(retrieval_result.attempted_sources),
         )
         return {
             "docs_context": retrieval_result.snippets,
@@ -495,8 +497,10 @@ async def rag_retrieval_node(state: GeneratorState) -> Dict[str, Any]:
             attempted_sources=[],
             source_statuses={"error": str(e)},
             used_sources=[],
-            fallback_used=True,
+            fallback_used=False,
             warnings=[f"RAG retrieval failed: {e}"],
+            stage_source_statuses={"rag": {"error": str(e)}},
+            consulted_sources=[],
         )
         return {
             "docs_context": [],
@@ -688,6 +692,24 @@ def _build_generation_context_pack(state: GeneratorState) -> GenerationContextPa
                     else not bool(docs_snippets)
                 )
             ),
+            "stage_source_statuses": (
+                dict(getattr(state.get("docs_retrieval_feedback"), "stage_source_statuses", {}))
+                if hasattr(state.get("docs_retrieval_feedback"), "stage_source_statuses")
+                else (
+                    dict(state.get("docs_retrieval_feedback", {}).get("stage_source_statuses", {}))
+                    if isinstance(state.get("docs_retrieval_feedback"), dict)
+                    else {}
+                )
+            ),
+            "consulted_sources": (
+                list(getattr(state.get("docs_retrieval_feedback"), "consulted_sources", []))
+                if hasattr(state.get("docs_retrieval_feedback"), "consulted_sources")
+                else (
+                    list(state.get("docs_retrieval_feedback", {}).get("consulted_sources", []))
+                    if isinstance(state.get("docs_retrieval_feedback"), dict)
+                    else []
+                )
+            ),
         },
         fallback_used=(
             getattr(state.get("docs_retrieval_feedback"), "fallback_used", False)
@@ -782,22 +804,31 @@ async def architecture_selection_node(state: GeneratorState) -> Dict[str, Any]:
                 if s not in merged_attempted:
                     merged_attempted.append(s)
             merged_statuses = dict(current_feedback.source_statuses)
-            merged_statuses.update(delta.source_statuses)
+            for s, stat in delta.source_statuses.items():
+                if s not in merged_statuses:
+                    merged_statuses[s] = stat
             merged_used = list(current_feedback.used_sources)
-            for s in delta.used_sources:
-                if s not in merged_used:
-                    merged_used.append(s)
-            merged_fallback = current_feedback.fallback_used or delta.fallback_used
+            merged_fallback = current_feedback.fallback_used
             merged_warnings = list(current_feedback.warnings)
             for w in delta.warnings:
                 if w not in merged_warnings and len(merged_warnings) < 10:
                     merged_warnings.append(w)
+            merged_stage_statuses = dict(getattr(current_feedback, "stage_source_statuses", {}) or {})
+            if "rag" not in merged_stage_statuses and current_feedback.source_statuses:
+                merged_stage_statuses["rag"] = dict(current_feedback.source_statuses)
+            merged_stage_statuses["architecture_selection"] = dict(delta.source_statuses)
+            merged_consulted = list(getattr(current_feedback, "consulted_sources", []) or current_feedback.attempted_sources)
+            for s in (getattr(delta, "consulted_sources", []) or delta.attempted_sources):
+                if s not in merged_consulted:
+                    merged_consulted.append(s)
             node_output["docs_retrieval_feedback"] = DocsRetrievalFeedback(
                 attempted_sources=merged_attempted,
                 source_statuses=merged_statuses,
                 used_sources=merged_used,
                 fallback_used=merged_fallback,
                 warnings=merged_warnings,
+                stage_source_statuses=merged_stage_statuses,
+                consulted_sources=merged_consulted,
             )
         else:
             node_output["docs_retrieval_feedback"] = delta

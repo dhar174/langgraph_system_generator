@@ -201,18 +201,18 @@ class DocsRetrievalService:
                         statuses[source_id] = DocsSourceStatus.UNAVAILABLE.value
 
             # Deduplicate and cap
-            deduped: Dict[str, DocSnippet] = {}
+            stub_deduped: Dict[str, DocSnippet] = {}
             for s in accumulated_snippets:
                 key = f"{s.source}#{s.heading or ''}#{s.content[:60]}"
-                if key not in deduped:
-                    deduped[key] = s
-            final_snippets = list(deduped.values())[:k]
+                if key not in stub_deduped:
+                    stub_deduped[key] = s
+            final_snippets = list(stub_deduped.values())[:k]
 
             final_used = [
                 src for src in attempted
                 if any(s.source_kind == src or s.source.startswith(f"{src}:") or s.source == src for s in final_snippets)
             ]
-            fallback_used = True
+            fallback_used = any(src in ("cached_repo_docs", "rag_index") for src in final_used)
 
             for source_id in ordered_source_ids:
                 if source_id not in statuses:
@@ -332,13 +332,13 @@ class DocsRetrievalService:
         else:
             candidate_snippets = accumulated_snippets
 
-        deduped: Dict[str, DocSnippet] = {}
+        live_deduped: Dict[str, DocSnippet] = {}
         for s in candidate_snippets:
             key = f"{s.source}#{s.heading or ''}#{s.content[:60]}"
-            if key not in deduped:
-                deduped[key] = s
+            if key not in live_deduped:
+                live_deduped[key] = s
 
-        final_snippets = list(deduped.values())[:k]
+        final_snippets = list(live_deduped.values())[:k]
 
         # If crosscheck returned snippets and k >= 1, guarantee representation in final_snippets
         if crosscheck_snippets and not any(s.source_kind == "context7" for s in final_snippets):
@@ -353,11 +353,8 @@ class DocsRetrievalService:
             if any(s.source_kind == src or s.source.startswith(f"{src}:") or s.source == src for s in final_snippets)
         ]
 
-        # fallback_used is True if cached/local fallback was used or attempted (Finding 8 & 17)
-        fallback_used = (
-            any(s in ("cached_repo_docs", "rag_index") for s in final_used)
-            or any(s in ("cached_repo_docs", "rag_index") for s in attempted)
-        )
+        # fallback_used is True strictly if cached/local fallback actually contributed at least one final snippet
+        fallback_used = any(s in ("cached_repo_docs", "rag_index") for s in final_used)
 
         return DocsRetrievalResult(
             snippets=final_snippets,

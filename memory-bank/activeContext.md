@@ -16,7 +16,7 @@
 
 ## Recent Changes Reflected in the Codebase
 
-- Implemented actual runtime docs-source precedence for generation context (Issue #375 / branch `fix/375-runtime-docs-source-precedence`):
+- Implemented actual runtime docs-source precedence for generation context (Issue #375 / PR #377 / branch `fix/375-runtime-docs-source-precedence`):
   (1) Provider-neutral architecture under `src/langgraph_system_generator/rag/` featuring
   `DocsSourceProvider` ABC, `DocsSourceStatus` (success, empty, unavailable, failed, skipped),
   `DocsProviderResult`, `DocsRetrievalResult`, `DocsSourceRegistry`, and `DocsRetrievalService`;
@@ -33,9 +33,18 @@
   `GenerationContextPack` and CLI/API manifests for strict provenance truthfulness (`attempted_sources`,
   `source_statuses`, `used_sources`, `fallback_used`);
   (7) Preserved 100% offline, deterministic stub mode with zero mandatory package additions in `setup.py`;
-  (8) Added 26 comprehensive tests in `tests/unit/test_rag_source_precedence.py` covering all precedence,
-  fallback, bypass prevention, caching, credential-free isolation, warning redaction, Context7 endpoint availability,
-  library ID resolution, zero-score preservation, and FAISS distance ordering requirements (resolving all 20 review findings).
+  (8) Completed 6 PR #377 review correctness fixes:
+      - Shared MCP Streamable HTTP transport helper `src/langgraph_system_generator/rag/mcp_transport.py`
+        with protocol version `2026-07-28`, `Mcp-Method: tools/call`, `Mcp-Name`, `_meta`, JSON/SSE stream parsing,
+        and connection failure discrimination;
+      - Context7 two-step flow (`resolve-library-id` -> `query-docs`) returning `EMPTY` on empty library ID
+        and falling back to `search` only when tools are explicitly rejected as unknown, with Option A default endpoint availability;
+      - LangChain provider immediate loop termination on network/connection failure without retry storm;
+      - Strict `fallback_used` semantics (`True` iff a cached/local fallback source actually contributed at least one final snippet);
+      - ArchitectureSelector transient docs isolation: `stage_source_statuses` and `consulted_sources` populated while keeping `used_sources` unpolluted and `fallback_used` unflipped;
+      - Deterministic concurrent query feedback aggregation in `query_specs` order with strict status reduction rule;
+  (9) 34 comprehensive unit tests in `tests/unit/test_rag_source_precedence.py`, 715 unit tests passing,
+  82 pattern tests passing, flake8 0 issues, mypy 0 issues.
 - Restored bounded supervisor context-window management (Issue #65 / PR #374)
   adapted surgically to the modern LangGraph v1 architecture: scalar
   `task_results_summary: str` state, bounded context preparation with

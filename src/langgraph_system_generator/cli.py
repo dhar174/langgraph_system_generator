@@ -173,9 +173,11 @@ def _build_cli_context_pack(
             "docs_snippet_count": 0,
             "source_counts": {},
             "docs_live_required": False,
-            "fallback_used": True,
+            "fallback_used": False,
+            "stage_source_statuses": {},
+            "consulted_sources": [],
         },
-        fallback_used=True,
+        fallback_used=False,
         warnings=[
             "Shortcut generation path used static repo context facts; live docs retrieval is not required for stub mode."
         ],
@@ -217,7 +219,7 @@ def _default_state(
             attempted_sources=[],
             source_statuses={},
             used_sources=[],
-            fallback_used=True,
+            fallback_used=False,
             warnings=[
                 "Shortcut generation path used static repo context facts; live docs retrieval is not required for stub mode."
             ] if generation_mode == "stub" else [],
@@ -1451,7 +1453,7 @@ def _build_stub_result(prompt: str, agent_type: str | None = None) -> Dict[str, 
             attempted_sources=[],
             source_statuses={},
             used_sources=[],
-            fallback_used=True,
+            fallback_used=False,
             warnings=[
                 "Shortcut generation path used static repo context facts; live docs retrieval is not required for stub mode."
             ],

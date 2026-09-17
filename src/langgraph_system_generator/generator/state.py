@@ -614,6 +614,14 @@ class DocsRetrievalFeedback(BaseModel):
         default_factory=list,
         description="Advisory retrieval warnings or provider error descriptions.",
     )
+    stage_source_statuses: Dict[str, Dict[str, str]] = Field(
+        default_factory=dict,
+        description="Status outcome per source categorized by generator stage (e.g., 'rag', 'architecture_selection').",
+    )
+    consulted_sources: List[str] = Field(
+        default_factory=list,
+        description="All documentation sources consulted across any generator stage.",
+    )
 
 
 class DocSnippet(BaseModel):

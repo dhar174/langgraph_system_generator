@@ -28,11 +28,17 @@ from langgraph_system_generator.rag.providers.context7 import (
 from langgraph_system_generator.rag.providers.langchain_local import (
     LangChainDocsLocalProvider,
 )
+from langgraph_system_generator.rag.mcp_transport import (
+    DEFAULT_MCP_PROTOCOL_VERSION,
+    MCPTransportError,
+    call_mcp_tool,
+)
 from langgraph_system_generator.rag.retriever import DocsRetriever, RetrievedSnippet
 
 __all__ = [
     "CachedVectorDocsProvider",
     "Context7DocsProvider",
+    "DEFAULT_MCP_PROTOCOL_VERSION",
     "DocumentCache",
     "DocsIndexer",
     "DocsProviderResult",
@@ -43,10 +49,12 @@ __all__ = [
     "DocsSourceRegistry",
     "DocsSourceStatus",
     "LangChainDocsLocalProvider",
+    "MCPTransportError",
     "RetrievedSnippet",
     "VectorStoreManager",
     "_reset_docs_retrieval_service_for_tests",
     "build_docs_index",
     "build_index_from_cache",
+    "call_mcp_tool",
     "get_default_docs_retrieval_service",
 ]

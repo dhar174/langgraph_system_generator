@@ -13,6 +13,10 @@ from langgraph_system_generator.rag.base import (
     DocsSourceProvider,
     DocsSourceStatus,
 )
+from langgraph_system_generator.rag.mcp_transport import (
+    MCPTransportError,
+    call_mcp_tool,
+)
 from langgraph_system_generator.rag.normalizer import create_normalized_doc_snippet
 from langgraph_system_generator.utils.config import settings
 
@@ -73,56 +77,47 @@ class LangChainDocsLocalProvider(DocsSourceProvider):
             )
 
         # Standard Mintlify documentation MCP call, with fallback compatibility names
-        candidate_tool_calls = [
-            {"name": "search", "arguments": {"query": query}},
-            {"name": "search_docs_by_lang_chain", "arguments": {"query": query}},
-            {"name": "query_docs_filesystem_docs_by_lang_chain", "arguments": {"query": query}},
+        candidate_tool_names = [
+            "search",
+            "search_docs_by_lang_chain",
+            "query_docs_filesystem_docs_by_lang_chain",
         ]
 
         last_error: Optional[str] = None
         snippets: List[DocSnippet] = []
 
         try:
-            async with httpx.AsyncClient(timeout=self.timeout_seconds) as client:
-                for tool_call in candidate_tool_calls:
-                    json_rpc_payload = {
-                        "jsonrpc": "2.0",
-                        "id": 1,
-                        "method": "tools/call",
-                        "params": tool_call,
-                    }
-                    try:
-                        response = await client.post(
-                            url,
-                            json=json_rpc_payload,
-                            headers={"Content-Type": "application/json"},
-                        )
-                    except httpx.RequestError as req_err:
-                        last_error = f"HTTP request failed: {req_err}"
+            for tool_name in candidate_tool_names:
+                try:
+                    data = await call_mcp_tool(
+                        endpoint=url,
+                        tool_name=tool_name,
+                        arguments={"query": query},
+                        timeout_seconds=self.timeout_seconds,
+                    )
+                except MCPTransportError as exc:
+                    last_error = str(exc)
+                    if exc.is_connection_error:
+                        # Transport connection failure: stop compatibility-tool probing immediately
                         break
+                    continue
 
-                    if response.status_code != 200:
-                        last_error = f"HTTP {response.status_code}: {response.text[:200]}"
+                if "error" in data:
+                    err_obj = data["error"]
+                    err_msg = (
+                        err_obj.get("message", str(err_obj))
+                        if isinstance(err_obj, dict)
+                        else str(err_obj)
+                    )
+                    last_error = f"MCP error: {err_msg}"
+                    # If tool was not found or unknown, try the next compatibility candidate tool
+                    if "not found" in err_msg.lower() or "unknown tool" in err_msg.lower():
                         continue
+                    break
 
-                    try:
-                        data = response.json()
-                    except Exception:
-                        last_error = f"Invalid JSON response from {url}"
-                        continue
-
-                    if "error" in data:
-                        err_obj = data["error"]
-                        err_msg = err_obj.get("message", str(err_obj)) if isinstance(err_obj, dict) else str(err_obj)
-                        last_error = f"MCP error: {err_msg}"
-                        # If tool was not found, try the next compatibility candidate tool
-                        if "not found" in err_msg.lower() or "unknown tool" in err_msg.lower():
-                            continue
-                        break
-
-                    snippets = self._extract_snippets_from_payload(data, fallback_url=url)
-                    if snippets:
-                        break
+                snippets = self._extract_snippets_from_payload(data, fallback_url=url)
+                if snippets:
+                    break
 
         except Exception as exc:
             elapsed_ms = (time.perf_counter() - start_time) * 1000.0

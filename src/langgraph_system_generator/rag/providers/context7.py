@@ -14,6 +14,10 @@ from langgraph_system_generator.rag.base import (
     DocsSourceProvider,
     DocsSourceStatus,
 )
+from langgraph_system_generator.rag.mcp_transport import (
+    MCPTransportError,
+    call_mcp_tool,
+)
 from langgraph_system_generator.rag.normalizer import create_normalized_doc_snippet
 from langgraph_system_generator.utils.config import settings
 
@@ -45,13 +49,13 @@ class Context7DocsProvider(DocsSourceProvider):
         return self._endpoint_url or settings.context7_mcp_url or "https://mcp.context7.com/mcp"
 
     def is_available(self, mode: str = "live") -> bool:
-        """Return True if enabled in live mode and either an API key or custom endpoint is configured."""
+        """Return True if enabled in live mode and endpoint URL is configured."""
         if mode == "stub":
             return False
         return bool(
             settings.docs_live_sources_enabled
             and settings.context7_docs_enabled
-            and (self.api_key or self._endpoint_url or settings.context7_mcp_url)
+            and bool(self.endpoint_url)
         )
 
     def _extract_library_id(self, payload: Dict[str, Any]) -> Optional[str]:
@@ -114,7 +118,7 @@ class Context7DocsProvider(DocsSourceProvider):
             )
 
         try:
-            import httpx
+            import httpx  # noqa: F401
         except ImportError:
             return DocsProviderResult(
                 source_id=self.source_id,
@@ -122,87 +126,149 @@ class Context7DocsProvider(DocsSourceProvider):
                 error_message="Optional dependency 'httpx' is required for Context7 docs retrieval.",
             )
 
-        headers = {"Content-Type": "application/json"}
-        if self.api_key:
-            headers["Authorization"] = f"Bearer {self.api_key}"
-
+        auth_header = f"Bearer {self.api_key}" if self.api_key else None
         target_lib = "langgraph" if "langchain" not in query.lower() else "langchain"
         resolved_lib_id = self._resolved_libraries.get(target_lib)
+        data: Optional[Dict[str, Any]] = None
+        should_fallback_to_search = False
 
         try:
-            async with httpx.AsyncClient(timeout=self.timeout_seconds) as client:
-                data: Optional[Dict[str, Any]] = None
-
-                # Protocol step 1: resolve library ID if not yet resolved
-                if not resolved_lib_id:
-                    resolve_payload = {
-                        "jsonrpc": "2.0",
-                        "id": 1,
-                        "method": "tools/call",
-                        "params": {
-                            "name": "resolve-library-id",
-                            "arguments": {"libraryName": target_lib, "query": query},
-                        },
-                    }
-                    resolve_resp = await client.post(
-                        self.endpoint_url,
-                        json=resolve_payload,
-                        headers=headers,
+            # Protocol step 1: resolve library ID if not yet resolved
+            if not resolved_lib_id:
+                try:
+                    resolve_data = await call_mcp_tool(
+                        endpoint=self.endpoint_url,
+                        tool_name="resolve-library-id",
+                        arguments={"libraryName": target_lib, "query": query},
+                        authorization=auth_header,
+                        timeout_seconds=self.timeout_seconds,
                     )
-                    if resolve_resp.status_code == 200:
-                        try:
-                            resolve_json = resolve_resp.json()
-                            if "result" in resolve_json and not resolve_json.get("error"):
-                                resolved_lib_id = self._extract_library_id(resolve_json)
-                                if resolved_lib_id:
-                                    self._resolved_libraries[target_lib] = resolved_lib_id
-                        except Exception:
-                            pass
-
-                # Protocol step 2: query-docs if library ID resolved
-                if resolved_lib_id:
-                    docs_payload = {
-                        "jsonrpc": "2.0",
-                        "id": 2,
-                        "method": "tools/call",
-                        "params": {
-                            "name": "query-docs",
-                            "arguments": {"libraryId": resolved_lib_id, "query": query},
-                        },
-                    }
-                    docs_resp = await client.post(
-                        self.endpoint_url,
-                        json=docs_payload,
-                        headers=headers,
-                    )
-                    if docs_resp.status_code == 200:
-                        data = docs_resp.json()
-
-                # Fallback to compatibility search tool if query-docs was not run or returned error
-                if data is None or ("error" in data and ("not found" in str(data["error"]).lower() or "unknown tool" in str(data["error"]).lower())):
-                    search_payload = {
-                        "jsonrpc": "2.0",
-                        "id": 3,
-                        "method": "tools/call",
-                        "params": {
-                            "name": "search",
-                            "arguments": {"query": query},
-                        },
-                    }
-                    search_resp = await client.post(
-                        self.endpoint_url,
-                        json=search_payload,
-                        headers=headers,
-                    )
-                    if search_resp.status_code != 200:
+                except MCPTransportError as exc:
+                    if exc.is_connection_error:
                         elapsed_ms = (time.perf_counter() - start_time) * 1000.0
                         return DocsProviderResult(
                             source_id=self.source_id,
                             status=DocsSourceStatus.FAILED,
                             latency_ms=elapsed_ms,
-                            error_message=f"Context7 HTTP {search_resp.status_code}: {search_resp.text[:200]}",
+                            error_message=str(exc),
                         )
-                    data = search_resp.json()
+                    err_str = str(exc).lower()
+                    if exc.status_code == 404 or "unknown" in err_str or "not found" in err_str:
+                        should_fallback_to_search = True
+                        resolve_data = {"error": str(exc)}
+                    else:
+                        elapsed_ms = (time.perf_counter() - start_time) * 1000.0
+                        return DocsProviderResult(
+                            source_id=self.source_id,
+                            status=DocsSourceStatus.FAILED,
+                            latency_ms=elapsed_ms,
+                            error_message=str(exc),
+                        )
+
+                if not should_fallback_to_search:
+                    if "error" in resolve_data:
+                        err_obj = resolve_data["error"]
+                        err_msg = (
+                            err_obj.get("message", str(err_obj))
+                            if isinstance(err_obj, dict)
+                            else str(err_obj)
+                        )
+                        if "not found" in err_msg.lower() or "unknown tool" in err_msg.lower():
+                            should_fallback_to_search = True
+                        else:
+                            elapsed_ms = (time.perf_counter() - start_time) * 1000.0
+                            return DocsProviderResult(
+                                source_id=self.source_id,
+                                status=DocsSourceStatus.FAILED,
+                                latency_ms=elapsed_ms,
+                                error_message=f"Context7 MCP error: {err_msg}",
+                            )
+                    else:
+                        resolved_lib_id = self._extract_library_id(resolve_data)
+                        if resolved_lib_id:
+                            self._resolved_libraries[target_lib] = resolved_lib_id
+                        else:
+                            # resolve-library-id returned empty / no library ID
+                            # Do not call query-docs or fall back to search!
+                            elapsed_ms = (time.perf_counter() - start_time) * 1000.0
+                            return DocsProviderResult(
+                                source_id=self.source_id,
+                                status=DocsSourceStatus.EMPTY,
+                                latency_ms=elapsed_ms,
+                            )
+
+            # Protocol step 2: query-docs if library ID resolved
+            if resolved_lib_id and not should_fallback_to_search:
+                try:
+                    query_data = await call_mcp_tool(
+                        endpoint=self.endpoint_url,
+                        tool_name="query-docs",
+                        arguments={"libraryId": resolved_lib_id, "query": query},
+                        authorization=auth_header,
+                        timeout_seconds=self.timeout_seconds,
+                    )
+                except MCPTransportError as exc:
+                    if exc.is_connection_error:
+                        elapsed_ms = (time.perf_counter() - start_time) * 1000.0
+                        return DocsProviderResult(
+                            source_id=self.source_id,
+                            status=DocsSourceStatus.FAILED,
+                            latency_ms=elapsed_ms,
+                            error_message=str(exc),
+                        )
+                    err_str = str(exc).lower()
+                    if exc.status_code == 404 or "unknown" in err_str or "not found" in err_str:
+                        should_fallback_to_search = True
+                        query_data = {"error": str(exc)}
+                    else:
+                        elapsed_ms = (time.perf_counter() - start_time) * 1000.0
+                        return DocsProviderResult(
+                            source_id=self.source_id,
+                            status=DocsSourceStatus.FAILED,
+                            latency_ms=elapsed_ms,
+                            error_message=str(exc),
+                        )
+
+                if not should_fallback_to_search:
+                    if "error" in query_data:
+                        err_obj = query_data["error"]
+                        err_msg = (
+                            err_obj.get("message", str(err_obj))
+                            if isinstance(err_obj, dict)
+                            else str(err_obj)
+                        )
+                        if "not found" in err_msg.lower() or "unknown tool" in err_msg.lower():
+                            should_fallback_to_search = True
+                        else:
+                            elapsed_ms = (time.perf_counter() - start_time) * 1000.0
+                            return DocsProviderResult(
+                                source_id=self.source_id,
+                                status=DocsSourceStatus.FAILED,
+                                latency_ms=elapsed_ms,
+                                error_message=f"Context7 MCP error: {err_msg}",
+                            )
+                    else:
+                        data = query_data
+
+            # Fallback to compatibility search tool ONLY if current tools were rejected as unknown/not found
+            if should_fallback_to_search:
+                try:
+                    search_data = await call_mcp_tool(
+                        endpoint=self.endpoint_url,
+                        tool_name="search",
+                        arguments={"query": query},
+                        authorization=auth_header,
+                        timeout_seconds=self.timeout_seconds,
+                    )
+                    data = search_data
+                except MCPTransportError as exc:
+                    elapsed_ms = (time.perf_counter() - start_time) * 1000.0
+                    return DocsProviderResult(
+                        source_id=self.source_id,
+                        status=DocsSourceStatus.FAILED,
+                        latency_ms=elapsed_ms,
+                        error_message=str(exc),
+                    )
 
         except Exception as exc:
             elapsed_ms = (time.perf_counter() - start_time) * 1000.0
@@ -273,6 +339,7 @@ class Context7DocsProvider(DocsSourceProvider):
                                 sub_parsed.get("snippets")
                                 or sub_parsed.get("documents")
                                 or sub_parsed.get("content")
+                                or sub_parsed.get("results")
                             )
                             if isinstance(sub_items, list):
                                 for sub_item in sub_items:

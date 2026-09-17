@@ -409,7 +409,7 @@ async def test_rag_retrieval_node_returns_empty_on_failure(monkeypatch, failure_
     result = await rag_retrieval_node({"user_prompt": "Find docs"})
 
     assert result["docs_context"] == []
-    assert result["docs_retrieval_feedback"].fallback_used is True
+    assert result["docs_retrieval_feedback"].fallback_used is False
 
 
 @pytest.mark.asyncio

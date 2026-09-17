@@ -53,15 +53,16 @@ class CachedVectorDocsProvider(DocsSourceProvider):
         """Retrieve documentation from local vector store off the event loop."""
         start_time = time.perf_counter()
         retriever_name = "DocsRetriever"
+        raw_results: List[Any]
         try:
             if self._injected_retriever is not None or self._vector_store_path is not None:
                 retriever = self._resolve_retriever()
                 retriever_name = type(retriever).__name__
-                raw_results: List[Any] = await asyncio.to_thread(retriever.retrieve, query, k)
+                raw_results = await asyncio.to_thread(retriever.retrieve, query, k)
             else:
                 from langgraph_system_generator.generator import nodes
 
-                raw_results: List[Any] = await nodes.asyncio.to_thread(
+                raw_results = await nodes.asyncio.to_thread(
                     nodes._retrieve_docs_for_prompt, query
                 )
         except Exception as exc:
@@ -98,16 +99,17 @@ class CachedVectorDocsProvider(DocsSourceProvider):
                 score_kind = item.get("score_kind")
                 if score_kind == "distance":
                     is_dist = True
-                    score = item.get("distance", item.get("relevance_score", 0.0))
+                    raw_score = item.get("distance", item.get("relevance_score", 0.0))
                 elif score_kind == "similarity":
                     is_dist = False
-                    score = item.get("relevance_score", item.get("score", 0.0))
+                    raw_score = item.get("relevance_score", item.get("score", 0.0))
                 elif "distance" in item and "relevance_score" not in item:
                     is_dist = True
-                    score = item["distance"]
+                    raw_score = item["distance"]
                 else:
                     is_dist = False
-                    score = item.get("relevance_score", item.get("score", 0.0))
+                    raw_score = item.get("relevance_score", item.get("score", 0.0))
+                score = float(raw_score) if raw_score is not None else 0.0
                 snippets.append(
                     create_normalized_doc_snippet(
                         content=item.get("content", ""),
@@ -126,16 +128,17 @@ class CachedVectorDocsProvider(DocsSourceProvider):
                 score_kind = getattr(item, "score_kind", None)
                 if score_kind == "distance":
                     is_dist = True
-                    score = getattr(item, "distance", getattr(item, "relevance_score", 0.0))
+                    raw_score = getattr(item, "distance", getattr(item, "relevance_score", 0.0))
                 elif score_kind == "similarity":
                     is_dist = False
-                    score = getattr(item, "relevance_score", getattr(item, "score", 0.0))
+                    raw_score = getattr(item, "relevance_score", getattr(item, "score", 0.0))
                 elif hasattr(item, "distance") and not hasattr(item, "relevance_score"):
                     is_dist = True
-                    score = getattr(item, "distance")
+                    raw_score = getattr(item, "distance")
                 else:
                     is_dist = False
-                    score = getattr(item, "relevance_score", getattr(item, "score", 0.0))
+                    raw_score = getattr(item, "relevance_score", getattr(item, "score", 0.0))
+                score = float(raw_score) if raw_score is not None else 0.0
                 snippets.append(
                     create_normalized_doc_snippet(
                         content=content,

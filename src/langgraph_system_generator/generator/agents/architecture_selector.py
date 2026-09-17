@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from dataclasses import dataclass, field
 import hashlib
 import logging
 from typing import Any, Dict, List
@@ -34,6 +35,16 @@ from langgraph_system_generator.utils.generation_options import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class _QueryDocsResult:
+    snippets: List[Any] = field(default_factory=list)
+    attempted: List[str] = field(default_factory=list)
+    statuses: Dict[str, str] = field(default_factory=dict)
+    used: List[str] = field(default_factory=list)
+    fallback_used: bool = False
+    warnings: List[str] = field(default_factory=list)
 
 
 class ArchitectureSelector:
@@ -309,14 +320,14 @@ Recommend the best architecture."""
                     query_specs.append((query, weight))
 
             if query_specs:
-                attempted: list[str] = []
-                statuses: dict[str, str] = {}
-                used: list[str] = []
-                feedback_warnings: list[str] = []
-                fallback_used = False
+                async def _retrieve_query_docs(query: str) -> _QueryDocsResult:
+                    q_attempted: List[str] = []
+                    q_statuses: Dict[str, str] = {}
+                    q_used: List[str] = []
+                    q_warnings: List[str] = []
+                    q_fallback_used = False
+                    q_snippets: List[Any] = []
 
-                async def _retrieve_query_docs(query: str) -> List[Any]:
-                    nonlocal fallback_used
                     if hasattr(self.docs_retriever, "aretrieve"):
                         try:
                             res = await self.docs_retriever.aretrieve(query, k=prompt_limit, mode=mode)
@@ -326,40 +337,36 @@ Recommend the best architecture."""
                                 query,
                                 exc,
                             )
-                            return []
+                            return _QueryDocsResult(warnings=[f"Query retrieval error: {exc}"])
 
                         feedback = getattr(res, "feedback", None)
-                        if feedback is not None:
-                            for s in getattr(feedback, "attempted_sources", []):
-                                if s not in attempted:
-                                    attempted.append(s)
-                            statuses.update(getattr(feedback, "source_statuses", {}))
-                            for s in getattr(feedback, "used_sources", []):
-                                if s not in used:
-                                    used.append(s)
-                            if getattr(feedback, "fallback_used", False):
-                                fallback_used = True
-                            for w in getattr(feedback, "warnings", []):
-                                if w not in feedback_warnings and len(feedback_warnings) < 10:
-                                    feedback_warnings.append(w)
-                        else:
-                            for s in getattr(res, "attempted_sources", []):
-                                if s not in attempted:
-                                    attempted.append(s)
-                            statuses.update(getattr(res, "source_statuses", {}))
-                            for s in getattr(res, "used_sources", []):
-                                if s not in used:
-                                    used.append(s)
-                            if getattr(res, "fallback_used", False):
-                                fallback_used = True
-                            for w in getattr(res, "warnings", []):
-                                if w not in feedback_warnings and len(feedback_warnings) < 10:
-                                    feedback_warnings.append(w)
+                        target = feedback if feedback is not None else res
+                        for s in getattr(target, "attempted_sources", []):
+                            if s not in q_attempted:
+                                q_attempted.append(s)
+                        q_statuses.update(getattr(target, "source_statuses", {}))
+                        if hasattr(target, "source_id"):
+                            src_id = str(target.source_id)
+                            if src_id not in q_attempted:
+                                q_attempted.append(src_id)
+                            if src_id not in q_statuses and hasattr(target, "status"):
+                                stat = target.status.value if hasattr(target.status, "value") else str(target.status)
+                                q_statuses[src_id] = stat
+                        for s in getattr(target, "used_sources", []):
+                            if s not in q_used:
+                                q_used.append(s)
+                        if getattr(target, "fallback_used", False):
+                            q_fallback_used = True
+                        for w in getattr(target, "warnings", []):
+                            if w not in q_warnings and len(q_warnings) < 10:
+                                q_warnings.append(w)
 
                         if hasattr(res, "snippets"):
-                            return res.snippets
-                        return res or []
-                    if hasattr(self.docs_retriever, "retrieve"):
+                            q_snippets = list(res.snippets)
+                        elif isinstance(res, list):
+                            q_snippets = list(res)
+
+                    elif hasattr(self.docs_retriever, "retrieve"):
                         try:
                             res = await asyncio.to_thread(self.docs_retriever.retrieve, query, prompt_limit)
                         except Exception as exc:  # noqa: BLE001
@@ -368,28 +375,79 @@ Recommend the best architecture."""
                                 query,
                                 exc,
                             )
-                            return []
-                        if hasattr(res, "snippets"):
-                            return res.snippets
-                        return res or []
-                    return []
+                            return _QueryDocsResult(warnings=[f"Query retrieval error: {exc}"])
 
-                retrieved_groups = await asyncio.gather(
+                        if hasattr(res, "snippets"):
+                            q_snippets = list(res.snippets)
+                        elif isinstance(res, list):
+                            q_snippets = list(res)
+
+                    return _QueryDocsResult(
+                        snippets=q_snippets,
+                        attempted=q_attempted,
+                        statuses=q_statuses,
+                        used=q_used,
+                        fallback_used=q_fallback_used,
+                        warnings=q_warnings,
+                    )
+
+                query_results: List[_QueryDocsResult] = await asyncio.gather(
                     *[_retrieve_query_docs(query) for query, _weight in query_specs]
                 )
-                for (_query, weight), docs in zip(query_specs, retrieved_groups):
-                    for doc in docs or []:
+
+                attempted_sources: List[str] = []
+                statuses_by_source: Dict[str, List[str]] = {}
+                aggregated_warnings: List[str] = []
+                any_fallback_used = False
+
+                for (_query, weight), q_res in zip(query_specs, query_results):
+                    for doc in q_res.snippets or []:
                         normalized = self._normalize_doc(doc)
                         normalized["weighted_relevance_score"] = self._doc_score(normalized) * weight
                         normalized_docs.append(normalized)
 
-                if attempted or statuses or used or feedback_warnings or fallback_used:
+                    for s in q_res.attempted:
+                        if s not in attempted_sources:
+                            attempted_sources.append(s)
+
+                    for s, stat in q_res.statuses.items():
+                        statuses_by_source.setdefault(s, []).append(stat)
+                        if s not in attempted_sources:
+                            attempted_sources.append(s)
+
+                    if q_res.fallback_used:
+                        any_fallback_used = True
+
+                    for w in q_res.warnings:
+                        if w not in aggregated_warnings and len(aggregated_warnings) < 10:
+                            aggregated_warnings.append(w)
+
+                # Deterministic status reduction rule:
+                # success > failed > empty > unavailable > skipped
+                reduced_statuses: Dict[str, str] = {}
+                for s, stat_list in statuses_by_source.items():
+                    if "success" in stat_list:
+                        reduced_statuses[s] = "success"
+                    elif "failed" in stat_list:
+                        reduced_statuses[s] = "failed"
+                    elif "empty" in stat_list:
+                        reduced_statuses[s] = "empty"
+                    elif "unavailable" in stat_list:
+                        reduced_statuses[s] = "unavailable"
+                    elif "skipped" in stat_list:
+                        reduced_statuses[s] = "skipped"
+                    elif stat_list:
+                        reduced_statuses[s] = stat_list[0]
+
+                if attempted_sources or reduced_statuses or aggregated_warnings or any_fallback_used:
                     self.docs_retrieval_feedback_delta = DocsRetrievalFeedback(
-                        attempted_sources=attempted,
-                        source_statuses=statuses,
-                        used_sources=used,
-                        fallback_used=fallback_used,
-                        warnings=feedback_warnings,
+                        attempted_sources=attempted_sources,
+                        source_statuses=reduced_statuses,
+                        used_sources=[],
+                        fallback_used=False,
+                        warnings=aggregated_warnings,
+                        stage_source_statuses={"architecture_selection": reduced_statuses},
+                        consulted_sources=list(attempted_sources),
                     )
 
         if not normalized_docs:
