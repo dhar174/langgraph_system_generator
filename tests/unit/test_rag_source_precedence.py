@@ -17,8 +17,9 @@ Tests:
 
 from __future__ import annotations
 
-import pytest
 import asyncio
+import json
+import pytest
 
 from langgraph_system_generator.generator.agents.architecture_selector import (
     ArchitectureSelector,
@@ -1745,3 +1746,343 @@ async def test_mcp_transport_generic_json_error_on_non_2xx_raises_transport_erro
         )
     assert exc_info.value.status_code == 404
     assert exc_info.value.error_kind == "http"
+
+
+def test_registry_replacement_preserves_builtin_precedence():
+    """Replacing an existing provider by source_id preserves its index in the registry."""
+    registry = DocsSourceRegistry()
+    initial_ids = registry.registered_source_ids()
+    assert initial_ids == [
+        "langchain-docs-local",
+        "context7",
+        "cached_repo_docs",
+    ]
+
+    replacement_primary = StubProvider(
+        "langchain-docs-local",
+        available=True,
+        snippets=[
+            DocSnippet(
+                content="Replaced primary",
+                source="test:1",
+                source_kind="langchain-docs-local",
+            )
+        ],
+    )
+    registry.register(replacement_primary)
+
+    after_ids = registry.registered_source_ids()
+    assert after_ids == [
+        "langchain-docs-local",
+        "context7",
+        "cached_repo_docs",
+    ]
+    assert registry.get_provider("langchain-docs-local") is replacement_primary
+
+
+@pytest.mark.asyncio
+async def test_registry_replacement_remains_executable_as_primary():
+    """Replaced primary provider is executed first and satisfies retrieval without downstream calls."""
+    registry = DocsSourceRegistry()
+    replacement_primary = StubProvider(
+        "langchain-docs-local",
+        available=True,
+        snippets=[
+            DocSnippet(
+                content="Fresh snippet from replaced primary",
+                source="https://custom.langchain.docs",
+                source_kind="langchain-docs-local",
+                relevance_score=0.98,
+            )
+        ],
+    )
+    context7_provider = StubProvider("context7", available=True, snippets=[])
+    cached_provider = StubProvider("cached_repo_docs", available=True, snippets=[])
+
+    registry.register(replacement_primary)
+    registry.register(context7_provider)
+    registry.register(cached_provider)
+
+    service = DocsRetrievalService(registry=registry)
+    result = await service.aretrieve("StateGraph reducer query", k=5, mode="live")
+
+    assert replacement_primary.call_count == 1
+    assert context7_provider.call_count == 0
+    assert cached_provider.call_count == 0
+    assert result.used_sources == ["langchain-docs-local"]
+    assert result.fallback_used is False
+    assert len(result.snippets) == 1
+    assert result.snippets[0].content == "Fresh snippet from replaced primary"
+
+
+def test_registry_replacement_explicit_prepend_still_repositions():
+    """Replacing an existing provider with prepend=True moves it to index 0."""
+    registry = DocsSourceRegistry()
+    assert registry.registered_source_ids() == [
+        "langchain-docs-local",
+        "context7",
+        "cached_repo_docs",
+    ]
+
+    # Prepend replacement for index 1 ('context7')
+    replacement_c7 = StubProvider("context7", available=True)
+    registry.register(replacement_c7, prepend=True)
+
+    assert registry.registered_source_ids() == [
+        "context7",
+        "langchain-docs-local",
+        "cached_repo_docs",
+    ]
+    assert registry.list_providers()[0] is replacement_c7
+
+
+def test_langchain_local_extracts_serialized_results_object():
+    """Serialized JSON object containing 'results' collection is unpacked into DocSnippets without raw JSON."""
+    provider = LangChainDocsLocalProvider(endpoint_url="http://mock-mcp/endpoint")
+    payload = {
+        "result": {
+            "content": [
+                {
+                    "type": "text",
+                    "text": json.dumps(
+                        {
+                            "results": [
+                                {
+                                    "snippet": "Actual documentation content",
+                                    "url": "https://example/docs",
+                                    "title": "Example Docs",
+                                    "score": 0.82,
+                                }
+                            ]
+                        }
+                    ),
+                }
+            ]
+        }
+    }
+
+    snippets = provider._extract_snippets_from_payload(
+        payload, fallback_url="http://fallback.url"
+    )
+    assert len(snippets) == 1
+    s = snippets[0]
+    assert s.content == "Actual documentation content"
+    assert s.source == "https://example/docs"
+    assert s.heading == "Example Docs"
+    assert s.relevance_score == 0.82
+    assert s.source_kind == "langchain-docs-local"
+    assert "results" not in s.content
+    assert "{" not in s.content
+
+
+def test_langchain_local_extracts_serialized_object_with_zero_score():
+    """Relevance score of 0.0 inside serialized object must survive unchanged without defaulting to 0.95."""
+    provider = LangChainDocsLocalProvider(endpoint_url="http://mock-mcp/endpoint")
+    payload = {
+        "result": {
+            "content": [
+                {
+                    "type": "text",
+                    "text": json.dumps(
+                        {
+                            "results": [
+                                {
+                                    "snippet": "Zero score documentation snippet",
+                                    "url": "https://example/zero",
+                                    "title": "Zero Score Title",
+                                    "score": 0.0,
+                                }
+                            ]
+                        }
+                    ),
+                }
+            ]
+        }
+    }
+
+    snippets = provider._extract_snippets_from_payload(
+        payload, fallback_url="http://fallback.url"
+    )
+    assert len(snippets) == 1
+    assert snippets[0].relevance_score == 0.0
+    assert snippets[0].content == "Zero score documentation snippet"
+
+
+def test_langchain_local_extracts_serialized_snippets_and_documents_collections():
+    """Serialized JSON objects with 'snippets' or 'documents' collection keys are properly normalized."""
+    provider = LangChainDocsLocalProvider(endpoint_url="http://mock-mcp/endpoint")
+
+    # Test 'snippets' collection key
+    payload_snippets = {
+        "result": {
+            "content": [
+                {
+                    "type": "text",
+                    "text": json.dumps(
+                        {
+                            "snippets": [
+                                {
+                                    "content": "Documentation text via snippets key",
+                                    "source": "https://example/snippets",
+                                    "heading": "Snippets Heading",
+                                    "relevance_score": 0.88,
+                                }
+                            ]
+                        }
+                    ),
+                }
+            ]
+        }
+    }
+    res_snippets = provider._extract_snippets_from_payload(
+        payload_snippets, fallback_url="http://fallback.url"
+    )
+    assert len(res_snippets) == 1
+    assert res_snippets[0].content == "Documentation text via snippets key"
+    assert res_snippets[0].source == "https://example/snippets"
+    assert res_snippets[0].heading == "Snippets Heading"
+    assert res_snippets[0].relevance_score == 0.88
+
+    # Test 'documents' collection key with page_content
+    payload_docs = {
+        "result": {
+            "content": [
+                {
+                    "type": "text",
+                    "text": json.dumps(
+                        {
+                            "documents": [
+                                {
+                                    "page_content": "Documentation text via documents key",
+                                    "url": "https://example/documents",
+                                    "title": "Documents Title",
+                                }
+                            ]
+                        }
+                    ),
+                }
+            ]
+        }
+    }
+    res_docs = provider._extract_snippets_from_payload(
+        payload_docs, fallback_url="http://fallback.url"
+    )
+    assert len(res_docs) == 1
+    assert res_docs[0].content == "Documentation text via documents key"
+    assert res_docs[0].source == "https://example/documents"
+    assert res_docs[0].heading == "Documents Title"
+    assert res_docs[0].relevance_score == 0.95  # default when omitted
+
+
+def test_langchain_local_extracts_serialized_single_doc_object():
+    """Serialized JSON object containing a single doc item directly is properly normalized."""
+    provider = LangChainDocsLocalProvider(endpoint_url="http://mock-mcp/endpoint")
+    payload = {
+        "result": {
+            "content": [
+                {
+                    "type": "text",
+                    "text": json.dumps(
+                        {
+                            "snippet": "Direct single doc snippet text",
+                            "url": "https://example/single",
+                            "title": "Single Doc Title",
+                            "score": 0.92,
+                        }
+                    ),
+                }
+            ]
+        }
+    }
+
+    snippets = provider._extract_snippets_from_payload(
+        payload, fallback_url="http://fallback.url"
+    )
+    assert len(snippets) == 1
+    assert snippets[0].content == "Direct single doc snippet text"
+    assert snippets[0].source == "https://example/single"
+    assert snippets[0].heading == "Single Doc Title"
+    assert snippets[0].relevance_score == 0.92
+
+
+@pytest.mark.asyncio
+async def test_langchain_local_serialized_object_provider_integration(monkeypatch):
+    """End-to-end provider aretrieve() succeeds and normalizes serialized object payload from call_mcp_tool."""
+    import langgraph_system_generator.rag.providers.langchain_local as local_mod
+
+    raw_json_results = json.dumps(
+        {
+            "results": [
+                {
+                    "snippet": "LangGraph StateGraph workflow coordination guide",
+                    "url": "https://docs.langchain.com/langgraph/guide",
+                    "title": "StateGraph Guide",
+                    "score": 0.91,
+                }
+            ]
+        }
+    )
+
+    async def mock_call_mcp_tool(*args, **kwargs):
+        return {
+            "result": {
+                "content": [
+                    {
+                        "type": "text",
+                        "text": raw_json_results,
+                    }
+                ]
+            }
+        }
+
+    monkeypatch.setattr(settings, "docs_live_sources_enabled", True)
+    monkeypatch.setattr(local_mod, "call_mcp_tool", mock_call_mcp_tool)
+
+    provider = LangChainDocsLocalProvider(endpoint_url="http://test.mcp/endpoint")
+    result = await provider.aretrieve("StateGraph guide", k=5, mode="live")
+
+    assert result.status == DocsSourceStatus.SUCCESS
+    assert len(result.snippets) == 1
+    assert (
+        result.snippets[0].content == "LangGraph StateGraph workflow coordination guide"
+    )
+    assert result.snippets[0].source == "https://docs.langchain.com/langgraph/guide"
+    assert result.snippets[0].heading == "StateGraph Guide"
+    assert result.snippets[0].relevance_score == 0.91
+    assert "{" not in result.snippets[0].content
+
+
+@pytest.mark.asyncio
+async def test_langchain_local_rejects_protocol_envelope_json(monkeypatch):
+    """Protocol-envelope JSON without recognized doc content must not be emitted as document snippet."""
+    import langgraph_system_generator.rag.providers.langchain_local as local_mod
+
+    envelope_json = json.dumps(
+        {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "notifications/initialized",
+            "params": {},
+        }
+    )
+
+    async def mock_call_mcp_tool(*args, **kwargs):
+        return {
+            "result": {
+                "content": [
+                    {
+                        "type": "text",
+                        "text": envelope_json,
+                    }
+                ]
+            }
+        }
+
+    monkeypatch.setattr(settings, "docs_live_sources_enabled", True)
+    monkeypatch.setattr(local_mod, "call_mcp_tool", mock_call_mcp_tool)
+
+    provider = LangChainDocsLocalProvider(endpoint_url="http://test.mcp/endpoint")
+    result = await provider.aretrieve("Check envelope", k=5, mode="live")
+
+    assert result.status == DocsSourceStatus.EMPTY
+    assert len(result.snippets) == 0
