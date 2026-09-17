@@ -44,9 +44,10 @@
       - Strict `fallback_used` semantics (`True` iff a cached/local fallback source actually contributed at least one final snippet);
       - ArchitectureSelector transient docs isolation: `stage_source_statuses` and `consulted_sources` populated while keeping `used_sources` unpolluted and `fallback_used` unflipped;
       - Deterministic concurrent query feedback aggregation in `query_specs` order with strict status reduction rule;
-  (9) 36 comprehensive unit tests in `tests/unit/test_rag_source_precedence.py`, 717 unit tests passing,
-  82 pattern tests passing, flake8 0 issues, mypy 0 issues, deterministic offline stub verified, live wire smoke against `https://docs.langchain.com/mcp` verified (5 snippets, `SUCCESS`).
-  Committed as `eb40bd4` on `fix/375-runtime-docs-source-precedence` and PR #377 updated.
+      - `DocsSourceRegistry.register()` in-place provider replacement preserving registry index and precedence by default, while honoring explicit `prepend=True` repositioning to index 0;
+      - `LangChainDocsLocalProvider` robust serialized JSON collection and single-object normalization (`results`, `snippets`, `documents`, `content`), preserving `0.0` relevance scores and rejecting protocol envelope JSON without emitting false doc snippets;
+  (9) 50 comprehensive unit tests in `tests/unit/test_rag_source_precedence.py`, 731 unit tests passing,
+  82 pattern tests passing, flake8 0 issues, mypy 0 issues, deterministic offline stub verified, live wire smoke against `https://docs.langchain.com/mcp` preserved (5 snippets, `SUCCESS`).
 
 - Restored bounded supervisor context-window management (Issue #65 / PR #374)
   adapted surgically to the modern LangGraph v1 architecture: scalar

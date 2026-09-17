@@ -43,14 +43,15 @@ The generator previously bypassed live documentation retrieval in favor of a har
 | 7.3 | MCP streamable HTTP transport helper | Complete | 2026-09-16 | `mcp_transport.py` with protocol `2026-07-28`, headers, and SSE streaming. |
 | 7.4 | Transport failure & tool missing boundaries | Complete | 2026-09-17 | Immediate abort on HTTP/network errors; candidate retry only on `-32601` unknown tool. |
 | 7.5 | Truthful provenance & stage isolation | Complete | 2026-09-16 | Strict `fallback_used` and `ArchitectureSelector` transient isolation. |
-| 7.6 | Unit test suite & offline verification | Complete | 2026-09-17 | 36 unit tests passing 100% offline without live network or external API keys. |
+| 7.6 | Unit test suite & offline verification | Complete | 2026-09-17 | Dedicated tests passing 100% offline without live network or external API keys. |
+| 7.7 | Registry replacement precedence preservation | Complete | 2026-09-17 | In-place replacement preserving provider index by default; explicit `prepend=True` moves to index 0. |
+| 7.8 | Serialized JSON object normalization in LangChain local | Complete | 2026-09-17 | Unpacks serialized JSON `results`/`snippets`/`documents`/`content` collections and single doc objects; preserves `0.0` scores; rejects raw protocol JSON envelopes. |
 
 ## Verification & Outcomes
 
-- 36/36 tests pass in `tests/unit/test_rag_source_precedence.py`.
-- Full unit test suite (717 tests) and pattern test suite (82 tests) pass cleanly.
-- Flake8 reports 0 fatal errors, mypy reports 0 issues in `src/langgraph_system_generator/rag/`.
+- 50/50 tests pass in `tests/unit/test_rag_source_precedence.py` (8 new regression tests added covering registry replacement order, execution as primary, prepend repositioning, serialized object unpacking, zero-score preservation, and protocol envelope rejection).
+- Full unit test suite (731 tests) and pattern test suite (82 tests) pass cleanly.
+- Flake8 reports 0 fatal errors on `src/` and `tests/`, black reports all files formatted, mypy reports 0 issues in `src/langgraph_system_generator/rag/`.
 - Offline stub mode verified across CLI, API, and package surfaces.
-- Live MCP wire smoke validation against `https://docs.langchain.com/mcp` succeeded with 5 snippets and `DocsSourceStatus.SUCCESS`.
-- Pushed commit `eb40bd4` to branch `fix/375-runtime-docs-source-precedence` and updated PR #377.
+- Preserved prior verified live wire smoke against `https://docs.langchain.com/mcp` (5 snippets, `SUCCESS`).
 
