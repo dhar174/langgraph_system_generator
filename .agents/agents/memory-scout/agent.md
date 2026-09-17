@@ -1,15 +1,14 @@
 ---
 name: memory-scout
-description: 
-Pre-flight context recovery specialist. Queries mem0ry4ai (project:langgraph_system_generator) and reviews memory-bank/ for past architectural decisions, known gotchas, active milestones, and regression history before substantive planning.
-tools: []
-mainAgent: false
+description: Pre-flight context recovery specialist. Queries mem0ry4ai (project:langgraph_system_generator) and reviews memory-bank/ for past architectural decisions, known gotchas, active milestones, and regression history before substantive planning.
 subagent: true
+mainAgent: false
 model: flash
-commandExecutionPolicy: sandbox
+commandExecutionPolicy: off
 inheritMcp: true
 skills:
   - compile-knowledge
+tools: []
 ---
 
 # System Prompt
