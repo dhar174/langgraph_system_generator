@@ -98,7 +98,9 @@ class StubProvider(DocsSourceProvider):
         self.call_count += 1
         self.last_query = query
         if self.raise_on_call:
-            raise RuntimeError(f"Canary triggered: {self.source_id} called unexpectedly in {mode} mode!")
+            raise RuntimeError(
+                f"Canary triggered: {self.source_id} called unexpectedly in {mode} mode!"
+            )
         if self.error:
             return DocsProviderResult(
                 source_id=self.source_id,
@@ -125,6 +127,7 @@ class StubLLM:
         import json
 
         from langchain_core.messages import AIMessage
+
         payload = {
             "architecture_type": "router",
             "patterns": {"primary": "router", "secondary": []},
@@ -154,11 +157,15 @@ async def test_primary_live_provider_succeeds():
         relevance_score=0.95,
         heading="Graphs",
     )
-    primary = StubProvider("langchain-docs-local", available=True, snippets=[primary_snippet])
+    primary = StubProvider(
+        "langchain-docs-local", available=True, snippets=[primary_snippet]
+    )
     secondary = StubProvider("context7", available=True, snippets=[])
     fallback = StubProvider("cached_repo_docs", available=True, snippets=[])
 
-    service = DocsRetrievalService(precedence=["langchain-docs-local", "context7", "cached_repo_docs"])
+    service = DocsRetrievalService(
+        precedence=["langchain-docs-local", "context7", "cached_repo_docs"]
+    )
     service.registry.register(primary)
     service.registry.register(secondary)
     service.registry.register(fallback)
@@ -190,7 +197,9 @@ async def test_primary_unavailable_secondary_context7_succeeds():
     secondary = StubProvider("context7", available=True, snippets=[c7_snippet])
     fallback = StubProvider("cached_repo_docs", available=True, snippets=[])
 
-    service = DocsRetrievalService(precedence=["langchain-docs-local", "context7", "cached_repo_docs"])
+    service = DocsRetrievalService(
+        precedence=["langchain-docs-local", "context7", "cached_repo_docs"]
+    )
     service.registry.register(primary)
     service.registry.register(secondary)
     service.registry.register(fallback)
@@ -226,7 +235,9 @@ async def test_primary_fails_with_error_secondary_context7_succeeds():
     secondary = StubProvider("context7", available=True, snippets=[c7_snippet])
     fallback = StubProvider("cached_repo_docs", available=True, snippets=[])
 
-    service = DocsRetrievalService(precedence=["langchain-docs-local", "context7", "cached_repo_docs"])
+    service = DocsRetrievalService(
+        precedence=["langchain-docs-local", "context7", "cached_repo_docs"]
+    )
     service.registry.register(primary)
     service.registry.register(secondary)
     service.registry.register(fallback)
@@ -256,9 +267,13 @@ async def test_both_live_sources_unavailable_falls_back_to_cached():
     )
     primary = StubProvider("langchain-docs-local", available=False)
     secondary = StubProvider("context7", available=False)
-    fallback = StubProvider("cached_repo_docs", available=True, snippets=[cached_snippet])
+    fallback = StubProvider(
+        "cached_repo_docs", available=True, snippets=[cached_snippet]
+    )
 
-    service = DocsRetrievalService(precedence=["langchain-docs-local", "context7", "cached_repo_docs"])
+    service = DocsRetrievalService(
+        precedence=["langchain-docs-local", "context7", "cached_repo_docs"]
+    )
     service.registry.register(primary)
     service.registry.register(secondary)
     service.registry.register(fallback)
@@ -268,7 +283,11 @@ async def test_both_live_sources_unavailable_falls_back_to_cached():
     assert len(result.snippets) == 1
     assert result.snippets[0].source_kind == "cached_repo_docs"
     assert result.fallback_used is True
-    assert result.attempted_sources == ["langchain-docs-local", "context7", "cached_repo_docs"]
+    assert result.attempted_sources == [
+        "langchain-docs-local",
+        "context7",
+        "cached_repo_docs",
+    ]
     assert result.used_sources == ["cached_repo_docs"]
     assert fallback.call_count == 1
 
@@ -282,11 +301,15 @@ async def test_live_provider_empty_progresses_down_precedence():
         source_kind="context7",
         relevance_score=0.8,
     )
-    primary = StubProvider("langchain-docs-local", available=True, status=DocsSourceStatus.EMPTY)
+    primary = StubProvider(
+        "langchain-docs-local", available=True, status=DocsSourceStatus.EMPTY
+    )
     secondary = StubProvider("context7", available=True, snippets=[next_snippet])
     fallback = StubProvider("cached_repo_docs", available=True, snippets=[])
 
-    service = DocsRetrievalService(precedence=["langchain-docs-local", "context7", "cached_repo_docs"])
+    service = DocsRetrievalService(
+        precedence=["langchain-docs-local", "context7", "cached_repo_docs"]
+    )
     service.registry.register(primary)
     service.registry.register(secondary)
     service.registry.register(fallback)
@@ -311,9 +334,13 @@ async def test_stub_mode_isolation_canary():
         source_kind="cached_repo_docs",
         relevance_score=0.8,
     )
-    fallback = StubProvider("cached_repo_docs", available=True, snippets=[cached_snippet])
+    fallback = StubProvider(
+        "cached_repo_docs", available=True, snippets=[cached_snippet]
+    )
 
-    service = DocsRetrievalService(precedence=["langchain-docs-local", "context7", "cached_repo_docs"])
+    service = DocsRetrievalService(
+        precedence=["langchain-docs-local", "context7", "cached_repo_docs"]
+    )
     service.registry.register(primary)
     service.registry.register(secondary)
     service.registry.register(fallback)
@@ -365,10 +392,16 @@ async def test_architecture_selector_bypass_regression(monkeypatch):
         relevance_score=0.5,
     )
 
-    primary = StubProvider("langchain-docs-local", available=True, snippets=[live_snippet])
-    fallback = StubProvider("cached_repo_docs", available=True, snippets=[cached_snippet])
+    primary = StubProvider(
+        "langchain-docs-local", available=True, snippets=[live_snippet]
+    )
+    fallback = StubProvider(
+        "cached_repo_docs", available=True, snippets=[cached_snippet]
+    )
 
-    service = DocsRetrievalService(precedence=["langchain-docs-local", "cached_repo_docs"])
+    service = DocsRetrievalService(
+        precedence=["langchain-docs-local", "cached_repo_docs"]
+    )
     service.registry.register(primary)
     service.registry.register(fallback)
 
@@ -384,11 +417,19 @@ async def test_architecture_selector_bypass_regression(monkeypatch):
 
     # Verify that LIVE_DOC_MARKER is present and won the selection race
     found_live = any("LIVE_DOC_MARKER" in doc.get("content", "") for doc in prompt_docs)
-    found_stale = any("STALE_CACHED_DOC_MARKER" in doc.get("content", "") for doc in prompt_docs)
+    found_stale = any(
+        "STALE_CACHED_DOC_MARKER" in doc.get("content", "") for doc in prompt_docs
+    )
 
-    assert found_live is True, "ArchitectureSelector failed to consume live docs from DocsRetrievalService"
-    assert found_stale is False, "ArchitectureSelector should not have used stale cached docs when live succeeded"
-    assert primary.call_count > 0, "Primary live provider was never called by ArchitectureSelector"
+    assert (
+        found_live is True
+    ), "ArchitectureSelector failed to consume live docs from DocsRetrievalService"
+    assert (
+        found_stale is False
+    ), "ArchitectureSelector should not have used stale cached docs when live succeeded"
+    assert (
+        primary.call_count > 0
+    ), "Primary live provider was never called by ArchitectureSelector"
 
 
 @pytest.mark.asyncio
@@ -457,13 +498,16 @@ def test_cli_shortcut_context_pack_truthfulness():
 @pytest.mark.asyncio
 async def test_custom_plugin_module_registration(monkeypatch):
     """docs_source_plugin_modules can register custom documentation providers."""
+
     class CustomDocsProvider(DocsSourceProvider):
         source_id: str = "custom_enterprise_wiki"
 
         def is_available(self, mode: str = "live") -> bool:
             return True
 
-        async def aretrieve(self, query: str, k: int = 5, mode: str = "live") -> DocsProviderResult:
+        async def aretrieve(
+            self, query: str, k: int = 5, mode: str = "live"
+        ) -> DocsProviderResult:
             return DocsProviderResult(
                 source_id=self.source_id,
                 status=DocsSourceStatus.SUCCESS,
@@ -534,9 +578,13 @@ async def test_architecture_selector_docs_mode_stub_canary(monkeypatch):
         source_kind="cached_repo_docs",
         relevance_score=0.9,
     )
-    fallback = StubProvider("cached_repo_docs", available=True, snippets=[cached_snippet])
+    fallback = StubProvider(
+        "cached_repo_docs", available=True, snippets=[cached_snippet]
+    )
 
-    service = DocsRetrievalService(precedence=["langchain-docs-local", "context7", "cached_repo_docs"])
+    service = DocsRetrievalService(
+        precedence=["langchain-docs-local", "context7", "cached_repo_docs"]
+    )
     service.registry.register(primary)
     service.registry.register(secondary)
     service.registry.register(fallback)
@@ -568,7 +616,9 @@ async def test_architecture_selector_docs_mode_stub_canary(monkeypatch):
         ]["cached_repo_docs"]
         == "success"
     )
-    assert "cached_repo_docs" in selector.docs_retrieval_feedback_delta.consulted_sources
+    assert (
+        "cached_repo_docs" in selector.docs_retrieval_feedback_delta.consulted_sources
+    )
 
 
 @pytest.mark.asyncio
@@ -596,7 +646,9 @@ async def test_provider_exception_boundary():
     )
     fallback = StubProvider("cached_repo_docs", available=True, snippets=[safe_snippet])
 
-    service = DocsRetrievalService(precedence=["langchain-docs-local", "context7", "cached_repo_docs"])
+    service = DocsRetrievalService(
+        precedence=["langchain-docs-local", "context7", "cached_repo_docs"]
+    )
     service.registry.register(exploding_avail)
     service.registry.register(exploding_retrieval)
     service.registry.register(fallback)
@@ -624,7 +676,9 @@ async def test_cache_non_eviction_on_live_provider_exception(monkeypatch):
         async def aretrieve(self, *args, **kwargs):
             raise ConnectionError("Live network timeout")
 
-    monkeypatch.setattr(nodes_mod, "get_default_docs_retrieval_service", lambda: BrokenService())
+    monkeypatch.setattr(
+        nodes_mod, "get_default_docs_retrieval_service", lambda: BrokenService()
+    )
 
     state = {
         "user_prompt": "Hello test",
@@ -649,7 +703,9 @@ async def test_crosscheck_control_flow_primary_success_never_falls_back(monkeypa
         source_kind="langchain-docs-local",
         relevance_score=0.95,
     )
-    primary = StubProvider("langchain-docs-local", available=True, snippets=[primary_snippet])
+    primary = StubProvider(
+        "langchain-docs-local", available=True, snippets=[primary_snippet]
+    )
     secondary = StubProvider(
         "context7",
         available=True,
@@ -669,7 +725,9 @@ async def test_crosscheck_control_flow_primary_success_never_falls_back(monkeypa
         ],
     )
 
-    service = DocsRetrievalService(precedence=["langchain-docs-local", "context7", "cached_repo_docs"])
+    service = DocsRetrievalService(
+        precedence=["langchain-docs-local", "context7", "cached_repo_docs"]
+    )
     service.registry.register(primary)
     service.registry.register(secondary)
     service.registry.register(fallback)
@@ -696,7 +754,9 @@ async def test_crosscheck_capping_survival(monkeypatch):
         )
         for i in range(5)
     ]
-    primary = StubProvider("langchain-docs-local", available=True, snippets=primary_snippets)
+    primary = StubProvider(
+        "langchain-docs-local", available=True, snippets=primary_snippets
+    )
     c7_snippet = DocSnippet(
         content="Context7 freshest API updates",
         source="context7:freshest",
@@ -706,7 +766,9 @@ async def test_crosscheck_capping_survival(monkeypatch):
     secondary = StubProvider("context7", available=True, snippets=[c7_snippet])
     fallback = StubProvider("cached_repo_docs", available=True, snippets=[])
 
-    service = DocsRetrievalService(precedence=["langchain-docs-local", "context7", "cached_repo_docs"])
+    service = DocsRetrievalService(
+        precedence=["langchain-docs-local", "context7", "cached_repo_docs"]
+    )
     service.registry.register(primary)
     service.registry.register(secondary)
     service.registry.register(fallback)
@@ -729,7 +791,9 @@ async def test_plugin_prepend_ordering():
         source_kind="custom_wiki",
         relevance_score=0.99,
     )
-    plugin_provider = StubProvider("custom_wiki", available=True, snippets=[plugin_snippet])
+    plugin_provider = StubProvider(
+        "custom_wiki", available=True, snippets=[plugin_snippet]
+    )
     cached_provider = StubProvider(
         "cached_repo_docs",
         available=True,
@@ -769,7 +833,6 @@ def test_faiss_distance_ordering_and_fields():
     assert snippet["distance"] == 0.1
     assert snippet["score_kind"] == "distance"
 
-
     score_small_dist = normalize_relevance_score(0.1, is_distance=True)
     score_large_dist = normalize_relevance_score(2.0, is_distance=True)
 
@@ -783,7 +846,15 @@ async def test_zero_score_preservation():
     """Scores of 0.0 must be preserved rather than truth-value defaulting to 1.0."""
     local_provider = LangChainDocsLocalProvider()
     snippets_local = local_provider._extract_snippets_from_payload(
-        {"snippets": [{"content": "Zero score doc", "url": "https://python.langchain.com/zero", "score": 0.0}]},
+        {
+            "snippets": [
+                {
+                    "content": "Zero score doc",
+                    "url": "https://python.langchain.com/zero",
+                    "score": 0.0,
+                }
+            ]
+        },
         fallback_url="https://python.langchain.com",
     )
     assert len(snippets_local) == 1
@@ -791,7 +862,15 @@ async def test_zero_score_preservation():
 
     c7_provider = Context7DocsProvider()
     snippets_c7 = c7_provider._parse_snippets(
-        {"snippets": [{"text": "Zero score c7", "url": "https://context7.ai/doc", "score": 0.0}]},
+        {
+            "snippets": [
+                {
+                    "text": "Zero score c7",
+                    "url": "https://context7.ai/doc",
+                    "score": 0.0,
+                }
+            ]
+        },
         fallback_source="https://context7.ai",
     )
     assert len(snippets_c7) == 1
@@ -805,7 +884,9 @@ def test_context7_explicit_endpoint_availability(monkeypatch):
     monkeypatch.delenv("CONTEXT7_API_KEY", raising=False)
     monkeypatch.delenv("CONTEXT7_MCP_URL", raising=False)
 
-    provider = Context7DocsProvider(api_key=None, endpoint_url="http://localhost:8080/mcp")
+    provider = Context7DocsProvider(
+        api_key=None, endpoint_url="http://localhost:8080/mcp"
+    )
     assert provider.is_available("live") is True
 
     # Under Option A, the default hosted endpoint is available when enabled without requiring API key
@@ -920,7 +1001,9 @@ async def test_context7_resolve_library_id_to_query_docs_workflow(monkeypatch):
 
     monkeypatch.setattr(httpx.AsyncClient, "post", mock_post)
 
-    provider = Context7DocsProvider(api_key="secret-c7-key-123", endpoint_url="http://context7.mock/mcp")
+    provider = Context7DocsProvider(
+        api_key="secret-c7-key-123", endpoint_url="http://context7.mock/mcp"
+    )
 
     res = await provider.aretrieve("LangGraph graph", k=2, mode="live")
 
@@ -1050,13 +1133,21 @@ async def test_mcp_transport_sse_response_parsing(monkeypatch):
 async def test_fallback_used_semantics_cases_abc():
     """Verify fallback_used semantics: Case A (True), Case B (False), Case C (False)."""
     # Case A: live failed, cached fallback returned snippets -> fallback_used=True
-    primary_a = StubProvider("langchain-docs-local", available=True, error="network failure")
+    primary_a = StubProvider(
+        "langchain-docs-local", available=True, error="network failure"
+    )
     fallback_a = StubProvider(
         "cached_repo_docs",
         available=True,
-        snippets=[DocSnippet(content="Cached text", source="cache", source_kind="cached_repo_docs")],
+        snippets=[
+            DocSnippet(
+                content="Cached text", source="cache", source_kind="cached_repo_docs"
+            )
+        ],
     )
-    service_a = DocsRetrievalService(precedence=["langchain-docs-local", "cached_repo_docs"])
+    service_a = DocsRetrievalService(
+        precedence=["langchain-docs-local", "cached_repo_docs"]
+    )
     service_a.registry.register(primary_a)
     service_a.registry.register(fallback_a)
     res_a = await service_a.aretrieve("test query", mode="live")
@@ -1064,9 +1155,13 @@ async def test_fallback_used_semantics_cases_abc():
     assert "cached_repo_docs" in res_a.used_sources
 
     # Case B: live failed, cached fallback returned 0 snippets -> fallback_used=False
-    primary_b = StubProvider("langchain-docs-local", available=True, error="network failure")
+    primary_b = StubProvider(
+        "langchain-docs-local", available=True, error="network failure"
+    )
     fallback_b = StubProvider("cached_repo_docs", available=True, snippets=[])
-    service_b = DocsRetrievalService(precedence=["langchain-docs-local", "cached_repo_docs"])
+    service_b = DocsRetrievalService(
+        precedence=["langchain-docs-local", "cached_repo_docs"]
+    )
     service_b.registry.register(primary_b)
     service_b.registry.register(fallback_b)
     res_b = await service_b.aretrieve("test query", mode="live")
@@ -1074,9 +1169,13 @@ async def test_fallback_used_semantics_cases_abc():
     assert res_b.used_sources == []
 
     # Case C: live failed, cached fallback raised an exception -> fallback_used=False
-    primary_c = StubProvider("langchain-docs-local", available=True, error="network failure")
+    primary_c = StubProvider(
+        "langchain-docs-local", available=True, error="network failure"
+    )
     fallback_c = StubProvider("cached_repo_docs", available=True, error="disk corrupt")
-    service_c = DocsRetrievalService(precedence=["langchain-docs-local", "cached_repo_docs"])
+    service_c = DocsRetrievalService(
+        precedence=["langchain-docs-local", "cached_repo_docs"]
+    )
     service_c.registry.register(primary_c)
     service_c.registry.register(fallback_c)
     res_c = await service_c.aretrieve("test query", mode="live")
@@ -1137,7 +1236,11 @@ async def test_context7_query_docs_failed_returns_failed(monkeypatch):
                 json={
                     "jsonrpc": "2.0",
                     "id": req_id,
-                    "result": {"content": [{"text": '{"libraries": [{"library_id": "lib-456"}]}'}]},
+                    "result": {
+                        "content": [
+                            {"text": '{"libraries": [{"library_id": "lib-456"}]}'}
+                        ]
+                    },
                 },
             )
         elif name == "query-docs":
@@ -1146,7 +1249,10 @@ async def test_context7_query_docs_failed_returns_failed(monkeypatch):
                 json={
                     "jsonrpc": "2.0",
                     "id": req_id,
-                    "error": {"code": -32000, "message": "Database error in query-docs"},
+                    "error": {
+                        "code": -32000,
+                        "message": "Database error in query-docs",
+                    },
                 },
             )
         return httpx.Response(404)
@@ -1181,7 +1287,10 @@ async def test_context7_unknown_tool_falls_back_to_search(monkeypatch):
                 json={
                     "jsonrpc": "2.0",
                     "id": req_id,
-                    "error": {"code": -32601, "message": "Tool resolve-library-id not found"},
+                    "error": {
+                        "code": -32601,
+                        "message": "Tool resolve-library-id not found",
+                    },
                 },
             )
         elif name == "search":
@@ -1192,7 +1301,9 @@ async def test_context7_unknown_tool_falls_back_to_search(monkeypatch):
                     "id": req_id,
                     "result": {
                         "content": [
-                            {"text": '{"results": [{"snippet": "Search result", "url": "https://c7.ai"}]}'}
+                            {
+                                "text": '{"results": [{"snippet": "Search result", "url": "https://c7.ai"}]}'
+                            }
                         ]
                     },
                 },
@@ -1219,12 +1330,19 @@ async def test_architecture_selector_transient_docs_provenance_isolation(monkeyp
         source_kind="langchain-docs-local",
         relevance_score=0.96,
     )
-    rag_provider = StubProvider("langchain-docs-local", available=True, snippets=[live_snippet])
-    rag_service = DocsRetrievalService(precedence=["langchain-docs-local", "cached_repo_docs"])
+    rag_provider = StubProvider(
+        "langchain-docs-local", available=True, snippets=[live_snippet]
+    )
+    rag_service = DocsRetrievalService(
+        precedence=["langchain-docs-local", "cached_repo_docs"]
+    )
     rag_service.registry.register(rag_provider)
 
     from langgraph_system_generator.generator import nodes as nodes_mod
-    monkeypatch.setattr(nodes_mod, "get_default_docs_retrieval_service", lambda: rag_service)
+
+    monkeypatch.setattr(
+        nodes_mod, "get_default_docs_retrieval_service", lambda: rag_service
+    )
 
     state = {
         "user_prompt": "Build a state graph router",
@@ -1238,19 +1356,27 @@ async def test_architecture_selector_transient_docs_provenance_isolation(monkeyp
     assert state["docs_retrieval_feedback"].used_sources == ["langchain-docs-local"]
     assert state["docs_retrieval_feedback"].fallback_used is False
 
-    selector_live = StubProvider("langchain-docs-local", available=True, error="network blip")
+    selector_live = StubProvider(
+        "langchain-docs-local", available=True, error="network blip"
+    )
     cached_doc = DocSnippet(
         content="Offline selector facts",
         source="cache://facts",
         source_kind="cached_repo_docs",
         relevance_score=0.90,
     )
-    selector_fallback = StubProvider("cached_repo_docs", available=True, snippets=[cached_doc])
-    selector_service = DocsRetrievalService(precedence=["langchain-docs-local", "cached_repo_docs"])
+    selector_fallback = StubProvider(
+        "cached_repo_docs", available=True, snippets=[cached_doc]
+    )
+    selector_service = DocsRetrievalService(
+        precedence=["langchain-docs-local", "cached_repo_docs"]
+    )
     selector_service.registry.register(selector_live)
     selector_service.registry.register(selector_fallback)
 
-    monkeypatch.setattr(nodes_mod, "get_default_docs_retrieval_service", lambda: selector_service)
+    monkeypatch.setattr(
+        nodes_mod, "get_default_docs_retrieval_service", lambda: selector_service
+    )
     monkeypatch.setattr(
         "langgraph_system_generator.generator.agents.architecture_selector.ChatOpenAI",
         StubLLM,
@@ -1263,13 +1389,18 @@ async def test_architecture_selector_transient_docs_provenance_isolation(monkeyp
     assert feedback.used_sources == ["langchain-docs-local"]
     assert feedback.fallback_used is False
     assert feedback.stage_source_statuses["rag"]["langchain-docs-local"] == "success"
-    assert feedback.stage_source_statuses["architecture_selection"]["cached_repo_docs"] == "success"
+    assert (
+        feedback.stage_source_statuses["architecture_selection"]["cached_repo_docs"]
+        == "success"
+    )
     assert "cached_repo_docs" in feedback.consulted_sources
 
     pack = _build_generation_context_pack(state)
     assert pack.source_summary["used_sources"] == ["langchain-docs-local"]
     assert pack.source_summary["fallback_used"] is False
-    assert pack.source_summary["stage_source_statuses"] == feedback.stage_source_statuses
+    assert (
+        pack.source_summary["stage_source_statuses"] == feedback.stage_source_statuses
+    )
 
 
 @pytest.mark.asyncio
@@ -1301,7 +1432,13 @@ async def test_concurrent_architecture_feedback_determinism(monkeypatch):
             else:
                 await asyncio.sleep(0.05)
                 return DocsRetrievalResult(
-                    snippets=[DocSnippet(content="LangGraph core", source="c7", source_kind="context7")],
+                    snippets=[
+                        DocSnippet(
+                            content="LangGraph core",
+                            source="c7",
+                            source_kind="context7",
+                        )
+                    ],
                     attempted_sources=["context7"],
                     source_statuses={"context7": "success"},
                     used_sources=["context7"],
@@ -1327,7 +1464,9 @@ async def test_concurrent_architecture_feedback_determinism(monkeypatch):
     delta = selector.docs_retrieval_feedback_delta
     assert delta is not None
     assert delta.source_statuses["context7"] == "success"
-    assert delta.stage_source_statuses["architecture_selection"]["context7"] == "success"
+    assert (
+        delta.stage_source_statuses["architecture_selection"]["context7"] == "success"
+    )
 
 
 @pytest.mark.asyncio
@@ -1346,7 +1485,9 @@ async def test_langchain_local_http_error_does_not_retry_candidates(monkeypatch)
 
     monkeypatch.setattr(httpx.AsyncClient, "post", mock_post)
 
-    provider = LangChainDocsLocalProvider(endpoint_url="http://127.0.0.1:9999/wrong-path")
+    provider = LangChainDocsLocalProvider(
+        endpoint_url="http://127.0.0.1:9999/wrong-path"
+    )
     res = await provider.aretrieve("Query", k=3, mode="live")
     assert res.status == DocsSourceStatus.FAILED
     assert call_count == 1
@@ -1379,3 +1520,228 @@ async def test_context7_http_404_fails_without_search_fallback(monkeypatch):
     assert tools_called == ["resolve-library-id"]
 
 
+@pytest.mark.asyncio
+async def test_mcp_transport_multi_event_sse_with_progress_notifications(monkeypatch):
+    """call_mcp_tool consumes progress notifications and returns the final matching response."""
+    import httpx
+    from langgraph_system_generator.rag.mcp_transport import call_mcp_tool
+
+    sse_body = (
+        'data: {"jsonrpc": "2.0", "method": "notifications/progress", "params": {"progress": 1, "total": 2}}\n\n'
+        'data: {"jsonrpc": "2.0", "method": "notifications/progress", "params": {"progress": 2, "total": 2}}\n\n'
+        'data: {"jsonrpc": "2.0", "id": 1, "result": {"content": [{"text": "final-sse-result"}]}}\n\n'
+    )
+
+    async def mock_post(self, url, headers=None, json=None, timeout=None):
+        return httpx.Response(
+            200,
+            headers={"Content-Type": "text/event-stream"},
+            content=sse_body.encode("utf-8"),
+        )
+
+    monkeypatch.setattr(httpx.AsyncClient, "post", mock_post)
+
+    res = await call_mcp_tool(
+        endpoint_url="http://test.mcp/sse-stream",
+        tool_name="test_tool",
+        arguments={},
+        request_id=1,
+    )
+    assert res.get("id") == 1
+    assert res.get("result") == {"content": [{"text": "final-sse-result"}]}
+
+
+@pytest.mark.asyncio
+async def test_mcp_transport_sse_ignores_unrelated_response_id(monkeypatch):
+    """call_mcp_tool ignores unrelated response IDs and returns matching id, or raises parse error."""
+    import httpx
+    from langgraph_system_generator.rag.mcp_transport import (
+        MCPTransportError,
+        call_mcp_tool,
+    )
+
+    # Sub-case A: Unrelated response ID alongside matching response ID
+    sse_body_mixed = (
+        'data: {"jsonrpc": "2.0", "method": "notifications/progress", "params": {"progress": 1}}\n\n'
+        'data: {"jsonrpc": "2.0", "id": 999, "result": {"content": [{"text": "unrelated-id-result"}]}}\n\n'
+        'data: {"jsonrpc": "2.0", "id": 1, "result": {"content": [{"text": "matching-id-result"}]}}\n\n'
+    )
+
+    async def mock_post_mixed(self, url, headers=None, json=None, timeout=None):
+        return httpx.Response(
+            200,
+            headers={"Content-Type": "text/event-stream"},
+            content=sse_body_mixed.encode("utf-8"),
+        )
+
+    monkeypatch.setattr(httpx.AsyncClient, "post", mock_post_mixed)
+
+    res = await call_mcp_tool(
+        endpoint_url="http://test.mcp/sse-mixed",
+        tool_name="test_tool",
+        arguments={},
+        request_id=1,
+    )
+    assert res.get("id") == 1
+    assert res.get("result") == {"content": [{"text": "matching-id-result"}]}
+
+    # Sub-case B: Only unrelated response ID exists in stream -> raises parse error
+    sse_body_unrelated_only = 'data: {"jsonrpc": "2.0", "id": 999, "result": {"content": [{"text": "unrelated-id-result"}]}}\n\n'
+
+    async def mock_post_unrelated(self, url, headers=None, json=None, timeout=None):
+        return httpx.Response(
+            200,
+            headers={"Content-Type": "text/event-stream"},
+            content=sse_body_unrelated_only.encode("utf-8"),
+        )
+
+    monkeypatch.setattr(httpx.AsyncClient, "post", mock_post_unrelated)
+
+    with pytest.raises(MCPTransportError) as exc_info:
+        await call_mcp_tool(
+            endpoint_url="http://test.mcp/sse-unrelated",
+            tool_name="test_tool",
+            arguments={},
+            request_id=1,
+        )
+    assert exc_info.value.error_kind == "parse"
+    assert "No valid JSON-RPC response" in str(exc_info.value)
+
+
+@pytest.mark.asyncio
+async def test_mcp_transport_structured_jsonrpc_error_on_http_400(monkeypatch):
+    """call_mcp_tool preserves structured JSON-RPC error payload on HTTP 400 for provider compatibility probing."""
+    import json
+    import httpx
+    from langgraph_system_generator.rag.mcp_transport import call_mcp_tool
+
+    http_400_body = {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "error": {
+            "code": -32601,
+            "message": "Method not found",
+        },
+    }
+
+    async def mock_post(self, url, headers=None, json=None, timeout=None):
+        return httpx.Response(
+            400,
+            headers={"Content-Type": "application/json"},
+            json=http_400_body,
+        )
+
+    monkeypatch.setattr(httpx.AsyncClient, "post", mock_post)
+
+    # 1. Direct call_mcp_tool test
+    payload = await call_mcp_tool(
+        endpoint_url="http://test.mcp/compat",
+        tool_name="search",
+        arguments={"query": "test"},
+        request_id=1,
+    )
+    assert payload.get("id") == 1
+    assert payload.get("error", {}).get("code") == -32601
+    assert payload.get("error", {}).get("message") == "Method not found"
+
+    # 2. Provider integration: compatibility probing continues on structured tool error
+    monkeypatch.setattr(settings, "docs_live_sources_enabled", True)
+    tools_called = []
+
+    async def mock_provider_post(self, url, *args, **kwargs):
+        payload = kwargs.get("json") or {}
+        tool_name = payload.get("params", {}).get("name")
+        req_id = payload.get("id", 1)
+        tools_called.append(tool_name)
+        if tool_name == "search":
+            return httpx.Response(
+                400,
+                headers={"Content-Type": "application/json"},
+                json={
+                    "jsonrpc": "2.0",
+                    "id": req_id,
+                    "error": {"code": -32601, "message": "Method not found"},
+                },
+            )
+        elif tool_name == "search_docs_by_lang_chain":
+            return httpx.Response(
+                200,
+                json={
+                    "jsonrpc": "2.0",
+                    "id": req_id,
+                    "result": {
+                        "content": [
+                            {
+                                "text": json.dumps(
+                                    [{"content": "Success snippet", "url": "http://ok"}]
+                                )
+                            }
+                        ]
+                    },
+                },
+            )
+        return httpx.Response(404)
+
+    monkeypatch.setattr(httpx.AsyncClient, "post", mock_provider_post)
+
+    provider = LangChainDocsLocalProvider(
+        endpoint_url="http://test.mcp/compat-provider"
+    )
+    res = await provider.aretrieve("Query", k=3, mode="live")
+    assert res.status == DocsSourceStatus.SUCCESS
+    assert len(res.snippets) == 1
+    assert res.snippets[0].content == "Success snippet"
+    assert tools_called == ["search", "search_docs_by_lang_chain"]
+
+
+@pytest.mark.asyncio
+async def test_mcp_transport_plain_http_failure_raises_transport_error(monkeypatch):
+    """call_mcp_tool raises MCPTransportError on plain HTTP 404 failure and provider halts probing."""
+    import httpx
+    from langgraph_system_generator.rag.mcp_transport import (
+        MCPTransportError,
+        call_mcp_tool,
+    )
+
+    async def mock_post(self, url, headers=None, json=None, timeout=None):
+        return httpx.Response(404, text="Not Found: reverse proxy route missing")
+
+    monkeypatch.setattr(httpx.AsyncClient, "post", mock_post)
+
+    with pytest.raises(MCPTransportError) as exc_info:
+        await call_mcp_tool(
+            endpoint_url="http://test.mcp/broken-proxy",
+            tool_name="search",
+            arguments={"query": "test"},
+            request_id=1,
+        )
+    assert exc_info.value.status_code == 404
+    assert exc_info.value.error_kind == "http"
+    assert "Not Found: reverse proxy route missing" in str(exc_info.value)
+
+
+@pytest.mark.asyncio
+async def test_mcp_transport_generic_json_error_on_non_2xx_raises_transport_error(
+    monkeypatch,
+):
+    """call_mcp_tool does not treat arbitrary HTTP 404/400 JSON bodies without matching id as tool-not-found."""
+    import httpx
+    from langgraph_system_generator.rag.mcp_transport import (
+        MCPTransportError,
+        call_mcp_tool,
+    )
+
+    async def mock_post(self, url, headers=None, json=None, timeout=None):
+        return httpx.Response(404, json={"detail": "Route /tools/call not registered"})
+
+    monkeypatch.setattr(httpx.AsyncClient, "post", mock_post)
+
+    with pytest.raises(MCPTransportError) as exc_info:
+        await call_mcp_tool(
+            endpoint_url="http://test.mcp/api",
+            tool_name="search",
+            arguments={"query": "test"},
+            request_id=1,
+        )
+    assert exc_info.value.status_code == 404
+    assert exc_info.value.error_kind == "http"
