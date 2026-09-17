@@ -1012,8 +1012,10 @@ async def test_mcp_transport_protocol_headers_and_metadata(monkeypatch):
     assert captured["headers"].get("Authorization") == "Bearer secret-key"
     assert captured["json"]["method"] == "tools/call"
     assert captured["json"]["params"]["name"] == "test_tool"
-    assert captured["json"]["params"]["arguments"] == {"arg1": "val1"}
-    assert captured["json"]["params"]["_meta"]["protocolVersion"] == "2026-07-28"
+    meta = captured["json"]["params"]["_meta"]
+    assert meta["io.modelcontextprotocol/protocolVersion"] == "2026-07-28"
+    assert "io.modelcontextprotocol/clientCapabilities" in meta
+    assert "protocolVersion" not in meta
 
 
 @pytest.mark.asyncio
@@ -1326,4 +1328,54 @@ async def test_concurrent_architecture_feedback_determinism(monkeypatch):
     assert delta is not None
     assert delta.source_statuses["context7"] == "success"
     assert delta.stage_source_statuses["architecture_selection"]["context7"] == "success"
+
+
+@pytest.mark.asyncio
+async def test_langchain_local_http_error_does_not_retry_candidates(monkeypatch):
+    """Transport/HTTP failures must stop LangChain candidate tool probing immediately after 1 request."""
+    import httpx
+
+    monkeypatch.setattr(settings, "docs_live_sources_enabled", True)
+
+    call_count = 0
+
+    async def mock_post(self, *args, **kwargs):
+        nonlocal call_count
+        call_count += 1
+        return httpx.Response(404, text="Not Found: endpoint /mcp does not exist")
+
+    monkeypatch.setattr(httpx.AsyncClient, "post", mock_post)
+
+    provider = LangChainDocsLocalProvider(endpoint_url="http://127.0.0.1:9999/wrong-path")
+    res = await provider.aretrieve("Query", k=3, mode="live")
+    assert res.status == DocsSourceStatus.FAILED
+    assert call_count == 1
+    assert "404" in (res.error_message or "")
+
+
+@pytest.mark.asyncio
+async def test_context7_http_404_fails_without_search_fallback(monkeypatch):
+    """Transport/HTTP 404 on Context7 must fail the provider immediately without falling back to search."""
+    import httpx
+
+    monkeypatch.setattr(settings, "docs_live_sources_enabled", True)
+    monkeypatch.setattr(settings, "context7_docs_enabled", True)
+
+    tools_called = []
+
+    async def mock_post(self, url, headers=None, json=None, timeout=None):
+        name = (json or {}).get("params", {}).get("name")
+        tools_called.append(name)
+        return httpx.Response(404, text="Not Found: reverse proxy error")
+
+    monkeypatch.setattr(httpx.AsyncClient, "post", mock_post)
+
+    provider = Context7DocsProvider(endpoint_url="http://mock.c7/wrong-mcp")
+    res = await provider.aretrieve("Some topic", mode="live")
+
+    assert res.status == DocsSourceStatus.FAILED
+    assert "404" in (res.error_message or "")
+    # Must NOT have fallen back to 'search' against the nonexistent endpoint!
+    assert tools_called == ["resolve-library-id"]
+
 

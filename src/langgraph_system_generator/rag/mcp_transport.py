@@ -126,6 +126,15 @@ async def call_mcp_tool(
     if authorization:
         headers["Authorization"] = authorization
 
+    meta_payload: Dict[str, Any] = {
+        "io.modelcontextprotocol/protocolVersion": protocol_version,
+        "io.modelcontextprotocol/clientCapabilities": {},
+        "io.modelcontextprotocol/clientInfo": {
+            "name": "langgraph-system-generator",
+            "version": "1.0.0",
+        },
+    }
+
     json_rpc_payload: Dict[str, Any] = {
         "jsonrpc": "2.0",
         "id": request_id,
@@ -133,9 +142,7 @@ async def call_mcp_tool(
         "params": {
             "name": tool_name,
             "arguments": arguments,
-            "_meta": {
-                "protocolVersion": protocol_version,
-            },
+            "_meta": meta_payload,
         },
     }
 

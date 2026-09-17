@@ -97,21 +97,27 @@ class LangChainDocsLocalProvider(DocsSourceProvider):
                     )
                 except MCPTransportError as exc:
                     last_error = str(exc)
-                    if exc.is_connection_error:
-                        # Transport connection failure: stop compatibility-tool probing immediately
-                        break
-                    continue
+                    # Transport/HTTP/network/auth failures mean this provider cannot be reached.
+                    # Stop compatibility-tool probing immediately instead of sending useless retries.
+                    break
 
                 if "error" in data:
                     err_obj = data["error"]
+                    err_code = err_obj.get("code") if isinstance(err_obj, dict) else None
                     err_msg = (
                         err_obj.get("message", str(err_obj))
                         if isinstance(err_obj, dict)
                         else str(err_obj)
                     )
                     last_error = f"MCP error: {err_msg}"
-                    # If tool was not found or unknown, try the next compatibility candidate tool
-                    if "not found" in err_msg.lower() or "unknown tool" in err_msg.lower():
+                    is_tool_missing = (
+                        err_code == -32601
+                        or "not found" in err_msg.lower()
+                        or "unknown tool" in err_msg.lower()
+                        or "unknown method" in err_msg.lower()
+                    )
+                    # If JSON-RPC tool was not found or unknown, try the next compatibility candidate tool
+                    if is_tool_missing:
                         continue
                     break
 

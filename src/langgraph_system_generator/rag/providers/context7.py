@@ -144,58 +144,51 @@ class Context7DocsProvider(DocsSourceProvider):
                         timeout_seconds=self.timeout_seconds,
                     )
                 except MCPTransportError as exc:
-                    if exc.is_connection_error:
-                        elapsed_ms = (time.perf_counter() - start_time) * 1000.0
-                        return DocsProviderResult(
-                            source_id=self.source_id,
-                            status=DocsSourceStatus.FAILED,
-                            latency_ms=elapsed_ms,
-                            error_message=str(exc),
-                        )
-                    err_str = str(exc).lower()
-                    if exc.status_code == 404 or "unknown" in err_str or "not found" in err_str:
-                        should_fallback_to_search = True
-                        resolve_data = {"error": str(exc)}
-                    else:
-                        elapsed_ms = (time.perf_counter() - start_time) * 1000.0
-                        return DocsProviderResult(
-                            source_id=self.source_id,
-                            status=DocsSourceStatus.FAILED,
-                            latency_ms=elapsed_ms,
-                            error_message=str(exc),
-                        )
+                    elapsed_ms = (time.perf_counter() - start_time) * 1000.0
+                    return DocsProviderResult(
+                        source_id=self.source_id,
+                        status=DocsSourceStatus.FAILED,
+                        latency_ms=elapsed_ms,
+                        error_message=str(exc),
+                    )
 
-                if not should_fallback_to_search:
-                    if "error" in resolve_data:
-                        err_obj = resolve_data["error"]
-                        err_msg = (
-                            err_obj.get("message", str(err_obj))
-                            if isinstance(err_obj, dict)
-                            else str(err_obj)
-                        )
-                        if "not found" in err_msg.lower() or "unknown tool" in err_msg.lower():
-                            should_fallback_to_search = True
-                        else:
-                            elapsed_ms = (time.perf_counter() - start_time) * 1000.0
-                            return DocsProviderResult(
-                                source_id=self.source_id,
-                                status=DocsSourceStatus.FAILED,
-                                latency_ms=elapsed_ms,
-                                error_message=f"Context7 MCP error: {err_msg}",
-                            )
+                if "error" in resolve_data:
+                    err_obj = resolve_data["error"]
+                    err_code = err_obj.get("code") if isinstance(err_obj, dict) else None
+                    err_msg = (
+                        err_obj.get("message", str(err_obj))
+                        if isinstance(err_obj, dict)
+                        else str(err_obj)
+                    )
+                    is_tool_missing = (
+                        err_code == -32601
+                        or "not found" in err_msg.lower()
+                        or "unknown tool" in err_msg.lower()
+                        or "unknown method" in err_msg.lower()
+                    )
+                    if is_tool_missing:
+                        should_fallback_to_search = True
                     else:
-                        resolved_lib_id = self._extract_library_id(resolve_data)
-                        if resolved_lib_id:
-                            self._resolved_libraries[target_lib] = resolved_lib_id
-                        else:
-                            # resolve-library-id returned empty / no library ID
-                            # Do not call query-docs or fall back to search!
-                            elapsed_ms = (time.perf_counter() - start_time) * 1000.0
-                            return DocsProviderResult(
-                                source_id=self.source_id,
-                                status=DocsSourceStatus.EMPTY,
-                                latency_ms=elapsed_ms,
-                            )
+                        elapsed_ms = (time.perf_counter() - start_time) * 1000.0
+                        return DocsProviderResult(
+                            source_id=self.source_id,
+                            status=DocsSourceStatus.FAILED,
+                            latency_ms=elapsed_ms,
+                            error_message=f"Context7 MCP error: {err_msg}",
+                        )
+                else:
+                    resolved_lib_id = self._extract_library_id(resolve_data)
+                    if resolved_lib_id:
+                        self._resolved_libraries[target_lib] = resolved_lib_id
+                    else:
+                        # resolve-library-id returned empty / no library ID
+                        # Do not call query-docs or fall back to search!
+                        elapsed_ms = (time.perf_counter() - start_time) * 1000.0
+                        return DocsProviderResult(
+                            source_id=self.source_id,
+                            status=DocsSourceStatus.EMPTY,
+                            latency_ms=elapsed_ms,
+                        )
 
             # Protocol step 2: query-docs if library ID resolved
             if resolved_lib_id and not should_fallback_to_search:
@@ -208,47 +201,40 @@ class Context7DocsProvider(DocsSourceProvider):
                         timeout_seconds=self.timeout_seconds,
                     )
                 except MCPTransportError as exc:
-                    if exc.is_connection_error:
-                        elapsed_ms = (time.perf_counter() - start_time) * 1000.0
-                        return DocsProviderResult(
-                            source_id=self.source_id,
-                            status=DocsSourceStatus.FAILED,
-                            latency_ms=elapsed_ms,
-                            error_message=str(exc),
-                        )
-                    err_str = str(exc).lower()
-                    if exc.status_code == 404 or "unknown" in err_str or "not found" in err_str:
-                        should_fallback_to_search = True
-                        query_data = {"error": str(exc)}
-                    else:
-                        elapsed_ms = (time.perf_counter() - start_time) * 1000.0
-                        return DocsProviderResult(
-                            source_id=self.source_id,
-                            status=DocsSourceStatus.FAILED,
-                            latency_ms=elapsed_ms,
-                            error_message=str(exc),
-                        )
+                    elapsed_ms = (time.perf_counter() - start_time) * 1000.0
+                    return DocsProviderResult(
+                        source_id=self.source_id,
+                        status=DocsSourceStatus.FAILED,
+                        latency_ms=elapsed_ms,
+                        error_message=str(exc),
+                    )
 
-                if not should_fallback_to_search:
-                    if "error" in query_data:
-                        err_obj = query_data["error"]
-                        err_msg = (
-                            err_obj.get("message", str(err_obj))
-                            if isinstance(err_obj, dict)
-                            else str(err_obj)
-                        )
-                        if "not found" in err_msg.lower() or "unknown tool" in err_msg.lower():
-                            should_fallback_to_search = True
-                        else:
-                            elapsed_ms = (time.perf_counter() - start_time) * 1000.0
-                            return DocsProviderResult(
-                                source_id=self.source_id,
-                                status=DocsSourceStatus.FAILED,
-                                latency_ms=elapsed_ms,
-                                error_message=f"Context7 MCP error: {err_msg}",
-                            )
+                if "error" in query_data:
+                    err_obj = query_data["error"]
+                    err_code = err_obj.get("code") if isinstance(err_obj, dict) else None
+                    err_msg = (
+                        err_obj.get("message", str(err_obj))
+                        if isinstance(err_obj, dict)
+                        else str(err_obj)
+                    )
+                    is_tool_missing = (
+                        err_code == -32601
+                        or "not found" in err_msg.lower()
+                        or "unknown tool" in err_msg.lower()
+                        or "unknown method" in err_msg.lower()
+                    )
+                    if is_tool_missing:
+                        should_fallback_to_search = True
                     else:
-                        data = query_data
+                        elapsed_ms = (time.perf_counter() - start_time) * 1000.0
+                        return DocsProviderResult(
+                            source_id=self.source_id,
+                            status=DocsSourceStatus.FAILED,
+                            latency_ms=elapsed_ms,
+                            error_message=f"Context7 MCP error: {err_msg}",
+                        )
+                else:
+                    data = query_data
 
             # Fallback to compatibility search tool ONLY if current tools were rejected as unknown/not found
             if should_fallback_to_search:
