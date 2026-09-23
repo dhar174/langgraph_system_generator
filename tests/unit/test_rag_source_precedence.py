@@ -2796,4 +2796,97 @@ async def test_langchain_local_sanitizes_endpoint_url_in_fallback_provenance_and
     assert "admin:[REDACTED]@" in result.snippets[0].source
 
 
+@pytest.mark.asyncio
+async def test_mcp_transport_connection_error_sanitizes_credentials_and_urls(monkeypatch):
+    """MCPTransportError redacts basic auth and compound secrets on connection errors."""
+    import httpx
+    from langgraph_system_generator.rag.mcp_transport import (
+        MCPTransportError,
+        call_mcp_tool,
+    )
+
+    async def mock_post_connect_error(*args, **kwargs):
+        raise httpx.ConnectError(
+            "Connect call failed ('https://admin:super_secret@mcp.local:8080/v1?access_token=compound_tok_123&client_secret=compound_sec_456')"
+        )
+
+    monkeypatch.setattr(httpx.AsyncClient, "post", mock_post_connect_error)
+
+    with pytest.raises(MCPTransportError) as exc_info:
+        await call_mcp_tool(
+            endpoint_url="https://admin:super_secret@mcp.local:8080/v1?access_token=compound_tok_123&client_secret=compound_sec_456",
+            tool_name="test_tool",
+            request_id=1,
+        )
+    err_msg = str(exc_info.value)
+    assert exc_info.value.is_connection_error is True
+    assert "super_secret" not in err_msg
+    assert "compound_tok_123" not in err_msg
+    assert "compound_sec_456" not in err_msg
+    assert "admin:[REDACTED]@" in err_msg
+    assert "access_token=[REDACTED]" in err_msg
+    assert "client_secret=[REDACTED]" in err_msg
+
+
+@pytest.mark.asyncio
+async def test_mcp_transport_generic_error_sanitizes_credentials_and_urls(monkeypatch):
+    """MCPTransportError redacts basic auth and compound secrets on generic transport exceptions."""
+    import httpx
+    from langgraph_system_generator.rag.mcp_transport import (
+        MCPTransportError,
+        call_mcp_tool,
+    )
+
+    async def mock_post_runtime_error(*args, **kwargs):
+        raise RuntimeError(
+            "Unexpected error requesting https://user:pass789@mcp.local:8080?refresh_token=ref_tok_999"
+        )
+
+    monkeypatch.setattr(httpx.AsyncClient, "post", mock_post_runtime_error)
+
+    with pytest.raises(MCPTransportError) as exc_info:
+        await call_mcp_tool(
+            endpoint_url="https://user:pass789@mcp.local:8080?refresh_token=ref_tok_999",
+            tool_name="test_tool",
+            request_id=1,
+        )
+    err_msg = str(exc_info.value)
+    assert exc_info.value.is_connection_error is False
+    assert "pass789" not in err_msg
+    assert "ref_tok_999" not in err_msg
+    assert "user:[REDACTED]@" in err_msg
+    assert "refresh_token=[REDACTED]" in err_msg
+
+
+def test_warning_sanitizer_redacts_compound_secrets_and_urls():
+    """_sanitize_warning redacts compound query secrets, JSON credentials, and URLs."""
+    from langgraph_system_generator.rag.orchestrator import _sanitize_warning
+
+    # Compound query parameters
+    dirty_query = "Request failed with access_token=secret_tok_123 and client_secret=compound_sec_456"
+    clean_query = _sanitize_warning(dirty_query)
+    assert "secret_tok_123" not in clean_query
+    assert "compound_sec_456" not in clean_query
+    assert "access_token=[REDACTED]" in clean_query
+    assert "client_secret=[REDACTED]" in clean_query
+
+    # JSON formatted secret keys
+    dirty_json = 'Provider error payload: {"access_token": "json_secret_val", "client_secret": "json_sec_val"}'
+    clean_json = _sanitize_warning(dirty_json)
+    assert "json_secret_val" not in clean_json
+    assert "json_sec_val" not in clean_json
+    assert '"access_token": "[REDACTED]"' in clean_json
+    assert '"client_secret": "[REDACTED]"' in clean_json
+
+    # Full URL with credentials and query parameters
+    dirty_url = "Failed connecting to https://svc_user:my_secret_password@mcp.internal:8443/v1?token=param_tok_999&auth_token=compound_auth_888"
+    clean_url = _sanitize_warning(dirty_url)
+    assert "my_secret_password" not in clean_url
+    assert "param_tok_999" not in clean_url
+    assert "compound_auth_888" not in clean_url
+    assert "svc_user:[REDACTED]@" in clean_url
+    assert "token=[REDACTED]" in clean_url
+    assert "auth_token=[REDACTED]" in clean_url
+
+
 

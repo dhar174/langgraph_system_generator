@@ -17,6 +17,7 @@ from langgraph_system_generator.rag.base import (
     DocsSourceProvider,
     DocsSourceStatus,
 )
+from langgraph_system_generator.rag.mcp_transport import _sanitize_text_credentials
 from langgraph_system_generator.rag.providers.cached_vector import (
     CachedVectorDocsProvider,
 )
@@ -33,21 +34,7 @@ def _sanitize_warning(msg: str, max_chars: int = 200) -> str:
     """Sanitize provider error messages by redacting secrets and bounding length."""
     if not msg:
         return ""
-    cleaned = re.sub(
-        r"(bearer\s+)[A-Za-z0-9_\-\.]+", r"\1[REDACTED]", str(msg), flags=re.IGNORECASE
-    )
-    cleaned = re.sub(
-        r"((?:[?&]|\b)(?:api_key|key|token|secret)=)[^&\s]+",
-        r"\1[REDACTED]",
-        cleaned,
-        flags=re.IGNORECASE,
-    )
-    cleaned = re.sub(
-        r'(["\'](?:api_key|key|token|password|secret)["\']\s*:\s*["\'])[^"\']+',
-        r"\1[REDACTED]",
-        cleaned,
-        flags=re.IGNORECASE,
-    )
+    cleaned = _sanitize_text_credentials(str(msg))
     compact = " ".join(cleaned.split())
     if len(compact) > max_chars:
         return compact[: max(0, max_chars - 3)].rstrip() + "..."

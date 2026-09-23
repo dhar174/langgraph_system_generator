@@ -89,7 +89,7 @@ def _sanitize_url_for_logging(url: str) -> str:
     except Exception:
         # Fallback to regex if urlsplit/parse fails
         sanitized = re.sub(
-            r"((?:[?&]|\b)[\w\-]*(?:key|token|secret|password|auth|cred)[\w\-]*=)[^&\s]+",
+            r"((?:[?&]|\b)[\w\-]*(?:key|token|secret|password|auth|cred|signature)[\w\-]*=)[^&\s]+",
             r"\1[REDACTED]",
             url_str,
             flags=re.IGNORECASE,
@@ -100,6 +100,61 @@ def _sanitize_url_for_logging(url: str) -> str:
             sanitized,
         )
         return sanitized
+
+
+def _sanitize_text_credentials(text: Any, endpoint: Optional[str] = None) -> str:
+    """Sanitize error, warning, or payload text by redacting embedded URLs, compound secrets, and credentials."""
+    if not text:
+        return ""
+    result = str(text)
+
+    # 1. If an explicit endpoint was passed, redact it first
+    if endpoint and endpoint in result:
+        result = result.replace(endpoint, _sanitize_url_for_logging(endpoint))
+
+    # 2. Extract and route all embedded URLs through _sanitize_url_for_logging
+    def _replace_url(match: re.Match) -> str:
+        raw_url = match.group(0)
+        trailing = ""
+        while raw_url and raw_url[-1] in "')]},;.:\"":
+            trailing = raw_url[-1] + trailing
+            raw_url = raw_url[:-1]
+        return _sanitize_url_for_logging(raw_url) + trailing
+
+    result = re.sub(r"https?://[^\s<>'\"]+", _replace_url, result)
+
+    # 3. Redact Bearer tokens
+    result = re.sub(
+        r"(bearer\s+)[A-Za-z0-9_\-\.]+",
+        r"\1[REDACTED]",
+        result,
+        flags=re.IGNORECASE,
+    )
+
+    # 4. Redact query/key-value tokens matching compound secret names (access_token, client_secret, etc.)
+    result = re.sub(
+        r"((?:[?&]|\b)[\w\-]*(?:key|token|secret|password|auth|cred|signature)[\w\-]*\s*=\s*)[^&\s,'\"<>]+",
+        r"\1[REDACTED]",
+        result,
+        flags=re.IGNORECASE,
+    )
+
+    # 5. Redact JSON/dict style key-value pairs with compound secret names
+    result = re.sub(
+        r'(["\'][\w\-]*(?:key|token|secret|password|auth|cred|signature)[\w\-]*["\']\s*:\s*["\'])[^"\']+',
+        r"\1[REDACTED]",
+        result,
+        flags=re.IGNORECASE,
+    )
+
+    # 6. Redact basic-auth credentials in any remaining URL/netloc patterns
+    result = re.sub(
+        r"(://[^:/@\s]+:)[^@\s/]+@",
+        r"\1[REDACTED]@",
+        result,
+    )
+
+    return result
 
 
 def _id_matches(response_id: Any, request_id: Any) -> bool:
@@ -335,25 +390,14 @@ async def call_mcp_tool(
         httpx.ProxyError,
         httpx.UnsupportedProtocol,
     ) as req_err:
-        # Sanitize error message to ensure no sensitive URL tokens or secrets leak
-        err_text = re.sub(
-            r"([?&][\w\-]*(?:key|token|secret|password|auth|cred)[\w\-]*=)[^&\s]+",
-            r"\1[REDACTED]",
-            str(req_err),
-            flags=re.IGNORECASE,
-        )
+        err_text = _sanitize_text_credentials(req_err, endpoint=endpoint)
         raise MCPTransportError(
             f"MCP connection failed: {err_text}",
             error_kind="connection",
             is_connection_error=True,
         ) from req_err
     except Exception as exc:
-        err_text = re.sub(
-            r"([?&][\w\-]*(?:key|token|secret|password|auth|cred)[\w\-]*=)[^&\s]+",
-            r"\1[REDACTED]",
-            str(exc),
-            flags=re.IGNORECASE,
-        )
+        err_text = _sanitize_text_credentials(exc, endpoint=endpoint)
         raise MCPTransportError(
             f"MCP transport error: {err_text}",
             error_kind="transport",
@@ -391,12 +435,7 @@ async def call_mcp_tool(
         ):
             return parsed_payload
 
-        clean_preview = re.sub(
-            r"(bearer\s+)[A-Za-z0-9_\-\.]+",
-            r"\1[REDACTED]",
-            response.text[:200],
-            flags=re.IGNORECASE,
-        )
+        clean_preview = _sanitize_text_credentials(response.text[:200])
         raise MCPTransportError(
             f"MCP HTTP {response.status_code}: {clean_preview.strip()}",
             error_kind="http",
