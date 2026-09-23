@@ -24,6 +24,7 @@ class CachedVectorDocsProvider(DocsSourceProvider):
     """Documentation provider backed by local/cached vector store index."""
 
     source_id: str = "cached_repo_docs"
+    stub_safe: bool = True
 
     def __init__(
         self,

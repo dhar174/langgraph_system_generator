@@ -46,12 +46,14 @@ The generator previously bypassed live documentation retrieval in favor of a har
 | 7.6 | Unit test suite & offline verification | Complete | 2026-09-17 | Dedicated tests passing 100% offline without live network or external API keys. |
 | 7.7 | Registry replacement precedence preservation | Complete | 2026-09-17 | In-place replacement preserving provider index by default; explicit `prepend=True` moves to index 0. |
 | 7.8 | Serialized JSON object normalization in LangChain local | Complete | 2026-09-17 | Unpacks serialized JSON `results`/`snippets`/`documents`/`content` collections and single doc objects; preserves `0.0` scores; rejects raw protocol JSON envelopes. |
+| 7.9 | Capability-driven stub mode plugin safety | Complete | 2026-09-23 | Explicit `stub_safe: bool = False` capability on `DocsSourceProvider`, `CachedVectorDocsProvider.stub_safe = True`, and capability-driven bypass skipping non-stub-safe providers without probing. |
 
 ## Verification & Outcomes
 
-- 50/50 tests pass in `tests/unit/test_rag_source_precedence.py` (8 new regression tests added covering registry replacement order, execution as primary, prepend repositioning, serialized object unpacking, zero-score preservation, and protocol envelope rejection).
-- Full unit test suite (731 tests) and pattern test suite (82 tests) pass cleanly.
-- Flake8 reports 0 fatal errors on `src/` and `tests/`, black reports all files formatted, mypy reports 0 issues in `src/langgraph_system_generator/rag/`.
-- Offline stub mode verified across CLI, API, and package surfaces.
+- 53/53 tests pass in `tests/unit/test_rag_source_precedence.py` (3 new regression tests added covering unsafe custom provider canary isolation, explicit stub-safe provider execution, and built-in provider stub-safe invariants).
+- Full unit test suite (734 tests), pattern test suite (82 tests), and full pytest suite (852 passed, 3 skipped, 5 warnings) pass cleanly.
+- Flake8 reports 0 fatal errors on `src/` and `tests/`, mypy reports 0 issues in `src/langgraph_system_generator/rag/` (13 source files).
+- Offline stub mode verified across CLI, API, and package surfaces with deterministic offline generation smoke.
 - Preserved prior verified live wire smoke against `https://docs.langchain.com/mcp` (5 snippets, `SUCCESS`).
+- ArchitectureSelector live retrieval fan-out / single-flight cache recorded as follow-up item.
 

@@ -46,8 +46,9 @@
       - Deterministic concurrent query feedback aggregation in `query_specs` order with strict status reduction rule;
       - `DocsSourceRegistry.register()` in-place provider replacement preserving registry index and precedence by default, while honoring explicit `prepend=True` repositioning to index 0;
       - `LangChainDocsLocalProvider` robust serialized JSON collection and single-object normalization (`results`, `snippets`, `documents`, `content`), preserving `0.0` relevance scores and rejecting protocol envelope JSON without emitting false doc snippets;
-  (9) 50 comprehensive unit tests in `tests/unit/test_rag_source_precedence.py`, 731 unit tests passing,
-  82 pattern tests passing, flake8 0 issues, mypy 0 issues, deterministic offline stub verified, live wire smoke against `https://docs.langchain.com/mcp` preserved (5 snippets, `SUCCESS`).
+      - Stub-mode plugin capability safety: `DocsSourceProvider.stub_safe: bool = False` (safe by default for third-party providers), `CachedVectorDocsProvider.stub_safe = True` (explicit local opt-in), and orchestrator capability check skipping non-stub-safe providers without invoking `is_available` or `aretrieve`;
+  (9) 53 comprehensive unit tests in `tests/unit/test_rag_source_precedence.py`, 734 unit tests passing,
+  82 pattern tests passing, 852 full pytest suite passing (3 skipped, 5 warnings), flake8 0 issues, mypy 0 issues, deterministic offline stub verified, live wire smoke against `https://docs.langchain.com/mcp` preserved (5 snippets, `SUCCESS`). Note: ArchitectureSelector live retrieval fan-out / single-flight cache noted as follow-up item.
 
 - Restored bounded supervisor context-window management (Issue #65 / PR #374)
   adapted surgically to the modern LangGraph v1 architecture: scalar

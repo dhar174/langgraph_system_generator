@@ -27,6 +27,7 @@ class LangChainDocsLocalProvider(DocsSourceProvider):
     """Primary live documentation provider querying local LangChain docs MCP/HTTP service."""
 
     source_id: str = "langchain-docs-local"
+    stub_safe: bool = False
 
     def __init__(
         self, endpoint_url: Optional[str] = None, timeout_seconds: float = 5.0

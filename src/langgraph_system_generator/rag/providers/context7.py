@@ -28,6 +28,7 @@ class Context7DocsProvider(DocsSourceProvider):
     """Secondary live documentation provider connecting to Context7 MCP / HTTP API."""
 
     source_id: str = "context7"
+    stub_safe: bool = False
 
     def __init__(
         self,

@@ -216,42 +216,45 @@ class DocsRetrievalService:
                 provider = self.registry.get_provider(source_id)
                 if provider is None:
                     continue
-                if source_id in ("langchain-docs-local", "context7"):
+                if not getattr(provider, "stub_safe", False):
                     statuses[source_id] = DocsSourceStatus.SKIPPED.value
-                else:
+                    continue
+
+                try:
+                    is_avail = provider.is_available(mode=mode)
+                except Exception as exc:
+                    statuses[source_id] = DocsSourceStatus.FAILED.value
+                    _add_warning(
+                        warnings, f"{source_id} availability check failed: {exc}"
+                    )
+                    continue
+
+                if is_avail:
+                    attempted.append(source_id)
                     try:
-                        is_avail = provider.is_available(mode=mode)
+                        res = await provider.aretrieve(query, k=k, mode=mode)
+                        statuses[source_id] = res.status.value
+                        if res.status == DocsSourceStatus.SUCCESS and res.snippets:
+                            used.append(source_id)
+                            accumulated_snippets.extend(res.snippets)
+                            break
+                        elif (
+                            res.status == DocsSourceStatus.FAILED
+                            and res.error_message
+                        ):
+                            _add_warning(
+                                warnings,
+                                f"Cached docs retrieval failed: {res.error_message}"
+                                if source_id == "cached_repo_docs"
+                                else f"{source_id} retrieval failed: {res.error_message}",
+                            )
                     except Exception as exc:
                         statuses[source_id] = DocsSourceStatus.FAILED.value
                         _add_warning(
-                            warnings, f"{source_id} availability check failed: {exc}"
+                            warnings, f"{source_id} retrieval error: {exc}"
                         )
-                        continue
-
-                    if is_avail:
-                        attempted.append(source_id)
-                        try:
-                            res = await provider.aretrieve(query, k=k, mode=mode)
-                            statuses[source_id] = res.status.value
-                            if res.status == DocsSourceStatus.SUCCESS and res.snippets:
-                                used.append(source_id)
-                                accumulated_snippets.extend(res.snippets)
-                                break
-                            elif (
-                                res.status == DocsSourceStatus.FAILED
-                                and res.error_message
-                            ):
-                                _add_warning(
-                                    warnings,
-                                    f"Cached docs retrieval failed: {res.error_message}",
-                                )
-                        except Exception as exc:
-                            statuses[source_id] = DocsSourceStatus.FAILED.value
-                            _add_warning(
-                                warnings, f"{source_id} retrieval error: {exc}"
-                            )
-                    else:
-                        statuses[source_id] = DocsSourceStatus.UNAVAILABLE.value
+                else:
+                    statuses[source_id] = DocsSourceStatus.UNAVAILABLE.value
 
             # Deduplicate and cap
             stub_deduped: Dict[str, DocSnippet] = {}

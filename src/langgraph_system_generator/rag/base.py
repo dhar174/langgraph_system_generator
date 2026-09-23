@@ -37,6 +37,7 @@ class DocsSourceProvider(ABC):
     """Abstract base class for documentation source providers."""
 
     source_id: str
+    stub_safe: bool = False
 
     @abstractmethod
     def is_available(self, mode: str = "live") -> bool:

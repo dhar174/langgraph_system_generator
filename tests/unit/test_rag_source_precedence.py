@@ -74,6 +74,7 @@ class StubProvider(DocsSourceProvider):
         error: str | None = None,
         error_message: str | None = None,
         raise_on_call: bool = False,
+        stub_safe: bool | None = None,
     ):
         self.source_id = source_id
         self.available = available
@@ -84,6 +85,10 @@ class StubProvider(DocsSourceProvider):
         self.raise_on_call = raise_on_call
         self.call_count = 0
         self.last_query: str | None = None
+        if stub_safe is not None:
+            self.stub_safe = stub_safe
+        elif source_id == "cached_repo_docs":
+            self.stub_safe = True
 
     def is_available(self, mode: str = "live") -> bool:
         if mode == "stub" and self.source_id in ("langchain-docs-local", "context7"):
@@ -2086,3 +2091,189 @@ async def test_langchain_local_rejects_protocol_envelope_json(monkeypatch):
 
     assert result.status == DocsSourceStatus.EMPTY
     assert len(result.snippets) == 0
+
+
+@pytest.mark.asyncio
+async def test_unsafe_custom_provider_never_invoked_in_stub_mode():
+    """A third-party/custom provider with stub_safe=False (or defaulting to False) must NEVER have is_available or aretrieve invoked in stub mode."""
+
+    class CanaryUnsafeCustomProvider(DocsSourceProvider):
+        source_id = "custom-remote-api"
+        stub_safe = False
+
+        def is_available(self, mode: str = "live") -> bool:
+            raise AssertionError(
+                "is_available() must not be called on non-stub-safe provider in stub mode!"
+            )
+
+        async def aretrieve(
+            self, query: str, k: int = 5, mode: str = "live"
+        ) -> DocsProviderResult:
+            raise AssertionError(
+                "aretrieve() must not be called on non-stub-safe provider in stub mode!"
+            )
+
+    class CanaryDefaultCustomProvider(DocsSourceProvider):
+        source_id = "custom-third-party-default"
+
+        def is_available(self, mode: str = "live") -> bool:
+            raise AssertionError(
+                "is_available() must not be called on default provider in stub mode!"
+            )
+
+        async def aretrieve(
+            self, query: str, k: int = 5, mode: str = "live"
+        ) -> DocsProviderResult:
+            raise AssertionError(
+                "aretrieve() must not be called on default provider in stub mode!"
+            )
+
+    cached_snippet = DocSnippet(
+        content="Deterministic fallback snippet",
+        source="cached:local",
+        source_kind="cached_repo_docs",
+        relevance_score=0.9,
+    )
+    cached_provider = StubProvider(
+        "cached_repo_docs", available=True, snippets=[cached_snippet]
+    )
+
+    service = DocsRetrievalService(
+        precedence=[
+            "custom-remote-api",
+            "custom-third-party-default",
+            "cached_repo_docs",
+        ]
+    )
+    service.registry.register(CanaryUnsafeCustomProvider())
+    service.registry.register(CanaryDefaultCustomProvider())
+    service.registry.register(cached_provider)
+
+    result = await service.aretrieve("test query", k=5, mode="stub")
+
+    assert result.source_statuses["custom-remote-api"] == DocsSourceStatus.SKIPPED.value
+    assert (
+        result.source_statuses["custom-third-party-default"]
+        == DocsSourceStatus.SKIPPED.value
+    )
+    assert "custom-remote-api" not in result.attempted_sources
+    assert "custom-third-party-default" not in result.attempted_sources
+    assert result.fallback_used is True
+    assert result.used_sources == ["cached_repo_docs"]
+    assert len(result.snippets) == 1
+    assert result.snippets[0].content == "Deterministic fallback snippet"
+
+
+@pytest.mark.asyncio
+async def test_explicit_stub_safe_provider_may_execute_in_stub_mode():
+    """A deterministic custom provider explicitly declaring stub_safe=True may execute during stub mode according to precedence."""
+
+    class StubSafeLocalPlugin(DocsSourceProvider):
+        source_id = "custom-offline-knowledge-base"
+        stub_safe = True
+
+        def __init__(self):
+            self.available_called = False
+            self.retrieve_called = False
+
+        def is_available(self, mode: str = "live") -> bool:
+            self.available_called = True
+            return True
+
+        async def aretrieve(
+            self, query: str, k: int = 5, mode: str = "live"
+        ) -> DocsProviderResult:
+            self.retrieve_called = True
+            return DocsProviderResult(
+                source_id=self.source_id,
+                status=DocsSourceStatus.SUCCESS,
+                snippets=[
+                    DocSnippet(
+                        content="Offline local plugin documentation snippet",
+                        source="plugin:offline_kb",
+                        source_kind=self.source_id,
+                        relevance_score=0.95,
+                    )
+                ],
+            )
+
+    plugin = StubSafeLocalPlugin()
+    cached_snippet = DocSnippet(
+        content="Cached repo fallback snippet",
+        source="cache:offline",
+        source_kind="cached_repo_docs",
+        relevance_score=0.7,
+    )
+    cached_provider = StubProvider(
+        "cached_repo_docs", available=True, snippets=[cached_snippet]
+    )
+
+    service = DocsRetrievalService(
+        precedence=["custom-offline-knowledge-base", "cached_repo_docs"]
+    )
+    service.registry.register(plugin)
+    service.registry.register(cached_provider)
+
+    result = await service.aretrieve("query", k=5, mode="stub")
+
+    assert plugin.available_called is True
+    assert plugin.retrieve_called is True
+    assert result.source_statuses["custom-offline-knowledge-base"] == "success"
+    assert result.used_sources == ["custom-offline-knowledge-base"]
+    assert result.attempted_sources == ["custom-offline-knowledge-base"]
+    assert result.fallback_used is False
+    assert len(result.snippets) == 1
+    assert result.snippets[0].source_kind == "custom-offline-knowledge-base"
+    assert cached_provider.call_count == 0
+
+
+@pytest.mark.asyncio
+async def test_builtin_providers_stub_safe_invariants_and_isolation():
+    """Verify built-in provider stub_safe attributes and guarantee live providers are never invoked in stub mode."""
+    assert DocsSourceProvider.stub_safe is False
+    assert LangChainDocsLocalProvider.stub_safe is False
+    assert Context7DocsProvider.stub_safe is False
+    assert CachedVectorDocsProvider.stub_safe is True
+
+    local_provider = LangChainDocsLocalProvider(
+        endpoint_url="http://127.0.0.1:9999/unreachable"
+    )
+    context7_provider = Context7DocsProvider(
+        api_key="sk-test-key",
+        endpoint_url="http://127.0.0.1:9999/unreachable",
+    )
+    dummy_snippet = DocSnippet(
+        content="Retrieved from process-local vector cache without network.",
+        source="cache:vector",
+        source_kind="cached_repo_docs",
+        relevance_score=0.85,
+    )
+    cached_vector_provider = StubProvider(
+        "cached_repo_docs",
+        available=True,
+        snippets=[dummy_snippet],
+        stub_safe=True,
+    )
+
+    service = DocsRetrievalService(
+        precedence=["langchain-docs-local", "context7", "cached_repo_docs"]
+    )
+    service.registry.register(local_provider)
+    service.registry.register(context7_provider)
+    service.registry.register(cached_vector_provider)
+
+    result = await service.aretrieve("How to use StateGraph", k=3, mode="stub")
+
+    assert result.source_statuses["langchain-docs-local"] == DocsSourceStatus.SKIPPED.value
+    assert result.source_statuses["context7"] == DocsSourceStatus.SKIPPED.value
+    assert result.source_statuses["cached_repo_docs"] == DocsSourceStatus.SUCCESS.value
+    assert "langchain-docs-local" not in result.attempted_sources
+    assert "context7" not in result.attempted_sources
+    assert result.attempted_sources == ["cached_repo_docs"]
+    assert result.used_sources == ["cached_repo_docs"]
+    assert result.fallback_used is True
+    assert len(result.snippets) == 1
+    assert (
+        result.snippets[0].content
+        == "Retrieved from process-local vector cache without network."
+    )
