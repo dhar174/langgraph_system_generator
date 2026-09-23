@@ -16,6 +16,7 @@ from langgraph_system_generator.rag.base import (
 )
 from langgraph_system_generator.rag.mcp_transport import (
     MCPTransportError,
+    _sanitize_url_for_logging,
     call_mcp_tool,
 )
 from langgraph_system_generator.rag.normalizer import create_normalized_doc_snippet
@@ -48,6 +49,10 @@ class Context7DocsProvider(DocsSourceProvider):
     @property
     def endpoint_url(self) -> str:
         return self._endpoint_url or settings.context7_mcp_url or "https://mcp.context7.com/mcp"
+
+    @property
+    def safe_endpoint_url(self) -> str:
+        return _sanitize_url_for_logging(self.endpoint_url)
 
     def is_available(self, mode: str = "live") -> bool:
         """Return True if enabled in live mode and endpoint URL is configured."""
@@ -284,7 +289,8 @@ class Context7DocsProvider(DocsSourceProvider):
                 error_message=f"Context7 MCP error: {err_msg}",
             )
 
-        snippets = self._parse_snippets(data, fallback_source=self.endpoint_url)
+        safe_endpoint = self.safe_endpoint_url
+        snippets = self._parse_snippets(data, fallback_source=safe_endpoint)
         if not snippets:
             return DocsProviderResult(
                 source_id=self.source_id,
@@ -297,7 +303,7 @@ class Context7DocsProvider(DocsSourceProvider):
             status=DocsSourceStatus.SUCCESS,
             snippets=snippets[:k],
             latency_ms=elapsed_ms,
-            metadata={"endpoint": self.endpoint_url},
+            metadata={"endpoint": safe_endpoint},
         )
 
     def _extract_snippets_from_parsed_json(

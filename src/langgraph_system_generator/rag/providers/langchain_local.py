@@ -15,6 +15,7 @@ from langgraph_system_generator.rag.base import (
 )
 from langgraph_system_generator.rag.mcp_transport import (
     MCPTransportError,
+    _sanitize_url_for_logging,
     call_mcp_tool,
 )
 from langgraph_system_generator.rag.normalizer import create_normalized_doc_snippet
@@ -38,6 +39,14 @@ class LangChainDocsLocalProvider(DocsSourceProvider):
     @property
     def endpoint_url(self) -> Optional[str]:
         return self._endpoint_url or settings.langchain_docs_mcp_url
+
+    @property
+    def safe_endpoint_url(self) -> Optional[str]:
+        return (
+            _sanitize_url_for_logging(self.endpoint_url)
+            if self.endpoint_url
+            else None
+        )
 
     def is_available(self, mode: str = "live") -> bool:
         """Return True if enabled in live mode and an endpoint URL is configured."""
@@ -97,6 +106,7 @@ class LangChainDocsLocalProvider(DocsSourceProvider):
         last_error: Optional[str] = None
         snippets: List[DocSnippet] = []
 
+        safe_url = self.safe_endpoint_url or url
         try:
             for tool_name in candidate_tool_names:
                 try:
@@ -134,7 +144,7 @@ class LangChainDocsLocalProvider(DocsSourceProvider):
                         continue
                     break
 
-                snippets = self._extract_snippets_from_payload(data, fallback_url=url)
+                snippets = self._extract_snippets_from_payload(data, fallback_url=safe_url)
                 if snippets:
                     break
 
@@ -168,7 +178,7 @@ class LangChainDocsLocalProvider(DocsSourceProvider):
             status=DocsSourceStatus.SUCCESS,
             snippets=snippets[:k],
             latency_ms=elapsed_ms,
-            metadata={"endpoint": url},
+            metadata={"endpoint": safe_url},
         )
 
     def _extract_nested_items(self, parsed: Any) -> List[Any]:

@@ -2687,3 +2687,113 @@ def test_context7_extracts_single_doc_dict_from_serialized_text():
     assert snippets[0].source_kind == "context7"
 
 
+@pytest.mark.asyncio
+async def test_context7_sanitizes_endpoint_url_in_fallback_provenance_and_metadata(monkeypatch):
+    """Context7 sanitizes endpoint URL credentials when used as fallback source or metadata."""
+    import httpx
+
+    sensitive_endpoint = "https://user:mypassword@api.context7.ai/mcp?api_key=secret_123&access_token=compound_abc"
+
+    async def mock_post(self, url, headers=None, json=None, timeout=None):
+        name = (json or {}).get("params", {}).get("name")
+        req_id = (json or {}).get("id", 1)
+        if name == "resolve-library-id":
+            return httpx.Response(
+                200,
+                json={
+                    "jsonrpc": "2.0",
+                    "id": req_id,
+                    "result": {
+                        "content": [
+                            {"text": '{"libraries": [{"library_id": "lib-999"}]}'}
+                        ]
+                    },
+                },
+            )
+        # query-docs response with content but NO explicit url or source
+        return httpx.Response(
+            200,
+            json={
+                "jsonrpc": "2.0",
+                "id": req_id,
+                "result": {
+                    "results": [
+                        {"content": "Documentation without explicit document URL"}
+                    ]
+                },
+            },
+        )
+
+    monkeypatch.setattr(httpx.AsyncClient, "post", mock_post)
+    monkeypatch.setattr(settings, "docs_live_sources_enabled", True)
+    monkeypatch.setattr(settings, "context7_docs_enabled", True)
+
+    provider = Context7DocsProvider(
+        api_key="sk-test",
+        endpoint_url=sensitive_endpoint,
+    )
+    result = await provider.aretrieve("test query", k=5, mode="live")
+    assert result.status == DocsSourceStatus.SUCCESS
+    assert len(result.snippets) == 1
+
+    # Verify metadata is sanitized
+    assert "mypassword" not in result.metadata["endpoint"]
+    assert "secret_123" not in result.metadata["endpoint"]
+    assert "compound_abc" not in result.metadata["endpoint"]
+    assert "api_key=[REDACTED]" in result.metadata["endpoint"]
+    assert "access_token=[REDACTED]" in result.metadata["endpoint"]
+    assert "user:[REDACTED]@" in result.metadata["endpoint"]
+
+    # Verify snippet fallback source is sanitized
+    assert "mypassword" not in result.snippets[0].source
+    assert "secret_123" not in result.snippets[0].source
+    assert "compound_abc" not in result.snippets[0].source
+    assert "api_key=[REDACTED]" in result.snippets[0].source
+    assert "access_token=[REDACTED]" in result.snippets[0].source
+    assert "user:[REDACTED]@" in result.snippets[0].source
+
+
+@pytest.mark.asyncio
+async def test_langchain_local_sanitizes_endpoint_url_in_fallback_provenance_and_metadata(monkeypatch):
+    """LangChain local sanitizes endpoint URL credentials when used as fallback provenance or metadata."""
+    import httpx
+
+    sensitive_endpoint = "https://admin:topsecret@docs.langchain.local/mcp?token=param_secret_tok"
+
+    async def mock_post(self, url, headers=None, json=None, timeout=None):
+        req_id = (json or {}).get("id", 1)
+        return httpx.Response(
+            200,
+            json={
+                "jsonrpc": "2.0",
+                "id": req_id,
+                "result": {
+                    "results": [
+                        {"content": "Local LangChain docs without explicit URL"}
+                    ]
+                },
+            },
+        )
+
+    monkeypatch.setattr(httpx.AsyncClient, "post", mock_post)
+    monkeypatch.setattr(settings, "docs_live_sources_enabled", True)
+
+    provider = LangChainDocsLocalProvider(endpoint_url=sensitive_endpoint)
+    result = await provider.aretrieve("test query", k=5, mode="live")
+    assert result.status == DocsSourceStatus.SUCCESS
+    assert len(result.snippets) == 1
+
+    # Verify metadata is sanitized
+    assert "topsecret" not in result.metadata["endpoint"]
+    assert "param_secret_tok" not in result.metadata["endpoint"]
+    assert "token=[REDACTED]" in result.metadata["endpoint"]
+    assert "admin:[REDACTED]@" in result.metadata["endpoint"]
+
+    # Verify snippet fallback source is sanitized
+    assert "topsecret" not in result.snippets[0].source
+    assert "param_secret_tok" not in result.snippets[0].source
+    assert "token=[REDACTED]" in result.snippets[0].source
+    assert "admin:[REDACTED]@" in result.snippets[0].source
+
+
+
