@@ -9,15 +9,18 @@
   `DocsRetrievalFeedback` with truthful provenance in `GenerationContextPack` and
   manifests (`attempted_sources`, `source_statuses`, `used_sources`, `fallback_used`,
   `stage_source_statuses`, `consulted_sources`).
-  All review findings resolved:
-  - Shared MCP Streamable HTTP transport helper `mcp_transport.py` with protocol `2026-07-28` and streamable headers.
-  - Context7 two-step flow (`resolve-library-id` -> `query-docs`) and bounded fallback to `search`.
-  - LangChain provider immediate loop termination on network/connection failure.
+  All review findings resolved across commits `f4fe02e`, `7995d02`, `c60a62b`, `a854327`, and `660b7a4`:
+  - Shared MCP Streamable HTTP transport helper `mcp_transport.py` with protocol `2026-07-28`, streamable headers, and request ID validation on HTTP-200 JSON responses.
+  - Context7 two-step flow (`resolve-library-id` -> `query-docs`), bounded fallback to `search`, empty/whitespace snippet rejection, and structural protocol envelope exclusion.
+  - LangChain provider immediate loop termination on network/connection failure and content-only serialized document acceptance.
   - Strict `fallback_used` semantics (`True` iff fallback actually contributed final snippets).
   - ArchitectureSelector transient docs provenance isolation without polluting `used_sources` or flipping `fallback_used`.
   - Deterministic concurrent query feedback aggregation in `query_specs` order.
-  All 34 tests in `tests/unit/test_rag_source_precedence.py` pass. Full unit test suite (715 tests)
-  and pattern test suite (82 tests) pass 100%. Flake8 and mypy pass 100%. Stub mode remains 100% offline and deterministic.
+  - `DocsSourceRegistry.register()` in-place provider replacement preserving registry index and precedence by default.
+  - Capability-based stub-mode plugin isolation (`stub_safe` default False, CachedVectorDocsProvider explicit True).
+  - Comprehensive credential and URL sanitization via `_sanitize_text_credentials` and `_sanitize_url_for_logging`, redacting basic-auth netlocs, compound tokens (`access_token`, `client_secret`, etc.), bearer tokens, and JSON keys across connection errors, transport errors, non-200 previews, provider fallback provenance, and orchestrator warnings.
+  All 71 tests in `tests/unit/test_rag_source_precedence.py` pass. Full unit test suite (753 tests, 5 warnings)
+  and pattern test suite (82 tests) pass 100%. Full pytest suite (871 passed, 3 skipped, 5 warnings). Flake8 and mypy pass 100%. Stub mode remains 100% offline and deterministic.
 - CLI-based generation supports both deterministic stub output and live
   generator-graph execution.
 - The FastAPI server exposes synchronous generation, async generation startup,
