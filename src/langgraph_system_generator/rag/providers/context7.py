@@ -312,6 +312,8 @@ class Context7DocsProvider(DocsSourceProvider):
                 items = result["documents"]
             elif "snippets" in result and isinstance(result["snippets"], list):
                 items = result["snippets"]
+            elif "results" in result and isinstance(result["results"], list):
+                items = result["results"]
         elif isinstance(result, list):
             items = result
 
@@ -331,6 +333,13 @@ class Context7DocsProvider(DocsSourceProvider):
                             if isinstance(sub_items, list):
                                 for sub_item in sub_items:
                                     if isinstance(sub_item, dict):
+                                        content = (
+                                            sub_item.get("content")
+                                            or sub_item.get("snippet")
+                                            or sub_item.get("text")
+                                        )
+                                        if not isinstance(content, str) or not content.strip():
+                                            continue
                                         sub_score = sub_item.get("score")
                                         if sub_score is None:
                                             sub_score = sub_item.get("relevance_score")
@@ -338,7 +347,7 @@ class Context7DocsProvider(DocsSourceProvider):
                                             sub_score = 0.9
                                         snippets.append(
                                             create_normalized_doc_snippet(
-                                                content=sub_item.get("content") or sub_item.get("snippet") or sub_item.get("text") or "",
+                                                content=content.strip(),
                                                 source=sub_item.get("url") or sub_item.get("source") or fallback_source,
                                                 source_kind=self.source_id,
                                                 relevance_score=sub_score,
@@ -349,6 +358,13 @@ class Context7DocsProvider(DocsSourceProvider):
                         elif isinstance(sub_parsed, list):
                             for sub_item in sub_parsed:
                                 if isinstance(sub_item, dict):
+                                    content = (
+                                        sub_item.get("content")
+                                        or sub_item.get("snippet")
+                                        or sub_item.get("text")
+                                    )
+                                    if not isinstance(content, str) or not content.strip():
+                                        continue
                                     sub_score = sub_item.get("score")
                                     if sub_score is None:
                                         sub_score = sub_item.get("relevance_score")
@@ -356,7 +372,7 @@ class Context7DocsProvider(DocsSourceProvider):
                                         sub_score = 0.9
                                     snippets.append(
                                         create_normalized_doc_snippet(
-                                            content=sub_item.get("content") or sub_item.get("snippet") or sub_item.get("text") or "",
+                                            content=content.strip(),
                                             source=sub_item.get("url") or sub_item.get("source") or fallback_source,
                                             source_kind=self.source_id,
                                             relevance_score=sub_score,
@@ -373,10 +389,11 @@ class Context7DocsProvider(DocsSourceProvider):
                     score = item.get("relevance_score")
                 if score is None:
                     score = 0.9
-                if text:
+                content = item.get("text") or item.get("content") or item.get("snippet")
+                if isinstance(content, str) and content.strip():
                     snippets.append(
                         create_normalized_doc_snippet(
-                            content=str(text),
+                            content=content.strip(),
                             source=str(source),
                             source_kind=self.source_id,
                             relevance_score=score,

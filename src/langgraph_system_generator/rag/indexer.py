@@ -216,9 +216,13 @@ class DocsIndexer:
 
         documents: List[Document] = []
         for url, result in zip(self.urls, responses):
-            if isinstance(result, BaseException):
+            if isinstance(result, asyncio.CancelledError):
+                raise result
+            if isinstance(result, Exception):
                 logging.warning("Failed to fetch %s: %s", url, result)
                 continue
+            if isinstance(result, BaseException):
+                raise result
             doc = self._html_to_document(result, url)
             # Filter out redirect pages and minimal content
             content = doc.page_content.strip()

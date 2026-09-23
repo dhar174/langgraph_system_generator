@@ -181,31 +181,31 @@ class LangChainDocsLocalProvider(DocsSourceProvider):
                 if isinstance(val, list):
                     return val
 
-            # Check if parsed itself is a single document/snippet object
-            # It must have a recognized content field that is a non-empty string.
-            has_content = any(
-                isinstance(parsed.get(k), str) and str(parsed[k]).strip()
-                for k in ("snippet", "page_content")
-            )
-            if not has_content:
-                has_text_or_content = any(
-                    isinstance(parsed.get(k), str) and str(parsed[k]).strip()
-                    for k in ("content", "text")
-                )
-                has_metadata = any(
-                    parsed.get(k) is not None
-                    for k in (
-                        "url",
-                        "source",
-                        "title",
-                        "heading",
-                        "score",
-                        "relevance_score",
+            # Check if parsed is a protocol / JSON-RPC envelope rather than a doc object
+            is_protocol = (
+                "jsonrpc" in parsed
+                or "method" in parsed
+                or ("id" in parsed and ("result" in parsed or "error" in parsed))
+                or ("error" in parsed and isinstance(parsed.get("error"), (dict, str)))
+                or (
+                    "result" in parsed
+                    and isinstance(parsed.get("result"), (dict, list))
+                    and not any(
+                        isinstance(parsed.get(k), str) and str(parsed[k]).strip()
+                        for k in ("snippet", "content", "text", "page_content")
                     )
                 )
-                if has_text_or_content and has_metadata:
-                    has_content = True
+            )
+            if is_protocol:
+                return []
 
+            # Check if parsed itself is a single document/snippet object.
+            # Recognized content fields: snippet, content, text, page_content.
+            # Metadata is not required.
+            has_content = any(
+                isinstance(parsed.get(k), str) and str(parsed[k]).strip()
+                for k in ("snippet", "content", "text", "page_content")
+            )
             if has_content:
                 return [parsed]
         return []

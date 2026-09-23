@@ -65,6 +65,21 @@ def _add_warning(
         warnings_list.append(sanitized)
 
 
+def _normalize_snippets_provenance(
+    snippets: List[DocSnippet], provider_id: str
+) -> List[DocSnippet]:
+    """Ensure missing snippet provenance is attributed to the provider that returned them."""
+    normalized: List[DocSnippet] = []
+    for snippet in snippets:
+        if not snippet.source_kind:
+            normalized.append(
+                snippet.model_copy(update={"source_kind": provider_id})
+            )
+        else:
+            normalized.append(snippet)
+    return normalized
+
+
 def _load_docs_source_plugin(module_name: str, registry: DocsSourceRegistry) -> None:
     """Load a documentation source plugin module into the registry.
 
@@ -236,7 +251,11 @@ class DocsRetrievalService:
                         statuses[source_id] = res.status.value
                         if res.status == DocsSourceStatus.SUCCESS and res.snippets:
                             used.append(source_id)
-                            accumulated_snippets.extend(res.snippets)
+                            accumulated_snippets.extend(
+                                _normalize_snippets_provenance(
+                                    res.snippets, provider.source_id
+                                )
+                            )
                             break
                         elif (
                             res.status == DocsSourceStatus.FAILED
@@ -326,7 +345,9 @@ class DocsRetrievalService:
                         statuses[source_id] = res.status.value
                         if res.status == DocsSourceStatus.SUCCESS and res.snippets:
                             used.append(source_id)
-                            crosscheck_snippets = res.snippets
+                            crosscheck_snippets = _normalize_snippets_provenance(
+                                res.snippets, provider.source_id
+                            )
                         elif (
                             res.status == DocsSourceStatus.FAILED and res.error_message
                         ):
@@ -372,7 +393,11 @@ class DocsRetrievalService:
 
             if res.status == DocsSourceStatus.SUCCESS and res.snippets:
                 used.append(source_id)
-                accumulated_snippets.extend(res.snippets)
+                accumulated_snippets.extend(
+                    _normalize_snippets_provenance(
+                        res.snippets, provider.source_id
+                    )
+                )
 
                 if source_id == "langchain-docs-local":
                     found_useful_live = True

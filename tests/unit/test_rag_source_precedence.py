@@ -2273,7 +2273,314 @@ async def test_builtin_providers_stub_safe_invariants_and_isolation():
     assert result.used_sources == ["cached_repo_docs"]
     assert result.fallback_used is True
     assert len(result.snippets) == 1
-    assert (
-        result.snippets[0].content
-        == "Retrieved from process-local vector cache without network."
+    assert result.snippets[0].content == (
+        "Retrieved from process-local vector cache without network."
     )
+
+
+# ---------------------------------------------------------------------------
+# Finding 2 tests: MCP transport HTTP-200 JSON request ID validation
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_mcp_transport_matching_request_id_succeeds(monkeypatch):
+    """call_mcp_tool succeeds when HTTP-200 JSON response matches the active request_id."""
+    import httpx
+    from langgraph_system_generator.rag.mcp_transport import call_mcp_tool
+
+    async def mock_post(*args, **kwargs):
+        return httpx.Response(
+            200,
+            json={"jsonrpc": "2.0", "id": 1, "result": {"content": []}},
+        )
+
+    monkeypatch.setattr(httpx.AsyncClient, "post", mock_post)
+
+    payload = await call_mcp_tool(
+        endpoint_url="http://test.mcp/endpoint",
+        tool_name="test_tool",
+        request_id=1,
+    )
+    assert payload.get("id") == 1
+    assert payload.get("result") == {"content": []}
+
+
+@pytest.mark.asyncio
+async def test_mcp_transport_mismatched_request_id_raises_parse_error(monkeypatch):
+    """call_mcp_tool raises MCPTransportError(error_kind='parse') when HTTP-200 JSON has mismatched ID."""
+    import httpx
+    from langgraph_system_generator.rag.mcp_transport import (
+        MCPTransportError,
+        call_mcp_tool,
+    )
+
+    async def mock_post(*args, **kwargs):
+        return httpx.Response(
+            200,
+            json={"jsonrpc": "2.0", "id": 999, "result": {"content": []}},
+        )
+
+    monkeypatch.setattr(httpx.AsyncClient, "post", mock_post)
+
+    with pytest.raises(MCPTransportError) as exc_info:
+        await call_mcp_tool(
+            endpoint_url="http://test.mcp/endpoint",
+            tool_name="test_tool",
+            request_id=1,
+        )
+    assert exc_info.value.error_kind == "parse"
+    assert "Invalid JSON-RPC response for request_id '1'" in str(exc_info.value)
+
+
+@pytest.mark.asyncio
+async def test_mcp_transport_notification_envelope_raises_parse_error(monkeypatch):
+    """call_mcp_tool raises MCPTransportError(error_kind='parse') when HTTP-200 is a notification-only envelope."""
+    import httpx
+    from langgraph_system_generator.rag.mcp_transport import (
+        MCPTransportError,
+        call_mcp_tool,
+    )
+
+    async def mock_post(*args, **kwargs):
+        return httpx.Response(
+            200,
+            json={"jsonrpc": "2.0", "method": "notifications/progress", "params": {}},
+        )
+
+    monkeypatch.setattr(httpx.AsyncClient, "post", mock_post)
+
+    with pytest.raises(MCPTransportError) as exc_info:
+        await call_mcp_tool(
+            endpoint_url="http://test.mcp/endpoint",
+            tool_name="test_tool",
+            request_id=1,
+        )
+    assert exc_info.value.error_kind == "parse"
+
+
+# ---------------------------------------------------------------------------
+# Finding 3 tests: Custom provider provenance preservation
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_custom_provider_untagged_snippets_acquire_provider_provenance():
+    """Untagged custom provider snippets receive provider.source_id provenance and appear in used_sources."""
+
+    class UntaggedCustomProvider(DocsSourceProvider):
+        source_id = "custom-untagged-plugin"
+        stub_safe = True
+
+        def is_available(self, mode: str = "live") -> bool:
+            return True
+
+        async def aretrieve(
+            self, query: str, k: int = 5, mode: str = "live"
+        ) -> DocsProviderResult:
+            return DocsProviderResult(
+                source_id=self.source_id,
+                status=DocsSourceStatus.SUCCESS,
+                snippets=[
+                    DocSnippet(
+                        content="Plugin documentation content",
+                        source="https://plugins.example.com/doc-1",
+                        source_kind=None,
+                        relevance_score=0.9,
+                    )
+                ],
+            )
+
+    provider = UntaggedCustomProvider()
+    service = DocsRetrievalService(precedence=["custom-untagged-plugin"])
+    service.registry.register(provider)
+
+    result = await service.aretrieve("plugin query", k=5, mode="live")
+
+    assert len(result.snippets) == 1
+    assert result.snippets[0].source_kind == "custom-untagged-plugin"
+    assert result.snippets[0].source == "https://plugins.example.com/doc-1"
+    assert "custom-untagged-plugin" in result.used_sources
+    assert result.fallback_used is False
+
+
+@pytest.mark.asyncio
+async def test_custom_provider_explicit_provenance_preserved():
+    """Custom provider snippet with explicit source_kind remains untouched."""
+
+    class ExplicitCustomProvider(DocsSourceProvider):
+        source_id = "custom-explicit-plugin"
+        stub_safe = True
+
+        def is_available(self, mode: str = "live") -> bool:
+            return True
+
+        async def aretrieve(
+            self, query: str, k: int = 5, mode: str = "live"
+        ) -> DocsProviderResult:
+            return DocsProviderResult(
+                source_id=self.source_id,
+                status=DocsSourceStatus.SUCCESS,
+                snippets=[
+                    DocSnippet(
+                        content="Explicit provenance plugin content",
+                        source="https://plugins.example.com/doc-2",
+                        source_kind="explicit-upstream-origin",
+                        relevance_score=0.88,
+                    )
+                ],
+            )
+
+    provider = ExplicitCustomProvider()
+    service = DocsRetrievalService(precedence=["custom-explicit-plugin"])
+    service.registry.register(provider)
+
+    result = await service.aretrieve("explicit query", k=5, mode="live")
+
+    assert len(result.snippets) == 1
+    assert result.snippets[0].source_kind == "explicit-upstream-origin"
+    assert result.snippets[0].source == "https://plugins.example.com/doc-2"
+
+
+# ---------------------------------------------------------------------------
+# Finding 4 tests: Context7 empty snippet prevention & fallback
+# ---------------------------------------------------------------------------
+
+
+def test_context7_nested_serialized_object_without_text_emits_no_snippets():
+    """Context7 payload containing nested object without text/content emits zero snippets."""
+    provider = Context7DocsProvider(api_key="test-key")
+    payload = {
+        "results": [
+            {
+                "url": "https://example.com/empty-result",
+            }
+        ]
+    }
+    snippets = provider._parse_snippets(
+        payload, fallback_source="https://context7.example.com"
+    )
+    assert snippets == []
+
+
+@pytest.mark.asyncio
+async def test_context7_empty_snippets_returns_empty_and_allows_cached_fallback(
+    monkeypatch,
+):
+    """Context7 returning only invalid/empty-content entries returns EMPTY and allows cached fallback."""
+    import httpx
+
+    # Mock Context7 returning resolve-library-id then query-docs with entries without text
+    async def mock_post(self, url, headers=None, json=None, timeout=None):
+        name = (json or {}).get("params", {}).get("name")
+        req_id = (json or {}).get("id", 1)
+        if name == "resolve-library-id":
+            return httpx.Response(
+                200,
+                json={
+                    "jsonrpc": "2.0",
+                    "id": req_id,
+                    "result": {
+                        "content": [
+                            {"text": '{"libraries": [{"library_id": "lib-123"}]}'}
+                        ]
+                    },
+                },
+            )
+        return httpx.Response(
+            200,
+            json={
+                "jsonrpc": "2.0",
+                "id": req_id,
+                "result": {
+                    "results": [
+                        {"url": "https://example.com/no-content-1"},
+                        {"url": "https://example.com/no-content-2", "content": "   "},
+                    ]
+                },
+            },
+        )
+
+    monkeypatch.setattr(httpx.AsyncClient, "post", mock_post)
+    monkeypatch.setattr(settings, "docs_live_sources_enabled", True)
+    monkeypatch.setattr(settings, "context7_docs_enabled", True)
+
+    context7_provider = Context7DocsProvider(
+        api_key="sk-test",
+        endpoint_url="http://test.context7/mcp",
+    )
+    direct_res = await context7_provider.aretrieve("test query", k=5, mode="live")
+    assert direct_res.status == DocsSourceStatus.EMPTY
+    assert len(direct_res.snippets) == 0
+
+    # Test through DocsRetrievalService: precedence continues to cached_repo_docs
+    cached_snippet = DocSnippet(
+        content="Cached documentation content fallback",
+        source="cache:repo",
+        source_kind="cached_repo_docs",
+        relevance_score=0.75,
+    )
+    cached_provider = StubProvider(
+        "cached_repo_docs", available=True, snippets=[cached_snippet]
+    )
+
+    service = DocsRetrievalService(precedence=["context7", "cached_repo_docs"])
+    service.registry.register(context7_provider)
+    service.registry.register(cached_provider)
+
+    result = await service.aretrieve("test query", k=5, mode="live")
+    assert result.source_statuses["context7"] == DocsSourceStatus.EMPTY.value
+    assert result.source_statuses["cached_repo_docs"] == DocsSourceStatus.SUCCESS.value
+    assert result.fallback_used is True
+    assert len(result.snippets) == 1
+    assert result.snippets[0].content == "Cached documentation content fallback"
+
+
+# ---------------------------------------------------------------------------
+# Finding 5 tests: LangChain local content-only / text-only serialized documents
+# ---------------------------------------------------------------------------
+
+
+def test_langchain_local_extracts_serialized_content_only_doc():
+    """LangChain local extracts a single-document object containing only 'content'."""
+    provider = LangChainDocsLocalProvider(endpoint_url="http://test.mcp")
+    payload = {
+        "result": {
+            "content": [
+                {
+                    "type": "text",
+                    "text": '{"content": "Content-only documentation"}',
+                }
+            ]
+        }
+    }
+    snippets = provider._extract_snippets_from_payload(
+        payload, fallback_url="https://docs.langchain.com/default"
+    )
+    assert len(snippets) == 1
+    assert snippets[0].content == "Content-only documentation"
+    assert snippets[0].source == "https://docs.langchain.com/default"
+    assert snippets[0].source_kind == "langchain-docs-local"
+
+
+def test_langchain_local_extracts_serialized_text_only_doc():
+    """LangChain local extracts a single-document object containing only 'text'."""
+    provider = LangChainDocsLocalProvider(endpoint_url="http://test.mcp")
+    payload = {
+        "result": {
+            "content": [
+                {
+                    "type": "text",
+                    "text": '{"text": "Text-only documentation"}',
+                }
+            ]
+        }
+    }
+    snippets = provider._extract_snippets_from_payload(
+        payload, fallback_url="https://docs.langchain.com/default"
+    )
+    assert len(snippets) == 1
+    assert snippets[0].content == "Text-only documentation"
+    assert snippets[0].source == "https://docs.langchain.com/default"
+    assert snippets[0].source_kind == "langchain-docs-local"
+

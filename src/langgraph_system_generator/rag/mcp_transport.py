@@ -353,9 +353,6 @@ async def call_mcp_tool(
     # Standard JSON response
     try:
         data = response.json()
-        if isinstance(data, dict):
-            return data
-        raise ValueError("MCP response did not decode to a JSON object")
     except Exception as json_err:
         # Check if response text has SSE format even without content-type header
         if "data:" in response.text:
@@ -364,3 +361,16 @@ async def call_mcp_tool(
             f"Invalid JSON response from MCP endpoint '{endpoint}'",
             error_kind="parse",
         ) from json_err
+
+    if isinstance(data, dict) and _is_valid_jsonrpc_payload(
+        data, request_id=request_id
+    ):
+        return data
+
+    if "data:" in response.text and not isinstance(data, dict):
+        return _parse_sse_response(response.text, request_id=request_id)
+
+    raise MCPTransportError(
+        f"Invalid JSON-RPC response for request_id '{request_id}' from MCP endpoint '{endpoint}'",
+        error_kind="parse",
+    )
