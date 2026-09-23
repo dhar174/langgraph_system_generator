@@ -2604,16 +2604,20 @@ async def test_mcp_transport_parse_error_sanitizes_endpoint_url(monkeypatch):
 
     monkeypatch.setattr(httpx.AsyncClient, "post", mock_post_invalid_json)
 
-    # Test query param secret redaction
+    # Test query param secret redaction (simple and compound names)
     with pytest.raises(MCPTransportError) as exc_info:
         await call_mcp_tool(
-            endpoint_url="https://api.example.com/mcp?api_key=secret_param_token_999",
+            endpoint_url="https://api.example.com/mcp?api_key=secret_param_token_999&access_token=compound_access_abc&client_secret=compound_secret_xyz",
             tool_name="test_tool",
             request_id=1,
         )
     assert exc_info.value.error_kind == "parse"
     assert "secret_param_token_999" not in str(exc_info.value)
+    assert "compound_access_abc" not in str(exc_info.value)
+    assert "compound_secret_xyz" not in str(exc_info.value)
     assert "api_key=[REDACTED]" in str(exc_info.value)
+    assert "access_token=[REDACTED]" in str(exc_info.value)
+    assert "client_secret=[REDACTED]" in str(exc_info.value)
 
     # Test basic auth credential redaction
     with pytest.raises(MCPTransportError) as exc_info2:

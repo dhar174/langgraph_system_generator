@@ -6,6 +6,7 @@ import json
 import logging
 import re
 from typing import Any, Dict, List, Optional
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 logger = logging.getLogger(__name__)
 
@@ -50,18 +51,55 @@ def _sanitize_url_for_logging(url: str) -> str:
     """Redact sensitive query params and basic auth credentials from a URL string."""
     if not url:
         return ""
-    sanitized = re.sub(
-        r"((?:[?&]|\b)(?:api_key|key|token|secret|password)=)[^&\s]+",
-        r"\1[REDACTED]",
-        str(url),
-        flags=re.IGNORECASE,
-    )
-    sanitized = re.sub(
-        r"(://[^:/@\s]+:)[^@\s/]+@",
-        r"\1[REDACTED]@",
-        sanitized,
-    )
-    return sanitized
+    url_str = str(url)
+    try:
+        parts = urlsplit(url_str)
+        netloc = parts.netloc
+        if "@" in netloc:
+            userinfo, host = netloc.split("@", 1)
+            if ":" in userinfo:
+                user, _ = userinfo.split(":", 1)
+                netloc = f"{user}:[REDACTED]@{host}"
+            else:
+                netloc = f"[REDACTED]@{host}"
+
+        if parts.query:
+            query_pairs = parse_qsl(parts.query, keep_blank_values=True)
+            sanitized_pairs = []
+            sensitive_fragments = (
+                "key",
+                "token",
+                "secret",
+                "password",
+                "auth",
+                "cred",
+                "signature",
+            )
+            for k, v in query_pairs:
+                k_lower = k.lower()
+                if any(s in k_lower for s in sensitive_fragments):
+                    sanitized_pairs.append((k, "[REDACTED]"))
+                else:
+                    sanitized_pairs.append((k, v))
+            query = urlencode(sanitized_pairs, safe="[]")
+        else:
+            query = parts.query
+
+        return urlunsplit((parts.scheme, netloc, parts.path, query, parts.fragment))
+    except Exception:
+        # Fallback to regex if urlsplit/parse fails
+        sanitized = re.sub(
+            r"((?:[?&]|\b)[\w\-]*(?:key|token|secret|password|auth|cred)[\w\-]*=)[^&\s]+",
+            r"\1[REDACTED]",
+            url_str,
+            flags=re.IGNORECASE,
+        )
+        sanitized = re.sub(
+            r"(://[^:/@\s]+:)[^@\s/]+@",
+            r"\1[REDACTED]@",
+            sanitized,
+        )
+        return sanitized
 
 
 def _id_matches(response_id: Any, request_id: Any) -> bool:
@@ -299,7 +337,7 @@ async def call_mcp_tool(
     ) as req_err:
         # Sanitize error message to ensure no sensitive URL tokens or secrets leak
         err_text = re.sub(
-            r"([?&](?:api_key|token|key|secret)=)[^&\s]+",
+            r"([?&][\w\-]*(?:key|token|secret|password|auth|cred)[\w\-]*=)[^&\s]+",
             r"\1[REDACTED]",
             str(req_err),
             flags=re.IGNORECASE,
@@ -311,7 +349,7 @@ async def call_mcp_tool(
         ) from req_err
     except Exception as exc:
         err_text = re.sub(
-            r"([?&](?:api_key|token|key|secret)=)[^&\s]+",
+            r"([?&][\w\-]*(?:key|token|secret|password|auth|cred)[\w\-]*=)[^&\s]+",
             r"\1[REDACTED]",
             str(exc),
             flags=re.IGNORECASE,
