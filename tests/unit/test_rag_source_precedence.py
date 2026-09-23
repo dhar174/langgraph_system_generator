@@ -2584,3 +2584,102 @@ def test_langchain_local_extracts_serialized_text_only_doc():
     assert snippets[0].source == "https://docs.langchain.com/default"
     assert snippets[0].source_kind == "langchain-docs-local"
 
+
+# ---------------------------------------------------------------------------
+# Follow-up review tests: URL sanitization in MCP errors & Context7 protocol rejection
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_mcp_transport_parse_error_sanitizes_endpoint_url(monkeypatch):
+    """MCPTransportError redacts sensitive query parameters and credentials in endpoint URLs."""
+    import httpx
+    from langgraph_system_generator.rag.mcp_transport import (
+        MCPTransportError,
+        call_mcp_tool,
+    )
+
+    async def mock_post_invalid_json(*args, **kwargs):
+        return httpx.Response(200, text="not valid json {{{")
+
+    monkeypatch.setattr(httpx.AsyncClient, "post", mock_post_invalid_json)
+
+    # Test query param secret redaction
+    with pytest.raises(MCPTransportError) as exc_info:
+        await call_mcp_tool(
+            endpoint_url="https://api.example.com/mcp?api_key=secret_param_token_999",
+            tool_name="test_tool",
+            request_id=1,
+        )
+    assert exc_info.value.error_kind == "parse"
+    assert "secret_param_token_999" not in str(exc_info.value)
+    assert "api_key=[REDACTED]" in str(exc_info.value)
+
+    # Test basic auth credential redaction
+    with pytest.raises(MCPTransportError) as exc_info2:
+        await call_mcp_tool(
+            endpoint_url="https://admin:super_secret_pw@api.example.com/mcp",
+            tool_name="test_tool",
+            request_id=1,
+        )
+    assert exc_info2.value.error_kind == "parse"
+    assert "super_secret_pw" not in str(exc_info2.value)
+    assert "admin:[REDACTED]@" in str(exc_info2.value)
+
+
+def test_context7_rejects_protocol_envelope_in_text_without_fallback_emission():
+    """Context7 rejects protocol envelope nested inside text and does not emit raw JSON."""
+    provider = Context7DocsProvider(api_key="test-key")
+    payload = {
+        "result": {
+            "content": [
+                {
+                    "type": "text",
+                    "text": '{"jsonrpc": "2.0", "method": "notifications/message", "params": {}}',
+                }
+            ]
+        }
+    }
+    snippets = provider._parse_snippets(
+        payload, fallback_source="https://context7.example.com"
+    )
+    assert snippets == []
+
+
+def test_context7_rejects_protocol_envelope_as_direct_string_item():
+    """Context7 rejects protocol envelope passed as a string item and does not emit raw JSON."""
+    provider = Context7DocsProvider(api_key="test-key")
+    payload = {
+        "result": [
+            '{"jsonrpc": "2.0", "id": 1, "result": {"value": 123}}',
+        ]
+    }
+    snippets = provider._parse_snippets(
+        payload, fallback_source="https://context7.example.com"
+    )
+    assert snippets == []
+
+
+def test_context7_extracts_single_doc_dict_from_serialized_text():
+    """Context7 extracts single-document JSON from text field when valid document fields exist."""
+    provider = Context7DocsProvider(api_key="test-key")
+    payload = {
+        "result": {
+            "content": [
+                {
+                    "type": "text",
+                    "text": '{"content": "Context7 extracted document", "title": "Context7 Title", "url": "https://docs.context7.ai/page"}',
+                }
+            ]
+        }
+    }
+    snippets = provider._parse_snippets(
+        payload, fallback_source="https://context7.example.com"
+    )
+    assert len(snippets) == 1
+    assert snippets[0].content == "Context7 extracted document"
+    assert snippets[0].heading == "Context7 Title"
+    assert snippets[0].source == "https://docs.context7.ai/page"
+    assert snippets[0].source_kind == "context7"
+
+

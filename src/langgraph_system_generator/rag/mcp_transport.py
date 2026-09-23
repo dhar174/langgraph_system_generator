@@ -46,6 +46,24 @@ def _sanitize_header_for_logging(headers: Dict[str, str]) -> Dict[str, str]:
     return safe
 
 
+def _sanitize_url_for_logging(url: str) -> str:
+    """Redact sensitive query params and basic auth credentials from a URL string."""
+    if not url:
+        return ""
+    sanitized = re.sub(
+        r"((?:[?&]|\b)(?:api_key|key|token|secret|password)=)[^&\s]+",
+        r"\1[REDACTED]",
+        str(url),
+        flags=re.IGNORECASE,
+    )
+    sanitized = re.sub(
+        r"(://[^:/@\s]+:)[^@\s/]+@",
+        r"\1[REDACTED]@",
+        sanitized,
+    )
+    return sanitized
+
+
 def _id_matches(response_id: Any, request_id: Any) -> bool:
     """Check if a response ID matches the expected request ID."""
     if response_id is None or request_id is None:
@@ -223,6 +241,7 @@ async def call_mcp_tool(
             "No MCP endpoint URL provided", error_kind="configuration"
         )
     endpoint = target_endpoint
+    safe_endpoint = _sanitize_url_for_logging(endpoint)
     if arguments is None:
         arguments = {}
     if api_key and not authorization:
@@ -358,7 +377,7 @@ async def call_mcp_tool(
         if "data:" in response.text:
             return _parse_sse_response(response.text, request_id=request_id)
         raise MCPTransportError(
-            f"Invalid JSON response from MCP endpoint '{endpoint}'",
+            f"Invalid JSON response from MCP endpoint '{safe_endpoint}'",
             error_kind="parse",
         ) from json_err
 
@@ -371,6 +390,6 @@ async def call_mcp_tool(
         return _parse_sse_response(response.text, request_id=request_id)
 
     raise MCPTransportError(
-        f"Invalid JSON-RPC response for request_id '{request_id}' from MCP endpoint '{endpoint}'",
+        f"Invalid JSON-RPC response for request_id '{request_id}' from MCP endpoint '{safe_endpoint}'",
         error_kind="parse",
     )

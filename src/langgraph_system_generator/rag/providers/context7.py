@@ -300,18 +300,137 @@ class Context7DocsProvider(DocsSourceProvider):
             metadata={"endpoint": self.endpoint_url},
         )
 
-    def _parse_snippets(self, payload: Dict[str, Any], fallback_source: str) -> List[DocSnippet]:
+    def _extract_snippets_from_parsed_json(
+        self, obj: Any, fallback_source: str
+    ) -> List[DocSnippet]:
+        """Extract valid doc snippets from parsed JSON dictionary or list, rejecting protocol envelopes."""
         snippets: List[DocSnippet] = []
-        result = payload.get("result") or payload
+        if isinstance(obj, dict):
+            # Reject protocol envelopes
+            is_protocol = (
+                "jsonrpc" in obj
+                or "method" in obj
+                or ("id" in obj and ("result" in obj or "error" in obj))
+                or ("error" in obj and isinstance(obj.get("error"), (dict, str)))
+            )
+            if is_protocol:
+                return []
+
+            sub_items = (
+                obj.get("snippets")
+                or obj.get("documents")
+                or obj.get("content")
+                or obj.get("results")
+            )
+            if isinstance(sub_items, list):
+                for sub_item in sub_items:
+                    if isinstance(sub_item, dict):
+                        content = (
+                            sub_item.get("content")
+                            or sub_item.get("snippet")
+                            or sub_item.get("text")
+                        )
+                        if not isinstance(content, str) or not content.strip():
+                            continue
+                        sub_score = sub_item.get("score")
+                        if sub_score is None:
+                            sub_score = sub_item.get("relevance_score")
+                        if sub_score is None:
+                            sub_score = 0.9
+                        snippets.append(
+                            create_normalized_doc_snippet(
+                                content=content.strip(),
+                                source=sub_item.get("url")
+                                or sub_item.get("source")
+                                or fallback_source,
+                                source_kind=self.source_id,
+                                relevance_score=sub_score,
+                                heading=sub_item.get("title")
+                                or sub_item.get("heading"),
+                            )
+                        )
+                return snippets
+
+            # Single document dictionary
+            doc_content = (
+                obj.get("content") or obj.get("snippet") or obj.get("text")
+            )
+            if isinstance(doc_content, str) and doc_content.strip():
+                sub_score = obj.get("score")
+                if sub_score is None:
+                    sub_score = obj.get("relevance_score")
+                if sub_score is None:
+                    sub_score = 0.9
+                snippets.append(
+                    create_normalized_doc_snippet(
+                        content=doc_content.strip(),
+                        source=obj.get("url") or obj.get("source") or fallback_source,
+                        source_kind=self.source_id,
+                        relevance_score=sub_score,
+                        heading=obj.get("title") or obj.get("heading"),
+                    )
+                )
+            return snippets
+
+        elif isinstance(obj, list):
+            for sub_item in obj:
+                if isinstance(sub_item, dict):
+                    content = (
+                        sub_item.get("content")
+                        or sub_item.get("snippet")
+                        or sub_item.get("text")
+                    )
+                    if not isinstance(content, str) or not content.strip():
+                        continue
+                    sub_score = sub_item.get("score")
+                    if sub_score is None:
+                        sub_score = sub_item.get("relevance_score")
+                    if sub_score is None:
+                        sub_score = 0.9
+                    snippets.append(
+                        create_normalized_doc_snippet(
+                            content=content.strip(),
+                            source=sub_item.get("url")
+                            or sub_item.get("source")
+                            or fallback_source,
+                            source_kind=self.source_id,
+                            relevance_score=sub_score,
+                            heading=sub_item.get("title")
+                            or sub_item.get("heading"),
+                        )
+                    )
+            return snippets
+
+        return []
+
+    def _parse_snippets(
+        self,
+        payload: Dict[str, Any],
+        fallback_source: str = "https://context7.ai/docs",
+    ) -> List[DocSnippet]:
+        """Extract doc snippets from Context7 query response.
+
+        Handles various response formats:
+        - {"results": [{"content": ...}, ...]}
+        - {"documents": [{"text": ...}, ...]}
+        - {"snippets": [{"snippet": ...}, ...]}
+        - MCP content array: [{"type": "text", "text": "..."}]
+        """
+        snippets: List[DocSnippet] = []
+
+        result = payload.get("result", payload)
         items: List[Any] = []
 
         if isinstance(result, dict):
-            if "content" in result and isinstance(result["content"], list):
-                items = result["content"]
+            # Check common result keys
+            if "results" in result and isinstance(result["results"], list):
+                items = result["results"]
             elif "documents" in result and isinstance(result["documents"], list):
                 items = result["documents"]
             elif "snippets" in result and isinstance(result["snippets"], list):
                 items = result["snippets"]
+            elif "content" in result and isinstance(result["content"], list):
+                items = result["content"]
             elif "results" in result and isinstance(result["results"], list):
                 items = result["results"]
         elif isinstance(result, list):
@@ -319,69 +438,30 @@ class Context7DocsProvider(DocsSourceProvider):
 
         for item in items:
             if isinstance(item, dict):
+                # Reject item if it is itself a protocol envelope
+                if any(k in item for k in ("jsonrpc", "method")):
+                    continue
+
                 text = item.get("text") or item.get("content") or ""
-                if isinstance(text, str) and (text.strip().startswith("[") or text.strip().startswith("{")):
+                if isinstance(text, str) and (
+                    text.strip().startswith("[") or text.strip().startswith("{")
+                ):
                     try:
                         sub_parsed = json.loads(text.strip())
-                        if isinstance(sub_parsed, dict):
-                            sub_items = (
-                                sub_parsed.get("snippets")
-                                or sub_parsed.get("documents")
-                                or sub_parsed.get("content")
-                                or sub_parsed.get("results")
-                            )
-                            if isinstance(sub_items, list):
-                                for sub_item in sub_items:
-                                    if isinstance(sub_item, dict):
-                                        content = (
-                                            sub_item.get("content")
-                                            or sub_item.get("snippet")
-                                            or sub_item.get("text")
-                                        )
-                                        if not isinstance(content, str) or not content.strip():
-                                            continue
-                                        sub_score = sub_item.get("score")
-                                        if sub_score is None:
-                                            sub_score = sub_item.get("relevance_score")
-                                        if sub_score is None:
-                                            sub_score = 0.9
-                                        snippets.append(
-                                            create_normalized_doc_snippet(
-                                                content=content.strip(),
-                                                source=sub_item.get("url") or sub_item.get("source") or fallback_source,
-                                                source_kind=self.source_id,
-                                                relevance_score=sub_score,
-                                                heading=sub_item.get("title") or sub_item.get("heading"),
-                                            )
-                                        )
-                                continue
-                        elif isinstance(sub_parsed, list):
-                            for sub_item in sub_parsed:
-                                if isinstance(sub_item, dict):
-                                    content = (
-                                        sub_item.get("content")
-                                        or sub_item.get("snippet")
-                                        or sub_item.get("text")
-                                    )
-                                    if not isinstance(content, str) or not content.strip():
-                                        continue
-                                    sub_score = sub_item.get("score")
-                                    if sub_score is None:
-                                        sub_score = sub_item.get("relevance_score")
-                                    if sub_score is None:
-                                        sub_score = 0.9
-                                    snippets.append(
-                                        create_normalized_doc_snippet(
-                                            content=content.strip(),
-                                            source=sub_item.get("url") or sub_item.get("source") or fallback_source,
-                                            source_kind=self.source_id,
-                                            relevance_score=sub_score,
-                                            heading=sub_item.get("title") or sub_item.get("heading"),
-                                        )
-                                    )
-                            continue
                     except Exception:
-                        pass
+                        sub_parsed = None
+
+                    if sub_parsed is not None:
+                        nested_snippets = self._extract_snippets_from_parsed_json(
+                            sub_parsed,
+                            fallback_source=item.get("url")
+                            or item.get("source")
+                            or fallback_source,
+                        )
+                        snippets.extend(nested_snippets)
+                        # If text was valid JSON, do not fall through to emit raw JSON string
+                        continue
+
                 source = item.get("url") or item.get("source") or fallback_source
                 heading = item.get("title") or item.get("heading")
                 score = item.get("score")
@@ -401,9 +481,25 @@ class Context7DocsProvider(DocsSourceProvider):
                         )
                     )
             elif isinstance(item, str) and item.strip():
+                raw_str = item.strip()
+                if raw_str.startswith(("[", "{")):
+                    try:
+                        str_parsed = json.loads(raw_str)
+                    except Exception:
+                        str_parsed = None
+
+                    if str_parsed is not None:
+                        nested_snippets = self._extract_snippets_from_parsed_json(
+                            str_parsed,
+                            fallback_source=fallback_source,
+                        )
+                        snippets.extend(nested_snippets)
+                        # If raw_str was valid JSON, do not fall through to emit raw JSON string
+                        continue
+
                 snippets.append(
                     create_normalized_doc_snippet(
-                        content=item.strip(),
+                        content=raw_str,
                         source=fallback_source,
                         source_kind=self.source_id,
                         relevance_score=0.9,
