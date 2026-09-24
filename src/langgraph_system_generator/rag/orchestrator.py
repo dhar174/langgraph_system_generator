@@ -7,7 +7,7 @@ import importlib
 import logging
 import re
 from threading import Lock
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from pydantic import BaseModel, Field
 
@@ -202,7 +202,6 @@ class DocsRetrievalService:
         used: List[str] = []
         statuses: Dict[str, str] = {}
         warnings: List[str] = []
-        accumulated_snippets: List[DocSnippet] = []
 
         if self._explicit_precedence:
             ordered_source_ids = list(self.precedence)
@@ -214,6 +213,7 @@ class DocsRetrievalService:
 
         if mode == "stub":
             # Stub mode: strictly bypass live providers
+            stub_attributed: List[Tuple[DocSnippet, str]] = []
             for source_id in ordered_source_ids:
                 provider = self.registry.get_provider(source_id)
                 if provider is None:
@@ -238,11 +238,11 @@ class DocsRetrievalService:
                         statuses[source_id] = res.status.value
                         if res.status == DocsSourceStatus.SUCCESS and res.snippets:
                             used.append(source_id)
-                            accumulated_snippets.extend(
-                                _normalize_snippets_provenance(
-                                    res.snippets, provider.source_id
-                                )
+                            norm_snippets = _normalize_snippets_provenance(
+                                res.snippets, provider.source_id
                             )
+                            for s in norm_snippets:
+                                stub_attributed.append((s, provider.source_id))
                             break
                         elif (
                             res.status == DocsSourceStatus.FAILED
@@ -263,17 +263,20 @@ class DocsRetrievalService:
                     statuses[source_id] = DocsSourceStatus.UNAVAILABLE.value
 
             # Deduplicate and cap
-            stub_deduped: Dict[str, DocSnippet] = {}
-            for s in accumulated_snippets:
+            stub_deduped: Dict[str, Tuple[DocSnippet, str]] = {}
+            for s, prov_id in stub_attributed:
                 key = f"{s.source}#{s.heading or ''}#{s.content[:60]}"
                 if key not in stub_deduped:
-                    stub_deduped[key] = s
-            final_snippets = list(stub_deduped.values())[:k]
+                    stub_deduped[key] = (s, prov_id)
+            final_attributed = list(stub_deduped.values())[:k]
+            final_snippets = [s for s, _ in final_attributed]
+            surviving_providers = {prov_id for _, prov_id in final_attributed}
 
             final_used = [
                 src
                 for src in attempted
-                if any(
+                if src in surviving_providers
+                or any(
                     s.source_kind == src
                     or s.source.startswith(f"{src}:")
                     or s.source == src
@@ -281,8 +284,9 @@ class DocsRetrievalService:
                 )
             ]
             fallback_used = any(
-                src in ("cached_repo_docs", "rag_index") for src in final_used
-            )
+                prov_id in ("cached_repo_docs", "rag_index")
+                for _, prov_id in final_attributed
+            ) or any(src in ("cached_repo_docs", "rag_index") for src in final_used)
 
             for source_id in ordered_source_ids:
                 if source_id not in statuses:
@@ -299,7 +303,8 @@ class DocsRetrievalService:
 
         # Live mode: execute precedence order
         found_useful_live = False
-        crosscheck_snippets: List[DocSnippet] = []
+        accumulated_attributed: List[Tuple[DocSnippet, str]] = []
+        crosscheck_attributed: List[Tuple[DocSnippet, str]] = []
 
         for source_id in ordered_source_ids:
             provider = self.registry.get_provider(source_id)
@@ -332,9 +337,11 @@ class DocsRetrievalService:
                         statuses[source_id] = res.status.value
                         if res.status == DocsSourceStatus.SUCCESS and res.snippets:
                             used.append(source_id)
-                            crosscheck_snippets = _normalize_snippets_provenance(
+                            norm_snippets = _normalize_snippets_provenance(
                                 res.snippets, provider.source_id
                             )
+                            for s in norm_snippets:
+                                crosscheck_attributed.append((s, provider.source_id))
                         elif (
                             res.status == DocsSourceStatus.FAILED and res.error_message
                         ):
@@ -380,11 +387,11 @@ class DocsRetrievalService:
 
             if res.status == DocsSourceStatus.SUCCESS and res.snippets:
                 used.append(source_id)
-                accumulated_snippets.extend(
-                    _normalize_snippets_provenance(
-                        res.snippets, provider.source_id
-                    )
+                norm_snippets = _normalize_snippets_provenance(
+                    res.snippets, provider.source_id
                 )
+                for s in norm_snippets:
+                    accumulated_attributed.append((s, provider.source_id))
 
                 if source_id == "langchain-docs-local":
                     found_useful_live = True
@@ -412,41 +419,45 @@ class DocsRetrievalService:
                 statuses[source_id] = DocsSourceStatus.SKIPPED.value
 
         # Cap and deduplicate snippets
-        # If crosscheck_snippets exist, reserve quota so at least one Context7 snippet survives final cap (Finding 6)
-        if crosscheck_snippets and accumulated_snippets:
-            reserve_crosscheck = min(len(crosscheck_snippets), max(1, k // 3))
+        # If crosscheck_attributed exists, reserve quota so at least one Context7 snippet survives final cap (Finding 6)
+        if crosscheck_attributed and accumulated_attributed:
+            reserve_crosscheck = min(len(crosscheck_attributed), max(1, k // 3))
             primary_quota = max(1, k - reserve_crosscheck)
-            candidate_snippets = (
-                accumulated_snippets[:primary_quota]
-                + crosscheck_snippets[:reserve_crosscheck]
+            candidate_attributed = (
+                accumulated_attributed[:primary_quota]
+                + crosscheck_attributed[:reserve_crosscheck]
             )
-        elif crosscheck_snippets:
-            candidate_snippets = crosscheck_snippets
+        elif crosscheck_attributed:
+            candidate_attributed = crosscheck_attributed
         else:
-            candidate_snippets = accumulated_snippets
+            candidate_attributed = accumulated_attributed
 
-        live_deduped: Dict[str, DocSnippet] = {}
-        for s in candidate_snippets:
+        live_deduped: Dict[str, Tuple[DocSnippet, str]] = {}
+        for s, prov_id in candidate_attributed:
             key = f"{s.source}#{s.heading or ''}#{s.content[:60]}"
             if key not in live_deduped:
-                live_deduped[key] = s
+                live_deduped[key] = (s, prov_id)
 
-        final_snippets = list(live_deduped.values())[:k]
+        final_attributed = list(live_deduped.values())[:k]
 
         # If crosscheck returned snippets and k >= 1, guarantee representation in final_snippets
-        if crosscheck_snippets and not any(
-            s.source_kind == "context7" for s in final_snippets
+        if crosscheck_attributed and not any(
+            prov_id == "context7" for _, prov_id in final_attributed
         ):
-            if final_snippets:
-                final_snippets[-1] = crosscheck_snippets[0]
+            if final_attributed:
+                final_attributed[-1] = crosscheck_attributed[0]
             else:
-                final_snippets.append(crosscheck_snippets[0])
+                final_attributed.append(crosscheck_attributed[0])
+
+        final_snippets = [s for s, _ in final_attributed]
+        surviving_providers = {prov_id for _, prov_id in final_attributed}
 
         # Recompute used_sources strictly from final snippets (Finding 16)
         final_used = [
             src
             for src in attempted
-            if any(
+            if src in surviving_providers
+            or any(
                 s.source_kind == src
                 or s.source.startswith(f"{src}:")
                 or s.source == src
@@ -455,7 +466,10 @@ class DocsRetrievalService:
         ]
 
         # fallback_used is True strictly if cached/local fallback actually contributed at least one final snippet
-        fallback_used = any(s in ("cached_repo_docs", "rag_index") for s in final_used)
+        fallback_used = any(
+            prov_id in ("cached_repo_docs", "rag_index")
+            for _, prov_id in final_attributed
+        ) or any(s in ("cached_repo_docs", "rag_index") for s in final_used)
 
         return DocsRetrievalResult(
             snippets=final_snippets,

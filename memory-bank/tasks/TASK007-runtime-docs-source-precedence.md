@@ -51,13 +51,14 @@ The generator previously bypassed live documentation retrieval in favor of a har
 | 7.11 | Review follow-up: URL sanitization & protocol rejection | Complete | 2026-09-23 | Redacted URL credentials and compound query secrets in MCPTransportError messages, and rejected protocol envelopes in Context7 without falling through to raw JSON text emission. |
 | 7.12 | Review follow-up: Endpoint fallback provenance & metadata sanitization | Complete | 2026-09-23 | Redacted endpoint credentials and query secrets from snippet fallback source and result metadata in Context7DocsProvider and LangChainDocsLocalProvider via safe_endpoint_url. |
 | 7.13 | Review follow-up: Credential & URL error/warning text sanitization | Complete | 2026-09-23 | Implemented `_sanitize_text_credentials` in `mcp_transport.py` routing URLs through `_sanitize_url_for_logging` and redacting basic-auth netlocs, compound query keys (`access_token`, `client_secret`, etc.), bearer tokens, and JSON keys; applied identically in `send_mcp_request` error branches, non-200 previews, and `orchestrator.py` `_sanitize_warning()`. |
+| 7.14 | Final correctness blockers: SSE validation, attribution, offline safety, exception sanitization | Complete | 2026-09-23 | Validated matching JSON-RPC responses in SSE streams & plain JSON fallback with stream ordering; decoupled provider attribution from snippet `source_kind` via attributed tuples; ensured genuinely offline stub mode with `CachedVectorDocsProvider.stub_safe: bool = False` by default; sanitized unexpected provider exceptions in Context7 and LangChain local; indexed TASK006/TASK007 in memory-bank/tasks/_index.md. |
 
 ## Verification & Outcomes
 
-- 71/71 tests pass in `tests/unit/test_rag_source_precedence.py` (18 regression tests added covering HTTP-200 JSON request ID matching/mismatches/notifications, custom provider untagged/explicit provenance, Context7 empty snippet prevention & fallback, LangChain local content/text-only docs, endpoint URL credential sanitization, Context7 protocol rejection, fallback provenance/metadata sanitization, connection/transport error URL/credential sanitization, and orchestrator compound warning redaction).
-- Full unit test suite (753 tests, 5 warnings, including dedicated cancellation test in `test_rag.py`), pattern test suite (82 tests), and full pytest suite (871 passed, 3 skipped, 5 warnings) pass cleanly.
+- 83/83 tests pass in `tests/unit/test_rag_source_precedence.py` (30 regression tests added across all review cycles).
+- Full unit test suite (765 tests, 5 warnings, including dedicated cancellation test in `test_rag.py`), pattern test suite (82 tests), and full pytest suite (883 passed, 3 skipped, 5 warnings) pass cleanly.
 - Flake8 reports 0 fatal errors on `src/` and `tests/`, mypy reports 0 issues in `src/langgraph_system_generator/rag/` (13 source files).
-- Offline stub mode verified across CLI, API, and package surfaces with deterministic offline generation smoke.
+- Offline stub mode verified across CLI, API, and package surfaces with deterministic offline generation smoke (no credentials, empty docs context).
 - Preserved prior verified live wire smoke against `https://docs.langchain.com/mcp` (5 snippets, `SUCCESS`).
 - ArchitectureSelector live retrieval fan-out / single-flight cache recorded as follow-up item.
 

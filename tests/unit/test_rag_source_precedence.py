@@ -2233,7 +2233,9 @@ async def test_builtin_providers_stub_safe_invariants_and_isolation():
     assert DocsSourceProvider.stub_safe is False
     assert LangChainDocsLocalProvider.stub_safe is False
     assert Context7DocsProvider.stub_safe is False
-    assert CachedVectorDocsProvider.stub_safe is True
+    assert CachedVectorDocsProvider.stub_safe is False
+    assert CachedVectorDocsProvider().stub_safe is False
+    assert CachedVectorDocsProvider(stub_safe=True).stub_safe is True
 
     local_provider = LangChainDocsLocalProvider(
         endpoint_url="http://127.0.0.1:9999/unreachable"
@@ -2887,6 +2889,292 @@ def test_warning_sanitizer_redacts_compound_secrets_and_urls():
     assert "svc_user:[REDACTED]@" in clean_url
     assert "token=[REDACTED]" in clean_url
     assert "auth_token=[REDACTED]" in clean_url
+
+
+# ==============================================================================
+# Final Correctness Pass Regression Tests: SSE Validation, Attribution, Offline Safety, & Exception Sanitization
+# ==============================================================================
+
+
+def test_parse_sse_response_rejects_matching_id_request_or_notification():
+    """SSE events with matching request_id but containing method (requests/notifications) are rejected."""
+    from langgraph_system_generator.rag.mcp_transport import (
+        MCPTransportError,
+        _parse_sse_response,
+    )
+
+    # Payload with matching ID but method/params (not a JSON-RPC response)
+    sse_text = (
+        'data: {"jsonrpc": "2.0", "id": 42, "method": "some/server/request", "params": {}}\n\n'
+    )
+    with pytest.raises(MCPTransportError) as exc_info:
+        _parse_sse_response(sse_text, request_id=42)
+    assert "No valid JSON-RPC response matching request_id '42'" in str(exc_info.value)
+
+
+def test_parse_sse_response_accepts_matching_id_result():
+    """SSE event with matching request_id and result is properly returned."""
+    from langgraph_system_generator.rag.mcp_transport import _parse_sse_response
+
+    sse_text = (
+        'data: {"jsonrpc": "2.0", "id": 42, "result": {"content": [{"type": "text", "text": "doc"}]}}\n\n'
+    )
+    res = _parse_sse_response(sse_text, request_id=42)
+    assert res["id"] == 42
+    assert "result" in res
+    assert res["result"]["content"][0]["text"] == "doc"
+
+
+def test_parse_sse_response_accepts_matching_id_error():
+    """SSE event with matching request_id and structured error is properly returned."""
+    from langgraph_system_generator.rag.mcp_transport import _parse_sse_response
+
+    sse_text = (
+        'data: {"jsonrpc": "2.0", "id": 42, "error": {"code": -32600, "message": "Invalid Request"}}\n\n'
+    )
+    res = _parse_sse_response(sse_text, request_id=42)
+    assert res["id"] == 42
+    assert "error" in res
+    assert res["error"]["code"] == -32600
+
+
+def test_parse_sse_response_stream_ordering_later_valid_wins():
+    """Stream ordering is preserved: earlier matching request/invalid events are ignored, later valid response wins."""
+    from langgraph_system_generator.rag.mcp_transport import _parse_sse_response
+
+    sse_text = (
+        'data: {"jsonrpc": "2.0", "id": 42, "method": "progress/report"}\n\n'
+        'data: {"jsonrpc": "2.0", "id": 42, "result": {"version": 1}}\n\n'
+        'data: {"jsonrpc": "2.0", "id": 42, "result": {"version": 2}}\n\n'
+        'data: {"jsonrpc": "2.0", "id": 42, "method": "trailing/request"}\n\n'
+    )
+    res = _parse_sse_response(sse_text, request_id=42)
+    assert res["id"] == 42
+    assert res["result"]["version"] == 2
+
+
+def test_parse_sse_response_fallback_plain_json_validates_payload():
+    """Fallback plain JSON response (no SSE data prefix) validates JSON-RPC structure."""
+    from langgraph_system_generator.rag.mcp_transport import (
+        MCPTransportError,
+        _parse_sse_response,
+    )
+
+    # Invalid JSON-RPC (has method, no result/error)
+    invalid_json = '{"jsonrpc": "2.0", "id": 99, "method": "invalid/method"}'
+    with pytest.raises(MCPTransportError):
+        _parse_sse_response(invalid_json, request_id=99)
+
+    # Valid JSON-RPC
+    valid_json = '{"jsonrpc": "2.0", "id": 99, "result": {"data": "ok"}}'
+    res = _parse_sse_response(valid_json, request_id=99)
+    assert res["id"] == 99
+    assert res["result"]["data"] == "ok"
+
+
+@pytest.mark.asyncio
+async def test_provider_attribution_preserves_custom_upstream_source_kind():
+    """Provider attribution in used_sources does not overwrite or depend on snippet source_kind."""
+    custom_snippet = DocSnippet(
+        content="Custom company wiki article.",
+        source="https://wiki.corp.internal/arch",
+        source_kind="enterprise-wiki-kb",
+        relevance_score=0.9,
+    )
+    custom_provider = StubProvider(
+        source_id="custom-corp-search",
+        available=True,
+        snippets=[custom_snippet],
+    )
+
+    service = DocsRetrievalService(precedence=["custom-corp-search"])
+    service.registry.register(custom_provider)
+
+    result = await service.aretrieve("architecture", k=5, mode="live")
+
+    # Content provenance is preserved as upstream source_kind
+    assert len(result.snippets) == 1
+    assert result.snippets[0].source_kind == "enterprise-wiki-kb"
+    # Execution provider provenance is correctly attributed in used_sources
+    assert "custom-corp-search" in result.used_sources
+    assert result.used_sources == ["custom-corp-search"]
+
+
+@pytest.mark.asyncio
+async def test_cached_provider_attribution_with_upstream_source_kind():
+    """Cached fallback provider maintains fallback_used and used_sources even when snippets have upstream source_kind."""
+    cached_doc = DocSnippet(
+        content="Cached documentation chunk.",
+        source="cache:docs",
+        source_kind="official-framework-docs",
+        relevance_score=0.8,
+    )
+    cached_provider = StubProvider(
+        source_id="cached_repo_docs",
+        available=True,
+        snippets=[cached_doc],
+        stub_safe=True,
+    )
+
+    service = DocsRetrievalService(precedence=["cached_repo_docs"])
+    service.registry.register(cached_provider)
+
+    result = await service.aretrieve("query", k=5, mode="stub")
+
+    assert len(result.snippets) == 1
+    assert result.snippets[0].source_kind == "official-framework-docs"
+    assert "cached_repo_docs" in result.used_sources
+    assert result.fallback_used is True
+
+
+@pytest.mark.asyncio
+async def test_capping_drops_non_contributing_provider_attribution():
+    """If snippets from a provider are dropped during capping/quota, that provider is not in used_sources."""
+    prov_a_snippet = DocSnippet(
+        content="Primary snippet.",
+        source="https://a.local/1",
+        source_kind="prov-a-kind",
+        relevance_score=0.95,
+    )
+    prov_b_snippet = DocSnippet(
+        content="Secondary snippet.",
+        source="https://b.local/2",
+        source_kind="prov-b-kind",
+        relevance_score=0.50,
+    )
+
+    prov_a = StubProvider("prov-a", available=True, snippets=[prov_a_snippet], stub_safe=True)
+    prov_b = StubProvider("prov-b", available=True, snippets=[prov_b_snippet], stub_safe=True)
+
+    service = DocsRetrievalService(precedence=["prov-a", "prov-b"])
+    service.registry.register(prov_a)
+    service.registry.register(prov_b)
+
+    # Request k=1: only prov_a's snippet survives
+    result = await service.aretrieve("query", k=1, mode="stub")
+
+    assert len(result.snippets) == 1
+    assert result.snippets[0].source_kind == "prov-a-kind"
+    assert result.used_sources == ["prov-a"]
+    assert "prov-b" not in result.used_sources
+
+
+@pytest.mark.asyncio
+async def test_default_cached_vector_provider_skipped_in_stub_mode(monkeypatch):
+    """Default CachedVectorDocsProvider is stub_safe=False and skipped in stub mode without constructing embeddings."""
+    from langgraph_system_generator.rag.providers.cached_vector import (
+        CachedVectorDocsProvider,
+    )
+
+    provider = CachedVectorDocsProvider()
+    assert provider.stub_safe is False
+
+    # Canary: if get_cached_docs_retriever or VectorStoreManager were called, fail the test
+    def fail_retriever(*args, **kwargs):
+        raise AssertionError("get_cached_docs_retriever should never be called in stub mode!")
+
+    monkeypatch.setattr(
+        "langgraph_system_generator.generator.nodes.get_cached_docs_retriever",
+        fail_retriever,
+    )
+
+    service = DocsRetrievalService(precedence=["cached_repo_docs"])
+    service.registry.register(provider)
+
+    result = await service.aretrieve("test query", k=5, mode="stub")
+
+    assert result.source_statuses["cached_repo_docs"] == DocsSourceStatus.SKIPPED.value
+    assert result.attempted_sources == []
+    assert result.used_sources == []
+    assert result.fallback_used is False
+    assert result.snippets == []
+
+
+def test_cached_vector_provider_offline_safe_retriever_opt_in():
+    """Injected offline retriever or explicit stub_safe opts into stub safety."""
+    from langgraph_system_generator.rag.providers.cached_vector import (
+        CachedVectorDocsProvider,
+    )
+
+    # Default
+    p1 = CachedVectorDocsProvider()
+    assert p1.stub_safe is False
+
+    # Explicit stub_safe=True
+    p2 = CachedVectorDocsProvider(stub_safe=True)
+    assert p2.stub_safe is True
+
+    # Offline-safe retriever object
+    class OfflineRetriever:
+        is_offline_safe = True
+
+    p3 = CachedVectorDocsProvider(docs_retriever=OfflineRetriever())
+    assert p3.stub_safe is True
+
+
+@pytest.mark.asyncio
+async def test_context7_unexpected_exception_sanitizes_credentials(monkeypatch):
+    """Unexpected exception in Context7DocsProvider redacts credentials from error_message and log."""
+    from langgraph_system_generator.rag.providers.context7 import Context7DocsProvider
+
+    monkeypatch.setattr(settings, "docs_live_sources_enabled", True)
+    monkeypatch.setattr(settings, "context7_docs_enabled", True)
+
+    provider = Context7DocsProvider(
+        api_key="sk-test",
+        endpoint_url="https://api.context7.com",
+    )
+
+    async def mock_call_tool_boom(*args, **kwargs):
+        raise RuntimeError(
+            "Unexpected crash connecting to https://admin:super_secret_pw@ctx7.internal/v1?token=tok_secret_999"
+        )
+
+    monkeypatch.setattr(
+        "langgraph_system_generator.rag.providers.context7.call_mcp_tool",
+        mock_call_tool_boom,
+    )
+
+    result = await provider.aretrieve("test query")
+    assert result.status == DocsSourceStatus.FAILED
+    assert result.error_message is not None
+    assert "super_secret_pw" not in result.error_message
+    assert "tok_secret_999" not in result.error_message
+    assert "admin:[REDACTED]@" in result.error_message
+    assert "token=[REDACTED]" in result.error_message
+
+
+@pytest.mark.asyncio
+async def test_langchain_local_unexpected_exception_sanitizes_credentials(monkeypatch):
+    """Unexpected exception in LangChainDocsLocalProvider redacts credentials from error_message and log."""
+    from langgraph_system_generator.rag.providers.langchain_local import (
+        LangChainDocsLocalProvider,
+    )
+
+    monkeypatch.setattr(settings, "docs_live_sources_enabled", True)
+
+    provider = LangChainDocsLocalProvider(
+        endpoint_url="https://docs.local",
+    )
+
+    async def mock_call_tool_boom(*args, **kwargs):
+        raise RuntimeError(
+            "Unexpected socket error contacting https://service:auth_pass_777@docs.local:9000?client_secret=cs_secret_111"
+        )
+
+    monkeypatch.setattr(
+        "langgraph_system_generator.rag.providers.langchain_local.call_mcp_tool",
+        mock_call_tool_boom,
+    )
+
+    result = await provider.aretrieve("test query")
+    assert result.status == DocsSourceStatus.FAILED
+    assert result.error_message is not None
+    assert "auth_pass_777" not in result.error_message
+    assert "cs_secret_111" not in result.error_message
+    assert "service:[REDACTED]@" in result.error_message
+    assert "client_secret=[REDACTED]" in result.error_message
+
 
 
 

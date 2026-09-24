@@ -251,13 +251,18 @@ def _parse_sse_response(
 
     # Find the final JSON-RPC response matching request_id
     for obj in candidate_objects:
-        obj_id = obj.get("id")
         if request_id is not None:
-            if _id_matches(obj_id, request_id):
+            if _is_valid_jsonrpc_payload(obj, request_id):
                 matched_response = obj
         else:
-            if obj_id is not None or "result" in obj or "error" in obj:
-                matched_response = obj
+            if ("result" in obj or "error" in obj) and (
+                "jsonrpc" not in obj or obj["jsonrpc"] == "2.0"
+            ):
+                if "error" in obj:
+                    if isinstance(obj["error"], (dict, str)):
+                        matched_response = obj
+                else:
+                    matched_response = obj
 
     if matched_response is not None:
         return matched_response
@@ -267,9 +272,18 @@ def _parse_sse_response(
         try:
             fallback_obj = json.loads(text.strip())
             if isinstance(fallback_obj, dict):
-                obj_id = fallback_obj.get("id")
-                if request_id is None or _id_matches(obj_id, request_id):
-                    return fallback_obj
+                if request_id is not None:
+                    if _is_valid_jsonrpc_payload(fallback_obj, request_id):
+                        return fallback_obj
+                else:
+                    if ("result" in fallback_obj or "error" in fallback_obj) and (
+                        "jsonrpc" not in fallback_obj or fallback_obj["jsonrpc"] == "2.0"
+                    ):
+                        if "error" in fallback_obj:
+                            if isinstance(fallback_obj["error"], (dict, str)):
+                                return fallback_obj
+                        else:
+                            return fallback_obj
         except Exception:
             pass
         raise MCPTransportError(

@@ -16,6 +16,7 @@ from langgraph_system_generator.rag.base import (
 )
 from langgraph_system_generator.rag.mcp_transport import (
     MCPTransportError,
+    _sanitize_text_credentials,
     _sanitize_url_for_logging,
     call_mcp_tool,
 )
@@ -264,12 +265,13 @@ class Context7DocsProvider(DocsSourceProvider):
 
         except Exception as exc:
             elapsed_ms = (time.perf_counter() - start_time) * 1000.0
-            logger.warning("Context7 retrieval failed: %s", exc)
+            clean_err = _sanitize_text_credentials(str(exc))
+            logger.warning("Context7 retrieval failed: %s", clean_err)
             return DocsProviderResult(
                 source_id=self.source_id,
                 status=DocsSourceStatus.FAILED,
                 latency_ms=elapsed_ms,
-                error_message=str(exc),
+                error_message=clean_err,
             )
 
         elapsed_ms = (time.perf_counter() - start_time) * 1000.0

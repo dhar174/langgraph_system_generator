@@ -17,10 +17,14 @@
   - ArchitectureSelector transient docs provenance isolation without polluting `used_sources` or flipping `fallback_used`.
   - Deterministic concurrent query feedback aggregation in `query_specs` order.
   - `DocsSourceRegistry.register()` in-place provider replacement preserving registry index and precedence by default.
-  - Capability-based stub-mode plugin isolation (`stub_safe` default False, CachedVectorDocsProvider explicit True).
+  - Capability-based stub-mode plugin isolation (`stub_safe` default False for all providers, including `CachedVectorDocsProvider` unless given an explicit offline retriever or `stub_safe=True`).
+  - Matched SSE JSON-RPC validation and stream ordering in `mcp_transport.py`.
+  - Independent provider attribution from snippet `source_kind` in `orchestrator.py`.
+  - Unexpected exception credential redaction in `context7.py` and `langchain_local.py`.
+  - Task indexing for TASK006 and TASK007 in `memory-bank/tasks/_index.md`.
   - Comprehensive credential and URL sanitization via `_sanitize_text_credentials` and `_sanitize_url_for_logging`, redacting basic-auth netlocs, compound tokens (`access_token`, `client_secret`, etc.), bearer tokens, and JSON keys across connection errors, transport errors, non-200 previews, provider fallback provenance, and orchestrator warnings.
-  All 71 tests in `tests/unit/test_rag_source_precedence.py` pass. Full unit test suite (753 tests, 5 warnings)
-  and pattern test suite (82 tests) pass 100%. Full pytest suite (871 passed, 3 skipped, 5 warnings). Flake8 and mypy pass 100%. Stub mode remains 100% offline and deterministic.
+  All 83 tests in `tests/unit/test_rag_source_precedence.py` pass. Full unit test suite (765 tests, 5 warnings)
+  and pattern test suite (82 tests) pass 100%. Full pytest suite (883 passed, 3 skipped, 5 warnings). Flake8 and mypy pass 100%. Stub mode remains 100% offline and deterministic.
 - CLI-based generation supports both deterministic stub output and live
   generator-graph execution.
 - The FastAPI server exposes synchronous generation, async generation startup,

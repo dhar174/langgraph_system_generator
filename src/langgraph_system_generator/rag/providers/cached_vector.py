@@ -24,15 +24,24 @@ class CachedVectorDocsProvider(DocsSourceProvider):
     """Documentation provider backed by local/cached vector store index."""
 
     source_id: str = "cached_repo_docs"
-    stub_safe: bool = True
+    stub_safe: bool = False
 
     def __init__(
         self,
         docs_retriever: Optional[DocsRetriever] = None,
         vector_store_path: Optional[str | Path] = None,
+        stub_safe: Optional[bool] = None,
     ):
         self._injected_retriever = docs_retriever
         self._vector_store_path = vector_store_path
+        if stub_safe is not None:
+            self.stub_safe = bool(stub_safe)
+        elif docs_retriever is not None and getattr(
+            docs_retriever, "is_offline_safe", False
+        ):
+            self.stub_safe = True
+        else:
+            self.stub_safe = False
 
     def _resolve_retriever(self) -> DocsRetriever:
         if self._injected_retriever is not None:
