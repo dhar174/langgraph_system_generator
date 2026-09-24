@@ -24,6 +24,7 @@ from langgraph_system_generator.generator.state import (
     ArchitectureFeedback,
     CellSpec,
     DocSnippet,
+    DocsRetrievalFeedback,
     GeneratorState,
     GenerationContextPack,
     GraphDesignFeedback,
@@ -50,6 +51,9 @@ from langgraph_system_generator.qa.summary import (
     serialize_qa_report,
 )
 from langgraph_system_generator.rag.embeddings import VectorStoreManager
+from langgraph_system_generator.rag.orchestrator import (
+    get_default_docs_retrieval_service,
+)
 from langgraph_system_generator.rag.retriever import DocsRetriever
 from langgraph_system_generator.utils.generation_options import (
     SUPPORTED_AGENT_TYPES,
@@ -458,37 +462,50 @@ async def intake_node(state: GeneratorState) -> Dict[str, Any]:
 
 
 async def rag_retrieval_node(state: GeneratorState) -> Dict[str, Any]:
-    """Retrieve relevant documentation.
+    """Retrieve relevant documentation adhering to configured docs-source precedence.
 
     Args:
         state: Current generator state
 
     Returns:
-        Updated state with retrieved documentation
+        Updated state with retrieved documentation and docs retrieval feedback
     """
+    mode = _generation_mode(state)
+    service = get_default_docs_retrieval_service()
     try:
-        snippets = await asyncio.to_thread(
-            _retrieve_docs_for_prompt,
+        retrieval_result = await service.aretrieve(
             state["user_prompt"],
+            k=settings.docs_max_total_snippets,
+            mode=mode,
         )
-
-        # Convert to DocSnippet format
-        docs = [
-            DocSnippet(
-                content=s["content"],
-                source=s["source"],
-                relevance_score=s["relevance_score"],
-                heading=s.get("heading"),
-            )
-            for s in snippets
-        ]
-
-        return {"docs_context": docs}
+        feedback = DocsRetrievalFeedback(
+            attempted_sources=retrieval_result.attempted_sources,
+            source_statuses=retrieval_result.source_statuses,
+            used_sources=retrieval_result.used_sources,
+            fallback_used=retrieval_result.fallback_used,
+            warnings=retrieval_result.warnings,
+            stage_source_statuses={"rag": dict(retrieval_result.source_statuses)},
+            consulted_sources=list(retrieval_result.attempted_sources),
+        )
+        return {
+            "docs_context": retrieval_result.snippets,
+            "docs_retrieval_feedback": feedback,
+        }
     except Exception as e:
         logger.warning("RAG retrieval failed: %s", e)
-        _drop_docs_retriever_cache_entry()
-        # If RAG fails, continue without docs
-        return {"docs_context": []}
+        feedback = DocsRetrievalFeedback(
+            attempted_sources=[],
+            source_statuses={"error": str(e)},
+            used_sources=[],
+            fallback_used=False,
+            warnings=[f"RAG retrieval failed: {e}"],
+            stage_source_statuses={"rag": {"error": str(e)}},
+            consulted_sources=[],
+        )
+        return {
+            "docs_context": [],
+            "docs_retrieval_feedback": feedback,
+        }
 
 
 def _build_generation_context_pack(state: GeneratorState) -> GenerationContextPack:
@@ -500,24 +517,30 @@ def _build_generation_context_pack(state: GeneratorState) -> GenerationContextPa
     supported_architectures = ARCHITECTURE_REGISTRY.supported_architecture_types()
     docs_snippets: List[Dict[str, Any]] = []
 
-    source_precedence = [
+    try:
+        service_providers = [
+            p.source_id for p in get_default_docs_retrieval_service().registry.list_providers()
+        ]
+    except Exception:
+        service_providers = []
+
+    base_precedence = [
         "langchain-docs-local",
         "context7",
         "cached_repo_docs",
         "rag_index",
     ]
+    source_precedence = list(dict.fromkeys(service_providers + base_precedence))
     source_counts: Dict[str, int] = {source: 0 for source in source_precedence}
 
     def _source_kind(payload: Dict[str, Any]) -> str:
-        explicit_kind = str(payload.get("source_kind") or "").strip().lower()
-        if explicit_kind in source_precedence:
+        explicit_kind = str(payload.get("source_kind") or "").strip()
+        if explicit_kind:
             return explicit_kind
         source_metadata = payload.get("source_metadata")
         if isinstance(source_metadata, dict):
-            metadata_kind = (
-                str(source_metadata.get("source_kind") or "").strip().lower()
-            )
-            if metadata_kind in source_precedence:
+            metadata_kind = str(source_metadata.get("source_kind") or "").strip()
+            if metadata_kind:
                 return metadata_kind
         normalized = str(payload.get("source") or "").lower()
         if normalized.startswith(("context7:", "context7/")):
@@ -551,6 +574,8 @@ def _build_generation_context_pack(state: GeneratorState) -> GenerationContextPa
         )
         content = str(payload.get("content", ""))
         source_kind = _source_kind(payload)
+        if source_kind not in source_precedence:
+            source_precedence.append(source_kind)
         source_counts[source_kind] = source_counts.get(source_kind, 0) + 1
         docs_snippets.append(
             {
@@ -626,17 +651,85 @@ def _build_generation_context_pack(state: GeneratorState) -> GenerationContextPa
         docs_snippets=docs_snippets,
         source_summary={
             "source_precedence": source_precedence,
+            "attempted_sources": (
+                list(getattr(state.get("docs_retrieval_feedback"), "attempted_sources", []))
+                if hasattr(state.get("docs_retrieval_feedback"), "attempted_sources")
+                else (
+                    list(state.get("docs_retrieval_feedback", {}).get("attempted_sources", []))
+                    if isinstance(state.get("docs_retrieval_feedback"), dict)
+                    else []
+                )
+            ),
+            "source_statuses": (
+                dict(getattr(state.get("docs_retrieval_feedback"), "source_statuses", {}))
+                if hasattr(state.get("docs_retrieval_feedback"), "source_statuses")
+                else (
+                    dict(state.get("docs_retrieval_feedback", {}).get("source_statuses", {}))
+                    if isinstance(state.get("docs_retrieval_feedback"), dict)
+                    else {}
+                )
+            ),
+            "used_sources": (
+                list(getattr(state.get("docs_retrieval_feedback"), "used_sources", []))
+                if hasattr(state.get("docs_retrieval_feedback"), "used_sources")
+                else (
+                    list(state.get("docs_retrieval_feedback", {}).get("used_sources", []))
+                    if isinstance(state.get("docs_retrieval_feedback"), dict)
+                    else [source for source in source_precedence if source_counts.get(source, 0) > 0]
+                )
+            ),
             "docs_snippet_count": len(docs_snippets),
             "source_counts": {
                 key: value for key, value in source_counts.items() if value
             },
             "docs_live_required": False,
+            "fallback_used": (
+                getattr(state.get("docs_retrieval_feedback"), "fallback_used", False)
+                if hasattr(state.get("docs_retrieval_feedback"), "fallback_used")
+                else (
+                    state.get("docs_retrieval_feedback", {}).get("fallback_used", not bool(docs_snippets))
+                    if isinstance(state.get("docs_retrieval_feedback"), dict)
+                    else not bool(docs_snippets)
+                )
+            ),
+            "stage_source_statuses": (
+                dict(getattr(state.get("docs_retrieval_feedback"), "stage_source_statuses", {}))
+                if hasattr(state.get("docs_retrieval_feedback"), "stage_source_statuses")
+                else (
+                    dict(state.get("docs_retrieval_feedback", {}).get("stage_source_statuses", {}))
+                    if isinstance(state.get("docs_retrieval_feedback"), dict)
+                    else {}
+                )
+            ),
+            "consulted_sources": (
+                list(getattr(state.get("docs_retrieval_feedback"), "consulted_sources", []))
+                if hasattr(state.get("docs_retrieval_feedback"), "consulted_sources")
+                else (
+                    list(state.get("docs_retrieval_feedback", {}).get("consulted_sources", []))
+                    if isinstance(state.get("docs_retrieval_feedback"), dict)
+                    else []
+                )
+            ),
         },
-        fallback_used=not bool(docs_snippets),
+        fallback_used=(
+            getattr(state.get("docs_retrieval_feedback"), "fallback_used", False)
+            if hasattr(state.get("docs_retrieval_feedback"), "fallback_used")
+            else (
+                state.get("docs_retrieval_feedback", {}).get("fallback_used", not bool(docs_snippets))
+                if isinstance(state.get("docs_retrieval_feedback"), dict)
+                else not bool(docs_snippets)
+            )
+        ),
         warnings=(
-            [
-                "No retrieved docs snippets were available; using repo/static context facts only."
-            ]
+            list(getattr(state.get("docs_retrieval_feedback"), "warnings", []))
+            if hasattr(state.get("docs_retrieval_feedback"), "warnings")
+            else (
+                list(state.get("docs_retrieval_feedback", {}).get("warnings", []))
+                if isinstance(state.get("docs_retrieval_feedback"), dict)
+                else []
+            )
+        ) + (
+            ["No retrieved docs snippets were available; using repo/static context facts only."]
             if not docs_snippets
             else []
         ),
@@ -678,33 +771,69 @@ async def architecture_selection_node(state: GeneratorState) -> Dict[str, Any]:
             ),
         }
 
-    try:
-        retriever = await asyncio.to_thread(get_cached_docs_retriever)
-    except Exception as e:
-        logger.warning(
-            "Failed to load vector store for architecture selection: %s",
-            e,
-        )
-        retriever = None
-
+    mode = _generation_mode(state)
+    docs_service = get_default_docs_retrieval_service()
     selector = ArchitectureSelector(
-        docs_retriever=retriever,
+        docs_service=docs_service,
+        docs_mode=mode,
         model_config=_resolve_model_config(state),
     )
 
     architecture = await selector.select_architecture(
-        state["constraints"], state["docs_context"]
+        state["constraints"], state["docs_context"], mode=mode
     )
 
     selected_patterns = architecture.patterns.model_dump()
     architecture_type = architecture.architecture_type
 
-    return {
+    node_output: Dict[str, Any] = {
         "selected_patterns": selected_patterns,
         "architecture_type": architecture_type,
         "architecture_justification": architecture.justification,
         "architecture_feedback": architecture.feedback,
     }
+
+    if getattr(selector, "docs_retrieval_feedback_delta", None) is not None:
+        delta = selector.docs_retrieval_feedback_delta
+        current_feedback = state.get("docs_retrieval_feedback")
+        if current_feedback is not None:
+            if isinstance(current_feedback, dict):
+                current_feedback = DocsRetrievalFeedback(**current_feedback)
+            merged_attempted = list(current_feedback.attempted_sources)
+            for s in delta.attempted_sources:
+                if s not in merged_attempted:
+                    merged_attempted.append(s)
+            merged_statuses = dict(current_feedback.source_statuses)
+            for s, stat in delta.source_statuses.items():
+                if s not in merged_statuses:
+                    merged_statuses[s] = stat
+            merged_used = list(current_feedback.used_sources)
+            merged_fallback = current_feedback.fallback_used
+            merged_warnings = list(current_feedback.warnings)
+            for w in delta.warnings:
+                if w not in merged_warnings and len(merged_warnings) < 10:
+                    merged_warnings.append(w)
+            merged_stage_statuses = dict(getattr(current_feedback, "stage_source_statuses", {}) or {})
+            if "rag" not in merged_stage_statuses and current_feedback.source_statuses:
+                merged_stage_statuses["rag"] = dict(current_feedback.source_statuses)
+            merged_stage_statuses["architecture_selection"] = dict(delta.source_statuses)
+            merged_consulted = list(getattr(current_feedback, "consulted_sources", []) or current_feedback.attempted_sources)
+            for s in (getattr(delta, "consulted_sources", []) or delta.attempted_sources):
+                if s not in merged_consulted:
+                    merged_consulted.append(s)
+            node_output["docs_retrieval_feedback"] = DocsRetrievalFeedback(
+                attempted_sources=merged_attempted,
+                source_statuses=merged_statuses,
+                used_sources=merged_used,
+                fallback_used=merged_fallback,
+                warnings=merged_warnings,
+                stage_source_statuses=merged_stage_statuses,
+                consulted_sources=merged_consulted,
+            )
+        else:
+            node_output["docs_retrieval_feedback"] = delta
+
+    return node_output
 
 
 async def graph_design_node(state: GeneratorState) -> Dict[str, Any]:

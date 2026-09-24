@@ -216,9 +216,13 @@ class DocsIndexer:
 
         documents: List[Document] = []
         for url, result in zip(self.urls, responses):
+            if isinstance(result, asyncio.CancelledError):
+                raise result
             if isinstance(result, Exception):
                 logging.warning("Failed to fetch %s: %s", url, result)
                 continue
+            if isinstance(result, BaseException):
+                raise result
             doc = self._html_to_document(result, url)
             # Filter out redirect pages and minimal content
             content = doc.page_content.strip()
@@ -243,7 +247,7 @@ class DocsIndexer:
         return splitter.split_documents(docs)
 
     async def _fetch(self, session: aiohttp.ClientSession, url: str) -> str:
-        async with session.get(url, timeout=self.request_timeout) as response:
+        async with session.get(url, timeout=aiohttp.ClientTimeout(total=self.request_timeout)) as response:
             response.raise_for_status()
             return await response.text()
 

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from dataclasses import dataclass, field
 import hashlib
 import logging
 from typing import Any, Dict, List
@@ -23,6 +24,7 @@ from langgraph_system_generator.generator.state import (
     ArchitectureSelectionResult,
     Constraint,
     DocSnippet,
+    DocsRetrievalFeedback,
 )
 from langgraph_system_generator.generator.utils import extract_json_from_llm_response
 from langgraph_system_generator.rag.retriever import DocsRetriever
@@ -35,22 +37,36 @@ from langgraph_system_generator.utils.generation_options import (
 logger = logging.getLogger(__name__)
 
 
+@dataclass
+class _QueryDocsResult:
+    snippets: List[Any] = field(default_factory=list)
+    attempted: List[str] = field(default_factory=list)
+    statuses: Dict[str, str] = field(default_factory=dict)
+    used: List[str] = field(default_factory=list)
+    fallback_used: bool = False
+    warnings: List[str] = field(default_factory=list)
+
+
 class ArchitectureSelector:
     """Chooses optimal LangGraph pattern architecture."""
 
     def __init__(
         self,
-        docs_retriever: DocsRetriever | None = None,
+        docs_retriever: Any | None = None,
         model: str | None = None,
         model_config: ModelConfig | None = None,
         architecture_registry: ArchitectureRegistry | None = None,
+        docs_service: Any | None = None,
+        docs_mode: str = "live",
     ):
         self.llm = build_chat_llm(
             model=model,
             model_config=model_config,
             chat_openai_class=ChatOpenAI,
         )
-        self.docs_retriever = docs_retriever
+        self.docs_retriever = docs_service if docs_service is not None else docs_retriever
+        self.docs_mode = docs_mode
+        self.docs_retrieval_feedback_delta: DocsRetrievalFeedback | None = None
         self.architecture_registry = (
             architecture_registry.clone()
             if architecture_registry is not None
@@ -58,11 +74,16 @@ class ArchitectureSelector:
         )
 
     async def select_architecture(
-        self, constraints: List[Constraint], docs_context: List[DocSnippet]
+        self,
+        constraints: List[Constraint],
+        docs_context: List[DocSnippet],
+        *,
+        mode: str | None = None,
     ) -> ArchitectureSelectionResult:
         """Select router vs subagents vs hybrid vs autoagent pattern."""
 
-        prompt_docs = await self._select_prompt_docs(docs_context)
+        effective_mode = mode or self.docs_mode
+        prompt_docs = await self._select_prompt_docs(docs_context, mode=effective_mode)
         docs_considered = [self._doc_label(doc) for doc in prompt_docs]
 
         constraints_text = "\n".join(
@@ -275,6 +296,8 @@ Recommend the best architecture."""
     async def _select_prompt_docs(
         self,
         docs_context: List[DocSnippet],
+        *,
+        mode: str = "live",
     ) -> List[Dict[str, Any]]:
         """Collect, weight, dedupe, and cap selector prompt docs."""
 
@@ -297,17 +320,135 @@ Recommend the best architecture."""
                     query_specs.append((query, weight))
 
             if query_specs:
-                retrieved_groups = await asyncio.gather(
-                    *[
-                        asyncio.to_thread(self.docs_retriever.retrieve, query, prompt_limit)
-                        for query, _weight in query_specs
-                    ]
+                async def _retrieve_query_docs(query: str) -> _QueryDocsResult:
+                    q_attempted: List[str] = []
+                    q_statuses: Dict[str, str] = {}
+                    q_used: List[str] = []
+                    q_warnings: List[str] = []
+                    q_fallback_used = False
+                    q_snippets: List[Any] = []
+
+                    if hasattr(self.docs_retriever, "aretrieve"):
+                        try:
+                            res = await self.docs_retriever.aretrieve(query, k=prompt_limit, mode=mode)
+                        except Exception as exc:  # noqa: BLE001
+                            logger.warning(
+                                "Docs retrieval failed in ArchitectureSelector for query '%s': %s",
+                                query,
+                                exc,
+                            )
+                            return _QueryDocsResult(warnings=[f"Query retrieval error: {exc}"])
+
+                        feedback = getattr(res, "feedback", None)
+                        target = feedback if feedback is not None else res
+                        for s in getattr(target, "attempted_sources", []):
+                            if s not in q_attempted:
+                                q_attempted.append(s)
+                        q_statuses.update(getattr(target, "source_statuses", {}))
+                        if hasattr(target, "source_id"):
+                            src_id = str(target.source_id)
+                            if src_id not in q_attempted:
+                                q_attempted.append(src_id)
+                            if src_id not in q_statuses and hasattr(target, "status"):
+                                stat = target.status.value if hasattr(target.status, "value") else str(target.status)
+                                q_statuses[src_id] = stat
+                        for s in getattr(target, "used_sources", []):
+                            if s not in q_used:
+                                q_used.append(s)
+                        if getattr(target, "fallback_used", False):
+                            q_fallback_used = True
+                        for w in getattr(target, "warnings", []):
+                            if w not in q_warnings and len(q_warnings) < 10:
+                                q_warnings.append(w)
+
+                        if hasattr(res, "snippets"):
+                            q_snippets = list(res.snippets)
+                        elif isinstance(res, list):
+                            q_snippets = list(res)
+
+                    elif hasattr(self.docs_retriever, "retrieve"):
+                        try:
+                            res = await asyncio.to_thread(self.docs_retriever.retrieve, query, prompt_limit)
+                        except Exception as exc:  # noqa: BLE001
+                            logger.warning(
+                                "Docs retrieval failed in ArchitectureSelector for query '%s': %s",
+                                query,
+                                exc,
+                            )
+                            return _QueryDocsResult(warnings=[f"Query retrieval error: {exc}"])
+
+                        if hasattr(res, "snippets"):
+                            q_snippets = list(res.snippets)
+                        elif isinstance(res, list):
+                            q_snippets = list(res)
+
+                    return _QueryDocsResult(
+                        snippets=q_snippets,
+                        attempted=q_attempted,
+                        statuses=q_statuses,
+                        used=q_used,
+                        fallback_used=q_fallback_used,
+                        warnings=q_warnings,
+                    )
+
+                query_results: List[_QueryDocsResult] = await asyncio.gather(
+                    *[_retrieve_query_docs(query) for query, _weight in query_specs]
                 )
-                for (_query, weight), docs in zip(query_specs, retrieved_groups):
-                    for doc in docs or []:
+
+                attempted_sources: List[str] = []
+                statuses_by_source: Dict[str, List[str]] = {}
+                aggregated_warnings: List[str] = []
+                any_fallback_used = False
+
+                for (_query, weight), q_res in zip(query_specs, query_results):
+                    for doc in q_res.snippets or []:
                         normalized = self._normalize_doc(doc)
                         normalized["weighted_relevance_score"] = self._doc_score(normalized) * weight
                         normalized_docs.append(normalized)
+
+                    for s in q_res.attempted:
+                        if s not in attempted_sources:
+                            attempted_sources.append(s)
+
+                    for s, stat in q_res.statuses.items():
+                        statuses_by_source.setdefault(s, []).append(stat)
+                        if s not in attempted_sources:
+                            attempted_sources.append(s)
+
+                    if q_res.fallback_used:
+                        any_fallback_used = True
+
+                    for w in q_res.warnings:
+                        if w not in aggregated_warnings and len(aggregated_warnings) < 10:
+                            aggregated_warnings.append(w)
+
+                # Deterministic status reduction rule:
+                # success > failed > empty > unavailable > skipped
+                reduced_statuses: Dict[str, str] = {}
+                for s, stat_list in statuses_by_source.items():
+                    if "success" in stat_list:
+                        reduced_statuses[s] = "success"
+                    elif "failed" in stat_list:
+                        reduced_statuses[s] = "failed"
+                    elif "empty" in stat_list:
+                        reduced_statuses[s] = "empty"
+                    elif "unavailable" in stat_list:
+                        reduced_statuses[s] = "unavailable"
+                    elif "skipped" in stat_list:
+                        reduced_statuses[s] = "skipped"
+                    elif stat_list:
+                        reduced_statuses[s] = stat_list[0]
+
+                if attempted_sources or reduced_statuses or aggregated_warnings or any_fallback_used:
+                    self.docs_retrieval_feedback_delta = DocsRetrievalFeedback(
+                        attempted_sources=attempted_sources,
+                        source_statuses=reduced_statuses,
+                        used_sources=[],
+                        fallback_used=False,
+                        warnings=aggregated_warnings,
+                        stage_source_statuses={"architecture_selection": reduced_statuses},
+                        consulted_sources=list(attempted_sources),
+                    )
 
         if not normalized_docs:
             normalized_docs = [self._normalize_doc(doc) for doc in docs_context]
