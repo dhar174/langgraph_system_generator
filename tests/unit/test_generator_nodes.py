@@ -464,3 +464,53 @@ async def test_rag_retrieval_node_maps_snippets(monkeypatch):
             heading=None,
         ),
     ]
+
+
+@pytest.mark.asyncio
+async def test_rag_retrieval_node_sanitizes_credentials_on_failure(monkeypatch, caplog):
+    """rag_retrieval_node redacts credentials from logs, warnings, and feedback upon failure."""
+    import logging
+
+    class CredentialLeakingService:
+        async def aretrieve(self, *args, **kwargs):
+            raise RuntimeError(
+                "Connection failed to https://api.internal/v1?token=URL_SECRET_123 "
+                "with Bearer BEARER_SECRET_456 and client_secret=CLIENT_SECRET_789"
+            )
+
+    monkeypatch.setattr(
+        "langgraph_system_generator.generator.nodes.get_default_docs_retrieval_service",
+        lambda: CredentialLeakingService(),
+    )
+
+    with caplog.at_level(logging.WARNING):
+        result = await rag_retrieval_node({"user_prompt": "Find docs", "generation_mode": "live"})
+
+    assert result["docs_context"] == []
+    feedback = result["docs_retrieval_feedback"]
+    assert feedback.fallback_used is False
+
+    err_status = feedback.source_statuses.get("error", "")
+    assert "URL_SECRET_123" not in err_status
+    assert "BEARER_SECRET_456" not in err_status
+    assert "CLIENT_SECRET_789" not in err_status
+    assert "[REDACTED]" in err_status
+
+    stage_err = feedback.stage_source_statuses.get("rag", {}).get("error", "")
+    assert "URL_SECRET_123" not in stage_err
+    assert "BEARER_SECRET_456" not in stage_err
+    assert "CLIENT_SECRET_789" not in stage_err
+    assert "[REDACTED]" in stage_err
+
+    assert len(feedback.warnings) >= 1
+    warning_text = feedback.warnings[0]
+    assert "URL_SECRET_123" not in warning_text
+    assert "BEARER_SECRET_456" not in warning_text
+    assert "CLIENT_SECRET_789" not in warning_text
+    assert "[REDACTED]" in warning_text
+
+    assert "URL_SECRET_123" not in caplog.text
+    assert "BEARER_SECRET_456" not in caplog.text
+    assert "CLIENT_SECRET_789" not in caplog.text
+    assert "RAG retrieval failed:" in caplog.text
+

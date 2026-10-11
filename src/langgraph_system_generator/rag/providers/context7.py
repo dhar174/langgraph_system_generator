@@ -156,7 +156,7 @@ class Context7DocsProvider(DocsSourceProvider):
                         source_id=self.source_id,
                         status=DocsSourceStatus.FAILED,
                         latency_ms=elapsed_ms,
-                        error_message=str(exc),
+                        error_message=_sanitize_text_credentials(str(exc)),
                     )
 
                 if "error" in resolve_data:
@@ -181,7 +181,9 @@ class Context7DocsProvider(DocsSourceProvider):
                             source_id=self.source_id,
                             status=DocsSourceStatus.FAILED,
                             latency_ms=elapsed_ms,
-                            error_message=f"Context7 MCP error: {err_msg}",
+                            error_message=_sanitize_text_credentials(
+                                f"Context7 MCP error: {err_msg}"
+                            ),
                         )
                 else:
                     resolved_lib_id = self._extract_library_id(resolve_data)
@@ -213,7 +215,7 @@ class Context7DocsProvider(DocsSourceProvider):
                         source_id=self.source_id,
                         status=DocsSourceStatus.FAILED,
                         latency_ms=elapsed_ms,
-                        error_message=str(exc),
+                        error_message=_sanitize_text_credentials(str(exc)),
                     )
 
                 if "error" in query_data:
@@ -238,7 +240,9 @@ class Context7DocsProvider(DocsSourceProvider):
                             source_id=self.source_id,
                             status=DocsSourceStatus.FAILED,
                             latency_ms=elapsed_ms,
-                            error_message=f"Context7 MCP error: {err_msg}",
+                            error_message=_sanitize_text_credentials(
+                                f"Context7 MCP error: {err_msg}"
+                            ),
                         )
                 else:
                     data = query_data
@@ -260,7 +264,7 @@ class Context7DocsProvider(DocsSourceProvider):
                         source_id=self.source_id,
                         status=DocsSourceStatus.FAILED,
                         latency_ms=elapsed_ms,
-                        error_message=str(exc),
+                        error_message=_sanitize_text_credentials(str(exc)),
                     )
 
         except Exception as exc:
@@ -288,7 +292,9 @@ class Context7DocsProvider(DocsSourceProvider):
                 source_id=self.source_id,
                 status=DocsSourceStatus.FAILED,
                 latency_ms=elapsed_ms,
-                error_message=f"Context7 MCP error: {err_msg}",
+                error_message=_sanitize_text_credentials(
+                    f"Context7 MCP error: {err_msg}"
+                ),
             )
 
         safe_endpoint = self.safe_endpoint_url

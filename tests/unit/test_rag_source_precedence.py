@@ -3266,3 +3266,151 @@ async def test_pure_surviving_provider_attribution_no_heuristic_pollution():
     assert res_stub.used_sources == ["prov_a"]
     assert "prov_b" not in res_stub.used_sources
     assert res_stub.fallback_used is False
+
+
+@pytest.mark.asyncio
+async def test_context7_structured_and_transport_errors_sanitize_credentials(monkeypatch):
+    """Context7DocsProvider redacts credentials across resolve, query, search, and transport errors."""
+    from langgraph_system_generator.rag.mcp_transport import MCPTransportError
+    from langgraph_system_generator.rag.providers.context7 import Context7DocsProvider
+
+    monkeypatch.setattr(settings, "docs_live_sources_enabled", True)
+    monkeypatch.setattr(settings, "context7_docs_enabled", True)
+
+    provider = Context7DocsProvider(api_key="sk-test", endpoint_url="https://api.context7.com")
+
+    # 1. Structured error in resolve-library-id
+    async def mock_call_resolve_err(*args, **kwargs):
+        return {
+            "error": {
+                "code": -32000,
+                "message": "Auth failure on https://user:secret_pass_123@api.com?key=api_key_456",
+            }
+        }
+
+    monkeypatch.setattr(
+        "langgraph_system_generator.rag.providers.context7.call_mcp_tool",
+        mock_call_resolve_err,
+    )
+    res = await provider.aretrieve("test query")
+    assert res.status == DocsSourceStatus.FAILED
+    assert res.error_message is not None
+    assert "secret_pass_123" not in res.error_message
+    assert "api_key_456" not in res.error_message
+    assert "[REDACTED]" in res.error_message
+
+    # 2. Structured error in query-docs
+    provider._resolved_libraries["langgraph"] = "lib_resolved"
+
+    async def mock_call_query_err(*args, **kwargs):
+        return {
+            "error": {
+                "code": -32000,
+                "message": "Database error at https://db:sec_pass_789@db.internal?token=tok_999",
+            }
+        }
+
+    monkeypatch.setattr(
+        "langgraph_system_generator.rag.providers.context7.call_mcp_tool",
+        mock_call_query_err,
+    )
+    res2 = await provider.aretrieve("test query")
+    assert res2.status == DocsSourceStatus.FAILED
+    assert res2.error_message is not None
+    assert "sec_pass_789" not in res2.error_message
+    assert "tok_999" not in res2.error_message
+    assert "[REDACTED]" in res2.error_message
+
+    # 3. Fallback search structured error
+    provider._resolved_libraries.clear()
+
+    async def mock_call_search_fallback(*args, **kwargs):
+        tool_name = kwargs.get("tool_name") or (args[1] if len(args) > 1 else None)
+        if tool_name == "resolve-library-id":
+            return {"error": {"code": -32601, "message": "Method not found"}}
+        elif tool_name == "search":
+            return {
+                "error": {
+                    "code": -32000,
+                    "message": "Search auth failure with Bearer BEARER_SECRET_SEARCH",
+                }
+            }
+        return {"error": {"code": -32601, "message": "Method not found"}}
+
+    monkeypatch.setattr(
+        "langgraph_system_generator.rag.providers.context7.call_mcp_tool",
+        mock_call_search_fallback,
+    )
+    res3 = await provider.aretrieve("test query")
+    assert res3.status == DocsSourceStatus.FAILED
+    assert res3.error_message is not None
+    assert "BEARER_SECRET_SEARCH" not in res3.error_message
+    assert "[REDACTED]" in res3.error_message
+
+    # 4. MCPTransportError in resolve-library-id
+    async def mock_call_transport_err(*args, **kwargs):
+        raise MCPTransportError(
+            "HTTP 500 from https://user:pass_trans_111@c7.local?auth=auth_val_222"
+        )
+
+    monkeypatch.setattr(
+        "langgraph_system_generator.rag.providers.context7.call_mcp_tool",
+        mock_call_transport_err,
+    )
+    res4 = await provider.aretrieve("test query")
+    assert res4.status == DocsSourceStatus.FAILED
+    assert res4.error_message is not None
+    assert "pass_trans_111" not in res4.error_message
+    assert "auth_val_222" not in res4.error_message
+    assert "[REDACTED]" in res4.error_message
+
+
+@pytest.mark.asyncio
+async def test_langchain_local_structured_and_transport_errors_sanitize_credentials(monkeypatch):
+    """LangChainDocsLocalProvider redacts credentials across structured error and transport errors."""
+    from langgraph_system_generator.rag.mcp_transport import MCPTransportError
+    from langgraph_system_generator.rag.providers.langchain_local import (
+        LangChainDocsLocalProvider,
+    )
+
+    monkeypatch.setattr(settings, "docs_live_sources_enabled", True)
+
+    provider = LangChainDocsLocalProvider(endpoint_url="https://docs.local")
+
+    # 1. Structured error in tool response
+    async def mock_call_tool_structured_err(*args, **kwargs):
+        return {
+            "error": {
+                "code": -32000,
+                "message": "DB error at https://user:lc_pass_333@lc.local?secret=lc_sec_444",
+            }
+        }
+
+    monkeypatch.setattr(
+        "langgraph_system_generator.rag.providers.langchain_local.call_mcp_tool",
+        mock_call_tool_structured_err,
+    )
+    res = await provider.aretrieve("test query")
+    assert res.status == DocsSourceStatus.FAILED
+    assert res.error_message is not None
+    assert "lc_pass_333" not in res.error_message
+    assert "lc_sec_444" not in res.error_message
+    assert "[REDACTED]" in res.error_message
+
+    # 2. MCPTransportError during tool call
+    async def mock_call_tool_transport_err(*args, **kwargs):
+        raise MCPTransportError(
+            "Transport failure contacting https://agent:agent_secret_555@lc.local?token=tok_agent_666"
+        )
+
+    monkeypatch.setattr(
+        "langgraph_system_generator.rag.providers.langchain_local.call_mcp_tool",
+        mock_call_tool_transport_err,
+    )
+    res2 = await provider.aretrieve("test query")
+    assert res2.status == DocsSourceStatus.FAILED
+    assert res2.error_message is not None
+    assert "agent_secret_555" not in res2.error_message
+    assert "tok_agent_666" not in res2.error_message
+    assert "[REDACTED]" in res2.error_message
+

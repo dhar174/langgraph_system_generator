@@ -51,6 +51,7 @@ from langgraph_system_generator.qa.summary import (
     serialize_qa_report,
 )
 from langgraph_system_generator.rag.embeddings import VectorStoreManager
+from langgraph_system_generator.rag.mcp_transport import _sanitize_text_credentials
 from langgraph_system_generator.rag.orchestrator import (
     get_default_docs_retrieval_service,
 )
@@ -492,14 +493,15 @@ async def rag_retrieval_node(state: GeneratorState) -> Dict[str, Any]:
             "docs_retrieval_feedback": feedback,
         }
     except Exception as e:
-        logger.warning("RAG retrieval failed: %s", e)
+        safe_error = _sanitize_text_credentials(str(e))
+        logger.warning("RAG retrieval failed: %s", safe_error)
         feedback = DocsRetrievalFeedback(
             attempted_sources=[],
-            source_statuses={"error": str(e)},
+            source_statuses={"error": safe_error},
             used_sources=[],
             fallback_used=False,
-            warnings=[f"RAG retrieval failed: {e}"],
-            stage_source_statuses={"rag": {"error": str(e)}},
+            warnings=[f"RAG retrieval failed: {safe_error}"],
+            stage_source_statuses={"rag": {"error": safe_error}},
             consulted_sources=[],
         )
         return {

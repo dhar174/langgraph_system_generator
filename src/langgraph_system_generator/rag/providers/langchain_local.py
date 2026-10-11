@@ -118,7 +118,7 @@ class LangChainDocsLocalProvider(DocsSourceProvider):
                         timeout_seconds=self.timeout_seconds,
                     )
                 except MCPTransportError as exc:
-                    last_error = str(exc)
+                    last_error = _sanitize_text_credentials(str(exc))
                     # Transport/HTTP/network/auth failures mean this provider cannot be reached.
                     # Stop compatibility-tool probing immediately instead of sending useless retries.
                     break
@@ -133,7 +133,7 @@ class LangChainDocsLocalProvider(DocsSourceProvider):
                         if isinstance(err_obj, dict)
                         else str(err_obj)
                     )
-                    last_error = f"MCP error: {err_msg}"
+                    last_error = _sanitize_text_credentials(f"MCP error: {err_msg}")
                     is_tool_missing = (
                         err_code == -32601
                         or "not found" in err_msg.lower()
