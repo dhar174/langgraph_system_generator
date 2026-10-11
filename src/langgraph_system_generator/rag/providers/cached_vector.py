@@ -34,12 +34,16 @@ class CachedVectorDocsProvider(DocsSourceProvider):
     ):
         self._injected_retriever = docs_retriever
         self._vector_store_path = vector_store_path
-        if stub_safe is not None:
-            self.stub_safe = bool(stub_safe)
-        elif docs_retriever is not None and getattr(
+        is_offline = docs_retriever is not None and getattr(
             docs_retriever, "is_offline_safe", False
-        ):
-            self.stub_safe = True
+        )
+        if stub_safe is True and not is_offline:
+            logger.warning(
+                "CachedVectorDocsProvider stub_safe=True ignored: injected retriever is not offline-safe."
+            )
+            self.stub_safe = False
+        elif is_offline:
+            self.stub_safe = True if stub_safe is None else bool(stub_safe)
         else:
             self.stub_safe = False
 
@@ -51,7 +55,9 @@ class CachedVectorDocsProvider(DocsSourceProvider):
         return get_cached_docs_retriever(self._vector_store_path)
 
     def is_available(self, mode: str = "live") -> bool:
-        """The cached vector provider is the local fallback and is always available."""
+        """Check availability. In stub mode, only available if offline-safe."""
+        if mode == "stub":
+            return bool(self.stub_safe)
         return True
 
     async def aretrieve(
@@ -61,6 +67,12 @@ class CachedVectorDocsProvider(DocsSourceProvider):
         mode: str = "live",
     ) -> DocsProviderResult:
         """Retrieve documentation from local vector store off the event loop."""
+        if mode == "stub" and not self.stub_safe:
+            return DocsProviderResult(
+                source_id=self.source_id,
+                status=DocsSourceStatus.SKIPPED,
+                latency_ms=0.0,
+            )
         start_time = time.perf_counter()
         retriever_name = "DocsRetriever"
         raw_results: List[Any]

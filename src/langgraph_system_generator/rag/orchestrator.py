@@ -272,21 +272,11 @@ class DocsRetrievalService:
             final_snippets = [s for s, _ in final_attributed]
             surviving_providers = {prov_id for _, prov_id in final_attributed}
 
-            final_used = [
-                src
-                for src in attempted
-                if src in surviving_providers
-                or any(
-                    s.source_kind == src
-                    or s.source.startswith(f"{src}:")
-                    or s.source == src
-                    for s in final_snippets
-                )
-            ]
+            final_used = [src for src in attempted if src in surviving_providers]
             fallback_used = any(
                 prov_id in ("cached_repo_docs", "rag_index")
                 for _, prov_id in final_attributed
-            ) or any(src in ("cached_repo_docs", "rag_index") for src in final_used)
+            )
 
             for source_id in ordered_source_ids:
                 if source_id not in statuses:
@@ -452,24 +442,14 @@ class DocsRetrievalService:
         final_snippets = [s for s, _ in final_attributed]
         surviving_providers = {prov_id for _, prov_id in final_attributed}
 
-        # Recompute used_sources strictly from final snippets (Finding 16)
-        final_used = [
-            src
-            for src in attempted
-            if src in surviving_providers
-            or any(
-                s.source_kind == src
-                or s.source.startswith(f"{src}:")
-                or s.source == src
-                for s in final_snippets
-            )
-        ]
+        # Recompute used_sources strictly from final surviving provider attribution
+        final_used = [src for src in attempted if src in surviving_providers]
 
         # fallback_used is True strictly if cached/local fallback actually contributed at least one final snippet
         fallback_used = any(
             prov_id in ("cached_repo_docs", "rag_index")
             for _, prov_id in final_attributed
-        ) or any(s in ("cached_repo_docs", "rag_index") for s in final_used)
+        )
 
         return DocsRetrievalResult(
             snippets=final_snippets,

@@ -2235,7 +2235,7 @@ async def test_builtin_providers_stub_safe_invariants_and_isolation():
     assert Context7DocsProvider.stub_safe is False
     assert CachedVectorDocsProvider.stub_safe is False
     assert CachedVectorDocsProvider().stub_safe is False
-    assert CachedVectorDocsProvider(stub_safe=True).stub_safe is True
+    assert CachedVectorDocsProvider(stub_safe=True).stub_safe is False  # Ignored without offline-safe retriever
 
     local_provider = LangChainDocsLocalProvider(
         endpoint_url="http://127.0.0.1:9999/unreachable"
@@ -3099,10 +3099,12 @@ def test_cached_vector_provider_offline_safe_retriever_opt_in():
     # Default
     p1 = CachedVectorDocsProvider()
     assert p1.stub_safe is False
+    assert p1.is_available(mode="stub") is False
 
-    # Explicit stub_safe=True
+    # Explicit stub_safe=True without offline retriever is rejected and logged
     p2 = CachedVectorDocsProvider(stub_safe=True)
-    assert p2.stub_safe is True
+    assert p2.stub_safe is False
+    assert p2.is_available(mode="stub") is False
 
     # Offline-safe retriever object
     class OfflineRetriever:
@@ -3110,6 +3112,15 @@ def test_cached_vector_provider_offline_safe_retriever_opt_in():
 
     p3 = CachedVectorDocsProvider(docs_retriever=OfflineRetriever())
     assert p3.stub_safe is True
+    assert p3.is_available(mode="stub") is True
+
+    p4 = CachedVectorDocsProvider(docs_retriever=OfflineRetriever(), stub_safe=True)
+    assert p4.stub_safe is True
+    assert p4.is_available(mode="stub") is True
+
+    p5 = CachedVectorDocsProvider(docs_retriever=OfflineRetriever(), stub_safe=False)
+    assert p5.stub_safe is False
+    assert p5.is_available(mode="stub") is False
 
 
 @pytest.mark.asyncio
@@ -3176,5 +3187,82 @@ async def test_langchain_local_unexpected_exception_sanitizes_credentials(monkey
     assert "client_secret=[REDACTED]" in result.error_message
 
 
+def test_is_valid_jsonrpc_payload_strictness():
+    """_is_valid_jsonrpc_payload strictly enforces jsonrpc=='2.0', XOR result/error, and dict error."""
+    from langgraph_system_generator.rag.mcp_transport import _is_valid_jsonrpc_payload
+
+    # Valid result
+    assert _is_valid_jsonrpc_payload({"jsonrpc": "2.0", "id": 1, "result": {"ok": True}}, 1) is True
+    # Valid error (dict)
+    assert _is_valid_jsonrpc_payload({"jsonrpc": "2.0", "id": 1, "error": {"code": -32600, "message": "err"}}, 1) is True
+    # Missing jsonrpc key
+    assert _is_valid_jsonrpc_payload({"id": 1, "result": {"ok": True}}, 1) is False
+    # Non-2.0 jsonrpc
+    assert _is_valid_jsonrpc_payload({"jsonrpc": "1.0", "id": 1, "result": {"ok": True}}, 1) is False
+    # Both result and error present (rejected by XOR)
+    assert _is_valid_jsonrpc_payload({"jsonrpc": "2.0", "id": 1, "result": {}, "error": {"code": -1, "message": "err"}}, 1) is False
+    # Neither result nor error present
+    assert _is_valid_jsonrpc_payload({"jsonrpc": "2.0", "id": 1, "method": "foo"}, 1) is False
+    # String-valued error
+    assert _is_valid_jsonrpc_payload({"jsonrpc": "2.0", "id": 1, "error": "Internal Error string"}, 1) is False
+    # ID mismatch
+    assert _is_valid_jsonrpc_payload({"jsonrpc": "2.0", "id": 2, "result": {}}, 1) is False
+    # Optional request_id is None matches any ID as long as valid response
+    assert _is_valid_jsonrpc_payload({"jsonrpc": "2.0", "id": "any", "result": {}}, None) is True
 
 
+@pytest.mark.asyncio
+async def test_cached_vector_provider_direct_stub_call_skipped_without_retriever():
+    """Direct aretrieve(mode='stub') returns SKIPPED immediately without calling _resolve_retriever or OpenAIEmbeddings."""
+    from langgraph_system_generator.rag.providers.cached_vector import (
+        CachedVectorDocsProvider,
+    )
+
+    provider = CachedVectorDocsProvider()
+    assert provider.stub_safe is False
+    assert provider.is_available(mode="stub") is False
+
+    result = await provider.aretrieve("query", k=5, mode="stub")
+    assert result.status == DocsSourceStatus.SKIPPED
+    assert result.source_id == "cached_repo_docs"
+    assert result.latency_ms == 0.0
+    assert result.snippets == []
+
+
+@pytest.mark.asyncio
+async def test_pure_surviving_provider_attribution_no_heuristic_pollution():
+    """used_sources and fallback_used are strictly derived from surviving_providers and not polluted by snippet source_kind or prefix."""
+    # prov_a returns a snippet that happens to have source_kind="prov_b" or source="prov_b:page"
+    misleading_snippet = DocSnippet(
+        content="Misleading content.",
+        source="prov_b:page",
+        source_kind="prov_b",
+        relevance_score=0.9,
+    )
+    prov_a = StubProvider(
+        source_id="prov_a",
+        available=True,
+        snippets=[misleading_snippet],
+        stub_safe=True,
+    )
+    prov_b = StubProvider(
+        source_id="prov_b",
+        available=False,
+        snippets=[],
+        stub_safe=True,
+    )
+    service = DocsRetrievalService(precedence=["prov_a", "prov_b"])
+    service.registry.register(prov_a)
+    service.registry.register(prov_b)
+
+    # In live mode
+    res_live = await service.aretrieve("test query", k=5, mode="live")
+    assert res_live.used_sources == ["prov_a"]
+    assert "prov_b" not in res_live.used_sources
+    assert res_live.fallback_used is False
+
+    # In stub mode
+    res_stub = await service.aretrieve("test query", k=5, mode="stub")
+    assert res_stub.used_sources == ["prov_a"]
+    assert "prov_b" not in res_stub.used_sources
+    assert res_stub.fallback_used is False

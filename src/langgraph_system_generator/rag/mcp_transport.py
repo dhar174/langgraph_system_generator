@@ -166,20 +166,25 @@ def _id_matches(response_id: Any, request_id: Any) -> bool:
     return str(response_id) == str(request_id)
 
 
-def _is_valid_jsonrpc_payload(data: Any, request_id: int | str) -> bool:
-    """Determine whether data is a structured JSON-RPC response or error for request_id."""
+def _is_valid_jsonrpc_payload(
+    data: Any,
+    request_id: Optional[int | str] = None,
+) -> bool:
+    """Determine whether data is a structured JSON-RPC 2.0 response or error."""
     if not isinstance(data, dict):
         return False
-    if not _id_matches(data.get("id"), request_id):
+    if request_id is not None and not _id_matches(data.get("id"), request_id):
         return False
-    if "jsonrpc" in data and data["jsonrpc"] != "2.0":
+    if data.get("jsonrpc") != "2.0":
         return False
-    # Must contain either 'result' or 'error' (JSON-RPC 2.0 response specification)
-    if "result" not in data and "error" not in data:
+    has_result = "result" in data
+    has_error = "error" in data
+    # Must contain either 'result' or 'error', but not both (JSON-RPC 2.0 response specification)
+    if not (has_result ^ has_error):
         return False
-    if "error" in data:
+    if has_error:
         err_obj = data["error"]
-        if not isinstance(err_obj, (dict, str)):
+        if not isinstance(err_obj, dict):
             return False
     return True
 
@@ -251,18 +256,8 @@ def _parse_sse_response(
 
     # Find the final JSON-RPC response matching request_id
     for obj in candidate_objects:
-        if request_id is not None:
-            if _is_valid_jsonrpc_payload(obj, request_id):
-                matched_response = obj
-        else:
-            if ("result" in obj or "error" in obj) and (
-                "jsonrpc" not in obj or obj["jsonrpc"] == "2.0"
-            ):
-                if "error" in obj:
-                    if isinstance(obj["error"], (dict, str)):
-                        matched_response = obj
-                else:
-                    matched_response = obj
+        if _is_valid_jsonrpc_payload(obj, request_id):
+            matched_response = obj
 
     if matched_response is not None:
         return matched_response
@@ -271,19 +266,10 @@ def _parse_sse_response(
         # Check if text is plain JSON despite content-type header
         try:
             fallback_obj = json.loads(text.strip())
-            if isinstance(fallback_obj, dict):
-                if request_id is not None:
-                    if _is_valid_jsonrpc_payload(fallback_obj, request_id):
-                        return fallback_obj
-                else:
-                    if ("result" in fallback_obj or "error" in fallback_obj) and (
-                        "jsonrpc" not in fallback_obj or fallback_obj["jsonrpc"] == "2.0"
-                    ):
-                        if "error" in fallback_obj:
-                            if isinstance(fallback_obj["error"], (dict, str)):
-                                return fallback_obj
-                        else:
-                            return fallback_obj
+            if isinstance(fallback_obj, dict) and _is_valid_jsonrpc_payload(
+                fallback_obj, request_id
+            ):
+                return fallback_obj
         except Exception:
             pass
         raise MCPTransportError(
