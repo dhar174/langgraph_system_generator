@@ -3424,6 +3424,11 @@ async def test_architecture_selector_retrieval_exceptions_sanitized(monkeypatch,
         ArchitectureSelector,
     )
 
+    monkeypatch.setattr(
+        "langgraph_system_generator.generator.agents.architecture_selector.ChatOpenAI",
+        MagicMock,
+    )
+
     dirty_secret = (
         "https://user:password@example.com/mcp?access_token=SECRET_URL_123 "
         "Bearer SECRET_BEARER_456 client_secret=SECRET_CLIENT_789"
