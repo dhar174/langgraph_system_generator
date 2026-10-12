@@ -80,8 +80,10 @@ def _load_docs_source_plugin(module_name: str, registry: DocsSourceRegistry) -> 
                 register_func(registry)
                 break
     except Exception as exc:
+        safe_mod = _sanitize_text_credentials(str(module_name))
+        safe_exc = _sanitize_text_credentials(str(exc))
         logger.warning(
-            "Failed loading docs source plugin module '%s': %s", module_name, exc
+            "Failed loading docs source plugin module '%s': %s", safe_mod, safe_exc
         )
 
 

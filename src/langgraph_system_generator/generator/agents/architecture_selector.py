@@ -27,6 +27,7 @@ from langgraph_system_generator.generator.state import (
     DocsRetrievalFeedback,
 )
 from langgraph_system_generator.generator.utils import extract_json_from_llm_response
+from langgraph_system_generator.rag.mcp_transport import _sanitize_text_credentials
 from langgraph_system_generator.rag.retriever import DocsRetriever
 from langgraph_system_generator.utils.config import ModelConfig, settings
 from langgraph_system_generator.utils.generation_options import (
@@ -332,12 +333,14 @@ Recommend the best architecture."""
                         try:
                             res = await self.docs_retriever.aretrieve(query, k=prompt_limit, mode=mode)
                         except Exception as exc:  # noqa: BLE001
+                            safe_exc = _sanitize_text_credentials(str(exc))
+                            safe_query = _sanitize_text_credentials(str(query))
                             logger.warning(
                                 "Docs retrieval failed in ArchitectureSelector for query '%s': %s",
-                                query,
-                                exc,
+                                safe_query,
+                                safe_exc,
                             )
-                            return _QueryDocsResult(warnings=[f"Query retrieval error: {exc}"])
+                            return _QueryDocsResult(warnings=[f"Query retrieval error: {safe_exc}"])
 
                         feedback = getattr(res, "feedback", None)
                         target = feedback if feedback is not None else res
@@ -358,8 +361,9 @@ Recommend the best architecture."""
                         if getattr(target, "fallback_used", False):
                             q_fallback_used = True
                         for w in getattr(target, "warnings", []):
-                            if w not in q_warnings and len(q_warnings) < 10:
-                                q_warnings.append(w)
+                            safe_w = _sanitize_text_credentials(str(w))
+                            if safe_w not in q_warnings and len(q_warnings) < 10:
+                                q_warnings.append(safe_w)
 
                         if hasattr(res, "snippets"):
                             q_snippets = list(res.snippets)
@@ -370,12 +374,14 @@ Recommend the best architecture."""
                         try:
                             res = await asyncio.to_thread(self.docs_retriever.retrieve, query, prompt_limit)
                         except Exception as exc:  # noqa: BLE001
+                            safe_exc = _sanitize_text_credentials(str(exc))
+                            safe_query = _sanitize_text_credentials(str(query))
                             logger.warning(
                                 "Docs retrieval failed in ArchitectureSelector for query '%s': %s",
-                                query,
-                                exc,
+                                safe_query,
+                                safe_exc,
                             )
-                            return _QueryDocsResult(warnings=[f"Query retrieval error: {exc}"])
+                            return _QueryDocsResult(warnings=[f"Query retrieval error: {safe_exc}"])
 
                         if hasattr(res, "snippets"):
                             q_snippets = list(res.snippets)
@@ -419,8 +425,9 @@ Recommend the best architecture."""
                         any_fallback_used = True
 
                     for w in q_res.warnings:
-                        if w not in aggregated_warnings and len(aggregated_warnings) < 10:
-                            aggregated_warnings.append(w)
+                        safe_w = _sanitize_text_credentials(str(w))
+                        if safe_w not in aggregated_warnings and len(aggregated_warnings) < 10:
+                            aggregated_warnings.append(safe_w)
 
                 # Deterministic status reduction rule:
                 # success > failed > empty > unavailable > skipped

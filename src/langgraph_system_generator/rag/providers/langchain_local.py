@@ -275,6 +275,8 @@ class LangChainDocsLocalProvider(DocsSourceProvider):
                 items = result["documents"]
             elif "snippets" in result and isinstance(result["snippets"], list):
                 items = result["snippets"]
+            else:
+                items = self._extract_nested_items(result)
         elif isinstance(result, list):
             items = result
 

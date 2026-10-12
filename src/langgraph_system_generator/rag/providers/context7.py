@@ -167,12 +167,7 @@ class Context7DocsProvider(DocsSourceProvider):
                         if isinstance(err_obj, dict)
                         else str(err_obj)
                     )
-                    is_tool_missing = (
-                        err_code == -32601
-                        or "not found" in err_msg.lower()
-                        or "unknown tool" in err_msg.lower()
-                        or "unknown method" in err_msg.lower()
-                    )
+                    is_tool_missing = err_code == -32601
                     if is_tool_missing:
                         should_fallback_to_search = True
                     else:
@@ -226,12 +221,7 @@ class Context7DocsProvider(DocsSourceProvider):
                         if isinstance(err_obj, dict)
                         else str(err_obj)
                     )
-                    is_tool_missing = (
-                        err_code == -32601
-                        or "not found" in err_msg.lower()
-                        or "unknown tool" in err_msg.lower()
-                        or "unknown method" in err_msg.lower()
-                    )
+                    is_tool_missing = err_code == -32601
                     if is_tool_missing:
                         should_fallback_to_search = True
                     else:

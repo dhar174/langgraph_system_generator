@@ -3414,3 +3414,346 @@ async def test_langchain_local_structured_and_transport_errors_sanitize_credenti
     assert "tok_agent_666" not in res2.error_message
     assert "[REDACTED]" in res2.error_message
 
+
+@pytest.mark.asyncio
+async def test_architecture_selector_retrieval_exceptions_sanitized(monkeypatch, caplog):
+    """ArchitectureSelector redacts credentials from logs, warnings, and feedback on retrieval failure."""
+    import logging
+    from unittest.mock import AsyncMock, MagicMock
+    from langgraph_system_generator.generator.agents.architecture_selector import (
+        ArchitectureSelector,
+    )
+
+    dirty_secret = (
+        "https://user:password@example.com/mcp?access_token=SECRET_URL_123 "
+        "Bearer SECRET_BEARER_456 client_secret=SECRET_CLIENT_789"
+    )
+
+    # 1. Test async aretrieve path
+    class AsyncBoomRetriever:
+        async def aretrieve(self, *args, **kwargs):
+            raise RuntimeError(f"Async failure: {dirty_secret}")
+
+    selector_async = ArchitectureSelector(docs_retriever=AsyncBoomRetriever())
+
+    with caplog.at_level(logging.WARNING):
+        await selector_async._select_prompt_docs("test prompt")
+
+    # Assert caplog is clean of all secrets
+    assert "password" not in caplog.text
+    assert "SECRET_URL_123" not in caplog.text
+    assert "SECRET_BEARER_456" not in caplog.text
+    assert "SECRET_CLIENT_789" not in caplog.text
+    assert "[REDACTED]" in caplog.text
+
+    # Assert selector feedback delta warnings are clean
+    feedback = selector_async.docs_retrieval_feedback_delta
+    assert feedback is not None
+    assert len(feedback.warnings) > 0
+    for w in feedback.warnings:
+        assert "password" not in w
+        assert "SECRET_URL_123" not in w
+        assert "SECRET_BEARER_456" not in w
+        assert "SECRET_CLIENT_789" not in w
+        assert "[REDACTED]" in w
+
+    caplog.clear()
+
+    # 2. Test sync retrieve path
+    class SyncBoomRetriever:
+        def retrieve(self, *args, **kwargs):
+            raise RuntimeError(f"Sync failure: {dirty_secret}")
+
+    selector_sync = ArchitectureSelector(docs_retriever=SyncBoomRetriever())
+    with caplog.at_level(logging.WARNING):
+        await selector_sync._select_prompt_docs("test prompt")
+
+    assert "password" not in caplog.text
+    assert "SECRET_URL_123" not in caplog.text
+    assert "SECRET_BEARER_456" not in caplog.text
+    assert "SECRET_CLIENT_789" not in caplog.text
+    assert "[REDACTED]" in caplog.text
+
+    feedback_sync = selector_sync.docs_retrieval_feedback_delta
+    assert feedback_sync is not None
+    for w in feedback_sync.warnings:
+        assert "password" not in w
+        assert "SECRET_URL_123" not in w
+        assert "SECRET_BEARER_456" not in w
+        assert "SECRET_CLIENT_789" not in w
+        assert "[REDACTED]" in w
+
+
+def test_docs_source_plugin_loader_sanitizes_credentials(monkeypatch, caplog):
+    """_load_docs_source_plugin redacts credentials in module name and exceptions."""
+    import logging
+    from langgraph_system_generator.rag.orchestrator import (
+        DocsSourceRegistry,
+        _load_docs_source_plugin,
+    )
+
+    registry = DocsSourceRegistry(providers=[])
+    dirty_module = "plugin_pkg_https://user:mod_secret_111@mod.local"
+
+    def mock_import(name):
+        raise RuntimeError(
+            "Crash loading plugin: https://user:import_secret_222@pkg.internal?token=TOK_PLUGIN_333"
+        )
+
+    monkeypatch.setattr(
+        "langgraph_system_generator.rag.orchestrator.importlib.import_module",
+        mock_import,
+    )
+
+    with caplog.at_level(logging.WARNING):
+        _load_docs_source_plugin(dirty_module, registry)
+
+    assert "mod_secret_111" not in caplog.text
+    assert "import_secret_222" not in caplog.text
+    assert "TOK_PLUGIN_333" not in caplog.text
+    assert "[REDACTED]" in caplog.text
+    assert "Failed loading docs source plugin module" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_cached_vector_provider_sanitizes_credentials_on_failure(monkeypatch, caplog):
+    """CachedVectorDocsProvider redacts credentials from error_message and logs on failure."""
+    import logging
+    from langgraph_system_generator.rag.providers.cached_vector import (
+        CachedVectorDocsProvider,
+    )
+
+    class FakeBoomRetriever:
+        is_offline_safe = True
+        def retrieve(self, *args, **kwargs):
+            raise RuntimeError(
+                "FAISS load error from https://user:db_secret_444@vector.internal:9200?key=KEY_SECRET_555"
+            )
+
+    provider = CachedVectorDocsProvider(docs_retriever=FakeBoomRetriever(), stub_safe=True)
+
+    with caplog.at_level(logging.WARNING):
+        res = await provider.aretrieve("query")
+
+    assert res.status == DocsSourceStatus.FAILED
+    assert res.error_message is not None
+    assert "db_secret_444" not in res.error_message
+    assert "KEY_SECRET_555" not in res.error_message
+    assert "[REDACTED]" in res.error_message
+
+    assert "db_secret_444" not in caplog.text
+    assert "KEY_SECRET_555" not in caplog.text
+    assert "[REDACTED]" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_cached_vector_provider_empty_documentation_filtering():
+    """CachedVectorDocsProvider filters blank/whitespace snippets and returns EMPTY if no usable content."""
+    from langgraph_system_generator.rag.providers.cached_vector import (
+        CachedVectorDocsProvider,
+    )
+
+    class DummyDoc:
+        def __init__(self, page_content, metadata=None):
+            self.page_content = page_content
+            self.metadata = metadata or {}
+
+    # 1. All empty/whitespace dicts -> EMPTY
+    class EmptyDictRetriever:
+        is_offline_safe = True
+        def retrieve(self, *args, **kwargs):
+            return [{"content": "", "source": "src1"}, {"content": "   \n\t  ", "source": "src2"}]
+
+    provider_empty_dict = CachedVectorDocsProvider(docs_retriever=EmptyDictRetriever(), stub_safe=True)
+    res_dict = await provider_empty_dict.aretrieve("query")
+    assert res_dict.status == DocsSourceStatus.EMPTY
+    assert res_dict.snippets == []
+
+    # 2. All empty/whitespace DocSnippet objects -> EMPTY
+    class EmptyDocSnippetRetriever:
+        is_offline_safe = True
+        def retrieve(self, *args, **kwargs):
+            return [
+                DocSnippet(content="", source="src3"),
+                DocSnippet(content="    ", source="src4"),
+            ]
+
+    provider_empty_snip = CachedVectorDocsProvider(docs_retriever=EmptyDocSnippetRetriever(), stub_safe=True)
+    res_snip = await provider_empty_snip.aretrieve("query")
+    assert res_snip.status == DocsSourceStatus.EMPTY
+    assert res_snip.snippets == []
+
+    # 3. All empty/whitespace LangChain Document-like objects -> EMPTY
+    class EmptyDocObjRetriever:
+        is_offline_safe = True
+        def retrieve(self, *args, **kwargs):
+            return [DummyDoc(""), DummyDoc("   \n ")]
+
+    provider_empty_doc = CachedVectorDocsProvider(docs_retriever=EmptyDocObjRetriever(), stub_safe=True)
+    res_doc = await provider_empty_doc.aretrieve("query")
+    assert res_doc.status == DocsSourceStatus.EMPTY
+    assert res_doc.snippets == []
+
+    # 4. Mixed valid/blank results with zero relevance score -> SUCCESS with only valid snippet
+    class MixedRetriever:
+        is_offline_safe = True
+        def retrieve(self, *args, **kwargs):
+            return [
+                {"content": "   "},
+                {"content": "Valid documentation snippet", "source": "valid:src", "score": 0.0},
+                DummyDoc(""),
+            ]
+
+    provider_mixed = CachedVectorDocsProvider(docs_retriever=MixedRetriever(), stub_safe=True)
+    res_mixed = await provider_mixed.aretrieve("query")
+    assert res_mixed.status == DocsSourceStatus.SUCCESS
+    assert len(res_mixed.snippets) == 1
+    assert res_mixed.snippets[0].content == "Valid documentation snippet"
+    assert res_mixed.snippets[0].source == "valid:src"
+    assert res_mixed.snippets[0].relevance_score == 0.0
+
+
+@pytest.mark.asyncio
+async def test_context7_fallback_strictly_on_method_not_found(monkeypatch):
+    """Context7DocsProvider triggers search fallback ONLY on -32601 and NOT on error message text."""
+    from langgraph_system_generator.rag.providers.context7 import Context7DocsProvider
+
+    monkeypatch.setattr(settings, "docs_live_sources_enabled", True)
+    monkeypatch.setattr(settings, "context7_docs_enabled", True)
+
+    provider = Context7DocsProvider(api_key="sk-test", endpoint_url="https://api.context7.com")
+
+    call_history = []
+
+    # Case 1: Genuine -32601 -> fallback search is invoked
+    async def mock_call_case1(*args, **kwargs):
+        tool = kwargs.get("tool_name") or args[1]
+        call_history.append(tool)
+        if tool == "resolve-library-id":
+            return {"error": {"code": -32601, "message": "Method not found"}}
+        elif tool == "search":
+            return {"results": [{"content": "Search hit content"}]}
+        return {"error": {"code": -32601, "message": "Method not found"}}
+
+    monkeypatch.setattr(
+        "langgraph_system_generator.rag.providers.context7.call_mcp_tool",
+        mock_call_case1,
+    )
+    res1 = await provider.aretrieve("query")
+    assert res1.status == DocsSourceStatus.SUCCESS
+    assert "resolve-library-id" in call_history
+    assert "search" in call_history
+    assert len(res1.snippets) > 0
+
+    # Case 2: Internal server error with "method not found" text -> NO fallback search!
+    call_history.clear()
+    provider._resolved_libraries.clear()
+
+    async def mock_call_case2(*args, **kwargs):
+        tool = kwargs.get("tool_name") or args[1]
+        call_history.append(tool)
+        if tool == "resolve-library-id":
+            return {"error": {"code": -32000, "message": "Internal upstream method not found"}}
+        return {"error": {"code": -32000, "message": "Unexpected"}}
+
+    monkeypatch.setattr(
+        "langgraph_system_generator.rag.providers.context7.call_mcp_tool",
+        mock_call_case2,
+    )
+    res2 = await provider.aretrieve("query")
+    assert res2.status == DocsSourceStatus.FAILED
+    assert call_history == ["resolve-library-id"]
+    assert "search" not in call_history
+    assert "Context7 MCP error" in res2.error_message
+
+    # Case 3: Semantic lookup failure code -32004 ("not found") -> NO fallback search!
+    call_history.clear()
+    provider._resolved_libraries.clear()
+
+    async def mock_call_case3(*args, **kwargs):
+        tool = kwargs.get("tool_name") or args[1]
+        call_history.append(tool)
+        if tool == "resolve-library-id":
+            return {"error": {"code": -32004, "message": "Requested documentation not found"}}
+        return {"error": {"code": -32004, "message": "Unexpected"}}
+
+    monkeypatch.setattr(
+        "langgraph_system_generator.rag.providers.context7.call_mcp_tool",
+        mock_call_case3,
+    )
+    res3 = await provider.aretrieve("query")
+    assert res3.status == DocsSourceStatus.FAILED
+    assert call_history == ["resolve-library-id"]
+    assert "search" not in call_history
+
+
+@pytest.mark.asyncio
+async def test_langchain_local_accepts_direct_single_document_mcp_results(monkeypatch):
+    """LangChainDocsLocalProvider accepts direct single-document dictionaries from MCP."""
+    from langgraph_system_generator.rag.providers.langchain_local import (
+        LangChainDocsLocalProvider,
+    )
+
+    monkeypatch.setattr(settings, "docs_live_sources_enabled", True)
+    provider = LangChainDocsLocalProvider(endpoint_url="https://docs.local")
+
+    # 1. Direct content-only single doc
+    payload_content = {
+        "result": {
+            "content": "Direct single document content",
+            "url": "https://docs.example.com/reference",
+            "title": "Reference Guide",
+        }
+    }
+    snippets = provider._extract_snippets_from_payload(payload_content, "https://docs.local")
+    assert len(snippets) == 1
+    assert snippets[0].content == "Direct single document content"
+    assert snippets[0].source == "https://docs.example.com/reference"
+    assert snippets[0].heading == "Reference Guide"
+
+    # 2. Direct text-only single doc
+    payload_text = {
+        "result": {
+            "text": "Direct text content",
+            "source": "https://docs.example.com/api",
+        }
+    }
+    snippets2 = provider._extract_snippets_from_payload(payload_text, "https://docs.local")
+    assert len(snippets2) == 1
+    assert snippets2[0].content == "Direct text content"
+    assert snippets2[0].source == "https://docs.example.com/api"
+
+    # 3. Direct snippet-only single doc with score 0.0
+    payload_snippet = {
+        "result": {
+            "snippet": "Direct snippet content",
+            "score": 0.0,
+        }
+    }
+    snippets3 = provider._extract_snippets_from_payload(payload_snippet, "https://docs.local")
+    assert len(snippets3) == 1
+    assert snippets3[0].content == "Direct snippet content"
+    assert snippets3[0].relevance_score == 0.0
+
+    # 4. Direct page_content single doc
+    payload_page = {
+        "result": {
+            "page_content": "Direct page content",
+        }
+    }
+    snippets4 = provider._extract_snippets_from_payload(payload_page, "https://docs.local")
+    assert len(snippets4) == 1
+    assert snippets4[0].content == "Direct page content"
+
+    # 5. Protocol envelope rejection
+    payload_proto = {
+        "result": {
+            "jsonrpc": "2.0",
+            "method": "notifications/progress",
+            "params": {"token": 1},
+        }
+    }
+    snippets5 = provider._extract_snippets_from_payload(payload_proto, "https://docs.local")
+    assert snippets5 == []
+
+

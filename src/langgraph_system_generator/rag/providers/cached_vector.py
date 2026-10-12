@@ -14,6 +14,7 @@ from langgraph_system_generator.rag.base import (
     DocsSourceProvider,
     DocsSourceStatus,
 )
+from langgraph_system_generator.rag.mcp_transport import _sanitize_text_credentials
 from langgraph_system_generator.rag.normalizer import create_normalized_doc_snippet
 from langgraph_system_generator.rag.retriever import DocsRetriever
 
@@ -89,12 +90,13 @@ class CachedVectorDocsProvider(DocsSourceProvider):
                 )
         except Exception as exc:
             elapsed_ms = (time.perf_counter() - start_time) * 1000.0
-            logger.warning("Cached vector store retrieval failed: %s", exc)
+            safe_exc = _sanitize_text_credentials(str(exc))
+            logger.warning("Cached vector store retrieval failed: %s", safe_exc)
             return DocsProviderResult(
                 source_id=self.source_id,
                 status=DocsSourceStatus.FAILED,
                 latency_ms=elapsed_ms,
-                error_message=str(exc),
+                error_message=safe_exc,
             )
 
         elapsed_ms = (time.perf_counter() - start_time) * 1000.0
@@ -108,6 +110,8 @@ class CachedVectorDocsProvider(DocsSourceProvider):
         snippets: List[DocSnippet] = []
         for item in raw_results:
             if isinstance(item, DocSnippet):
+                if not item.content or not item.content.strip():
+                    continue
                 if not item.source_kind:
                     item = create_normalized_doc_snippet(
                         content=item.content,
@@ -118,6 +122,9 @@ class CachedVectorDocsProvider(DocsSourceProvider):
                     )
                 snippets.append(item)
             elif isinstance(item, dict):
+                raw_content = item.get("content", "")
+                if not raw_content or not str(raw_content).strip():
+                    continue
                 score_kind = item.get("score_kind")
                 if score_kind == "distance":
                     is_dist = True
@@ -134,7 +141,7 @@ class CachedVectorDocsProvider(DocsSourceProvider):
                 score = float(raw_score) if raw_score is not None else 0.0
                 snippets.append(
                     create_normalized_doc_snippet(
-                        content=item.get("content", ""),
+                        content=str(raw_content).strip(),
                         source=item.get("source", ""),
                         source_kind=self.source_id,
                         relevance_score=score,
@@ -144,6 +151,8 @@ class CachedVectorDocsProvider(DocsSourceProvider):
                 )
             else:
                 content = getattr(item, "page_content", getattr(item, "content", str(item)))
+                if not content or not str(content).strip():
+                    continue
                 metadata = getattr(item, "metadata", {})
                 source = metadata.get("source", "") if isinstance(metadata, dict) else ""
                 heading = metadata.get("heading") or metadata.get("title") if isinstance(metadata, dict) else None
@@ -163,7 +172,7 @@ class CachedVectorDocsProvider(DocsSourceProvider):
                 score = float(raw_score) if raw_score is not None else 0.0
                 snippets.append(
                     create_normalized_doc_snippet(
-                        content=content,
+                        content=str(content).strip(),
                         source=source,
                         source_kind=self.source_id,
                         relevance_score=score,
@@ -171,6 +180,15 @@ class CachedVectorDocsProvider(DocsSourceProvider):
                         is_distance=is_dist,
                     )
                 )
+
+        if not snippets:
+            return DocsProviderResult(
+                source_id=self.source_id,
+                status=DocsSourceStatus.EMPTY,
+                snippets=[],
+                latency_ms=elapsed_ms,
+                metadata={"retriever_type": retriever_name},
+            )
 
         return DocsProviderResult(
             source_id=self.source_id,
