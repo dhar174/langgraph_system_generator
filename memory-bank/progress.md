@@ -1,5 +1,32 @@
 ## What Works
 
+- Actual runtime docs-source precedence for generation context (Issue #375 / PR #377):
+  provider-neutral `DocsRetrievalService` with `LangChainDocsLocalProvider`
+  (live local MCP/Mintlify search), `Context7DocsProvider` (live secondary/cross-check),
+  and `CachedVectorDocsProvider` (resilient process-local cached fallback).
+  `rag_retrieval_node` and `ArchitectureSelector` both route through this service,
+  eliminating the architecture selection bypass. State contract includes
+  `DocsRetrievalFeedback` with truthful provenance in `GenerationContextPack` and
+  manifests (`attempted_sources`, `source_statuses`, `used_sources`, `fallback_used`,
+  `stage_source_statuses`, `consulted_sources`).
+  All review findings resolved across commits `f4fe02e`, `7995d02`, `c60a62b`, `a854327`, and `660b7a4`:
+  - Shared MCP Streamable HTTP transport helper `mcp_transport.py` with protocol `2026-07-28`, streamable headers, and request ID validation on HTTP-200 JSON responses.
+  - Context7 two-step flow (`resolve-library-id` -> `query-docs`), bounded fallback to `search`, empty/whitespace snippet rejection, and structural protocol envelope exclusion.
+  - LangChain provider immediate loop termination on network/connection failure and content-only serialized document acceptance.
+  - Strict `fallback_used` semantics (`True` iff fallback actually contributed final snippets).
+  - ArchitectureSelector transient docs provenance isolation without polluting `used_sources` or flipping `fallback_used`.
+  - Deterministic concurrent query feedback aggregation in `query_specs` order.
+  - `DocsSourceRegistry.register()` in-place provider replacement preserving registry index and precedence by default.
+  - Capability-based stub-mode plugin isolation (`stub_safe` default False for all providers; `CachedVectorDocsProvider` requires verified offline retriever with `is_offline_safe = True` to enable `stub_safe`, and guards `aretrieve(mode='stub')` directly).
+  - Strict JSON-RPC 2.0 response validation in `mcp_transport.py` requiring `jsonrpc == "2.0"`, XOR `result`/`error`, and dict `error` across SSE, plain JSON, and HTTP paths with stream ordering.
+  - Pure provider attribution in `orchestrator.py` deriving `used_sources` and `fallback_used` authoritatively from `surviving_providers` tuples without heuristic `source_kind` or prefix fallbacks.
+  - Unexpected exception credential redaction in `context7.py` and `langchain_local.py`.
+  - Security closeout pass: resolved Copilot findings by sanitizing RAG node exception feedback in `nodes.py` (`source_statuses`, `warnings`, `stage_source_statuses`), sanitizing `error_message` across all branches in `context7.py`, and sanitizing structured JSON-RPC error messages and transport errors in `langchain_local.py`.
+  - Task indexing for TASK006 and TASK007 in `memory-bank/tasks/_index.md`.
+  - Comprehensive credential and URL sanitization via `_sanitize_text_credentials` and `_sanitize_url_for_logging`, redacting basic-auth netlocs, compound tokens (`access_token`, `client_secret`, etc.), bearer tokens, and JSON keys across connection errors, transport errors, non-200 previews, provider fallback provenance, and orchestrator warnings.
+  - Comprehensive resolution of all remaining known findings (A–F): provider-neutral snippet normalization and empty-result precedence in `orchestrator.py` (A); strict fallback/provenance defaults in `GenerationContextPack` (B); bounded/deduplicated `ArchitectureSelector` live retrieval with `asyncio.Semaphore(settings.architecture_docs_max_concurrency)` (C); cached-retriever eviction after failure via `_drop_docs_retriever_cache_entry` (D); strict JSON-RPC 2.0 response shape validation with SSE fallback (E); and complete Memory Bank alignment (F).
+  All 112 tests in `tests/unit/test_rag_source_precedence.py` pass (+18 regression tests). Full unit test suite (800 tests, 5 warnings)
+  and pattern test suite (82 tests) pass 100%. Full pytest suite passes (918 passed, 3 skipped, 5 warnings). Flake8, black, and mypy pass 100%. Stub mode remains 100% offline and deterministic.
 - CLI-based generation supports both deterministic stub output and live
   generator-graph execution.
 - The FastAPI server exposes synchronous generation, async generation startup,

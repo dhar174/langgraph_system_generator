@@ -154,6 +154,12 @@ class Settings(BaseSettings):
         ge=1,
         description="Maximum number of weighted docs snippets included in the architecture selector prompt.",
     )
+    architecture_docs_max_concurrency: int = Field(
+        default=3,
+        ge=1,
+        le=10,
+        description="Maximum concurrent unique query retrievals executed by ArchitectureSelector.",
+    )
     notebook_composer_default_max_iterations: int = Field(
         default=10,
         ge=1,
@@ -192,6 +198,46 @@ class Settings(BaseSettings):
             "Optional QA/repair plugin modules loaded to extend internal validator and repair registries."
         ),
     )
+    docs_live_sources_enabled: bool = Field(
+        default=False,
+        description="Whether live docs sources (MCP, Context7) are enabled for generation.",
+    )
+    langchain_docs_mcp_url: Optional[str] = Field(
+        default=None,
+        description="Optional URL or endpoint for local LangChain docs MCP server or proxy.",
+    )
+    context7_docs_enabled: bool = Field(
+        default=False,
+        description="Whether Context7 live docs integration is enabled.",
+    )
+    context7_api_key: Optional[str] = Field(
+        default=None,
+        description="API key for Context7 documentation lookup.",
+    )
+    context7_mcp_url: Optional[str] = Field(
+        default=None,
+        description="Optional URL or endpoint for Context7 MCP server.",
+    )
+    docs_context7_crosscheck: bool = Field(
+        default=False,
+        description="Whether to query Context7 as a cross-check even when primary source succeeds.",
+    )
+    docs_source_plugin_modules: Annotated[list[str], NoDecode] = Field(
+        default_factory=list,
+        description=(
+            "Optional docs source plugin modules loaded to extend internal docs sources."
+        ),
+    )
+    docs_max_snippet_chars: int = Field(
+        default=1200,
+        ge=100,
+        description="Maximum character count per retrieved documentation snippet.",
+    )
+    docs_max_total_snippets: int = Field(
+        default=10,
+        ge=1,
+        description="Maximum total snippets to keep in docs context.",
+    )
 
     @field_validator("requirements_constraint_types", mode="before")
     @classmethod
@@ -213,7 +259,9 @@ class Settings(BaseSettings):
                         f"Invalid JSON in requirements_constraint_types: {exc}"
                     ) from exc
                 if not isinstance(parsed, list):
-                    raise ValueError("requirements_constraint_types must decode to a list")
+                    raise ValueError(
+                        "requirements_constraint_types must decode to a list"
+                    )
                 return parsed
             return [item.strip() for item in stripped.split(",") if item.strip()]
         return value
@@ -240,7 +288,9 @@ class Settings(BaseSettings):
             return value
 
         if not isinstance(parsed, dict):
-            raise ValueError("architecture_pattern_doc_queries must decode to an object")
+            raise ValueError(
+                "architecture_pattern_doc_queries must decode to an object"
+            )
 
         normalized: dict[str, list[str]] = {}
         for raw_key, raw_queries in parsed.items():
@@ -255,7 +305,9 @@ class Settings(BaseSettings):
                 raise ValueError(
                     "architecture_pattern_doc_queries values must be strings or lists"
                 )
-            normalized[key] = [str(query).strip() for query in queries if str(query).strip()]
+            normalized[key] = [
+                str(query).strip() for query in queries if str(query).strip()
+            ]
         return normalized
 
     @field_validator("architecture_pattern_doc_weights", mode="before")
@@ -280,7 +332,9 @@ class Settings(BaseSettings):
             return value
 
         if not isinstance(parsed, dict):
-            raise ValueError("architecture_pattern_doc_weights must decode to an object")
+            raise ValueError(
+                "architecture_pattern_doc_weights must decode to an object"
+            )
 
         normalized: dict[str, float] = {}
         for raw_key, raw_weight in parsed.items():
@@ -437,6 +491,40 @@ class Settings(BaseSettings):
                 normalized.append(module_name)
         return normalized
 
+    @field_validator("docs_source_plugin_modules", mode="before")
+    @classmethod
+    def _parse_docs_source_plugin_modules(cls, value):
+        """Accept JSON arrays or comma-separated plugin module strings."""
+        if value in (None, ""):
+            return []
+        if isinstance(value, list):
+            raw_items = value
+        elif isinstance(value, str):
+            stripped = value.strip()
+            if not stripped:
+                return []
+            if stripped.startswith("["):
+                try:
+                    parsed = json.loads(stripped)
+                except json.JSONDecodeError as exc:
+                    raise ValueError(
+                        f"Invalid JSON in docs_source_plugin_modules: {exc}"
+                    ) from exc
+                if not isinstance(parsed, list):
+                    raise ValueError("docs_source_plugin_modules must decode to a list")
+                raw_items = parsed
+            else:
+                raw_items = stripped.split(",")
+        else:
+            return value
+
+        normalized: list[str] = []
+        for raw_item in raw_items:
+            module_name = str(raw_item or "").strip()
+            if module_name and module_name not in normalized:
+                normalized.append(module_name)
+        return normalized
+
     @field_validator("notebook_composer_parallelism_mode", mode="before")
     @classmethod
     def _validate_notebook_composer_parallelism_mode(cls, value):
@@ -473,6 +561,15 @@ _TEST_SETTINGS_ENV_KEYS = (
     "TOOLCHAIN_ENGINEER_PLUGIN_MODULES",
     "GRAPH_DESIGNER_PLUGIN_MODULES",
     "QA_REPAIR_PLUGIN_MODULES",
+    "DOCS_LIVE_SOURCES_ENABLED",
+    "LANGCHAIN_DOCS_MCP_URL",
+    "CONTEXT7_DOCS_ENABLED",
+    "CONTEXT7_API_KEY",
+    "CONTEXT7_MCP_URL",
+    "DOCS_CONTEXT7_CROSSCHECK",
+    "DOCS_SOURCE_PLUGIN_MODULES",
+    "DOCS_MAX_SNIPPET_CHARS",
+    "DOCS_MAX_TOTAL_SNIPPETS",
 )
 
 
@@ -508,9 +605,7 @@ def _suspend_project_env_for_pytest(env_file: Optional[str]):
         return
 
     removed_values = {
-        key: os.environ.pop(key)
-        for key in _TEST_SETTINGS_ENV_KEYS
-        if key in os.environ
+        key: os.environ.pop(key) for key in _TEST_SETTINGS_ENV_KEYS if key in os.environ
     }
     try:
         yield
@@ -530,7 +625,9 @@ def _cached_settings(env_file: Optional[str]) -> Settings:
         return Settings(**init_kwargs)
 
 
-def get_settings(env_file: Union[str, Path, None, object] = _DEFAULT_ENV_FILE) -> Settings:
+def get_settings(
+    env_file: Union[str, Path, None, object] = _DEFAULT_ENV_FILE,
+) -> Settings:
     """Return a cached settings instance."""
     if env_file is _DEFAULT_ENV_FILE:
         resolved_env_file = None if _pytest_is_active() else _resolve_default_env_file()

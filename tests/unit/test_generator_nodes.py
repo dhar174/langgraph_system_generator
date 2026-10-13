@@ -8,6 +8,7 @@ from langgraph_system_generator.generator.agents.requirements_analyst import (
     RequirementsAnalyst,
 )
 from langgraph_system_generator.generator.nodes import (
+    _build_generation_context_pack,
     _reset_docs_retriever_cache_for_tests,
     intake_node,
     notebook_assembly_node,
@@ -18,6 +19,7 @@ from langgraph_system_generator.generator.state import (
     CellSpec,
     Constraint,
     DocSnippet,
+    DocsRetrievalFeedback,
     NotebookCompositionFeedback,
     NotebookCompositionResult,
     NotebookDependencyPlan,
@@ -408,7 +410,8 @@ async def test_rag_retrieval_node_returns_empty_on_failure(monkeypatch, failure_
 
     result = await rag_retrieval_node({"user_prompt": "Find docs"})
 
-    assert result == {"docs_context": []}
+    assert result["docs_context"] == []
+    assert result["docs_retrieval_feedback"].fallback_used is False
 
 
 @pytest.mark.asyncio
@@ -451,13 +454,169 @@ async def test_rag_retrieval_node_maps_snippets(monkeypatch):
         DocSnippet(
             content="Content A",
             source="source-a",
+            source_kind="cached_repo_docs",
             relevance_score=0.9,
             heading="Heading A",
         ),
         DocSnippet(
             content="Content B",
             source="source-b",
+            source_kind="cached_repo_docs",
             relevance_score=0.5,
             heading=None,
         ),
     ]
+
+
+@pytest.mark.asyncio
+async def test_rag_retrieval_node_sanitizes_credentials_on_failure(monkeypatch, caplog):
+    """rag_retrieval_node redacts credentials from logs, warnings, and feedback upon failure."""
+    import logging
+
+    class CredentialLeakingService:
+        async def aretrieve(self, *args, **kwargs):
+            raise RuntimeError(
+                "Connection failed to https://api.internal/v1?token=URL_SECRET_123 "
+                "with Bearer BEARER_SECRET_456 and client_secret=CLIENT_SECRET_789"
+            )
+
+    monkeypatch.setattr(
+        "langgraph_system_generator.generator.nodes.get_default_docs_retrieval_service",
+        lambda: CredentialLeakingService(),
+    )
+
+    with caplog.at_level(logging.WARNING):
+        result = await rag_retrieval_node(
+            {"user_prompt": "Find docs", "generation_mode": "live"}
+        )
+
+    assert result["docs_context"] == []
+    feedback = result["docs_retrieval_feedback"]
+    assert feedback.fallback_used is False
+
+    err_status = feedback.source_statuses.get("error", "")
+    assert "URL_SECRET_123" not in err_status
+    assert "BEARER_SECRET_456" not in err_status
+    assert "CLIENT_SECRET_789" not in err_status
+    assert "[REDACTED]" in err_status
+
+    stage_err = feedback.stage_source_statuses.get("rag", {}).get("error", "")
+    assert "URL_SECRET_123" not in stage_err
+    assert "BEARER_SECRET_456" not in stage_err
+    assert "CLIENT_SECRET_789" not in stage_err
+    assert "[REDACTED]" in stage_err
+
+    assert len(feedback.warnings) >= 1
+    warning_text = feedback.warnings[0]
+    assert "URL_SECRET_123" not in warning_text
+    assert "BEARER_SECRET_456" not in warning_text
+    assert "CLIENT_SECRET_789" not in warning_text
+    assert "[REDACTED]" in warning_text
+
+    assert "URL_SECRET_123" not in caplog.text
+    assert "BEARER_SECRET_456" not in caplog.text
+    assert "CLIENT_SECRET_789" not in caplog.text
+    assert "RAG retrieval failed:" in caplog.text
+
+
+def test_context_pack_no_feedback_empty_docs():
+    """B1: No feedback and empty docs defaults fallback_used to False and used_sources to empty."""
+    state = {
+        "user_prompt": "Build a router",
+        "docs_context": [],
+        "constraints": [],
+    }
+    pack = _build_generation_context_pack(state)
+    assert pack.source_summary["fallback_used"] is False
+    assert pack.fallback_used is False
+    assert pack.source_summary["used_sources"] == []
+    assert pack.source_summary["source_counts"] == {}
+
+
+def test_context_pack_no_feedback_manually_supplied_docs():
+    """B2: No feedback with manually supplied docs retains content provenance without fabricating execution."""
+    snippet = DocSnippet(
+        content="Sample documentation content",
+        source="internal-wiki",
+        source_kind="custom_wiki",
+    )
+    state = {
+        "user_prompt": "Build a router",
+        "docs_context": [snippet],
+        "constraints": [],
+    }
+    pack = _build_generation_context_pack(state)
+    assert pack.source_summary["source_counts"] == {"custom_wiki": 1}
+    assert pack.source_summary["used_sources"] == []
+    assert pack.source_summary["fallback_used"] is False
+    assert pack.fallback_used is False
+
+
+def test_context_pack_explicit_cached_fallback():
+    """B3: Explicit feedback showing cached_repo_docs contributed sets fallback_used True and records provider."""
+    snippet = DocSnippet(
+        content="Cached fallback doc",
+        source="cached://docs",
+        source_kind="cached_repo_docs",
+    )
+    feedback = DocsRetrievalFeedback(
+        attempted_sources=["cached_repo_docs"],
+        used_sources=["cached_repo_docs"],
+        source_statuses={"cached_repo_docs": "success"},
+        fallback_used=True,
+    )
+    state = {
+        "user_prompt": "Build a router",
+        "docs_context": [snippet],
+        "constraints": [],
+        "docs_retrieval_feedback": feedback,
+    }
+    pack = _build_generation_context_pack(state)
+    assert pack.source_summary["fallback_used"] is True
+    assert pack.fallback_used is True
+    assert "cached_repo_docs" in pack.source_summary["used_sources"]
+
+
+def test_context_pack_failed_cached_retrieval_fallback_false():
+    """B4: Failed or empty cached retrieval keeps fallback_used False."""
+    feedback = DocsRetrievalFeedback(
+        attempted_sources=["cached_repo_docs"],
+        used_sources=[],
+        source_statuses={"cached_repo_docs": "failed"},
+        fallback_used=False,
+    )
+    state = {
+        "user_prompt": "Build a router",
+        "docs_context": [],
+        "constraints": [],
+        "docs_retrieval_feedback": feedback,
+    }
+    pack = _build_generation_context_pack(state)
+    assert pack.source_summary["fallback_used"] is False
+    assert pack.fallback_used is False
+    assert pack.source_summary["used_sources"] == []
+
+
+def test_context_pack_cli_consistency_deterministic_shortcut():
+    """B5: Deterministic CLI shortcut feedback reports no live-source attempts and no cached retrieval."""
+    feedback = DocsRetrievalFeedback(
+        attempted_sources=[],
+        used_sources=[],
+        source_statuses={
+            "langchain-docs-local": "skipped",
+            "context7": "skipped",
+            "cached_repo_docs": "skipped",
+        },
+        fallback_used=False,
+    )
+    state = {
+        "user_prompt": "Build a router",
+        "docs_context": [],
+        "constraints": [],
+        "docs_retrieval_feedback": feedback,
+    }
+    pack = _build_generation_context_pack(state)
+    assert pack.source_summary["attempted_sources"] == []
+    assert pack.source_summary["used_sources"] == []
+    assert pack.source_summary["fallback_used"] is False
+    assert pack.fallback_used is False
