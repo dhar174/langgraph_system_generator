@@ -19,6 +19,8 @@ from __future__ import annotations
 
 import asyncio
 import json
+from unittest.mock import MagicMock
+
 import pytest
 
 from langgraph_system_generator.generator.agents.architecture_selector import (
@@ -4122,6 +4124,10 @@ async def test_provider_neutral_normalization_crosscheck_empty_preserves_primary
 @pytest.mark.asyncio
 async def test_architecture_selector_concurrency_bounded(monkeypatch):
     """C1: ArchitectureSelector limits concurrent unique retrievals to architecture_docs_max_concurrency."""
+    monkeypatch.setattr(
+        "langgraph_system_generator.generator.agents.architecture_selector.ChatOpenAI",
+        MagicMock,
+    )
     monkeypatch.setattr(settings, "architecture_docs_max_concurrency", 3)
 
     active_calls = 0
@@ -4157,6 +4163,10 @@ async def test_architecture_selector_concurrency_bounded(monkeypatch):
 async def test_architecture_selector_duplicate_queries_execute_once(monkeypatch):
     """C2: Duplicate identical queries across architecture types are executed at most once."""
     monkeypatch.setattr(
+        "langgraph_system_generator.generator.agents.architecture_selector.ChatOpenAI",
+        MagicMock,
+    )
+    monkeypatch.setattr(
         settings,
         "architecture_pattern_doc_queries",
         {
@@ -4191,6 +4201,10 @@ async def test_architecture_selector_duplicate_queries_execute_once(monkeypatch)
 @pytest.mark.asyncio
 async def test_architecture_selector_weighting_survives_deduplication(monkeypatch):
     """C3: Deduplicating shared queries preserves architecture-specific weights without compounding."""
+    monkeypatch.setattr(
+        "langgraph_system_generator.generator.agents.architecture_selector.ChatOpenAI",
+        MagicMock,
+    )
     monkeypatch.setattr(
         settings,
         "architecture_pattern_doc_queries",
@@ -4258,6 +4272,10 @@ async def test_architecture_selector_weighting_survives_deduplication(monkeypatc
 @pytest.mark.asyncio
 async def test_architecture_selector_deterministic_output_order(monkeypatch):
     """C4: Variable query completion order does not alter the deterministic output doc ranking."""
+    monkeypatch.setattr(
+        "langgraph_system_generator.generator.agents.architecture_selector.ChatOpenAI",
+        MagicMock,
+    )
 
     class VariableDelayRetriever:
         async def aretrieve(self, query: str, k: int = 5, mode: str = "live"):
@@ -4284,8 +4302,12 @@ async def test_architecture_selector_deterministic_output_order(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_architecture_selector_failure_isolation():
+async def test_architecture_selector_failure_isolation(monkeypatch):
     """C5: If one query fails, other queries succeed and failure is reported in sanitized feedback."""
+    monkeypatch.setattr(
+        "langgraph_system_generator.generator.agents.architecture_selector.ChatOpenAI",
+        MagicMock,
+    )
 
     class PartialFailingRetriever:
         async def aretrieve(self, query: str, k: int = 5, mode: str = "live"):
@@ -4313,8 +4335,12 @@ async def test_architecture_selector_failure_isolation():
 
 
 @pytest.mark.asyncio
-async def test_architecture_selector_stub_mode_invariants():
+async def test_architecture_selector_stub_mode_invariants(monkeypatch):
     """C6: In stub mode, ArchitectureSelector executes without network or credential requirements."""
+    monkeypatch.setattr(
+        "langgraph_system_generator.generator.agents.architecture_selector.ChatOpenAI",
+        MagicMock,
+    )
     selector = ArchitectureSelector(docs_retriever=None)
     docs = await selector._select_prompt_docs([], mode="stub")
     assert docs == []
