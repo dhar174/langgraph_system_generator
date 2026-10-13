@@ -369,7 +369,7 @@ async def test_context_pack_node_falls_back_to_static_repo_facts_without_docs():
     )
 
     pack = result["generation_context_pack"]
-    assert pack.fallback_used is True
+    assert pack.fallback_used is False
     assert pack.warnings
     assert "invocation_config" in pack.qa_gates
     assert pack.source_summary["docs_live_required"] is False

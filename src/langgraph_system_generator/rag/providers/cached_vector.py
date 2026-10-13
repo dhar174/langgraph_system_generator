@@ -78,7 +78,10 @@ class CachedVectorDocsProvider(DocsSourceProvider):
         retriever_name = "DocsRetriever"
         raw_results: List[Any]
         try:
-            if self._injected_retriever is not None or self._vector_store_path is not None:
+            if (
+                self._injected_retriever is not None
+                or self._vector_store_path is not None
+            ):
                 retriever = self._resolve_retriever()
                 retriever_name = type(retriever).__name__
                 raw_results = await asyncio.to_thread(retriever.retrieve, query, k)
@@ -89,6 +92,12 @@ class CachedVectorDocsProvider(DocsSourceProvider):
                     nodes._retrieve_docs_for_prompt, query
                 )
         except Exception as exc:
+            if self._injected_retriever is None:
+                from langgraph_system_generator.generator.nodes import (
+                    _drop_docs_retriever_cache_entry,
+                )
+
+                _drop_docs_retriever_cache_entry(self._vector_store_path)
             elapsed_ms = (time.perf_counter() - start_time) * 1000.0
             safe_exc = _sanitize_text_credentials(str(exc))
             logger.warning("Cached vector store retrieval failed: %s", safe_exc)
@@ -150,25 +159,39 @@ class CachedVectorDocsProvider(DocsSourceProvider):
                     )
                 )
             else:
-                content = getattr(item, "page_content", getattr(item, "content", str(item)))
+                content = getattr(
+                    item, "page_content", getattr(item, "content", str(item))
+                )
                 if not content or not str(content).strip():
                     continue
                 metadata = getattr(item, "metadata", {})
-                source = metadata.get("source", "") if isinstance(metadata, dict) else ""
-                heading = metadata.get("heading") or metadata.get("title") if isinstance(metadata, dict) else None
+                source = (
+                    metadata.get("source", "") if isinstance(metadata, dict) else ""
+                )
+                heading = (
+                    metadata.get("heading") or metadata.get("title")
+                    if isinstance(metadata, dict)
+                    else None
+                )
                 score_kind = getattr(item, "score_kind", None)
                 if score_kind == "distance":
                     is_dist = True
-                    raw_score = getattr(item, "distance", getattr(item, "relevance_score", 0.0))
+                    raw_score = getattr(
+                        item, "distance", getattr(item, "relevance_score", 0.0)
+                    )
                 elif score_kind == "similarity":
                     is_dist = False
-                    raw_score = getattr(item, "relevance_score", getattr(item, "score", 0.0))
+                    raw_score = getattr(
+                        item, "relevance_score", getattr(item, "score", 0.0)
+                    )
                 elif hasattr(item, "distance") and not hasattr(item, "relevance_score"):
                     is_dist = True
                     raw_score = getattr(item, "distance")
                 else:
                     is_dist = False
-                    raw_score = getattr(item, "relevance_score", getattr(item, "score", 0.0))
+                    raw_score = getattr(
+                        item, "relevance_score", getattr(item, "score", 0.0)
+                    )
                 score = float(raw_score) if raw_score is not None else 0.0
                 snippets.append(
                     create_normalized_doc_snippet(

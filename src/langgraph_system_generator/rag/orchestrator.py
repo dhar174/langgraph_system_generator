@@ -18,6 +18,10 @@ from langgraph_system_generator.rag.base import (
     DocsSourceStatus,
 )
 from langgraph_system_generator.rag.mcp_transport import _sanitize_text_credentials
+from langgraph_system_generator.rag.normalizer import (
+    normalize_relevance_score,
+    normalize_snippet_content,
+)
 from langgraph_system_generator.rag.providers.cached_vector import (
     CachedVectorDocsProvider,
 )
@@ -55,15 +59,34 @@ def _add_warning(
 def _normalize_snippets_provenance(
     snippets: List[DocSnippet], provider_id: str
 ) -> List[DocSnippet]:
-    """Ensure missing snippet provenance is attributed to the provider that returned them."""
+    """Normalize incoming snippets: reject empty/whitespace, bound content length,
+    normalize relevance score, preserve metadata and explicit source_kind, or fill provider_id.
+    Avoid mutating provider-owned DocSnippet instances.
+    """
     normalized: List[DocSnippet] = []
     for snippet in snippets:
-        if not snippet.source_kind:
-            normalized.append(
-                snippet.model_copy(update={"source_kind": provider_id})
+        raw_content = getattr(snippet, "content", "")
+        if not raw_content or not str(raw_content).strip():
+            continue
+        cleaned_content = normalize_snippet_content(raw_content)
+        if not cleaned_content:
+            continue
+        raw_score = getattr(snippet, "relevance_score", 0.0)
+        norm_score = normalize_relevance_score(raw_score)
+        raw_kind = getattr(snippet, "source_kind", None)
+        norm_kind = raw_kind if raw_kind else provider_id
+        raw_source = getattr(snippet, "source", "")
+        raw_heading = getattr(snippet, "heading", None)
+
+        normalized.append(
+            DocSnippet(
+                content=cleaned_content,
+                source=raw_source,
+                source_kind=norm_kind,
+                relevance_score=norm_score,
+                heading=raw_heading,
             )
-        else:
-            normalized.append(snippet)
+        )
     return normalized
 
 
@@ -237,30 +260,35 @@ class DocsRetrievalService:
                     attempted.append(source_id)
                     try:
                         res = await provider.aretrieve(query, k=k, mode=mode)
-                        statuses[source_id] = res.status.value
-                        if res.status == DocsSourceStatus.SUCCESS and res.snippets:
-                            used.append(source_id)
+                        if res.status == DocsSourceStatus.SUCCESS:
                             norm_snippets = _normalize_snippets_provenance(
-                                res.snippets, provider.source_id
+                                res.snippets or [], provider.source_id
                             )
-                            for s in norm_snippets:
-                                stub_attributed.append((s, provider.source_id))
-                            break
+                            if norm_snippets:
+                                statuses[source_id] = DocsSourceStatus.SUCCESS.value
+                                used.append(source_id)
+                                for s in norm_snippets:
+                                    stub_attributed.append((s, provider.source_id))
+                                break
+                            else:
+                                statuses[source_id] = DocsSourceStatus.EMPTY.value
                         elif (
-                            res.status == DocsSourceStatus.FAILED
-                            and res.error_message
+                            res.status == DocsSourceStatus.FAILED and res.error_message
                         ):
+                            statuses[source_id] = res.status.value
                             _add_warning(
                                 warnings,
-                                f"Cached docs retrieval failed: {res.error_message}"
-                                if source_id == "cached_repo_docs"
-                                else f"{source_id} retrieval failed: {res.error_message}",
+                                (
+                                    f"Cached docs retrieval failed: {res.error_message}"
+                                    if source_id == "cached_repo_docs"
+                                    else f"{source_id} retrieval failed: {res.error_message}"
+                                ),
                             )
+                        else:
+                            statuses[source_id] = res.status.value
                     except Exception as exc:
                         statuses[source_id] = DocsSourceStatus.FAILED.value
-                        _add_warning(
-                            warnings, f"{source_id} retrieval error: {exc}"
-                        )
+                        _add_warning(warnings, f"{source_id} retrieval error: {exc}")
                 else:
                     statuses[source_id] = DocsSourceStatus.UNAVAILABLE.value
 
@@ -326,21 +354,29 @@ class DocsRetrievalService:
 
                     try:
                         res = await provider.aretrieve(query, k=k, mode=mode)
-                        statuses[source_id] = res.status.value
-                        if res.status == DocsSourceStatus.SUCCESS and res.snippets:
-                            used.append(source_id)
+                        if res.status == DocsSourceStatus.SUCCESS:
                             norm_snippets = _normalize_snippets_provenance(
-                                res.snippets, provider.source_id
+                                res.snippets or [], provider.source_id
                             )
-                            for s in norm_snippets:
-                                crosscheck_attributed.append((s, provider.source_id))
+                            if norm_snippets:
+                                statuses[source_id] = DocsSourceStatus.SUCCESS.value
+                                used.append(source_id)
+                                for s in norm_snippets:
+                                    crosscheck_attributed.append(
+                                        (s, provider.source_id)
+                                    )
+                            else:
+                                statuses[source_id] = DocsSourceStatus.EMPTY.value
                         elif (
                             res.status == DocsSourceStatus.FAILED and res.error_message
                         ):
+                            statuses[source_id] = res.status.value
                             _add_warning(
                                 warnings,
                                 f"{source_id} cross-check failed: {res.error_message}",
                             )
+                        else:
+                            statuses[source_id] = res.status.value
                     except Exception as exc:
                         statuses[source_id] = DocsSourceStatus.FAILED.value
                         _add_warning(warnings, f"{source_id} cross-check error: {exc}")
@@ -375,35 +411,42 @@ class DocsRetrievalService:
                 _add_warning(warnings, f"{source_id} retrieval error: {exc}")
                 continue
 
-            statuses[source_id] = res.status.value
-
-            if res.status == DocsSourceStatus.SUCCESS and res.snippets:
-                used.append(source_id)
+            if res.status == DocsSourceStatus.SUCCESS:
                 norm_snippets = _normalize_snippets_provenance(
-                    res.snippets, provider.source_id
+                    res.snippets or [], provider.source_id
                 )
-                for s in norm_snippets:
-                    accumulated_attributed.append((s, provider.source_id))
+                if norm_snippets:
+                    statuses[source_id] = DocsSourceStatus.SUCCESS.value
+                    used.append(source_id)
+                    for s in norm_snippets:
+                        accumulated_attributed.append((s, provider.source_id))
 
-                if source_id == "langchain-docs-local":
-                    found_useful_live = True
-                    if settings.docs_context7_crosscheck:
-                        continue
-                    break
-                elif source_id == "context7":
-                    found_useful_live = True
-                    break
+                    if source_id == "langchain-docs-local":
+                        found_useful_live = True
+                        if settings.docs_context7_crosscheck:
+                            continue
+                        break
+                    elif source_id == "context7":
+                        found_useful_live = True
+                        break
+                    else:
+                        break
                 else:
-                    break
+                    statuses[source_id] = DocsSourceStatus.EMPTY.value
+                    continue
 
             elif res.status == DocsSourceStatus.EMPTY:
+                statuses[source_id] = DocsSourceStatus.EMPTY.value
                 continue
             elif res.status == DocsSourceStatus.FAILED:
+                statuses[source_id] = DocsSourceStatus.FAILED.value
                 if res.error_message:
                     _add_warning(
                         warnings, f"{source_id} retrieval failed: {res.error_message}"
                     )
                 continue
+            else:
+                statuses[source_id] = res.status.value
 
         # Mark any remaining unattempted providers as skipped
         for source_id in ordered_source_ids:

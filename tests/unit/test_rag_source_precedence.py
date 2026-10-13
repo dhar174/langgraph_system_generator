@@ -2235,7 +2235,9 @@ async def test_builtin_providers_stub_safe_invariants_and_isolation():
     assert Context7DocsProvider.stub_safe is False
     assert CachedVectorDocsProvider.stub_safe is False
     assert CachedVectorDocsProvider().stub_safe is False
-    assert CachedVectorDocsProvider(stub_safe=True).stub_safe is False  # Ignored without offline-safe retriever
+    assert (
+        CachedVectorDocsProvider(stub_safe=True).stub_safe is False
+    )  # Ignored without offline-safe retriever
 
     local_provider = LangChainDocsLocalProvider(
         endpoint_url="http://127.0.0.1:9999/unreachable"
@@ -2266,7 +2268,9 @@ async def test_builtin_providers_stub_safe_invariants_and_isolation():
 
     result = await service.aretrieve("How to use StateGraph", k=3, mode="stub")
 
-    assert result.source_statuses["langchain-docs-local"] == DocsSourceStatus.SKIPPED.value
+    assert (
+        result.source_statuses["langchain-docs-local"] == DocsSourceStatus.SKIPPED.value
+    )
     assert result.source_statuses["context7"] == DocsSourceStatus.SKIPPED.value
     assert result.source_statuses["cached_repo_docs"] == DocsSourceStatus.SUCCESS.value
     assert "langchain-docs-local" not in result.attempted_sources
@@ -2690,7 +2694,9 @@ def test_context7_extracts_single_doc_dict_from_serialized_text():
 
 
 @pytest.mark.asyncio
-async def test_context7_sanitizes_endpoint_url_in_fallback_provenance_and_metadata(monkeypatch):
+async def test_context7_sanitizes_endpoint_url_in_fallback_provenance_and_metadata(
+    monkeypatch,
+):
     """Context7 sanitizes endpoint URL credentials when used as fallback source or metadata."""
     import httpx
 
@@ -2756,11 +2762,15 @@ async def test_context7_sanitizes_endpoint_url_in_fallback_provenance_and_metada
 
 
 @pytest.mark.asyncio
-async def test_langchain_local_sanitizes_endpoint_url_in_fallback_provenance_and_metadata(monkeypatch):
+async def test_langchain_local_sanitizes_endpoint_url_in_fallback_provenance_and_metadata(
+    monkeypatch,
+):
     """LangChain local sanitizes endpoint URL credentials when used as fallback provenance or metadata."""
     import httpx
 
-    sensitive_endpoint = "https://admin:topsecret@docs.langchain.local/mcp?token=param_secret_tok"
+    sensitive_endpoint = (
+        "https://admin:topsecret@docs.langchain.local/mcp?token=param_secret_tok"
+    )
 
     async def mock_post(self, url, headers=None, json=None, timeout=None):
         req_id = (json or {}).get("id", 1)
@@ -2799,7 +2809,9 @@ async def test_langchain_local_sanitizes_endpoint_url_in_fallback_provenance_and
 
 
 @pytest.mark.asyncio
-async def test_mcp_transport_connection_error_sanitizes_credentials_and_urls(monkeypatch):
+async def test_mcp_transport_connection_error_sanitizes_credentials_and_urls(
+    monkeypatch,
+):
     """MCPTransportError redacts basic auth and compound secrets on connection errors."""
     import httpx
     from langgraph_system_generator.rag.mcp_transport import (
@@ -2904,9 +2916,7 @@ def test_parse_sse_response_rejects_matching_id_request_or_notification():
     )
 
     # Payload with matching ID but method/params (not a JSON-RPC response)
-    sse_text = (
-        'data: {"jsonrpc": "2.0", "id": 42, "method": "some/server/request", "params": {}}\n\n'
-    )
+    sse_text = 'data: {"jsonrpc": "2.0", "id": 42, "method": "some/server/request", "params": {}}\n\n'
     with pytest.raises(MCPTransportError) as exc_info:
         _parse_sse_response(sse_text, request_id=42)
     assert "No valid JSON-RPC response matching request_id '42'" in str(exc_info.value)
@@ -2916,9 +2926,7 @@ def test_parse_sse_response_accepts_matching_id_result():
     """SSE event with matching request_id and result is properly returned."""
     from langgraph_system_generator.rag.mcp_transport import _parse_sse_response
 
-    sse_text = (
-        'data: {"jsonrpc": "2.0", "id": 42, "result": {"content": [{"type": "text", "text": "doc"}]}}\n\n'
-    )
+    sse_text = 'data: {"jsonrpc": "2.0", "id": 42, "result": {"content": [{"type": "text", "text": "doc"}]}}\n\n'
     res = _parse_sse_response(sse_text, request_id=42)
     assert res["id"] == 42
     assert "result" in res
@@ -2929,9 +2937,7 @@ def test_parse_sse_response_accepts_matching_id_error():
     """SSE event with matching request_id and structured error is properly returned."""
     from langgraph_system_generator.rag.mcp_transport import _parse_sse_response
 
-    sse_text = (
-        'data: {"jsonrpc": "2.0", "id": 42, "error": {"code": -32600, "message": "Invalid Request"}}\n\n'
-    )
+    sse_text = 'data: {"jsonrpc": "2.0", "id": 42, "error": {"code": -32600, "message": "Invalid Request"}}\n\n'
     res = _parse_sse_response(sse_text, request_id=42)
     assert res["id"] == 42
     assert "error" in res
@@ -3043,8 +3049,12 @@ async def test_capping_drops_non_contributing_provider_attribution():
         relevance_score=0.50,
     )
 
-    prov_a = StubProvider("prov-a", available=True, snippets=[prov_a_snippet], stub_safe=True)
-    prov_b = StubProvider("prov-b", available=True, snippets=[prov_b_snippet], stub_safe=True)
+    prov_a = StubProvider(
+        "prov-a", available=True, snippets=[prov_a_snippet], stub_safe=True
+    )
+    prov_b = StubProvider(
+        "prov-b", available=True, snippets=[prov_b_snippet], stub_safe=True
+    )
 
     service = DocsRetrievalService(precedence=["prov-a", "prov-b"])
     service.registry.register(prov_a)
@@ -3071,7 +3081,9 @@ async def test_default_cached_vector_provider_skipped_in_stub_mode(monkeypatch):
 
     # Canary: if get_cached_docs_retriever or VectorStoreManager were called, fail the test
     def fail_retriever(*args, **kwargs):
-        raise AssertionError("get_cached_docs_retriever should never be called in stub mode!")
+        raise AssertionError(
+            "get_cached_docs_retriever should never be called in stub mode!"
+        )
 
     monkeypatch.setattr(
         "langgraph_system_generator.generator.nodes.get_cached_docs_retriever",
@@ -3192,23 +3204,121 @@ def test_is_valid_jsonrpc_payload_strictness():
     from langgraph_system_generator.rag.mcp_transport import _is_valid_jsonrpc_payload
 
     # Valid result
-    assert _is_valid_jsonrpc_payload({"jsonrpc": "2.0", "id": 1, "result": {"ok": True}}, 1) is True
-    # Valid error (dict)
-    assert _is_valid_jsonrpc_payload({"jsonrpc": "2.0", "id": 1, "error": {"code": -32600, "message": "err"}}, 1) is True
+    assert (
+        _is_valid_jsonrpc_payload(
+            {"jsonrpc": "2.0", "id": 1, "result": {"ok": True}}, 1
+        )
+        is True
+    )
+    # Valid error (dict with integer code and string message)
+    assert (
+        _is_valid_jsonrpc_payload(
+            {"jsonrpc": "2.0", "id": 1, "error": {"code": -32600, "message": "err"}}, 1
+        )
+        is True
+    )
     # Missing jsonrpc key
     assert _is_valid_jsonrpc_payload({"id": 1, "result": {"ok": True}}, 1) is False
     # Non-2.0 jsonrpc
-    assert _is_valid_jsonrpc_payload({"jsonrpc": "1.0", "id": 1, "result": {"ok": True}}, 1) is False
+    assert (
+        _is_valid_jsonrpc_payload(
+            {"jsonrpc": "1.0", "id": 1, "result": {"ok": True}}, 1
+        )
+        is False
+    )
     # Both result and error present (rejected by XOR)
-    assert _is_valid_jsonrpc_payload({"jsonrpc": "2.0", "id": 1, "result": {}, "error": {"code": -1, "message": "err"}}, 1) is False
+    assert (
+        _is_valid_jsonrpc_payload(
+            {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "result": {},
+                "error": {"code": -1, "message": "err"},
+            },
+            1,
+        )
+        is False
+    )
     # Neither result nor error present
-    assert _is_valid_jsonrpc_payload({"jsonrpc": "2.0", "id": 1, "method": "foo"}, 1) is False
+    assert (
+        _is_valid_jsonrpc_payload({"jsonrpc": "2.0", "id": 1, "method": "foo"}, 1)
+        is False
+    )
     # String-valued error
-    assert _is_valid_jsonrpc_payload({"jsonrpc": "2.0", "id": 1, "error": "Internal Error string"}, 1) is False
+    assert (
+        _is_valid_jsonrpc_payload(
+            {"jsonrpc": "2.0", "id": 1, "error": "Internal Error string"}, 1
+        )
+        is False
+    )
     # ID mismatch
-    assert _is_valid_jsonrpc_payload({"jsonrpc": "2.0", "id": 2, "result": {}}, 1) is False
+    assert (
+        _is_valid_jsonrpc_payload({"jsonrpc": "2.0", "id": 2, "result": {}}, 1) is False
+    )
     # Optional request_id is None matches any ID as long as valid response
-    assert _is_valid_jsonrpc_payload({"jsonrpc": "2.0", "id": "any", "result": {}}, None) is True
+    assert (
+        _is_valid_jsonrpc_payload({"jsonrpc": "2.0", "id": "any", "result": {}}, None)
+        is True
+    )
+    # Missing id key rejected
+    assert _is_valid_jsonrpc_payload({"jsonrpc": "2.0", "result": {}}, None) is False
+    assert _is_valid_jsonrpc_payload({"jsonrpc": "2.0", "result": {}}, 1) is False
+    # Missing error code rejected
+    assert (
+        _is_valid_jsonrpc_payload(
+            {"jsonrpc": "2.0", "id": 1, "error": {"message": "err"}}, 1
+        )
+        is False
+    )
+    # Non-integer error code (string) rejected
+    assert (
+        _is_valid_jsonrpc_payload(
+            {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "error": {"code": "not-an-int", "message": "err"},
+            },
+            1,
+        )
+        is False
+    )
+    # Boolean error code rejected (bool is not valid int code)
+    assert (
+        _is_valid_jsonrpc_payload(
+            {"jsonrpc": "2.0", "id": 1, "error": {"code": True, "message": "err"}}, 1
+        )
+        is False
+    )
+    # Missing error message rejected
+    assert (
+        _is_valid_jsonrpc_payload(
+            {"jsonrpc": "2.0", "id": 1, "error": {"code": -32601}}, 1
+        )
+        is False
+    )
+    # Numeric error message rejected
+    assert (
+        _is_valid_jsonrpc_payload(
+            {"jsonrpc": "2.0", "id": 1, "error": {"code": -32601, "message": 500}}, 1
+        )
+        is False
+    )
+    # Valid optional error.data accepted
+    assert (
+        _is_valid_jsonrpc_payload(
+            {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "error": {
+                    "code": -32000,
+                    "message": "Server error",
+                    "data": {"detail": "info"},
+                },
+            },
+            1,
+        )
+        is True
+    )
 
 
 @pytest.mark.asyncio
@@ -3269,7 +3379,9 @@ async def test_pure_surviving_provider_attribution_no_heuristic_pollution():
 
 
 @pytest.mark.asyncio
-async def test_context7_structured_and_transport_errors_sanitize_credentials(monkeypatch):
+async def test_context7_structured_and_transport_errors_sanitize_credentials(
+    monkeypatch,
+):
     """Context7DocsProvider redacts credentials across resolve, query, search, and transport errors."""
     from langgraph_system_generator.rag.mcp_transport import MCPTransportError
     from langgraph_system_generator.rag.providers.context7 import Context7DocsProvider
@@ -3277,7 +3389,9 @@ async def test_context7_structured_and_transport_errors_sanitize_credentials(mon
     monkeypatch.setattr(settings, "docs_live_sources_enabled", True)
     monkeypatch.setattr(settings, "context7_docs_enabled", True)
 
-    provider = Context7DocsProvider(api_key="sk-test", endpoint_url="https://api.context7.com")
+    provider = Context7DocsProvider(
+        api_key="sk-test", endpoint_url="https://api.context7.com"
+    )
 
     # 1. Structured error in resolve-library-id
     async def mock_call_resolve_err(*args, **kwargs):
@@ -3366,7 +3480,9 @@ async def test_context7_structured_and_transport_errors_sanitize_credentials(mon
 
 
 @pytest.mark.asyncio
-async def test_langchain_local_structured_and_transport_errors_sanitize_credentials(monkeypatch):
+async def test_langchain_local_structured_and_transport_errors_sanitize_credentials(
+    monkeypatch,
+):
     """LangChainDocsLocalProvider redacts credentials across structured error and transport errors."""
     from langgraph_system_generator.rag.mcp_transport import MCPTransportError
     from langgraph_system_generator.rag.providers.langchain_local import (
@@ -3416,7 +3532,9 @@ async def test_langchain_local_structured_and_transport_errors_sanitize_credenti
 
 
 @pytest.mark.asyncio
-async def test_architecture_selector_retrieval_exceptions_sanitized(monkeypatch, caplog):
+async def test_architecture_selector_retrieval_exceptions_sanitized(
+    monkeypatch, caplog
+):
     """ArchitectureSelector redacts credentials from logs, warnings, and feedback on retrieval failure."""
     import logging
     from unittest.mock import AsyncMock, MagicMock
@@ -3521,7 +3639,9 @@ def test_docs_source_plugin_loader_sanitizes_credentials(monkeypatch, caplog):
 
 
 @pytest.mark.asyncio
-async def test_cached_vector_provider_sanitizes_credentials_on_failure(monkeypatch, caplog):
+async def test_cached_vector_provider_sanitizes_credentials_on_failure(
+    monkeypatch, caplog
+):
     """CachedVectorDocsProvider redacts credentials from error_message and logs on failure."""
     import logging
     from langgraph_system_generator.rag.providers.cached_vector import (
@@ -3530,12 +3650,15 @@ async def test_cached_vector_provider_sanitizes_credentials_on_failure(monkeypat
 
     class FakeBoomRetriever:
         is_offline_safe = True
+
         def retrieve(self, *args, **kwargs):
             raise RuntimeError(
                 "FAISS load error from https://user:db_secret_444@vector.internal:9200?key=KEY_SECRET_555"
             )
 
-    provider = CachedVectorDocsProvider(docs_retriever=FakeBoomRetriever(), stub_safe=True)
+    provider = CachedVectorDocsProvider(
+        docs_retriever=FakeBoomRetriever(), stub_safe=True
+    )
 
     with caplog.at_level(logging.WARNING):
         res = await provider.aretrieve("query")
@@ -3566,10 +3689,16 @@ async def test_cached_vector_provider_empty_documentation_filtering():
     # 1. All empty/whitespace dicts -> EMPTY
     class EmptyDictRetriever:
         is_offline_safe = True
-        def retrieve(self, *args, **kwargs):
-            return [{"content": "", "source": "src1"}, {"content": "   \n\t  ", "source": "src2"}]
 
-    provider_empty_dict = CachedVectorDocsProvider(docs_retriever=EmptyDictRetriever(), stub_safe=True)
+        def retrieve(self, *args, **kwargs):
+            return [
+                {"content": "", "source": "src1"},
+                {"content": "   \n\t  ", "source": "src2"},
+            ]
+
+    provider_empty_dict = CachedVectorDocsProvider(
+        docs_retriever=EmptyDictRetriever(), stub_safe=True
+    )
     res_dict = await provider_empty_dict.aretrieve("query")
     assert res_dict.status == DocsSourceStatus.EMPTY
     assert res_dict.snippets == []
@@ -3577,13 +3706,16 @@ async def test_cached_vector_provider_empty_documentation_filtering():
     # 2. All empty/whitespace DocSnippet objects -> EMPTY
     class EmptyDocSnippetRetriever:
         is_offline_safe = True
+
         def retrieve(self, *args, **kwargs):
             return [
                 DocSnippet(content="", source="src3"),
                 DocSnippet(content="    ", source="src4"),
             ]
 
-    provider_empty_snip = CachedVectorDocsProvider(docs_retriever=EmptyDocSnippetRetriever(), stub_safe=True)
+    provider_empty_snip = CachedVectorDocsProvider(
+        docs_retriever=EmptyDocSnippetRetriever(), stub_safe=True
+    )
     res_snip = await provider_empty_snip.aretrieve("query")
     assert res_snip.status == DocsSourceStatus.EMPTY
     assert res_snip.snippets == []
@@ -3591,10 +3723,13 @@ async def test_cached_vector_provider_empty_documentation_filtering():
     # 3. All empty/whitespace LangChain Document-like objects -> EMPTY
     class EmptyDocObjRetriever:
         is_offline_safe = True
+
         def retrieve(self, *args, **kwargs):
             return [DummyDoc(""), DummyDoc("   \n ")]
 
-    provider_empty_doc = CachedVectorDocsProvider(docs_retriever=EmptyDocObjRetriever(), stub_safe=True)
+    provider_empty_doc = CachedVectorDocsProvider(
+        docs_retriever=EmptyDocObjRetriever(), stub_safe=True
+    )
     res_doc = await provider_empty_doc.aretrieve("query")
     assert res_doc.status == DocsSourceStatus.EMPTY
     assert res_doc.snippets == []
@@ -3602,14 +3737,21 @@ async def test_cached_vector_provider_empty_documentation_filtering():
     # 4. Mixed valid/blank results with zero relevance score -> SUCCESS with only valid snippet
     class MixedRetriever:
         is_offline_safe = True
+
         def retrieve(self, *args, **kwargs):
             return [
                 {"content": "   "},
-                {"content": "Valid documentation snippet", "source": "valid:src", "score": 0.0},
+                {
+                    "content": "Valid documentation snippet",
+                    "source": "valid:src",
+                    "score": 0.0,
+                },
                 DummyDoc(""),
             ]
 
-    provider_mixed = CachedVectorDocsProvider(docs_retriever=MixedRetriever(), stub_safe=True)
+    provider_mixed = CachedVectorDocsProvider(
+        docs_retriever=MixedRetriever(), stub_safe=True
+    )
     res_mixed = await provider_mixed.aretrieve("query")
     assert res_mixed.status == DocsSourceStatus.SUCCESS
     assert len(res_mixed.snippets) == 1
@@ -3626,7 +3768,9 @@ async def test_context7_fallback_strictly_on_method_not_found(monkeypatch):
     monkeypatch.setattr(settings, "docs_live_sources_enabled", True)
     monkeypatch.setattr(settings, "context7_docs_enabled", True)
 
-    provider = Context7DocsProvider(api_key="sk-test", endpoint_url="https://api.context7.com")
+    provider = Context7DocsProvider(
+        api_key="sk-test", endpoint_url="https://api.context7.com"
+    )
 
     call_history = []
 
@@ -3658,7 +3802,12 @@ async def test_context7_fallback_strictly_on_method_not_found(monkeypatch):
         tool = kwargs.get("tool_name") or args[1]
         call_history.append(tool)
         if tool == "resolve-library-id":
-            return {"error": {"code": -32000, "message": "Internal upstream method not found"}}
+            return {
+                "error": {
+                    "code": -32000,
+                    "message": "Internal upstream method not found",
+                }
+            }
         return {"error": {"code": -32000, "message": "Unexpected"}}
 
     monkeypatch.setattr(
@@ -3679,7 +3828,12 @@ async def test_context7_fallback_strictly_on_method_not_found(monkeypatch):
         tool = kwargs.get("tool_name") or args[1]
         call_history.append(tool)
         if tool == "resolve-library-id":
-            return {"error": {"code": -32004, "message": "Requested documentation not found"}}
+            return {
+                "error": {
+                    "code": -32004,
+                    "message": "Requested documentation not found",
+                }
+            }
         return {"error": {"code": -32004, "message": "Unexpected"}}
 
     monkeypatch.setattr(
@@ -3710,7 +3864,9 @@ async def test_langchain_local_accepts_direct_single_document_mcp_results(monkey
             "title": "Reference Guide",
         }
     }
-    snippets = provider._extract_snippets_from_payload(payload_content, "https://docs.local")
+    snippets = provider._extract_snippets_from_payload(
+        payload_content, "https://docs.local"
+    )
     assert len(snippets) == 1
     assert snippets[0].content == "Direct single document content"
     assert snippets[0].source == "https://docs.example.com/reference"
@@ -3723,7 +3879,9 @@ async def test_langchain_local_accepts_direct_single_document_mcp_results(monkey
             "source": "https://docs.example.com/api",
         }
     }
-    snippets2 = provider._extract_snippets_from_payload(payload_text, "https://docs.local")
+    snippets2 = provider._extract_snippets_from_payload(
+        payload_text, "https://docs.local"
+    )
     assert len(snippets2) == 1
     assert snippets2[0].content == "Direct text content"
     assert snippets2[0].source == "https://docs.example.com/api"
@@ -3735,7 +3893,9 @@ async def test_langchain_local_accepts_direct_single_document_mcp_results(monkey
             "score": 0.0,
         }
     }
-    snippets3 = provider._extract_snippets_from_payload(payload_snippet, "https://docs.local")
+    snippets3 = provider._extract_snippets_from_payload(
+        payload_snippet, "https://docs.local"
+    )
     assert len(snippets3) == 1
     assert snippets3[0].content == "Direct snippet content"
     assert snippets3[0].relevance_score == 0.0
@@ -3746,7 +3906,9 @@ async def test_langchain_local_accepts_direct_single_document_mcp_results(monkey
             "page_content": "Direct page content",
         }
     }
-    snippets4 = provider._extract_snippets_from_payload(payload_page, "https://docs.local")
+    snippets4 = provider._extract_snippets_from_payload(
+        payload_page, "https://docs.local"
+    )
     assert len(snippets4) == 1
     assert snippets4[0].content == "Direct page content"
 
@@ -3758,7 +3920,572 @@ async def test_langchain_local_accepts_direct_single_document_mcp_results(monkey
             "params": {"token": 1},
         }
     }
-    snippets5 = provider._extract_snippets_from_payload(payload_proto, "https://docs.local")
+    snippets5 = provider._extract_snippets_from_payload(
+        payload_proto, "https://docs.local"
+    )
     assert snippets5 == []
 
 
+# ---------------------------------------------------------------------------
+# Findings A, C, D Regression Tests
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_provider_neutral_normalization_oversized_content():
+    """A1: Custom provider returning oversized content is bounded to docs_max_snippet_chars."""
+    registry = DocsSourceRegistry()
+    long_content = "Word " * 20000  # 100,000 chars
+    provider = StubProvider(
+        source_id="custom_large",
+        snippets=[
+            DocSnippet(
+                content=long_content, source="custom://large", relevance_score=0.9
+            )
+        ],
+    )
+    registry.register(provider)
+    service = DocsRetrievalService(registry=registry, precedence=["custom_large"])
+    result = await service.aretrieve("query", k=5, mode="live")
+
+    assert len(result.snippets) == 1
+    assert len(result.snippets[0].content) <= settings.docs_max_snippet_chars
+    assert result.snippets[0].content.endswith("...")
+    assert result.used_sources == ["custom_large"]
+    assert result.source_statuses["custom_large"] == "success"
+
+
+@pytest.mark.asyncio
+async def test_provider_neutral_normalization_invalid_scores():
+    """A2: Custom provider returning scores > 1.0 or < 0.0 are clamped to [0.0, 1.0]."""
+    registry = DocsSourceRegistry()
+    provider = StubProvider(
+        source_id="custom_scores",
+        snippets=[
+            DocSnippet(content="Doc high", source="custom://1", relevance_score=500.0),
+            DocSnippet(content="Doc low", source="custom://2", relevance_score=-10.0),
+        ],
+    )
+    registry.register(provider)
+    service = DocsRetrievalService(registry=registry, precedence=["custom_scores"])
+    result = await service.aretrieve("query", k=5, mode="live")
+
+    assert len(result.snippets) == 2
+    assert result.snippets[0].relevance_score == 1.0
+    assert result.snippets[1].relevance_score == 0.0
+
+
+@pytest.mark.asyncio
+async def test_provider_neutral_normalization_zero_score_preserved():
+    """A3: A valid snippet with relevance score 0.0 retains 0.0."""
+    registry = DocsSourceRegistry()
+    provider = StubProvider(
+        source_id="custom_zero",
+        snippets=[
+            DocSnippet(content="Doc zero", source="custom://zero", relevance_score=0.0)
+        ],
+    )
+    registry.register(provider)
+    service = DocsRetrievalService(registry=registry, precedence=["custom_zero"])
+    result = await service.aretrieve("query", k=5, mode="live")
+
+    assert len(result.snippets) == 1
+    assert result.snippets[0].relevance_score == 0.0
+
+
+@pytest.mark.asyncio
+async def test_provider_neutral_normalization_empty_primary_allows_fallback():
+    """A4: Primary returning SUCCESS but only whitespace snippets is marked empty and precedence continues."""
+    registry = DocsSourceRegistry()
+    primary = StubProvider(
+        source_id="custom_primary",
+        snippets=[DocSnippet(content="   \n\t  ", source="custom://empty")],
+        status=DocsSourceStatus.SUCCESS,
+    )
+    secondary = StubProvider(
+        source_id="custom_secondary",
+        snippets=[
+            DocSnippet(content="Useful secondary content", source="custom://secondary")
+        ],
+        status=DocsSourceStatus.SUCCESS,
+    )
+    registry.register(primary)
+    registry.register(secondary)
+    service = DocsRetrievalService(
+        registry=registry, precedence=["custom_primary", "custom_secondary"]
+    )
+    result = await service.aretrieve("query", k=5, mode="live")
+
+    assert result.source_statuses["custom_primary"] == "empty"
+    assert result.source_statuses["custom_secondary"] == "success"
+    assert "custom_primary" not in result.used_sources
+    assert result.used_sources == ["custom_secondary"]
+    assert len(result.snippets) == 1
+    assert result.snippets[0].content == "Useful secondary content"
+
+
+@pytest.mark.asyncio
+async def test_provider_neutral_normalization_explicit_provenance_preserved():
+    """A5: Custom provider returning explicit source_kind preserves it while used_sources identifies provider."""
+    registry = DocsSourceRegistry()
+    provider = StubProvider(
+        source_id="custom_prov",
+        snippets=[
+            DocSnippet(
+                content="Wiki documentation",
+                source="https://wiki.corp/page",
+                source_kind="internal-wiki",
+                relevance_score=0.75,
+            )
+        ],
+    )
+    registry.register(provider)
+    service = DocsRetrievalService(registry=registry, precedence=["custom_prov"])
+    result = await service.aretrieve("query", k=5, mode="live")
+
+    assert len(result.snippets) == 1
+    assert result.snippets[0].source_kind == "internal-wiki"
+    assert result.used_sources == ["custom_prov"]
+
+
+@pytest.mark.asyncio
+async def test_provider_neutral_normalization_stub_mode_parity():
+    """A6: In stub mode, an explicitly stub-safe provider returning blank content does not terminate stub retrieval."""
+    registry = DocsSourceRegistry()
+    stub_a = StubProvider(
+        source_id="stub_a",
+        snippets=[DocSnippet(content="   ", source="stub://blank")],
+        stub_safe=True,
+    )
+    stub_b = StubProvider(
+        source_id="stub_b",
+        snippets=[DocSnippet(content="Valid stub doc", source="stub://valid")],
+        stub_safe=True,
+    )
+    registry.register(stub_a)
+    registry.register(stub_b)
+    service = DocsRetrievalService(registry=registry, precedence=["stub_a", "stub_b"])
+    result = await service.aretrieve("query", k=5, mode="stub")
+
+    assert result.source_statuses["stub_a"] == "empty"
+    assert result.source_statuses["stub_b"] == "success"
+    assert "stub_a" not in result.used_sources
+    assert result.used_sources == ["stub_b"]
+    assert len(result.snippets) == 1
+    assert result.snippets[0].content == "Valid stub doc"
+
+
+@pytest.mark.asyncio
+async def test_provider_neutral_normalization_crosscheck_empty_preserves_primary(
+    monkeypatch,
+):
+    """A7: Context7 returning only whitespace snippets in cross-check does not invalidate primary docs or trigger cached fallback."""
+    monkeypatch.setattr(settings, "docs_context7_crosscheck", True)
+    registry = DocsSourceRegistry()
+    primary = StubProvider(
+        source_id="langchain-docs-local",
+        snippets=[
+            DocSnippet(content="Primary doc content", source="https://primary.docs")
+        ],
+    )
+    context7 = StubProvider(
+        source_id="context7",
+        snippets=[DocSnippet(content="   \n  ", source="https://c7.docs")],
+    )
+    cached = StubProvider(
+        source_id="cached_repo_docs",
+        snippets=[DocSnippet(content="Cached fallback", source="cached://docs")],
+    )
+    registry.register(primary)
+    registry.register(context7)
+    registry.register(cached)
+    service = DocsRetrievalService(
+        registry=registry,
+        precedence=["langchain-docs-local", "context7", "cached_repo_docs"],
+    )
+    result = await service.aretrieve("query", k=5, mode="live")
+
+    assert result.source_statuses["langchain-docs-local"] == "success"
+    assert result.source_statuses["context7"] == "empty"
+    assert result.source_statuses["cached_repo_docs"] == "skipped"
+    assert result.fallback_used is False
+    assert result.used_sources == ["langchain-docs-local"]
+    assert len(result.snippets) == 1
+    assert result.snippets[0].content == "Primary doc content"
+
+
+# ---------------------------------------------------------------------------
+# Area C: Bounded and Deduplicated ArchitectureSelector Retrieval
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_architecture_selector_concurrency_bounded(monkeypatch):
+    """C1: ArchitectureSelector limits concurrent unique retrievals to architecture_docs_max_concurrency."""
+    monkeypatch.setattr(settings, "architecture_docs_max_concurrency", 3)
+
+    active_calls = 0
+    peak_concurrent = 0
+    lock = asyncio.Lock()
+
+    class ConcurrencyTrackingRetriever:
+        async def aretrieve(self, query: str, k: int = 5, mode: str = "live"):
+            nonlocal active_calls, peak_concurrent
+            async with lock:
+                active_calls += 1
+                peak_concurrent = max(peak_concurrent, active_calls)
+            await asyncio.sleep(0.02)
+            async with lock:
+                active_calls -= 1
+            return DocsRetrievalResult(
+                snippets=[
+                    DocSnippet(content=f"Doc for {query}", source=f"src://{query}")
+                ],
+                attempted_sources=["test_prov"],
+                used_sources=["test_prov"],
+                source_statuses={"test_prov": "success"},
+            )
+
+    selector = ArchitectureSelector(docs_retriever=ConcurrencyTrackingRetriever())
+    await selector._select_prompt_docs([], mode="live")
+
+    assert peak_concurrent <= 3
+    assert peak_concurrent >= 1
+
+
+@pytest.mark.asyncio
+async def test_architecture_selector_duplicate_queries_execute_once(monkeypatch):
+    """C2: Duplicate identical queries across architecture types are executed at most once."""
+    monkeypatch.setattr(
+        settings,
+        "architecture_pattern_doc_queries",
+        {
+            "router": ["shared query 1", "unique query A"],
+            "hybrid": ["shared query 1", "unique query B"],
+            "subagents": ["shared query 1"],
+        },
+    )
+
+    executed_queries: list[str] = []
+
+    class CountingRetriever:
+        async def aretrieve(self, query: str, k: int = 5, mode: str = "live"):
+            executed_queries.append(query)
+            return DocsRetrievalResult(
+                snippets=[
+                    DocSnippet(content=f"Doc for {query}", source=f"src://{query}")
+                ],
+                attempted_sources=["test_prov"],
+                used_sources=["test_prov"],
+                source_statuses={"test_prov": "success"},
+            )
+
+    selector = ArchitectureSelector(docs_retriever=CountingRetriever())
+    await selector._select_prompt_docs([], mode="live")
+
+    # "shared query 1" should appear exactly once in executed_queries
+    assert executed_queries.count("shared query 1") == 1
+    assert len(executed_queries) == len(set(executed_queries))
+
+
+@pytest.mark.asyncio
+async def test_architecture_selector_weighting_survives_deduplication(monkeypatch):
+    """C3: Deduplicating shared queries preserves architecture-specific weights without compounding."""
+    monkeypatch.setattr(
+        settings,
+        "architecture_pattern_doc_queries",
+        {
+            "router": ["common query"],
+            "hybrid": ["common query"],
+            "subagents": [],
+            "autoagent": [],
+            "deepagents": [],
+        },
+    )
+    monkeypatch.setattr(
+        settings,
+        "architecture_pattern_doc_weights",
+        {
+            "router": 1.0,
+            "hybrid": 0.5,
+        },
+    )
+
+    class FixedScoreRetriever:
+        async def aretrieve(self, query: str, k: int = 5, mode: str = "live"):
+            if query == "common query":
+                return DocsRetrievalResult(
+                    snippets=[
+                        DocSnippet(
+                            content="Common doc",
+                            source="src://common",
+                            relevance_score=0.8,
+                        )
+                    ],
+                    attempted_sources=["test_prov"],
+                    used_sources=["test_prov"],
+                    source_statuses={"test_prov": "success"},
+                )
+            return DocsRetrievalResult(
+                snippets=[],
+                attempted_sources=["test_prov"],
+                used_sources=[],
+                source_statuses={"test_prov": "empty"},
+            )
+
+    selector = ArchitectureSelector(docs_retriever=FixedScoreRetriever())
+    docs = await selector._select_prompt_docs([], mode="live")
+
+    # The returned ranked prompt doc should preserve the higher weight (1.0 * 0.8 = 0.8)
+    assert len(docs) == 1
+    assert abs(docs[0]["weighted_relevance_score"] - 0.8) < 1e-4
+
+    # Now verify with different weights: hybrid 0.75, router 0.5
+    monkeypatch.setattr(
+        settings,
+        "architecture_pattern_doc_weights",
+        {
+            "router": 0.5,
+            "hybrid": 0.75,
+        },
+    )
+    docs_inv = await selector._select_prompt_docs([], mode="live")
+    assert len(docs_inv) == 1
+    # Higher weight (hybrid: 0.75 * 0.8 = 0.6) survived without cumulative compounding
+    assert abs(docs_inv[0]["weighted_relevance_score"] - 0.6) < 1e-4
+
+
+@pytest.mark.asyncio
+async def test_architecture_selector_deterministic_output_order(monkeypatch):
+    """C4: Variable query completion order does not alter the deterministic output doc ranking."""
+
+    class VariableDelayRetriever:
+        async def aretrieve(self, query: str, k: int = 5, mode: str = "live"):
+            delay = 0.03 if "router" in query else 0.005
+            await asyncio.sleep(delay)
+            return DocsRetrievalResult(
+                snippets=[
+                    DocSnippet(
+                        content=f"Doc: {query}",
+                        source=f"src://{query}",
+                        relevance_score=0.5,
+                    )
+                ],
+                attempted_sources=["test_prov"],
+                used_sources=["test_prov"],
+                source_statuses={"test_prov": "success"},
+            )
+
+    selector = ArchitectureSelector(docs_retriever=VariableDelayRetriever())
+    docs_run1 = await selector._select_prompt_docs([], mode="live")
+    docs_run2 = await selector._select_prompt_docs([], mode="live")
+
+    assert [d["content"] for d in docs_run1] == [d["content"] for d in docs_run2]
+
+
+@pytest.mark.asyncio
+async def test_architecture_selector_failure_isolation():
+    """C5: If one query fails, other queries succeed and failure is reported in sanitized feedback."""
+
+    class PartialFailingRetriever:
+        async def aretrieve(self, query: str, k: int = 5, mode: str = "live"):
+            if "supervisor" in query.lower():
+                raise ConnectionError(
+                    "connection failed to https://api.mcp.io?access_token=secret_123"
+                )
+            return DocsRetrievalResult(
+                snippets=[DocSnippet(content=f"Doc: {query}", source=f"src://{query}")],
+                attempted_sources=["test_prov"],
+                used_sources=["test_prov"],
+                source_statuses={"test_prov": "success"},
+            )
+
+    selector = ArchitectureSelector(docs_retriever=PartialFailingRetriever())
+    docs = await selector._select_prompt_docs([], mode="live")
+
+    assert len(docs) > 0
+    feedback = selector.docs_retrieval_feedback_delta
+    assert feedback is not None
+    assert any("connection failed" in w for w in feedback.warnings)
+    for w in feedback.warnings:
+        assert "secret_123" not in w
+        assert "[REDACTED]" in w
+
+
+@pytest.mark.asyncio
+async def test_architecture_selector_stub_mode_invariants():
+    """C6: In stub mode, ArchitectureSelector executes without network or credential requirements."""
+    selector = ArchitectureSelector(docs_retriever=None)
+    docs = await selector._select_prompt_docs([], mode="stub")
+    assert docs == []
+
+
+# ---------------------------------------------------------------------------
+# Area D: Cached-Retriever Eviction on Failure
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_cached_retriever_failure_evicts_internal_cache():
+    """D1: Internal cached retriever failure evicts the corresponding process-local cache entry."""
+    from langgraph_system_generator.generator.nodes import (
+        _DOCS_RETRIEVER_CACHE,
+        _docs_retriever_cache_key,
+    )
+
+    test_path = "/tmp/test_vector_store_d1"
+    cache_key = _docs_retriever_cache_key(test_path)
+
+    class FailingRetriever:
+        def retrieve(self, query: str, k: int = 5):
+            raise RuntimeError("Index corrupted or unreadable")
+
+    _DOCS_RETRIEVER_CACHE[cache_key] = FailingRetriever()
+    provider = CachedVectorDocsProvider(vector_store_path=test_path)
+
+    result = await provider.aretrieve("query")
+    assert result.status == DocsSourceStatus.FAILED
+    assert "Index corrupted" in (result.error_message or "")
+    # Cache entry must be evicted
+    assert cache_key not in _DOCS_RETRIEVER_CACHE
+
+
+@pytest.mark.asyncio
+async def test_cached_retriever_subsequent_request_reconstructs_and_succeeds(
+    monkeypatch,
+):
+    """D2: After eviction, a subsequent request reconstructs the retriever normally and can succeed."""
+    from langgraph_system_generator.generator.nodes import (
+        _DOCS_RETRIEVER_CACHE,
+        _docs_retriever_cache_key,
+    )
+
+    test_path = "/tmp/test_vector_store_d2"
+    cache_key = _docs_retriever_cache_key(test_path)
+
+    call_count = 0
+
+    class RecoverableRetriever:
+        def retrieve(self, query: str, k: int = 5):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                raise RuntimeError("Transient failure")
+            return [DocSnippet(content="Recovered doc", source="cache://recovered")]
+
+    def mock_get_retriever(path=None):
+        retriever = RecoverableRetriever()
+        _DOCS_RETRIEVER_CACHE[cache_key] = retriever
+        return retriever
+
+    monkeypatch.setattr(
+        "langgraph_system_generator.generator.nodes.get_cached_docs_retriever",
+        mock_get_retriever,
+    )
+
+    provider = CachedVectorDocsProvider(vector_store_path=test_path)
+
+    # First attempt fails and evicts
+    res1 = await provider.aretrieve("query")
+    assert res1.status == DocsSourceStatus.FAILED
+    assert cache_key not in _DOCS_RETRIEVER_CACHE
+
+    # Second attempt reconstructs and succeeds
+    res2 = await provider.aretrieve("query")
+    assert res2.status == DocsSourceStatus.SUCCESS
+    assert len(res2.snippets) == 1
+    assert res2.snippets[0].content == "Recovered doc"
+
+
+@pytest.mark.asyncio
+async def test_cached_retriever_injected_retriever_does_not_evict_shared_cache():
+    """D3: Explicitly injected retriever failure does not evict shared process-local cache entries."""
+    from langgraph_system_generator.generator.nodes import (
+        _DOCS_RETRIEVER_CACHE,
+        _docs_retriever_cache_key,
+    )
+
+    shared_path = "/tmp/shared_vector_store_d3"
+    cache_key = _docs_retriever_cache_key(shared_path)
+
+    class HealthyRetriever:
+        def retrieve(self, query: str, k: int = 5):
+            return [DocSnippet(content="Healthy", source="cache://healthy")]
+
+    class FailingInjectedRetriever:
+        def retrieve(self, query: str, k: int = 5):
+            raise RuntimeError("Injected retriever failure")
+
+    _DOCS_RETRIEVER_CACHE[cache_key] = HealthyRetriever()
+    provider = CachedVectorDocsProvider(
+        docs_retriever=FailingInjectedRetriever(),
+        vector_store_path=shared_path,
+    )
+
+    result = await provider.aretrieve("query")
+    assert result.status == DocsSourceStatus.FAILED
+    # Shared cache entry must NOT be evicted!
+    assert cache_key in _DOCS_RETRIEVER_CACHE
+
+
+@pytest.mark.asyncio
+async def test_cached_retriever_path_isolation():
+    """D4: Failure on path A does not evict cached retriever for path B."""
+    from langgraph_system_generator.generator.nodes import (
+        _DOCS_RETRIEVER_CACHE,
+        _docs_retriever_cache_key,
+    )
+
+    path_a = "/tmp/vector_store_a"
+    path_b = "/tmp/vector_store_b"
+    key_a = _docs_retriever_cache_key(path_a)
+    key_b = _docs_retriever_cache_key(path_b)
+
+    class FailingRetriever:
+        def retrieve(self, query: str, k: int = 5):
+            raise RuntimeError("A failed")
+
+    class HealthyRetriever:
+        def retrieve(self, query: str, k: int = 5):
+            return []
+
+    _DOCS_RETRIEVER_CACHE[key_a] = FailingRetriever()
+    _DOCS_RETRIEVER_CACHE[key_b] = HealthyRetriever()
+
+    provider_a = CachedVectorDocsProvider(vector_store_path=path_a)
+    result = await provider_a.aretrieve("query")
+    assert result.status == DocsSourceStatus.FAILED
+
+    assert key_a not in _DOCS_RETRIEVER_CACHE
+    assert key_b in _DOCS_RETRIEVER_CACHE
+
+
+@pytest.mark.asyncio
+async def test_cached_retriever_normal_reuse():
+    """D5: Repeated successful retrievals continue reusing the same cached retriever instance."""
+    from langgraph_system_generator.generator.nodes import (
+        _DOCS_RETRIEVER_CACHE,
+        _docs_retriever_cache_key,
+    )
+
+    test_path = "/tmp/vector_store_reuse"
+    cache_key = _docs_retriever_cache_key(test_path)
+
+    retrieve_count = 0
+
+    class CountingHealthyRetriever:
+        def retrieve(self, query: str, k: int = 5):
+            nonlocal retrieve_count
+            retrieve_count += 1
+            return [DocSnippet(content=f"Doc {retrieve_count}", source="cache://doc")]
+
+    _DOCS_RETRIEVER_CACHE[cache_key] = CountingHealthyRetriever()
+    provider = CachedVectorDocsProvider(vector_store_path=test_path)
+
+    res1 = await provider.aretrieve("q1")
+    res2 = await provider.aretrieve("q2")
+
+    assert res1.status == DocsSourceStatus.SUCCESS
+    assert res2.status == DocsSourceStatus.SUCCESS
+    assert retrieve_count == 2
+    assert cache_key in _DOCS_RETRIEVER_CACHE

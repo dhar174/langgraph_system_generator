@@ -24,8 +24,9 @@
   - Security closeout pass: resolved Copilot findings by sanitizing RAG node exception feedback in `nodes.py` (`source_statuses`, `warnings`, `stage_source_statuses`), sanitizing `error_message` across all branches in `context7.py`, and sanitizing structured JSON-RPC error messages and transport errors in `langchain_local.py`.
   - Task indexing for TASK006 and TASK007 in `memory-bank/tasks/_index.md`.
   - Comprehensive credential and URL sanitization via `_sanitize_text_credentials` and `_sanitize_url_for_logging`, redacting basic-auth netlocs, compound tokens (`access_token`, `client_secret`, etc.), bearer tokens, and JSON keys across connection errors, transport errors, non-200 previews, provider fallback provenance, and orchestrator warnings.
-  All 88 tests in `tests/unit/test_rag_source_precedence.py` pass (+35 regression tests). Full unit test suite (771 tests, 5 warnings)
-  and pattern test suite (82 tests) pass 100%. Full pytest suite passes (3 skipped, 5 warnings). Flake8 and mypy pass 100%. Stub mode remains 100% offline and deterministic.
+  - Comprehensive resolution of all remaining known findings (A–F): provider-neutral snippet normalization and empty-result precedence in `orchestrator.py` (A); strict fallback/provenance defaults in `GenerationContextPack` (B); bounded/deduplicated `ArchitectureSelector` live retrieval with `asyncio.Semaphore(settings.architecture_docs_max_concurrency)` (C); cached-retriever eviction after failure via `_drop_docs_retriever_cache_entry` (D); strict JSON-RPC 2.0 response shape validation with SSE fallback (E); and complete Memory Bank alignment (F).
+  All 112 tests in `tests/unit/test_rag_source_precedence.py` pass (+18 regression tests). Full unit test suite (800 tests, 5 warnings)
+  and pattern test suite (82 tests) pass 100%. Full pytest suite passes (918 passed, 3 skipped, 5 warnings). Flake8, black, and mypy pass 100%. Stub mode remains 100% offline and deterministic.
 - CLI-based generation supports both deterministic stub output and live
   generator-graph execution.
 - The FastAPI server exposes synchronous generation, async generation startup,

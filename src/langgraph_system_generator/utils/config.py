@@ -154,6 +154,12 @@ class Settings(BaseSettings):
         ge=1,
         description="Maximum number of weighted docs snippets included in the architecture selector prompt.",
     )
+    architecture_docs_max_concurrency: int = Field(
+        default=3,
+        ge=1,
+        le=10,
+        description="Maximum concurrent unique query retrievals executed by ArchitectureSelector.",
+    )
     notebook_composer_default_max_iterations: int = Field(
         default=10,
         ge=1,
@@ -253,7 +259,9 @@ class Settings(BaseSettings):
                         f"Invalid JSON in requirements_constraint_types: {exc}"
                     ) from exc
                 if not isinstance(parsed, list):
-                    raise ValueError("requirements_constraint_types must decode to a list")
+                    raise ValueError(
+                        "requirements_constraint_types must decode to a list"
+                    )
                 return parsed
             return [item.strip() for item in stripped.split(",") if item.strip()]
         return value
@@ -280,7 +288,9 @@ class Settings(BaseSettings):
             return value
 
         if not isinstance(parsed, dict):
-            raise ValueError("architecture_pattern_doc_queries must decode to an object")
+            raise ValueError(
+                "architecture_pattern_doc_queries must decode to an object"
+            )
 
         normalized: dict[str, list[str]] = {}
         for raw_key, raw_queries in parsed.items():
@@ -295,7 +305,9 @@ class Settings(BaseSettings):
                 raise ValueError(
                     "architecture_pattern_doc_queries values must be strings or lists"
                 )
-            normalized[key] = [str(query).strip() for query in queries if str(query).strip()]
+            normalized[key] = [
+                str(query).strip() for query in queries if str(query).strip()
+            ]
         return normalized
 
     @field_validator("architecture_pattern_doc_weights", mode="before")
@@ -320,7 +332,9 @@ class Settings(BaseSettings):
             return value
 
         if not isinstance(parsed, dict):
-            raise ValueError("architecture_pattern_doc_weights must decode to an object")
+            raise ValueError(
+                "architecture_pattern_doc_weights must decode to an object"
+            )
 
         normalized: dict[str, float] = {}
         for raw_key, raw_weight in parsed.items():
@@ -591,9 +605,7 @@ def _suspend_project_env_for_pytest(env_file: Optional[str]):
         return
 
     removed_values = {
-        key: os.environ.pop(key)
-        for key in _TEST_SETTINGS_ENV_KEYS
-        if key in os.environ
+        key: os.environ.pop(key) for key in _TEST_SETTINGS_ENV_KEYS if key in os.environ
     }
     try:
         yield
@@ -613,7 +625,9 @@ def _cached_settings(env_file: Optional[str]) -> Settings:
         return Settings(**init_kwargs)
 
 
-def get_settings(env_file: Union[str, Path, None, object] = _DEFAULT_ENV_FILE) -> Settings:
+def get_settings(
+    env_file: Union[str, Path, None, object] = _DEFAULT_ENV_FILE,
+) -> Settings:
     """Return a cached settings instance."""
     if env_file is _DEFAULT_ENV_FILE:
         resolved_env_file = None if _pytest_is_active() else _resolve_default_env_file()

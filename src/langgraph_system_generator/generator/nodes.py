@@ -249,9 +249,12 @@ def _drop_docs_retriever_cache_entry(
 
 def _retrieve_docs_for_prompt(prompt: str) -> List[Dict[str, Any]]:
     """Retrieve docs for a prompt using the shared cached retriever."""
-
-    retriever = get_cached_docs_retriever()
-    return retriever.retrieve(prompt, k=10)
+    try:
+        retriever = get_cached_docs_retriever()
+        return retriever.retrieve(prompt, k=10)
+    except Exception:
+        _drop_docs_retriever_cache_entry()
+        raise
 
 
 def _qa_repair_feedback_from_state(state: GeneratorState) -> QARepairFeedback:
@@ -521,7 +524,8 @@ def _build_generation_context_pack(state: GeneratorState) -> GenerationContextPa
 
     try:
         service_providers = [
-            p.source_id for p in get_default_docs_retrieval_service().registry.list_providers()
+            p.source_id
+            for p in get_default_docs_retrieval_service().registry.list_providers()
         ]
     except Exception:
         service_providers = []
@@ -654,19 +658,33 @@ def _build_generation_context_pack(state: GeneratorState) -> GenerationContextPa
         source_summary={
             "source_precedence": source_precedence,
             "attempted_sources": (
-                list(getattr(state.get("docs_retrieval_feedback"), "attempted_sources", []))
+                list(
+                    getattr(
+                        state.get("docs_retrieval_feedback"), "attempted_sources", []
+                    )
+                )
                 if hasattr(state.get("docs_retrieval_feedback"), "attempted_sources")
                 else (
-                    list(state.get("docs_retrieval_feedback", {}).get("attempted_sources", []))
+                    list(
+                        state.get("docs_retrieval_feedback", {}).get(
+                            "attempted_sources", []
+                        )
+                    )
                     if isinstance(state.get("docs_retrieval_feedback"), dict)
                     else []
                 )
             ),
             "source_statuses": (
-                dict(getattr(state.get("docs_retrieval_feedback"), "source_statuses", {}))
+                dict(
+                    getattr(state.get("docs_retrieval_feedback"), "source_statuses", {})
+                )
                 if hasattr(state.get("docs_retrieval_feedback"), "source_statuses")
                 else (
-                    dict(state.get("docs_retrieval_feedback", {}).get("source_statuses", {}))
+                    dict(
+                        state.get("docs_retrieval_feedback", {}).get(
+                            "source_statuses", {}
+                        )
+                    )
                     if isinstance(state.get("docs_retrieval_feedback"), dict)
                     else {}
                 )
@@ -675,9 +693,11 @@ def _build_generation_context_pack(state: GeneratorState) -> GenerationContextPa
                 list(getattr(state.get("docs_retrieval_feedback"), "used_sources", []))
                 if hasattr(state.get("docs_retrieval_feedback"), "used_sources")
                 else (
-                    list(state.get("docs_retrieval_feedback", {}).get("used_sources", []))
+                    list(
+                        state.get("docs_retrieval_feedback", {}).get("used_sources", [])
+                    )
                     if isinstance(state.get("docs_retrieval_feedback"), dict)
-                    else [source for source in source_precedence if source_counts.get(source, 0) > 0]
+                    else []
                 )
             ),
             "docs_snippet_count": len(docs_snippets),
@@ -689,25 +709,49 @@ def _build_generation_context_pack(state: GeneratorState) -> GenerationContextPa
                 getattr(state.get("docs_retrieval_feedback"), "fallback_used", False)
                 if hasattr(state.get("docs_retrieval_feedback"), "fallback_used")
                 else (
-                    state.get("docs_retrieval_feedback", {}).get("fallback_used", not bool(docs_snippets))
+                    bool(
+                        state.get("docs_retrieval_feedback", {}).get(
+                            "fallback_used", False
+                        )
+                    )
                     if isinstance(state.get("docs_retrieval_feedback"), dict)
-                    else not bool(docs_snippets)
+                    else False
                 )
             ),
             "stage_source_statuses": (
-                dict(getattr(state.get("docs_retrieval_feedback"), "stage_source_statuses", {}))
-                if hasattr(state.get("docs_retrieval_feedback"), "stage_source_statuses")
+                dict(
+                    getattr(
+                        state.get("docs_retrieval_feedback"),
+                        "stage_source_statuses",
+                        {},
+                    )
+                )
+                if hasattr(
+                    state.get("docs_retrieval_feedback"), "stage_source_statuses"
+                )
                 else (
-                    dict(state.get("docs_retrieval_feedback", {}).get("stage_source_statuses", {}))
+                    dict(
+                        state.get("docs_retrieval_feedback", {}).get(
+                            "stage_source_statuses", {}
+                        )
+                    )
                     if isinstance(state.get("docs_retrieval_feedback"), dict)
                     else {}
                 )
             ),
             "consulted_sources": (
-                list(getattr(state.get("docs_retrieval_feedback"), "consulted_sources", []))
+                list(
+                    getattr(
+                        state.get("docs_retrieval_feedback"), "consulted_sources", []
+                    )
+                )
                 if hasattr(state.get("docs_retrieval_feedback"), "consulted_sources")
                 else (
-                    list(state.get("docs_retrieval_feedback", {}).get("consulted_sources", []))
+                    list(
+                        state.get("docs_retrieval_feedback", {}).get(
+                            "consulted_sources", []
+                        )
+                    )
                     if isinstance(state.get("docs_retrieval_feedback"), dict)
                     else []
                 )
@@ -717,9 +761,11 @@ def _build_generation_context_pack(state: GeneratorState) -> GenerationContextPa
             getattr(state.get("docs_retrieval_feedback"), "fallback_used", False)
             if hasattr(state.get("docs_retrieval_feedback"), "fallback_used")
             else (
-                state.get("docs_retrieval_feedback", {}).get("fallback_used", not bool(docs_snippets))
+                bool(
+                    state.get("docs_retrieval_feedback", {}).get("fallback_used", False)
+                )
                 if isinstance(state.get("docs_retrieval_feedback"), dict)
-                else not bool(docs_snippets)
+                else False
             )
         ),
         warnings=(
@@ -730,8 +776,11 @@ def _build_generation_context_pack(state: GeneratorState) -> GenerationContextPa
                 if isinstance(state.get("docs_retrieval_feedback"), dict)
                 else []
             )
-        ) + (
-            ["No retrieved docs snippets were available; using repo/static context facts only."]
+        )
+        + (
+            [
+                "No retrieved docs snippets were available; using repo/static context facts only."
+            ]
             if not docs_snippets
             else []
         ),
@@ -815,12 +864,19 @@ async def architecture_selection_node(state: GeneratorState) -> Dict[str, Any]:
             for w in delta.warnings:
                 if w not in merged_warnings and len(merged_warnings) < 10:
                     merged_warnings.append(w)
-            merged_stage_statuses = dict(getattr(current_feedback, "stage_source_statuses", {}) or {})
+            merged_stage_statuses = dict(
+                getattr(current_feedback, "stage_source_statuses", {}) or {}
+            )
             if "rag" not in merged_stage_statuses and current_feedback.source_statuses:
                 merged_stage_statuses["rag"] = dict(current_feedback.source_statuses)
-            merged_stage_statuses["architecture_selection"] = dict(delta.source_statuses)
-            merged_consulted = list(getattr(current_feedback, "consulted_sources", []) or current_feedback.attempted_sources)
-            for s in (getattr(delta, "consulted_sources", []) or delta.attempted_sources):
+            merged_stage_statuses["architecture_selection"] = dict(
+                delta.source_statuses
+            )
+            merged_consulted = list(
+                getattr(current_feedback, "consulted_sources", [])
+                or current_feedback.attempted_sources
+            )
+            for s in getattr(delta, "consulted_sources", []) or delta.attempted_sources:
                 if s not in merged_consulted:
                     merged_consulted.append(s)
             node_output["docs_retrieval_feedback"] = DocsRetrievalFeedback(

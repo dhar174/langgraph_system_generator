@@ -65,7 +65,9 @@ class ArchitectureSelector:
             model_config=model_config,
             chat_openai_class=ChatOpenAI,
         )
-        self.docs_retriever = docs_service if docs_service is not None else docs_retriever
+        self.docs_retriever = (
+            docs_service if docs_service is not None else docs_retriever
+        )
         self.docs_mode = docs_mode
         self.docs_retrieval_feedback_delta: DocsRetrievalFeedback | None = None
         self.architecture_registry = (
@@ -131,7 +133,7 @@ Return a JSON object with this structure:
     "tradeoffs": ["short tradeoff statement"]
   }}
 }}"""
-            )
+        )
 
         user_message = HumanMessage(
             content=f"""Requirements:
@@ -172,7 +174,9 @@ Recommend the best architecture."""
 
         try:
             result = extract_json_from_llm_response(response.content)
-            return self._normalize_selection_result(result, docs_considered=docs_considered)
+            return self._normalize_selection_result(
+                result, docs_considered=docs_considered
+            )
         except (ValueError, KeyError, TypeError, ValidationError) as exc:
             reason = f"Architecture selection fallback used: {exc}"
             logger.warning(reason)
@@ -290,7 +294,9 @@ Recommend the best architecture."""
         """Return a sortable relevance score for a prompt doc."""
 
         try:
-            return float(doc.get("weighted_relevance_score", doc.get("relevance_score", 0.0)))
+            return float(
+                doc.get("weighted_relevance_score", doc.get("relevance_score", 0.0))
+            )
         except (TypeError, ValueError):
             return 0.0
 
@@ -308,7 +314,9 @@ Recommend the best architecture."""
             query_overrides = settings.architecture_pattern_doc_queries
             weight_overrides = settings.architecture_pattern_doc_weights
             query_specs: list[tuple[str, float]] = []
-            for architecture_id in self.architecture_registry.supported_architecture_types():
+            for (
+                architecture_id
+            ) in self.architecture_registry.supported_architecture_types():
                 queries = self.architecture_registry.docs_queries_for(
                     architecture_id,
                     query_overrides=query_overrides,
@@ -321,6 +329,7 @@ Recommend the best architecture."""
                     query_specs.append((query, weight))
 
             if query_specs:
+
                 async def _retrieve_query_docs(query: str) -> _QueryDocsResult:
                     q_attempted: List[str] = []
                     q_statuses: Dict[str, str] = {}
@@ -331,7 +340,9 @@ Recommend the best architecture."""
 
                     if hasattr(self.docs_retriever, "aretrieve"):
                         try:
-                            res = await self.docs_retriever.aretrieve(query, k=prompt_limit, mode=mode)
+                            res = await self.docs_retriever.aretrieve(
+                                query, k=prompt_limit, mode=mode
+                            )
                         except Exception as exc:  # noqa: BLE001
                             safe_exc = _sanitize_text_credentials(str(exc))
                             safe_query = _sanitize_text_credentials(str(query))
@@ -340,7 +351,9 @@ Recommend the best architecture."""
                                 safe_query,
                                 safe_exc,
                             )
-                            return _QueryDocsResult(warnings=[f"Query retrieval error: {safe_exc}"])
+                            return _QueryDocsResult(
+                                warnings=[f"Query retrieval error: {safe_exc}"]
+                            )
 
                         feedback = getattr(res, "feedback", None)
                         target = feedback if feedback is not None else res
@@ -353,7 +366,11 @@ Recommend the best architecture."""
                             if src_id not in q_attempted:
                                 q_attempted.append(src_id)
                             if src_id not in q_statuses and hasattr(target, "status"):
-                                stat = target.status.value if hasattr(target.status, "value") else str(target.status)
+                                stat = (
+                                    target.status.value
+                                    if hasattr(target.status, "value")
+                                    else str(target.status)
+                                )
                                 q_statuses[src_id] = stat
                         for s in getattr(target, "used_sources", []):
                             if s not in q_used:
@@ -372,7 +389,9 @@ Recommend the best architecture."""
 
                     elif hasattr(self.docs_retriever, "retrieve"):
                         try:
-                            res = await asyncio.to_thread(self.docs_retriever.retrieve, query, prompt_limit)
+                            res = await asyncio.to_thread(
+                                self.docs_retriever.retrieve, query, prompt_limit
+                            )
                         except Exception as exc:  # noqa: BLE001
                             safe_exc = _sanitize_text_credentials(str(exc))
                             safe_query = _sanitize_text_credentials(str(query))
@@ -381,7 +400,9 @@ Recommend the best architecture."""
                                 safe_query,
                                 safe_exc,
                             )
-                            return _QueryDocsResult(warnings=[f"Query retrieval error: {safe_exc}"])
+                            return _QueryDocsResult(
+                                warnings=[f"Query retrieval error: {safe_exc}"]
+                            )
 
                         if hasattr(res, "snippets"):
                             q_snippets = list(res.snippets)
@@ -397,8 +418,28 @@ Recommend the best architecture."""
                         warnings=q_warnings,
                     )
 
-                query_results: List[_QueryDocsResult] = await asyncio.gather(
-                    *[_retrieve_query_docs(query) for query, _weight in query_specs]
+                max_concurrency = max(
+                    1,
+                    min(
+                        10,
+                        int(getattr(settings, "architecture_docs_max_concurrency", 3)),
+                    ),
+                )
+                semaphore = asyncio.Semaphore(max_concurrency)
+
+                unique_queries: list[str] = list(
+                    dict.fromkeys(q for q, _ in query_specs)
+                )
+
+                async def _throttled_retrieve_query(q: str) -> _QueryDocsResult:
+                    async with semaphore:
+                        return await _retrieve_query_docs(q)
+
+                unique_results: List[_QueryDocsResult] = await asyncio.gather(
+                    *[_throttled_retrieve_query(q) for q in unique_queries]
+                )
+                query_results_map: Dict[str, _QueryDocsResult] = dict(
+                    zip(unique_queries, unique_results)
                 )
 
                 attempted_sources: List[str] = []
@@ -406,12 +447,21 @@ Recommend the best architecture."""
                 aggregated_warnings: List[str] = []
                 any_fallback_used = False
 
-                for (_query, weight), q_res in zip(query_specs, query_results):
+                for query, weight in query_specs:
+                    q_res = query_results_map[query]
                     for doc in q_res.snippets or []:
-                        normalized = self._normalize_doc(doc)
-                        normalized["weighted_relevance_score"] = self._doc_score(normalized) * weight
+                        normalized = dict(self._normalize_doc(doc))
+                        raw_score = normalized.get("relevance_score")
+                        try:
+                            base_score = (
+                                float(raw_score) if raw_score is not None else 1.0
+                            )
+                        except (TypeError, ValueError):
+                            base_score = 0.0
+                        normalized["weighted_relevance_score"] = base_score * weight
                         normalized_docs.append(normalized)
 
+                for q_res in unique_results:
                     for s in q_res.attempted:
                         if s not in attempted_sources:
                             attempted_sources.append(s)
@@ -426,7 +476,10 @@ Recommend the best architecture."""
 
                     for w in q_res.warnings:
                         safe_w = _sanitize_text_credentials(str(w))
-                        if safe_w not in aggregated_warnings and len(aggregated_warnings) < 10:
+                        if (
+                            safe_w not in aggregated_warnings
+                            and len(aggregated_warnings) < 10
+                        ):
                             aggregated_warnings.append(safe_w)
 
                 # Deterministic status reduction rule:
@@ -446,14 +499,21 @@ Recommend the best architecture."""
                     elif stat_list:
                         reduced_statuses[s] = stat_list[0]
 
-                if attempted_sources or reduced_statuses or aggregated_warnings or any_fallback_used:
+                if (
+                    attempted_sources
+                    or reduced_statuses
+                    or aggregated_warnings
+                    or any_fallback_used
+                ):
                     self.docs_retrieval_feedback_delta = DocsRetrievalFeedback(
                         attempted_sources=attempted_sources,
                         source_statuses=reduced_statuses,
                         used_sources=[],
                         fallback_used=False,
                         warnings=aggregated_warnings,
-                        stage_source_statuses={"architecture_selection": reduced_statuses},
+                        stage_source_statuses={
+                            "architecture_selection": reduced_statuses
+                        },
                         consulted_sources=list(attempted_sources),
                     )
 
@@ -516,7 +576,9 @@ Recommend the best architecture."""
                 validation_errors,
             )
         if not isinstance(raw_patterns, dict):
-            raise ValueError("Architecture selection returned malformed patterns payload.")
+            raise ValueError(
+                "Architecture selection returned malformed patterns payload."
+            )
 
         primary = raw_patterns.get("primary")
         normalized_primary = self.architecture_registry.resolve_architecture_id(
@@ -544,7 +606,9 @@ Recommend the best architecture."""
         if secondary is None:
             secondary = []
         if not isinstance(secondary, list):
-            raise ValueError("Architecture selection returned malformed patterns payload.")
+            raise ValueError(
+                "Architecture selection returned malformed patterns payload."
+            )
 
         _, normalized_secondary = self.architecture_registry.normalize_patterns(
             normalized_primary,
@@ -555,9 +619,13 @@ Recommend the best architecture."""
                 item if isinstance(item, str) else None
             )
             if normalized_item is None:
-                raise ValueError(f"Architecture selection returned malformed patterns payload: unsupported secondary '{item}'.")
+                raise ValueError(
+                    f"Architecture selection returned malformed patterns payload: unsupported secondary '{item}'."
+                )
             if normalized_item not in SUPPORTED_AGENT_TYPES:
-                raise ValueError(f"Architecture selection returned malformed patterns payload: unsupported secondary '{normalized_item}'.")
+                raise ValueError(
+                    f"Architecture selection returned malformed patterns payload: unsupported secondary '{normalized_item}'."
+                )
             if normalized_item is None:
                 continue
             if normalized_item not in SUPPORTED_AGENT_TYPES:
@@ -643,7 +711,9 @@ Recommend the best architecture."""
             )
             tradeoffs_payload = []
 
-        tradeoffs = [str(item).strip() for item in tradeoffs_payload if str(item).strip()]
+        tradeoffs = [
+            str(item).strip() for item in tradeoffs_payload if str(item).strip()
+        ]
         try:
             return ArchitectureFeedback(
                 confidence=raw_feedback.get("confidence"),
@@ -672,10 +742,14 @@ Recommend the best architecture."""
         if not isinstance(payload, dict):
             raise ValueError("Architecture selection payload must be an object.")
 
-        architecture_type = self._normalize_architecture_type(payload.get("architecture_type"))
+        architecture_type = self._normalize_architecture_type(
+            payload.get("architecture_type")
+        )
         justification = str(payload.get("justification") or "").strip()
         if not justification:
-            raise ValueError("Architecture selection must include a non-empty justification.")
+            raise ValueError(
+                "Architecture selection must include a non-empty justification."
+            )
 
         patterns, validation_errors = self._normalize_patterns(
             architecture_type,

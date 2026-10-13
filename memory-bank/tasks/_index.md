@@ -26,6 +26,7 @@
   - `TASK007-runtime-docs-source-precedence.md`
 - Task-level Memory Bank tracking covers the repository architecture visualizer
   docs sync, 1.0 release-readiness, Cloud Run deployment hardening, the
-  generated-output quality wave, supervisor context-window restoration (PR #229 /
-  Issue #65), and runtime docs-source precedence (PR #377 / Issue #375), alongside
-  the active Wave 5 pattern/intake modernization branch.
+  generated-output quality wave, supervisor context-window restoration (PR #374
+  restoring and modernizing the original PR #229 / Issue #65 contract), and
+  runtime docs-source precedence (PR #377 / Issue #375), alongside the active
+  Wave 5 pattern/intake modernization branch.

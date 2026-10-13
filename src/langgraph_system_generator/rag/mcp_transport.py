@@ -173,9 +173,11 @@ def _is_valid_jsonrpc_payload(
     """Determine whether data is a structured JSON-RPC 2.0 response or error."""
     if not isinstance(data, dict):
         return False
-    if request_id is not None and not _id_matches(data.get("id"), request_id):
-        return False
     if data.get("jsonrpc") != "2.0":
+        return False
+    if "id" not in data:
+        return False
+    if request_id is not None and not _id_matches(data.get("id"), request_id):
         return False
     has_result = "result" in data
     has_error = "error" in data
@@ -185,6 +187,14 @@ def _is_valid_jsonrpc_payload(
     if has_error:
         err_obj = data["error"]
         if not isinstance(err_obj, dict):
+            return False
+        code = err_obj.get("code")
+        # error.code must be an integer, excluding booleans
+        if isinstance(code, bool) or not isinstance(code, int):
+            return False
+        # error.message must be a string
+        msg = err_obj.get("message")
+        if not isinstance(msg, str):
             return False
     return True
 
@@ -463,7 +473,7 @@ async def call_mcp_tool(
     ):
         return data
 
-    if "data:" in response.text and not isinstance(data, dict):
+    if "data:" in response.text:
         return _parse_sse_response(response.text, request_id=request_id)
 
     raise MCPTransportError(
