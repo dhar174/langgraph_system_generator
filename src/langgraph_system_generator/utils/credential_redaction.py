@@ -13,11 +13,13 @@ class _LLMDiagnosticFilter(logging.Filter):
 
     def filter(self, record: logging.LogRecord) -> bool:
         message = record.getMessage()
-        if record.name.startswith("openai") and any(
-            marker in message.lower()
-            for marker in ("request options", "response_headers", "request_id")
-        ):
+        # SDK/HTTPcore diagnostic formats are not a stable allowlist. Ordinary
+        # remote header names can contain echoed credentials, and exceptions
+        # can include raw wire data. Keep these payloads out of logs entirely.
+        if record.name.startswith("openai"):
             message = "LLM SDK diagnostic details omitted."
+        elif record.name.startswith("httpcore"):
+            message = "LLM HTTP transport diagnostic details omitted."
         record.msg = sanitize_generation_payload(message)
         record.args = ()
         if record.exc_info:
@@ -31,7 +33,17 @@ class _LLMDiagnosticFilter(logging.Filter):
 
 def install_llm_log_redaction() -> None:
     """Install stateless filters, including for callers without CLI logging setup."""
-    for name in ("httpx", "openai._base_client"):
+    # Logger filters do not apply to descendant records. Attach directly to
+    # every emitting HTTPcore logger used by the supported sync/async transport.
+    for name in (
+        "httpx",
+        "openai._base_client",
+        "httpcore.connection",
+        "httpcore.http11",
+        "httpcore.http2",
+        "httpcore.proxy",
+        "httpcore.socks",
+    ):
         logger = logging.getLogger(name)
         if not any(isinstance(item, _LLMDiagnosticFilter) for item in logger.filters):
             logger.addFilter(_LLMDiagnosticFilter())

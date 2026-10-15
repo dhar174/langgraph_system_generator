@@ -2419,6 +2419,7 @@ def {safe_node_identifier}_node(state: WorkflowState) -> WorkflowState:
                         subagents,
                         tools=tool_identifiers,
                         model_config=model_config,
+                        use_notebook_helper=True,
                     ),
                     section="nodes",
                 )

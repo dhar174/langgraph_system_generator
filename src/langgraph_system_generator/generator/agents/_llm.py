@@ -10,6 +10,7 @@ from typing import Any
 import httpx
 from httpx import AsyncClient, Client
 from langchain_openai import ChatOpenAI
+from openai import DEFAULT_TIMEOUT
 
 from langgraph_system_generator.utils.config import ModelConfig, settings
 from langgraph_system_generator.utils.credential_redaction import (
@@ -111,13 +112,13 @@ def build_chat_llm(
     sync = Client(
         follow_redirects=False,
         trust_env=False,
-        timeout=60.0,
+        timeout=httpx.Timeout(**DEFAULT_TIMEOUT.as_dict()),
         event_hooks={"request": [check_request], "response": [check_response]},
     )
     asynchronous = AsyncClient(
         follow_redirects=False,
         trust_env=False,
-        timeout=60.0,
+        timeout=httpx.Timeout(**DEFAULT_TIMEOUT.as_dict()),
         event_hooks={
             "request": [check_async_request],
             "response": [check_async_response],
@@ -136,6 +137,7 @@ def build_chat_llm(
         "openai_proxy": "",
         "organization": "",
         "max_retries": 0,
+        "timeout": DEFAULT_TIMEOUT,
     }
     if config.max_tokens is not None:
         llm_kwargs["max_tokens"] = config.max_tokens

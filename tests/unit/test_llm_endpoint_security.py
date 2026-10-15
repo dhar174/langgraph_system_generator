@@ -178,7 +178,7 @@ def test_factory_never_inherits_endpoint_environment(monkeypatch, outbound):
         "https://llm.example.com:/v1",
         "https://llm.example.com:99999/v1",
         "https://[broken/v1",
-        "https://éxample.com/v1",
+        "https://ÃƒÆ’Ã‚Â©xample.com/v1",
         "https://llm.example.com/v1\n",
         "ftp://llm.example.com/v1",
     ],
@@ -780,3 +780,263 @@ async def test_async_failure_sse_and_logs_do_not_reflect_exception(
     )
     assert SERVER_KEY not in repr(events) + caplog.text
     assert "RuntimeError" in repr(events)
+
+
+@pytest.mark.asyncio
+async def test_review_preserves_sdk_timeout(outbound):
+    from openai import DEFAULT_TIMEOUT
+
+    async with _llm.llm_transport_scope():
+        model = build_chat_llm(model="test-model")
+        model.invoke("test")
+        await model.ainvoke("test")
+        assert len(outbound[0]) == 2
+        for request in outbound[0]:
+            assert request.extensions["timeout"] == DEFAULT_TIMEOUT.as_dict()
+        assert len(outbound[2]) == 2
+        assert all(
+            client.timeout.as_dict() == DEFAULT_TIMEOUT.as_dict()
+            for client in outbound[2]
+        )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("asynchronous", [False, True])
+async def test_review_sdk_success_headers_are_not_logged(
+    outbound, caplog, asynchronous
+):
+    import logging
+
+    caplog.set_level(logging.DEBUG)
+    outbound[1]["headers"] = {"x-echo": SERVER_KEY}
+    async with _llm.llm_transport_scope():
+        model = build_chat_llm(model="test-model")
+        if asynchronous:
+            await model.ainvoke("test")
+        else:
+            model.invoke("test")
+    assert any(record.name == "openai._base_client" for record in caplog.records)
+    assert SERVER_KEY not in caplog.text
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("asynchronous", [False, True])
+@pytest.mark.parametrize("status", [200, 302])
+async def test_review_real_httpcore_diagnostics_are_safe(
+    monkeypatch, caplog, asynchronous, status
+):
+    import logging
+
+    import httpcore
+
+    caplog.set_level(logging.DEBUG)
+    body = json.dumps(
+        {
+            "id": "fake",
+            "object": "chat.completion",
+            "created": 0,
+            "model": "test-model",
+            "choices": [
+                {
+                    "index": 0,
+                    "message": {"role": "assistant", "content": "ok"},
+                    "finish_reason": "stop",
+                }
+            ],
+        }
+    ).encode()
+    target = "https://private-provider.example.com/sensitive-route"
+    response = (
+        f"HTTP/1.1 {status} Response\r\n"
+        f"Content-Type: application/json\r\nContent-Length: {len(body)}\r\n"
+        f"X-Echo: {SERVER_KEY}\r\nLocation: {target}\r\n\r\n"
+    ).encode() + body
+    real_sync, real_async = httpx.Client, httpx.AsyncClient
+
+    def sync_client(**kwargs):
+        transport = httpx.HTTPTransport()
+        transport._pool = httpcore.ConnectionPool(
+            network_backend=httpcore.MockBackend([response])
+        )
+        return real_sync(transport=transport, **kwargs)
+
+    def async_client(**kwargs):
+        transport = httpx.AsyncHTTPTransport()
+        transport._pool = httpcore.AsyncConnectionPool(
+            network_backend=httpcore.AsyncMockBackend([response])
+        )
+        return real_async(transport=transport, **kwargs)
+
+    monkeypatch.setattr(_llm, "Client", sync_client)
+    monkeypatch.setattr(_llm, "AsyncClient", async_client)
+    async with _llm.llm_transport_scope():
+        model = build_chat_llm(model="test-model")
+
+        async def invoke():
+            if asynchronous:
+                return await model.ainvoke("test")
+            return model.invoke("test")
+
+        if status == 200:
+            assert (await invoke()).content == "ok"
+        else:
+            with pytest.raises((GenerationError, APIConnectionError)):
+                await invoke()
+    assert any(record.name == "httpcore.http11" for record in caplog.records)
+    assert any(record.name == "httpcore.connection" for record in caplog.records)
+    assert SERVER_KEY not in caplog.text and target not in caplog.text
+
+
+@pytest.mark.parametrize("name", ["httpcore.http2", "httpcore.proxy", "httpcore.socks"])
+def test_review_other_httpcore_emitters_are_filtered(name, caplog):
+    import logging
+
+    from langgraph_system_generator.utils.credential_redaction import (
+        install_llm_log_redaction,
+    )
+
+    caplog.set_level(logging.DEBUG)
+    install_llm_log_redaction()
+    logging.getLogger(name).debug(
+        "receive_response_headers.complete return_value=%r", {"x-echo": SERVER_KEY}
+    )
+    assert caplog.records and SERVER_KEY not in caplog.text
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("no_auth", [False, True])
+async def test_review_composed_deepagent_uses_runner_model(
+    monkeypatch, outbound, no_auth
+):
+    import sys
+    import types
+
+    import langchain_openai
+
+    from langgraph_system_generator.generator.agents.notebook_composer import (
+        NotebookComposer,
+    )
+    from langgraph_system_generator.generator.state import NotebookCompositionFeedback
+
+    monkeypatch.delenv("OPENAI_API_KEY")
+    monkeypatch.setenv(
+        "LNF_NOTEBOOK_API_BASE",
+        "http://127.0.0.1:1234/v1" if no_auth else "https://runner.example.com/v1",
+    )
+    if no_auth:
+        monkeypatch.delenv("LNF_NOTEBOOK_LLM_API_KEY", raising=False)
+        monkeypatch.setenv("LNF_NOTEBOOK_LLM_NO_AUTH", "true")
+    else:
+        monkeypatch.setenv("LNF_NOTEBOOK_LLM_API_KEY", "runner-key")
+        monkeypatch.setenv("LNF_NOTEBOOK_LLM_NO_AUTH", "false")
+    async with _llm.llm_transport_scope():
+        composer = NotebookComposer(
+            model_config=ModelConfig(model="test-model", api_base=CUSTOM_BASE)
+        )
+        workflow = {
+            "architecture_type": "deepagents",
+            "nodes": [{"name": "deep_agent"}],
+        }
+        plan = composer._plan_dependencies([], workflow)
+        cells = composer._create_config_cells(plan, NotebookCompositionFeedback())
+        cells += composer._create_pattern_node_cells(
+            workflow["nodes"], "deepagents", workflow
+        )
+    source = "\n".join(cell.content for cell in cells if cell.cell_type == "code")
+    captured = {}
+    model = object()
+
+    def fake_model(**kwargs):
+        captured["model_kwargs"] = kwargs
+        return model
+
+    class Agent:
+        def invoke(self, state):
+            return {
+                "messages": [types.SimpleNamespace(content="custom-provider result")]
+            }
+
+    def create_deep_agent(**kwargs):
+        captured["agent_kwargs"] = kwargs
+        return Agent()
+
+    monkeypatch.setattr(langchain_openai, "ChatOpenAI", fake_model)
+    monkeypatch.setitem(
+        sys.modules,
+        "deepagents",
+        types.SimpleNamespace(create_deep_agent=create_deep_agent),
+    )
+    namespace = {"WorkflowState": dict}
+    exec(  # noqa: S102 - execute generated cells against a fake optional SDK
+        compile(source, "composed-deepagent", "exec"), namespace
+    )
+    result = namespace["deep_agent_node"]({"messages": ["test"]})
+    assert result["deepagents_available"] is True
+    assert result["final_output"] == "custom-provider result"
+    assert captured["agent_kwargs"]["model"] is model
+    assert captured["model_kwargs"]["api_key"] == (
+        NO_AUTH_KEY if no_auth else "runner-key"
+    )
+    assert (
+        captured["model_kwargs"]["base_url"]
+        == __import__("os").environ["LNF_NOTEBOOK_API_BASE"]
+    )
+    monkeypatch.delenv("LNF_NOTEBOOK_LLM_API_KEY", raising=False)
+    monkeypatch.setenv("LNF_NOTEBOOK_LLM_NO_AUTH", "false")
+    assert namespace["_build_deep_agent"]() is None
+    monkeypatch.setitem(sys.modules, "deepagents", None)
+    namespace["make_llm"] = lambda: pytest.fail(
+        "model constructed without optional SDK"
+    )
+    assert namespace["_build_deep_agent"]() is None
+
+
+@pytest.mark.parametrize(
+    "message",
+    [
+        "HTTP Response: GET https://provider.example.com 200 OK Headers(%r)",
+        "HTTP Response: POST https://provider.example.com 200 OK headers=%r",
+    ],
+)
+def test_review_sdk_header_message_formats_are_safe(message, caplog):
+    import logging
+
+    from langgraph_system_generator.utils.credential_redaction import (
+        install_llm_log_redaction,
+    )
+
+    caplog.set_level(logging.DEBUG)
+    install_llm_log_redaction()
+    logging.getLogger("openai._base_client").debug(message, {"x-echo": SERVER_KEY})
+    assert caplog.records and SERVER_KEY not in caplog.text
+
+
+def test_review_standalone_deepagent_keeps_model_override(monkeypatch):
+    import sys
+    import types
+
+    from langgraph_system_generator.patterns.deepagents import DeepAgentsPattern
+
+    captured = {}
+
+    def create_deep_agent(**kwargs):
+        captured.update(kwargs)
+        return "standalone-agent"
+
+    monkeypatch.setitem(
+        sys.modules,
+        "deepagents",
+        types.SimpleNamespace(create_deep_agent=create_deep_agent),
+    )
+    monkeypatch.setenv("OPENAI_API_KEY", "standalone-fake-key")
+    monkeypatch.setenv("DEEP_AGENTS_MODEL", "openai:runner-model")
+    code = DeepAgentsPattern.generate_agent_node_code(
+        model_config={"model": "test-model"}
+    )
+    assert "make_llm" not in code
+    namespace = {"WorkflowState": dict}
+    exec(  # noqa: S102 - preserve standalone generated-code behavior with a fake SDK
+        compile(code, "standalone-deepagent", "exec"), namespace
+    )
+    assert namespace["_build_deep_agent"]() == "standalone-agent"
+    assert captured["model"] == "openai:runner-model"

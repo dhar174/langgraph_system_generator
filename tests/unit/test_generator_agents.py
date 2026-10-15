@@ -2241,6 +2241,8 @@ def _assert_endpoint_security_kwargs(captured):
     """Parameter forwarding must retain the explicit credential/transport boundary."""
     import asyncio
 
+    from openai import DEFAULT_TIMEOUT
+
     expected_key = (
         "unit-test-openai-key"
         if captured["base_url"] == "https://api.openai.com/v1"
@@ -2252,6 +2254,7 @@ def _assert_endpoint_security_kwargs(captured):
     assert sync.follow_redirects is False and asynchronous.follow_redirects is False
     assert sync.trust_env is False and asynchronous.trust_env is False
     assert captured.pop("max_retries") == 0
+    assert captured.pop("timeout").as_dict() == DEFAULT_TIMEOUT.as_dict()
     assert captured.pop("organization") == ""
     assert captured.pop("openai_proxy") == ""
     sync.close()

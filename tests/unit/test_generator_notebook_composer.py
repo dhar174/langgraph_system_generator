@@ -609,7 +609,8 @@ async def test_compose_notebook_emits_deepagents_sections_and_dependency(
     assert "Unsupported_Tool" not in code
     assert "tools=available_tools" in code
     assert 'workflow.add_node("deep_agent", deep_agent_node)' in code
-    assert '"openai:gpt-5.2"' in code
+    assert "model = make_llm()" in code
+    assert "DEEP_AGENTS_MODEL" not in code
     assert "Deep Agents Harness" in markdown
     assert "experimental" in markdown.lower()
     assert any(

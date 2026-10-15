@@ -83,9 +83,12 @@ the generator destination. Environment key values override dotenv settings.
 The shared factory supplies explicit credentials, verifies effective request
 destinations, and replaces ambient authentication headers. Its synchronous and
 asynchronous HTTP clients verify TLS, disable redirects and ignore environment
-proxy settings. Automatic SDK retries are disabled; provider failures are
+proxy settings. SDK-default connect/read/write/pool timeouts are preserved explicitly in both
+clients and model requests. Automatic SDK retries are disabled; provider failures are
 classified without exposing remote error bodies. Stateless SDK/HTTP logging
-filters remove endpoint URLs and raw diagnostic payloads. Live generation owns transport
+filters remove endpoint URLs and omit SDK/HTTPcore diagnostic payloads, including
+successful-response headers and raw HTTP/1.1, HTTP/2 and connection traces. Filters
+attach directly to the emitting loggers. Live generation owns transport
 cleanup, including failure and cancellation. Direct agent/factory callers own
 the returned clients' lifecycle.
 
@@ -95,7 +98,10 @@ Generated custom-provider notebooks retain centralized `make_llm(...)` and use
 the notebook runner's `LNF_NOTEBOOK_API_BASE` and `LNF_NOTEBOOK_LLM_API_KEY`, with
 existing environment/Colab secret loading. They never contain the hosted key or
 server-only endpoint. `LNF_NOTEBOOK_LLM_NO_AUTH=true` explicitly enables loopback
-no-auth for the notebook runner. Tool-specific credentials remain separate.
+no-auth for the notebook runner. Composed Deep Agents also obtain their model
+from `make_llm()` and pass that model instance into the optional SDK; standalone
+Deep Agents snippets keep their model-string configuration. Tool-specific
+credentials remain separate.
 
 ### Network assumptions and limitations
 
@@ -154,3 +160,39 @@ Redirect tests return 301, 302, 303, 307 and 308 toward untrusted hosts, metadat
 and same-host unauthorized paths, and assert that no second request occurs.
 Unregistered destinations perform no DNS lookup. Registered DNS names remain
 subject to the network assumptions above.
+
+
+### Review follow-up qualification
+
+Codex review `5527089222` and Copilot review `5527094547` identified the timeout,
+SDK response-header diagnostics, HTTPcore diagnostics, and composed Deep Agents
+provider-helper gaps. The regressions exercise effective sync/async request
+timeouts, SDK 2-style header messages, successful SDK responses, and real HTTPcore
+HTTP/1.1 response parsing using an in-memory network backend. No socket or live
+provider is needed. HTTP/2, proxy and SOCKS emitting logger records are also
+covered. Generated Deep Agents cells execute against a fake optional SDK with
+only dedicated notebook-runner credentials or explicit loopback no-auth, and
+preserve fallback behavior when configuration or the optional SDK is missing.
+
+A committed-head offline reproduction confirmed the SDK header-format leak and
+Deep Agents helper bypass with exit 1. The initial review regression run also
+failed on the timeout and HTTPcore records; two test-harness failures were
+corrected separately. The qualification table above describes the original
+published head. Review follow-up evidence is separate:
+
+| Follow-up gate | Result | Process exit |
+| --- | --- | --- |
+| Final review regressions and all five agent parameter contracts | 20 passed | 0 |
+| Deep Agents composer subset | 2 passed | 0 |
+| Full repository run | 1,030 passed, 3 skipped; one unchanged example subprocess exceeded 30 seconds | 1 |
+| Full repository retry | 1,029 passed, 3 skipped; two different unchanged example subprocesses exceeded 30 seconds | 1 |
+| Original example-file focused rerun | 6 passed without code or timeout edits | 0 |
+| Latest affected-example selection | 4 passed; unchanged LLM-judge subprocess exceeded 30 seconds | 1 |
+| CI fatal-error flake8 command | 0 findings | 0 |
+
+All 113 endpoint-security cases passed within both full runs. The nonzero local
+full-suite exits remain qualification limitations, not green results. No example
+code or test timeout was changed to conceal them. The published correction still
+requires a full hosted CI result at its exact head. Broad Ruff and mypy remain
+nonzero with no additional findings compared with the previous PR head; focused
+Ruff and Black checks pass on the security modules and tests.
