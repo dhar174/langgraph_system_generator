@@ -7,6 +7,12 @@
 
 ## Key Technical Decisions
 
+- LLM destinations use one shared endpoint policy, enforced at API admission,
+  package entry and the client factory. Only non-secret policy metadata enters
+  graph state; credentials and transports stay runtime-only. Hosted policy
+  cannot be downgraded by a package caller in a hosted process.
+
+
 - The generator uses an outer orchestration graph plus inner code-generation helpers, rather than generating an entire system in one step.
 - Shared workflow data is modeled with Pydantic models plus a `TypedDict` generator state so agents, nodes, QA, and packaging use consistent structures.
 - RAG retrieval is optional and failure-tolerant: if the FAISS vector store

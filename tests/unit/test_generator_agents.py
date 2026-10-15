@@ -752,8 +752,7 @@ async def test_architecture_selector_falls_back_on_unknown_primary_alias(monkeyp
     assert result.patterns.primary == "router"
     assert result.feedback.fallback_used is True
     assert any(
-        "unsupported primary 'single_router_with_unknown_handlers'" in error
-        for error in result.feedback.validation_errors
+        "unsupported primary" in error for error in result.feedback.validation_errors
     )
 
 
@@ -2238,6 +2237,27 @@ def test_package_import_probe_maps_non_module_distribution_names():
     assert tool_dependency_utils.package_import_probe("pymupdf") == "fitz"
 
 
+def _assert_endpoint_security_kwargs(captured):
+    """Parameter forwarding must retain the explicit credential/transport boundary."""
+    import asyncio
+
+    expected_key = (
+        "unit-test-openai-key"
+        if captured["base_url"] == "https://api.openai.com/v1"
+        else "unit-test-custom-key"
+    )
+    assert captured.pop("api_key") == expected_key
+    sync = captured.pop("http_client")
+    asynchronous = captured.pop("http_async_client")
+    assert sync.follow_redirects is False and asynchronous.follow_redirects is False
+    assert sync.trust_env is False and asynchronous.trust_env is False
+    assert captured.pop("max_retries") == 0
+    assert captured.pop("organization") == ""
+    assert captured.pop("openai_proxy") == ""
+    sync.close()
+    asyncio.run(asynchronous.aclose())
+
+
 def test_requirements_analyst_uses_request_scoped_model_config(monkeypatch):
     """RequirementsAnalyst should pass request-scoped model settings to ChatOpenAI."""
     captured_kwargs = {}
@@ -2257,6 +2277,7 @@ def test_requirements_analyst_uses_request_scoped_model_config(monkeypatch):
         )
     )
 
+    _assert_endpoint_security_kwargs(captured_kwargs)
     assert captured_kwargs == {
         "model": "gpt-5.2",
         "temperature": 0.4,
@@ -2279,8 +2300,10 @@ def test_architecture_selector_uses_request_scoped_model_config(monkeypatch):
         model_config=ModelConfig(model="gpt-5-mini", temperature=0.2, max_tokens=1024)
     )
 
+    _assert_endpoint_security_kwargs(captured_kwargs)
     assert captured_kwargs == {
         "model": "gpt-5-mini",
+        "base_url": "https://api.openai.com/v1",
         "temperature": 0.2,
         "max_tokens": 1024,
     }
@@ -2317,6 +2340,7 @@ def test_other_agents_use_request_scoped_model_config(
         )
     )
 
+    _assert_endpoint_security_kwargs(captured_kwargs)
     assert captured_kwargs == {
         "model": "gpt-5.1",
         "temperature": 0.3,

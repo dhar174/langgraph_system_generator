@@ -8,9 +8,9 @@ import json
 import os
 from pathlib import Path
 import sys
-from typing import Annotated, Optional, Union
+from typing import Annotated, Any, Literal, Optional, Union
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 
@@ -27,8 +27,11 @@ class ModelConfig(BaseModel):
         le=2.0,
         description="Temperature for LLM sampling (0.0-2.0)",
     )
+    endpoint_policy: Literal["local", "hosted"] = "local"
     api_base: Optional[str] = Field(
         default=None,
+        exclude=True,
+        repr=False,
         description="Custom API base URL for self-hosted or alternative providers",
     )
     max_tokens: Optional[int] = Field(
@@ -67,8 +70,11 @@ class GenerationConfig(BaseModel):
         ge=1,
         description="Optional max_tokens override",
     )
+    endpoint_policy: Literal["local", "hosted"] = "local"
     api_base: Optional[str] = Field(
         default=None,
+        exclude=True,
+        repr=False,
         description="Optional OpenAI-compatible base URL override",
     )
     agent_type: Optional[str] = Field(
@@ -82,6 +88,7 @@ class GenerationConfig(BaseModel):
             model=self.model or default_model,
             temperature=0.0 if self.temperature is None else self.temperature,
             api_base=self.api_base,
+            endpoint_policy=self.endpoint_policy,
             max_tokens=self.max_tokens,
         )
 
@@ -93,6 +100,13 @@ class Settings(BaseSettings):
         env_file_encoding="utf-8",
         extra="ignore",
     )
+
+    lnf_llm_endpoint_policy: Literal["local", "hosted"] = "local"
+    lnf_trusted_llm_endpoints: str = Field(default="{}", repr=False, exclude=True)
+    lnf_custom_llm_api_key: SecretStr | None = Field(
+        default=None, repr=False, exclude=True
+    )
+    lnf_custom_llm_no_auth: bool = False
 
     openai_api_key: Optional[str] = Field(
         default=None,
@@ -541,6 +555,10 @@ class Settings(BaseSettings):
 
 _DEFAULT_ENV_FILE = object()
 _TEST_SETTINGS_ENV_KEYS = (
+    "LNF_LLM_ENDPOINT_POLICY",
+    "LNF_TRUSTED_LLM_ENDPOINTS",
+    "LNF_CUSTOM_LLM_API_KEY",
+    "LNF_CUSTOM_LLM_NO_AUTH",
     "OPENAI_API_KEY",
     "ANTHROPIC_API_KEY",
     "LANGSMITH_API_KEY",
@@ -616,7 +634,7 @@ def _suspend_project_env_for_pytest(env_file: Optional[str]):
 @lru_cache(maxsize=8)
 def _cached_settings(env_file: Optional[str]) -> Settings:
     """Create and cache settings instances by env file path."""
-    init_kwargs = {}
+    init_kwargs: dict[str, Any] = {}
     if env_file is not None:
         init_kwargs["_env_file"] = env_file
         init_kwargs["_env_file_encoding"] = "utf-8"

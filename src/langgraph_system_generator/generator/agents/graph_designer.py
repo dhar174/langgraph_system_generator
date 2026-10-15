@@ -31,7 +31,10 @@ from langgraph_system_generator.generator.state import (
 )
 from langgraph_system_generator.generator.utils import extract_json_from_llm_response
 from langgraph_system_generator.utils.config import ModelConfig, settings
-from langgraph_system_generator.utils.error_handling import GenerationError
+from langgraph_system_generator.utils.error_handling import (
+    GenerationError,
+    safe_exception_summary,
+)
 from langgraph_system_generator.utils.generation_options import (
     resolve_architecture_type,
 )
@@ -196,11 +199,13 @@ class GraphDesigner:
                 validation_issues=live_issues,
             )
         except (ValueError, KeyError, TypeError, ValidationError) as exc:
-            fallback_reason = f"Graph design parsing failed: {exc}"
+            fallback_reason = (
+                f"Graph design parsing failed: {safe_exception_summary(exc)}"
+            )
             logger.warning(
                 "Graph design parsing failed for %s: %s",
                 architecture_type,
-                exc,
+                safe_exception_summary(exc),
             )
             return self._finalize_fallback(
                 registration,

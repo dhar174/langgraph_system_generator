@@ -2616,13 +2616,15 @@ async def test_pattern_nodes_use_request_scoped_model_config(
     assert any('MODEL = "gpt-5.2"' in cell.content for cell in config_code_cells)
     assert any("TEMPERATURE = 0.3" in cell.content for cell in config_code_cells)
     assert any(
-        'API_BASE = "https://example.test/v1"' in cell.content
+        'API_BASE = os.environ.get("LNF_NOTEBOOK_API_BASE", "")' in cell.content
         for cell in config_code_cells
     )
     assert any("MAX_TOKENS = 2048" in cell.content for cell in config_code_cells)
     assert any("def make_llm(" in cell.content for cell in config_code_cells)
     assert composition.feedback.resolved_model == "gpt-5.2"
-    assert composition.feedback.resolved_api_base == "https://example.test/v1"
+    assert composition.feedback.resolved_api_base is None
+    assert "https://example.test/v1" not in "\n".join(cell.content for cell in cells)
+    assert "LNF_NOTEBOOK_LLM_API_KEY" in composition.dependency_plan.provider_env_vars
 
 
 def test_subagents_task_results_summary_is_builtin_not_duplicate_extension(

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+
 from dataclasses import dataclass
 import json
 from typing import Any, Dict, List, Mapping
@@ -28,6 +29,7 @@ from langgraph_system_generator.generator.tool_registry import (
     normalize_tool_token,
 )
 from langgraph_system_generator.generator.utils import extract_json_from_llm_response
+from langgraph_system_generator.utils.error_handling import safe_exception_summary
 from langgraph_system_generator.utils.config import ModelConfig
 
 
@@ -671,9 +673,7 @@ Identify needed tools."""
             payload = extract_json_from_llm_response(response.content)
         except (ValueError, KeyError, TypeError) as exc:
             feedback.fallback_used = True
-            feedback.fallback_reason = (
-                f"Tool planning fell back to heuristic inference after payload parsing failed: {exc}"
-            )
+            feedback.fallback_reason = f"Tool planning fell back to heuristic inference after payload parsing failed: {safe_exception_summary(exc)}"
             self._append_unique(feedback.warnings, feedback.fallback_reason)
             return ToolPlanningResult(
                 tools=self._finalize_tools(heuristic_tools, constraints, feedback),

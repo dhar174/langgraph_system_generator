@@ -762,7 +762,7 @@ class NotebookCompositionFeedback(BaseModel):
     )
     resolved_api_base: Optional[str] = Field(
         default=None,
-        description="Resolved OpenAI-compatible base URL embedded in config cells.",
+        description="Legacy endpoint field, omitted to avoid persisting server configuration.",
     )
     resolved_max_iterations: Optional[int] = Field(
         default=None,

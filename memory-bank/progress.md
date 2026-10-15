@@ -1,5 +1,13 @@
 ## What Works
 
+- Issue #379 local qualification: 98 security tests, 898 unit tests, 82 pattern
+  tests and the full repository suite (1,016 passed, 3 skipped) exited 0 in a
+  fresh supported environment. CI fatal-error lint also exited 0. Broad Ruff,
+  Black and mypy retain verified baseline failures with no additional findings.
+  Hosted custom providers require exact registration and dedicated credentials.
+  Remote publication, exact-head CI and owner review are separate gates.
+
+
 - Actual runtime docs-source precedence for generation context (Issue #375 / PR #377):
   provider-neutral `DocsRetrievalService` with `LangChainDocsLocalProvider`
   (live local MCP/Mintlify search), `Context7DocsProvider` (live secondary/cross-check),

@@ -1,5 +1,11 @@
 ## Current Work Focus
 
+- Issue #379: explicit LLM destination/credential binding and hosted default-deny
+  registration are implemented. Local qualification passed (1,016 tests, 3 skips;
+  fatal-error lint exit 0). Publication, exact-head CI and owner review remain
+  separate gates; see `docs/llm-endpoint-security.md`.
+
+
 - The repository currently centers on prompt-to-notebook generation with shared
   CLI and FastAPI entry points, plus a reusable LangGraph pattern library.
 - Current maintenance work includes keeping the Memory Bank aligned with the
