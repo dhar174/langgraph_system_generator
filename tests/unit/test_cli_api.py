@@ -1148,7 +1148,7 @@ async def test_api_rejects_invalid_custom_endpoint():
         )
 
     assert response.status_code == 400
-    assert "http or https URL" in response.json()["detail"]
+    assert response.json()["detail"]["code"] == "invalid_endpoint"
 
 
 @pytest.mark.asyncio

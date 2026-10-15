@@ -91,6 +91,9 @@ jobs:
           service: ${{ env.SERVICE }}
           region: ${{ env.REGION }}
           image: ${{ env.IMAGE }}
+          env_vars: |-
+            LNF_LLM_ENDPOINT_POLICY=hosted
+          env_vars_update_strategy: merge
           secrets: |-
             OPENAI_API_KEY=${{ env.OPENAI_API_KEY_SECRET }}:latest
           secrets_update_strategy: merge

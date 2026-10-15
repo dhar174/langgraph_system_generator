@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+
 import asyncio
 from dataclasses import dataclass, field
 import hashlib
@@ -29,6 +30,7 @@ from langgraph_system_generator.generator.state import (
 from langgraph_system_generator.generator.utils import extract_json_from_llm_response
 from langgraph_system_generator.rag.mcp_transport import _sanitize_text_credentials
 from langgraph_system_generator.rag.retriever import DocsRetriever
+from langgraph_system_generator.utils.error_handling import safe_exception_summary
 from langgraph_system_generator.utils.config import ModelConfig, settings
 from langgraph_system_generator.utils.generation_options import (
     SUPPORTED_AGENT_TYPES,
@@ -156,18 +158,18 @@ Recommend the best architecture."""
                     docs_considered=docs_considered,
                 )
             except (ValueError, KeyError, TypeError, ValidationError) as exc:
-                reason = f"Architecture selection fallback used: {exc}"
+                reason = f"Architecture selection fallback used: {safe_exception_summary(exc)}"
                 logger.warning(reason)
                 return self._fallback_result(
                     reason,
                     docs_considered=docs_considered,
-                    validation_errors=[str(exc)],
+                    validation_errors=[safe_exception_summary(exc)],
                 )
             except Exception as exc:  # noqa: BLE001
                 logger.warning(
                     "Strict structured architecture selection was unavailable; "
                     "falling back to legacy JSON parsing: %s",
-                    exc,
+                    safe_exception_summary(exc),
                 )
 
         response = await self.llm.ainvoke(messages)
@@ -178,12 +180,14 @@ Recommend the best architecture."""
                 result, docs_considered=docs_considered
             )
         except (ValueError, KeyError, TypeError, ValidationError) as exc:
-            reason = f"Architecture selection fallback used: {exc}"
+            reason = (
+                f"Architecture selection fallback used: {safe_exception_summary(exc)}"
+            )
             logger.warning(reason)
             return self._fallback_result(
                 reason,
                 docs_considered=docs_considered,
-                validation_errors=[str(exc)],
+                validation_errors=[safe_exception_summary(exc)],
             )
 
     def _structured_output_llm(self) -> Any | None:
@@ -201,7 +205,7 @@ Recommend the best architecture."""
         except (NotImplementedError, TypeError, ValueError) as exc:
             logger.debug(
                 "Strict structured architecture selection binding unavailable: %s",
-                exc,
+                safe_exception_summary(exc),
             )
             return None
 
@@ -238,7 +242,7 @@ Recommend the best architecture."""
                     docs_considered=docs_considered,
                 )
             except (ValueError, KeyError, TypeError, ValidationError) as exc:
-                validation_errors.append(str(exc))
+                validation_errors.append(safe_exception_summary(exc))
 
         raise ValueError(
             "Strict structured architecture selection failed validation after retry: "

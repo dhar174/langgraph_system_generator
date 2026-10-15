@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+
 import ast
 import asyncio
 import inspect
@@ -48,6 +49,7 @@ from langgraph_system_generator.patterns import (
     SubagentsPattern,
 )
 from langgraph_system_generator.patterns.utils import render_additional_fields
+from langgraph_system_generator.utils.error_handling import safe_exception_summary
 from langgraph_system_generator.utils.config import ModelConfig, settings
 
 
@@ -463,11 +465,20 @@ class NotebookComposer:
                 continue
             accumulate_tool_dependencies(accumulator, tool)
 
-        if (
-            "langchain-openai" in accumulator.packages
-            and "OPENAI_API_KEY" not in accumulator.provider_env_vars
-        ):
-            accumulator.provider_env_vars.append("OPENAI_API_KEY")
+        from langgraph_system_generator.utils.llm_endpoint_security import (
+            authorize_endpoint,
+        )
+
+        binding = authorize_endpoint(
+            self.model_config.api_base, self.model_config.endpoint_policy
+        )
+        model_key_env = (
+            "OPENAI_API_KEY"
+            if binding.provider_id == "openai"
+            else "LNF_NOTEBOOK_LLM_API_KEY"
+        )
+        if model_key_env not in accumulator.provider_env_vars:
+            accumulator.provider_env_vars.append(model_key_env)
 
         plan.packages = accumulator.packages
         plan.runtime_notes = accumulator.runtime_notes
@@ -558,7 +569,7 @@ class NotebookComposer:
 
         feedback = NotebookCompositionFeedback(
             resolved_model=self.model_config.model,
-            resolved_api_base=self.model_config.api_base,
+            resolved_api_base=None,
             resolved_max_iterations=self._resolve_max_iterations(workflow_design),
         )
         dependency_plan = self._plan_dependencies(tools, workflow_design)
@@ -843,8 +854,18 @@ else:
     ) -> List[CellSpec]:
         """Create configuration cells using resolved request-scoped settings."""
 
+        from langgraph_system_generator.utils.llm_endpoint_security import (
+            authorize_endpoint,
+        )
+
+        binding = authorize_endpoint(
+            self.model_config.api_base, self.model_config.endpoint_policy
+        )
+        custom_provider = binding.provider_id != "openai"
         config_lines = [
             "import os",
+            "from urllib.parse import urlsplit",
+            "import ipaddress",
             "",
             "from langchain_openai import ChatOpenAI",
             "",
@@ -858,10 +879,14 @@ else:
                 else "MAX_TOKENS = None"
             ),
             (
-                f"API_BASE = {json.dumps(self.model_config.api_base)}"
-                if self.model_config.api_base
-                else "API_BASE = None"
+                'API_BASE = os.environ.get("LNF_NOTEBOOK_API_BASE", "")'
+                if custom_provider
+                else 'API_BASE = "https://api.openai.com/v1"'
             ),
+            f"CUSTOM_LLM_PROVIDER = {custom_provider!r}",
+            f"LLM_PROVIDER_ID = {json.dumps(binding.provider_id)}",
+            "# Custom providers need LNF_NOTEBOOK_API_BASE and their own LNF_NOTEBOOK_LLM_API_KEY.",
+            "# Explicit loopback-only no-auth: LNF_NOTEBOOK_LLM_NO_AUTH=true.",
             'THREAD_ID = "lnf-demo-thread"',
             "SHOW_UPDATES = False",
             "RUN_INTERACTIVE_LOOP = False",
@@ -910,7 +935,11 @@ else:
                 continue
             config_lines.extend(
                 [
-                    f'{safe_env_var} = _load_env_var("{safe_env_var}")',
+                    (
+                        f'{safe_env_var} = "" if os.environ.get("LNF_NOTEBOOK_LLM_NO_AUTH", "").lower() == "true" else _load_env_var("{safe_env_var}")'
+                        if safe_env_var == "LNF_NOTEBOOK_LLM_API_KEY"
+                        else f'{safe_env_var} = _load_env_var("{safe_env_var}")'
+                    ),
                     f"if not {safe_env_var}:",
                     f'    print("{safe_env_var} is not set. Configure it before running live model cells.")',
                     "",
@@ -934,8 +963,28 @@ else:
                 '        "model": model,',
                 '        "temperature": temperature,',
                 "    }",
-                "    if API_BASE:",
-                '        kwargs["base_url"] = API_BASE',
+                "    if not API_BASE:",
+                '        raise ValueError("Set LNF_NOTEBOOK_API_BASE for this provider.")',
+                "    parsed = urlsplit(API_BASE)",
+                '    if parsed.username or parsed.password or parsed.query or parsed.fragment or any(c in API_BASE for c in "\\\\%@?#"):',
+                '        raise ValueError("Use a credential-free endpoint URL.")',
+                "    try:",
+                "        loopback = ipaddress.ip_address(parsed.hostname or '').is_loopback",
+                "    except ValueError:",
+                "        loopback = parsed.hostname == 'localhost'",
+                "    if not parsed.hostname or parsed.scheme not in {'https', 'http'} or (parsed.scheme == 'http' and not loopback):",
+                '        raise ValueError("Remote endpoints require HTTPS.")',
+                "    key_env = 'LNF_NOTEBOOK_LLM_API_KEY' if CUSTOM_LLM_PROVIDER else 'OPENAI_API_KEY'",
+                "    key = os.environ.get(key_env, '')",
+                "    no_auth = CUSTOM_LLM_PROVIDER and os.environ.get('LNF_NOTEBOOK_LLM_NO_AUTH', '').lower() == 'true'",
+                "    if no_auth:",
+                "        if key or not loopback:",
+                '            raise ValueError("No-auth requires loopback and no custom key.")',
+                "        key = 'lnf-local-no-auth'",
+                "    if not key:",
+                '        raise ValueError(f"Set {key_env} before live model calls.")',
+                '    kwargs["base_url"] = API_BASE',
+                '    kwargs["api_key"] = key',
                 "    if max_tokens is not None:",
                 '        kwargs["max_tokens"] = max_tokens',
                 "    return ChatOpenAI(**kwargs)",
@@ -1340,14 +1389,14 @@ Generate the complete Python function implementation."""
             # Fallback to template with better implementation hints
             return self._generate_tool_fallback(
                 tool,
-                reason=f"Tool generation could not parse the tool specification: {exc}",
+                reason=f"Tool generation could not parse the tool specification: {safe_exception_summary(exc)}",
                 feedback=feedback,
             )
         except Exception as exc:
             # Unexpected error - still fallback but this is unusual
             return self._generate_tool_fallback(
                 tool,
-                reason=f"Tool generation failed unexpectedly: {type(exc).__name__}: {exc}",
+                reason=f"Tool generation failed unexpectedly: {type(exc).__name__}: {safe_exception_summary(exc)}",
                 feedback=feedback,
             )
 
@@ -1653,7 +1702,7 @@ Generate the complete Python function implementation."""
             return self._generate_node_fallback(
                 node,
                 workflow_design,
-                reason=f"Node generation could not parse the node specification: {exc}",
+                reason=f"Node generation could not parse the node specification: {safe_exception_summary(exc)}",
                 feedback=feedback,
             )
         except Exception as exc:
@@ -1661,7 +1710,7 @@ Generate the complete Python function implementation."""
             return self._generate_node_fallback(
                 node,
                 workflow_design,
-                reason=f"Node generation failed unexpectedly: {type(exc).__name__}: {exc}",
+                reason=f"Node generation failed unexpectedly: {type(exc).__name__}: {safe_exception_summary(exc)}",
                 feedback=feedback,
             )
 
@@ -2370,6 +2419,7 @@ def {safe_node_identifier}_node(state: WorkflowState) -> WorkflowState:
                         subagents,
                         tools=tool_identifiers,
                         model_config=model_config,
+                        use_notebook_helper=True,
                     ),
                     section="nodes",
                 )
