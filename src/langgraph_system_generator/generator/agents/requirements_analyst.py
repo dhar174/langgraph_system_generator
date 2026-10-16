@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+
 import json
 import logging
 from typing import Any, Dict, List, Mapping, Sequence, Set
@@ -18,6 +19,7 @@ from langgraph_system_generator.generator.state import (
     RequirementsFeedback,
 )
 from langgraph_system_generator.generator.utils import extract_json_from_llm_response
+from langgraph_system_generator.utils.error_handling import safe_exception_summary
 from langgraph_system_generator.utils.config import ModelConfig, settings
 
 logger = logging.getLogger(__name__)
@@ -344,7 +346,9 @@ class RequirementsAnalyst:
                 )
         except (ValueError, KeyError, TypeError) as exc:
             fallback_used = True
-            fallback_reason = f"Requirements extraction fallback used: {exc}"
+            fallback_reason = (
+                f"Requirements extraction fallback used: {safe_exception_summary(exc)}"
+            )
             logger.warning(fallback_reason)
             constraints = [self._fallback_constraint(prompt)]
 
@@ -402,7 +406,9 @@ class RequirementsAnalyst:
                 )
         except (ValueError, KeyError, TypeError) as exc:
             fallback_used = True
-            fallback_reason = f"Requirements dialog fallback used: {exc}"
+            fallback_reason = (
+                f"Requirements dialog fallback used: {safe_exception_summary(exc)}"
+            )
             logger.warning(fallback_reason)
             parsed_constraints = [self._fallback_constraint(dialog_text)]
 

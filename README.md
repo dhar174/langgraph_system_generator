@@ -48,8 +48,9 @@ exports, and structured QA feedback.
    ```
 
    Stub mode does not need provider credentials. Live mode requires
-   `OPENAI_API_KEY` unless you provide an OpenAI-compatible `custom_endpoint`
-   and explicit `model` through the API.
+   `OPENAI_API_KEY` for the official provider. Custom providers require their own
+   credentials; hosted API endpoints must be administrator-registered. See
+   [LLM endpoint security](docs/llm-endpoint-security.md) for configuration and migration.
 
 3. Optionally build the vector index from cached docs:
 
@@ -169,8 +170,11 @@ lnf build-index
 lnf build-index --use-openai
 ```
 
-CLI options intentionally stay narrow. Use the API for request-scoped `model`,
-`temperature`, `max_tokens`, or `custom_endpoint` overrides.
+CLI generation supports `--model` and `--custom-endpoint` for trusted local
+provider use. Use the API for `temperature` and `max_tokens` overrides. Hosted
+custom endpoints require administrator registration; local endpoints require a
+dedicated credential or explicit loopback no-auth. See
+[LLM endpoint security](docs/llm-endpoint-security.md).
 
 ## Expected Outputs And Feedback
 

@@ -24,6 +24,7 @@ from langgraph_system_generator.generator.state import (
     build_constraint_type_registry,
     CellSpec,
     Constraint,
+    DocsRetrievalFeedback,
     GenerationContextPack,
     GraphDesignFeedback,
     GraphExportBundle,
@@ -52,6 +53,10 @@ from langgraph_system_generator.generator.graph_design_registry import (
 )
 from langgraph_system_generator.utils.error_handling import GenerationError
 from langgraph_system_generator.utils.config import GenerationConfig, settings
+from langgraph_system_generator.utils.llm_endpoint_security import (
+    EndpointPolicy,
+    authorize_endpoint,
+)
 from langgraph_system_generator.utils.generation_options import (
     SUPPORTED_AGENT_TYPES,
     normalize_agent_type,
@@ -166,11 +171,17 @@ def _build_cli_context_pack(
                 "cached_repo_docs",
                 "rag_index",
             ],
+            "attempted_sources": [],
+            "source_statuses": {},
+            "used_sources": [],
             "docs_snippet_count": 0,
             "source_counts": {},
             "docs_live_required": False,
+            "fallback_used": False,
+            "stage_source_statuses": {},
+            "consulted_sources": [],
         },
-        fallback_used=True,
+        fallback_used=False,
         warnings=[
             "Shortcut generation path used static repo context facts; live docs retrieval is not required for stub mode."
         ],
@@ -208,6 +219,19 @@ def _default_state(
         "qa_repair_feedback": QARepairFeedback(),
         "selected_patterns": {},
         "docs_context": [],
+        "docs_retrieval_feedback": DocsRetrievalFeedback(
+            attempted_sources=[],
+            source_statuses={},
+            used_sources=[],
+            fallback_used=False,
+            warnings=(
+                [
+                    "Shortcut generation path used static repo context facts; live docs retrieval is not required for stub mode."
+                ]
+                if generation_mode == "stub"
+                else []
+            ),
+        ),
         "generation_context_pack": _build_cli_context_pack(
             prompt,
             generation_mode=generation_mode,
@@ -1433,6 +1457,15 @@ def _build_stub_result(prompt: str, agent_type: str | None = None) -> Dict[str, 
             "secondary": secondary_patterns,
         },
         "docs_context": [],
+        "docs_retrieval_feedback": DocsRetrievalFeedback(
+            attempted_sources=[],
+            source_statuses={},
+            used_sources=[],
+            fallback_used=False,
+            warnings=[
+                "Shortcut generation path used static repo context facts; live docs retrieval is not required for stub mode."
+            ],
+        ),
         "generation_context_pack": _build_cli_context_pack(
             prompt,
             architecture_type=architecture_type,
@@ -1467,6 +1500,7 @@ async def generate_artifacts(
     max_tokens: int | None = None,
     agent_type: str | None = None,
     custom_endpoint: str | None = None,
+    endpoint_policy: EndpointPolicy = "local",
     requirements_messages: List[Dict[str, str]] | None = None,
     progress_callback: Any | None = None,
 ) -> GenerationArtifacts:
@@ -1490,6 +1524,16 @@ async def generate_artifacts(
         progress_callback: Optional callback function(node, percentage, message) for progress tracking
     """
 
+    binding = authorize_endpoint(custom_endpoint, endpoint_policy)
+    if custom_endpoint and not model:
+        raise GenerationError(
+            "Custom endpoints require an explicit model.",
+            code="model_required",
+            status_code=400,
+        )
+    if mode == "live":
+        binding.credential()
+
     require_optional_module(
         "langgraph_system_generator.notebook.composer",
         feature="Artifact generation",
@@ -1508,7 +1552,8 @@ async def generate_artifacts(
         model=model,
         temperature=temperature,
         max_tokens=max_tokens,
-        api_base=custom_endpoint,
+        api_base=binding.base_url if custom_endpoint else None,
+        endpoint_policy=binding.policy,
         agent_type=agent_type,
     )
 
@@ -1558,26 +1603,34 @@ async def generate_artifacts(
 
     if mode == "live":
         create_generator_graph = _load_generator_graph()
-        if not custom_endpoint and not os.environ.get("OPENAI_API_KEY"):
-            raise GenerationError(
-                "LLM API credentials are required for live generation mode.",
-                code="credentials_required",
-                phase="graph_init",
-                hint="Set OPENAI_API_KEY or provide a custom_endpoint with an explicit model.",
-                status_code=503,
-            )
+        from langgraph_system_generator.generator.agents._llm import llm_transport_scope
+
         tracker.start("graph_init", "Creating generator graph...", percentage=12)
         graph = create_generator_graph()
         tracker.finish("graph_init", "Generator graph created.", percentage=15)
         tracker.start("graph_invoke", "Invoking generator graph...", percentage=18)
-        result = await graph.ainvoke(
-            _default_state(
-                prompt,
-                generation_config,
-                generation_mode="live",
-                requirements_messages=requirements_messages,
-            )
-        )
+        try:
+            async with llm_transport_scope():
+                result = await graph.ainvoke(
+                    _default_state(
+                        prompt,
+                        generation_config,
+                        generation_mode="live",
+                        requirements_messages=requirements_messages,
+                    )
+                )
+        except GenerationError:
+            raise
+        except Exception as exc:  # noqa: BLE001 - sanitize public generation boundary
+            cause = exc.__cause__
+            if isinstance(cause, GenerationError):
+                raise cause from None
+            raise GenerationError(
+                "Live generation failed.",
+                code="live_generation_failed",
+                phase="graph_invoke",
+                details={"error_type": type(exc).__name__},
+            ) from None
         tracker.finish("graph_invoke", "Generator graph completed.", percentage=60)
     else:
         tracker.start("stub_build", "Building stub result...", percentage=30)
@@ -1665,8 +1718,8 @@ async def generate_artifacts(
         manifest["max_tokens"] = max_tokens
     if agent_type:
         manifest["agent_type"] = agent_type
-    if custom_endpoint:
-        manifest["custom_endpoint"] = custom_endpoint
+    manifest["llm_provider"] = binding.provider_id
+    manifest["endpoint_policy"] = binding.policy
 
     # Persist helpful artifacts for downstream consumers
     plan = serialized.get("notebook_plan")
@@ -1955,6 +2008,8 @@ def _run_generate(args: argparse.Namespace) -> int:
                 mode=args.mode,
                 formats=args.formats,
                 agent_type=args.agent_type,
+                model=args.model,
+                custom_endpoint=args.custom_endpoint,
             )
         )
     except GenerationError as exc:
@@ -2060,6 +2115,14 @@ def build_parser() -> argparse.ArgumentParser:
         choices=["router", "subagents", "hybrid", "autoagent", "deepagents"],
         default=None,
         help="Override architecture selection for generation.",
+    )
+    gen.add_argument(
+        "--model", default=None, help="OpenAI-compatible model identifier."
+    )
+    gen.add_argument(
+        "--custom-endpoint",
+        default=None,
+        help="Trusted local endpoint; configure a dedicated key or explicit loopback no-auth.",
     )
     gen.set_defaults(func=_run_generate)
 

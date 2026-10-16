@@ -8,10 +8,10 @@ import logging
 import os
 from pathlib import Path
 from typing import Any, Dict, Literal, Optional
-from urllib.parse import urlparse
 
 from fastapi import FastAPI, HTTPException, Query, Request
-from fastapi.responses import FileResponse, HTMLResponse, Response
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -30,6 +30,10 @@ from langgraph_system_generator.api.progress_streaming import (
     emit_node_progress,
     get_stream_response,
 )
+from langgraph_system_generator.utils.credential_redaction import (
+    _sanitize_text_credentials,
+)
+from langgraph_system_generator.utils.llm_endpoint_security import authorize_endpoint
 from langgraph_system_generator.utils.error_handling import GenerationError
 from langgraph_system_generator.utils.generation_options import (
     SUPPORTED_AGENT_TYPES,
@@ -55,6 +59,17 @@ app = FastAPI(
     lifespan=_lifespan,
 )
 
+
+# Request validation errors otherwise include the rejected raw input.
+@app.exception_handler(RequestValidationError)
+async def _safe_request_validation_error(request: Request, exc: RequestValidationError):
+    errors = [
+        {"type": item["type"], "loc": item["loc"], "msg": "Invalid request field."}
+        for item in exc.errors()
+    ]
+    return JSONResponse(status_code=422, content={"detail": errors})
+
+
 # Mount static files
 _STATIC_DIR = Path(__file__).parent / "static"
 if _STATIC_DIR.exists():
@@ -77,7 +92,7 @@ def _generation_error_payload(exc: Exception) -> dict[str, Any]:
     if isinstance(exc, OptionalDependencyError):
         payload: dict[str, Any] = {
             "code": "dependency_unavailable",
-            "message": str(exc),
+            "message": _sanitize_text_credentials(str(exc)),
             "status_code": 503,
         }
         if exc.hint:
@@ -95,7 +110,7 @@ def _generation_error_payload(exc: Exception) -> dict[str, Any]:
 
     return {
         "code": "generation_error",
-        "message": str(exc),
+        "message": "Generation failed (" + type(exc).__name__ + ").",
         "status_code": 500,
         "details": {"error_type": type(exc).__name__},
     }
@@ -215,16 +230,14 @@ def _validate_advanced_options(
             detail="custom_endpoint requires an explicit OpenAI-compatible model identifier.",
         )
 
-    if normalized_custom_endpoint:
-        parsed_endpoint = urlparse(normalized_custom_endpoint)
-        if (
-            parsed_endpoint.scheme not in {"http", "https"}
-            or not parsed_endpoint.hostname
-        ):
-            raise HTTPException(
-                status_code=400,
-                detail="custom_endpoint must be a valid http or https URL with a hostname.",
-            )
+    try:
+        binding = authorize_endpoint(request.custom_endpoint or None, "hosted")
+        if request.mode == "live":
+            binding.credential()
+        if normalized_custom_endpoint:
+            normalized_custom_endpoint = binding.base_url
+    except GenerationError as exc:
+        _raise_generation_http_error(exc)
 
     if normalized_model == "custom":
         raise HTTPException(
@@ -292,9 +305,7 @@ class DialogMessage(BaseModel):
     @classmethod
     def _validate_non_whitespace_content(cls, value: str) -> str:
         if not value.strip():
-            raise ValueError(
-                "Message content must include non-whitespace characters."
-            )
+            raise ValueError("Message content must include non-whitespace characters.")
         return value
 
 
@@ -337,7 +348,7 @@ class GenerationRequest(BaseModel):
     )
     custom_endpoint: Optional[str] = Field(
         default=None,
-        description="Custom OpenAI-compatible API endpoint URL for self-hosted or proxy deployments.",
+        description="Administrator-registered OpenAI-compatible endpoint. Arbitrary hosted destinations are forbidden.",
     )
     temperature: Optional[float] = Field(
         default=None,
@@ -456,6 +467,7 @@ async def generate_notebook(request: GenerationRequest) -> GenerationResponse:
                 max_tokens=request.max_tokens,
                 agent_type=normalized_request.agent_type,
                 custom_endpoint=normalized_request.custom_endpoint,
+                endpoint_policy="hosted",
                 requirements_messages=requirements_messages,
             )
             return GenerationResponse(
@@ -467,13 +479,25 @@ async def generate_notebook(request: GenerationRequest) -> GenerationResponse:
                 output_dir=artifacts["output_dir"],
             )
         except (GenerationError, OptionalDependencyError) as exc:
-            logger.exception("Generation request failed for /generate")
+            logger.error(
+                "Generation request failed for /generate: %s", type(exc).__name__
+            )
             _raise_generation_http_error(exc)
         except ValueError as exc:  # pragma: no cover - surfaced via HTTPException
-            logger.exception("Generation request failed for /generate")
-            raise HTTPException(status_code=400, detail=str(exc))
-        except Exception as exc:  # pragma: no cover - defensive
-            logger.exception("Generation request failed for /generate")
+            logger.error(
+                "Generation request failed for /generate: %s", type(exc).__name__
+            )
+            _raise_generation_http_error(
+                GenerationError(
+                    "Invalid generation input.",
+                    code="invalid_generation_input",
+                    status_code=400,
+                )
+            )
+        except Exception as exc:  # noqa: BLE001 - sanitize public failure boundary
+            logger.error(
+                "Generation request failed for /generate: %s", type(exc).__name__
+            )
             _raise_generation_http_error(exc)
 
 
@@ -609,6 +633,7 @@ async def _run_generation_with_progress(
             max_tokens=request.max_tokens,
             agent_type=request.agent_type,
             custom_endpoint=request.custom_endpoint,
+            endpoint_policy="hosted",
             requirements_messages=requirements_messages,
             progress_callback=progress_callback,
         )
@@ -625,8 +650,10 @@ async def _run_generation_with_progress(
             },
         )
 
-    except Exception as exc:
-        logger.exception("Generation failed for async job %s", job_id)
+    except Exception as exc:  # noqa: BLE001 - sanitize SSE failure boundary
+        logger.error(
+            "Generation failed for async job %s: %s", job_id, type(exc).__name__
+        )
         payload = _generation_error_payload(exc)
         emit_log(
             job_id,

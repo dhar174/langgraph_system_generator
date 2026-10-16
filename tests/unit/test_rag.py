@@ -1,3 +1,4 @@
+import asyncio
 from concurrent.futures import ThreadPoolExecutor
 
 import pytest
@@ -141,3 +142,18 @@ async def test_scrape_docs_handles_errors(monkeypatch):
     monkeypatch.setattr(indexer, "_fetch", _raise)
     docs = await indexer.scrape_docs()
     assert docs == []
+
+
+@pytest.mark.asyncio
+async def test_scrape_docs_propagates_cancellation(monkeypatch):
+    indexer = DocsIndexer(urls=["https://example.com/cancel", "https://example.com/ok"])
+
+    async def _fetch(session, url):
+        if url == "https://example.com/cancel":
+            raise asyncio.CancelledError("task cancelled")
+        return "<html><body>Some long content that would otherwise be parsed into a document</body></html>"
+
+    monkeypatch.setattr(indexer, "_fetch", _fetch)
+    with pytest.raises(asyncio.CancelledError):
+        await indexer.scrape_docs()
+

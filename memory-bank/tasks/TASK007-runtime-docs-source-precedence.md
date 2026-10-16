@@ -1,0 +1,69 @@
+# TASK007 - Runtime Docs-Source Precedence
+
+**Status:** Complete
+**Added:** 2026-09-16
+**Updated:** 2026-09-17
+
+## Original Request
+
+Implement executable runtime docs-source precedence for generation context (Issue #375 / PR #377), replacing the direct ArchitectureSelector vector-bypass with provider-neutral retrieval, truthful provenance, and strict offline stub invariants.
+
+## Thought Process
+
+The generator previously bypassed live documentation retrieval in favor of a hardcoded architecture catalog or unverified vector search. A unified, provider-neutral docs retrieval system must:
+1. Enforce runtime source precedence: `langchain-docs-local` (primary live) -> `context7` (secondary/cross-check) -> `cached_repo_docs` / `rag_index` (offline fallback).
+2. Report truthful provenance in `GenerationContextPack` and manifests: `attempted_sources`, `source_statuses`, `used_sources`, and `fallback_used`.
+3. Provide strict `fallback_used` semantics (`True` iff fallback actually contributed at least one final retrieved snippet).
+4. Isolate transient stage queries (`ArchitectureSelector`) in `stage_source_statuses` and `consulted_sources` without polluting `used_sources`.
+5. Support Model Context Protocol (MCP) streamable HTTP transport (`2026-07-28` protocol version, `_meta` capabilities, and SSE stream handling).
+6. Enforce proper transport error boundaries: abort candidate probing immediately on HTTP/network errors instead of sending retry storms.
+7. Preserve 100% offline, deterministic stub mode with zero mandatory external package dependencies.
+
+## Implementation Plan
+
+- Implement `DocsSourceProvider`, `DocsSourceRegistry`, and `DocsRetrievalService` in `src/langgraph_system_generator/rag/`.
+- Implement `LangChainDocsLocalProvider` querying local MCP/Mintlify tool endpoints with lazy `httpx`.
+- Implement `Context7DocsProvider` with two-step workflow (`resolve-library-id` -> `query-docs`) and fallback to `search`.
+- Implement `CachedVectorDocsProvider` wrapping `DocsRetriever` off the event loop via `asyncio.to_thread`.
+- Build shared `mcp_transport.py` handling JSON-RPC and SSE streams with MCP protocol headers and metadata.
+- Wire `rag_retrieval_node` and `ArchitectureSelector` into `DocsRetrievalService`.
+- Expose typed `DocsRetrievalFeedback` in `GeneratorState`.
+- Write unit test suite in `tests/unit/test_rag_source_precedence.py` covering all provider flows, edge cases, error boundaries, and offline stubs.
+
+## Progress Tracking
+
+**Overall Status:** Complete
+
+### Subtasks
+
+| ID | Description | Status | Updated | Notes |
+|----|-------------|--------|---------|-------|
+| 7.1 | Provider-neutral RAG service architecture | Complete | 2026-09-16 | `DocsSourceProvider`, `DocsRetrievalService`, `DocsSourceRegistry` established. |
+| 7.2 | Live MCP & Context7 providers | Complete | 2026-09-16 | Providers with lazy `httpx` imports and robust payload parsing. |
+| 7.3 | MCP streamable HTTP transport helper | Complete | 2026-09-16 | `mcp_transport.py` with protocol `2026-07-28`, headers, and SSE streaming. |
+| 7.4 | Transport failure & tool missing boundaries | Complete | 2026-09-17 | Immediate abort on HTTP/network errors; candidate retry only on `-32601` unknown tool. |
+| 7.5 | Truthful provenance & stage isolation | Complete | 2026-09-16 | Strict `fallback_used` and `ArchitectureSelector` transient isolation. |
+| 7.6 | Unit test suite & offline verification | Complete | 2026-09-17 | Dedicated tests passing 100% offline without live network or external API keys. |
+| 7.7 | Registry replacement precedence preservation | Complete | 2026-09-17 | In-place replacement preserving provider index by default; explicit `prepend=True` moves to index 0. |
+| 7.8 | Serialized JSON object normalization in LangChain local | Complete | 2026-09-17 | Unpacks serialized JSON `results`/`snippets`/`documents`/`content` collections and single doc objects; preserves `0.0` scores; rejects raw protocol JSON envelopes. |
+| 7.9 | Capability-driven stub mode plugin safety | Complete | 2026-09-23 | Explicit `stub_safe: bool = False` capability on `DocsSourceProvider`, `CachedVectorDocsProvider.stub_safe = False` by default (requires verified `is_offline_safe = True`), and capability-driven bypass skipping non-stub-safe providers without probing. |
+| 7.10 | Final correctness pass & protocol validation | Complete | 2026-09-23 | Propagated asyncio cancellation in indexer, validated request IDs on HTTP-200 JSON MCP responses, normalized missing custom provider provenance, guarded Context7 against empty snippets with EMPTY fallback, and accepted content/text-only serialized docs with structural protocol rejection. |
+| 7.11 | Review follow-up: URL sanitization & protocol rejection | Complete | 2026-09-23 | Redacted URL credentials and compound query secrets in MCPTransportError messages, and rejected protocol envelopes in Context7 without falling through to raw JSON text emission. |
+| 7.12 | Review follow-up: Endpoint fallback provenance & metadata sanitization | Complete | 2026-09-23 | Redacted endpoint credentials and query secrets from snippet fallback source and result metadata in Context7DocsProvider and LangChainDocsLocalProvider via safe_endpoint_url. |
+| 7.13 | Review follow-up: Credential & URL error/warning text sanitization | Complete | 2026-09-23 | Implemented `_sanitize_text_credentials` in `mcp_transport.py` routing URLs through `_sanitize_url_for_logging` and redacting basic-auth netlocs, compound query keys (`access_token`, `client_secret`, etc.), bearer tokens, and JSON keys; applied identically in `send_mcp_request` error branches, non-200 previews, and `orchestrator.py` `_sanitize_warning()`. |
+| 7.14 | Final correctness blockers: SSE validation, attribution, offline safety, exception sanitization | Complete | 2026-09-23 | Validated matching JSON-RPC responses in SSE streams & plain JSON fallback with stream ordering; decoupled provider attribution from snippet `source_kind` via attributed tuples; ensured genuinely offline stub mode with `CachedVectorDocsProvider.stub_safe: bool = False` by default; sanitized unexpected provider exceptions in Context7 and LangChain local; indexed TASK006/TASK007 in memory-bank/tasks/_index.md. |
+| 7.15 | Final correctness pass: strict JSON-RPC validation, pure provider attribution, and offline-safe cached vector guard | Complete | 2026-09-24 | Strictly enforced `jsonrpc == "2.0"`, XOR `result`/`error`, and dict `error` in `_is_valid_jsonrpc_payload`; purged legacy `source_kind`/source-prefix fallback heuristics from `used_sources` and `fallback_used` in both live and stub modes to rely purely on `surviving_providers`; required verified offline retriever for `CachedVectorDocsProvider` stub safety and guarded `aretrieve(mode="stub")` direct entrypoint; added 3 new regression tests (86 precedence tests, 768 unit tests). |
+| 7.16 | Security closeout pass: sanitize RAG node exception feedback and provider error payloads; B1–B4 investigations | Complete | 2026-09-25 | Resolved Copilot findings by sanitizing outer RAG node exception text in `nodes.py` before logging and populating `DocsRetrievalFeedback` (`source_statuses`, `warnings`, `stage_source_statuses`); sanitized `error_message` across all branches in `context7.py` (`resolve-library-id`, `query-docs`, `search`, transport errors); sanitized structured JSON-RPC error messages and transport errors in `langchain_local.py`; conducted read-only investigations for B1 (retriever eviction), B2 (empty snippets), B3 (Context7 text fallback), and B4 (single-document payload parsing); added 3 new regression tests (88 precedence tests, 771 unit tests). |
+| 7.17 | Final security & retrieval correctness closeout: ArchitectureSelector, plugin loader, cached-vector exceptions; empty docs filtering, -32601 fallback gating, single-doc MCP parsing | Complete | 2026-10-12 | (1) Sanitized `ArchitectureSelector` retrieval exceptions, queries, and forwarded warnings via `_sanitize_text_credentials` in logging and `_QueryDocsResult.warnings`; (2) sanitized plugin module names and import errors in `orchestrator._load_docs_source_plugin` logging; (3) sanitized cached-vector retrieval exceptions in `CachedVectorDocsProvider` logging and `DocsProviderResult.error_message`; (4) filtered empty/whitespace snippets in `CachedVectorDocsProvider` across DocSnippet, dict, and Document items, returning `DocsSourceStatus.EMPTY` when no valid snippets remain while preserving `0.0` relevance scores; (5) restricted Context7 compatibility fallback strictly to `err_code == -32601` without substring matching on error message text; (6) accepted direct single-document MCP dictionaries in `LangChainDocsLocalProvider._extract_snippets_from_payload()` via `_extract_nested_items(result)` fallback when no collection key is present; added 6 new regression tests (94 precedence tests, 777 unit tests). |
+| 7.18 | Comprehensive resolution of all remaining findings (A–F): snippet normalization, context pack fallback, ArchitectureSelector bounded concurrency, cached retriever eviction, JSON-RPC validation | Complete | 2026-10-13 | (A) Provider-neutral snippet normalization & empty-result precedence fallback in `orchestrator.py` enforcing snippet non-emptiness, maximum character length (`settings.docs_max_snippet_chars`), and score normalization; empty results map to `EMPTY`, continuing precedence; (B) strict fallback & provenance defaults in `GenerationContextPack` (`nodes.py`), defaulting `fallback_used = False` and `used_sources = []` without feedback; (C) bounded and deduplicated `ArchitectureSelector` live retrieval with `asyncio.Semaphore(settings.architecture_docs_max_concurrency)` (default 3), preserving query ordering and preventing score compounding; (D) cached-retriever eviction after failure via `_drop_docs_retriever_cache_entry` in `CachedVectorDocsProvider` and `nodes.py`; (E) strict JSON-RPC 2.0 response shape validation in `mcp_transport.py` ensuring `id`, integer `code` (non-bool), and string `message`, with SSE fallback; (F) complete Memory Bank and documentation alignment; added 18 new regression tests (112 precedence tests, 800 unit tests). |
+
+## Verification & Outcomes
+
+- 112/112 tests pass in `tests/unit/test_rag_source_precedence.py` (+18 regression tests covering A1–A7, C1–C6, D1–D5).
+- Full unit test suite (800 tests, 5 warnings), pattern test suite (82 tests), and full pytest suite (918 passed, 3 skipped, 5 warnings) pass cleanly.
+- Flake8 reports 0 fatal errors on `src/` and `tests/`. Black and mypy are clean.
+- Offline stub mode verified across CLI, API, and package surfaces with deterministic offline generation smoke (no credentials, empty docs context).
+- Preserved prior verified live wire smoke against `https://docs.langchain.com/mcp` (5 snippets, `SUCCESS`).
+- ArchitectureSelector live retrieval fan-out / single-flight cache and concurrency bounding fully resolved.
+
+
