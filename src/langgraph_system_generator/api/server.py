@@ -43,6 +43,8 @@ from langgraph_system_generator.cli import (
     generate_artifacts,
 )
 from langgraph_system_generator.constants import _BASE_OUTPUT
+from langgraph_system_generator.jobs.models import JobError
+from langgraph_system_generator.jobs.registry import require_ephemeral_admission
 from langgraph_system_generator.utils.credential_redaction import (
     _sanitize_text_credentials,
 )
@@ -185,6 +187,10 @@ def _async_generation_enabled() -> bool:
 
 
 def _require_supported_access() -> None:
+    try:
+        require_ephemeral_admission()
+    except JobError as exc:
+        raise HTTPException(status_code=exc.status, detail={"code": exc.code}) from None
     if _is_hosted() and not _hosted_access_enabled():
         raise HTTPException(
             status_code=503,
@@ -854,10 +860,17 @@ async def root():
 async def health() -> dict[str, Any]:
     """Report health and the configured ephemeral execution capabilities."""
     access_enabled = _hosted_access_enabled()
+    backend_error = None
+    try:
+        require_ephemeral_admission()
+    except JobError as exc:
+        access_enabled = False
+        backend_error = exc.code
     return {
         "status": "ok",
         "execution_mode": "ephemeral_process_local",
         "durable_jobs": False,
+        "job_backend_error": backend_error,
         "generation_enabled": access_enabled,
         "async_generation": access_enabled and _async_generation_enabled(),
         "artifact_retention_seconds": _API_ARTIFACT_RETENTION_SECONDS,

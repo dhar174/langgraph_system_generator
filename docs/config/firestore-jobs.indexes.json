@@ -1,0 +1,12 @@
+{
+  "indexes": [],
+  "fieldOverrides": [
+    {"collectionGroup": "jobs", "fieldPath": "request", "indexes": []},
+    {"collectionGroup": "jobs", "fieldPath": "owner", "indexes": []},
+    {"collectionGroup": "jobs", "fieldPath": "result", "indexes": []},
+    {"collectionGroup": "jobs", "fieldPath": "delete_after", "ttl": true, "indexes": []},
+    {"collectionGroup": "events", "fieldPath": "delete_after", "ttl": true, "indexes": []},
+    {"collectionGroup": "idempotency", "fieldPath": "delete_after", "ttl": true, "indexes": []},
+    {"collectionGroup": "dispatch", "fieldPath": "delete_after", "ttl": true, "indexes": []}
+  ]
+}
