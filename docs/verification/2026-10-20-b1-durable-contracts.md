@@ -136,3 +136,49 @@ public routes, explicit event/object cleanup and activation quotas. Mock persist
 does not qualify those paths. Issue #380 remains open and public durable admission
 stays disabled. B2 starts after this interface is reviewed and merged or explicitly
 accepted as a stacked base.
+
+## PR #392 dispatch-query review follow-up
+
+The review at `64e33e5dd1ba8b61c7f481a2b0db82400a327d11` identified a valid B1
+store defect: with reconciliation delayed, 100 overdue pending intents could fill
+the bounded dispatch query and hide newer eligible work. A regression created that
+backlog and reproduced the empty result against both memory and the Firestore
+adapter (2 failed, exit 1). This fixes the existing foundation contract without
+implementing managed queue execution.
+
+Dispatch documents now project the immutable job `deadline_at`. Database selection
+applies `due_at <= now AND deadline_at > now` before the limit, ordered by earliest
+deadline and then due time. The authoritative transactional eligibility recheck is
+retained. The read does not mutate overdue jobs or depend on reconciliation/TTL.
+The shared regression covers a full page, `limit=1`, exact deadline expiry and
+unchanged overdue job state. A separate real-SDK protobuf test checks both filters,
+ordering and limit against the proposed composite index without RPCs or ADC.
+
+The Firestore index proposal adds `(deadline_at ASC, due_at ASC)` for the dispatch
+collection; the ADR documents this query and the backfill/index prerequisites for
+any preexisting experimental B1 data. No index or cloud resource was applied.
+An independent read-only diff review found no actionable issue; it did not rerun
+tests. The tested correction is `2e91355f5ce71f386a88e503940e084a7cfc047c`.
+The following fresh runs used isolated credentials, explicit checkout imports and
+the same verified Jupyter template path. The original receipts above remain
+historical evidence for the initial B1 implementation.
+
+| Follow-up gate | Actual result | Exit |
+| --- | --- | --- |
+| Backlog regressions and real SDK query/index selection | 3 passed | 0 |
+| B1 plus Phase A lifecycle/streaming and #379 security | 239 passed, 1 warning | 0 |
+| Complete unit suite | 1,038 passed, 5 warnings | 0 |
+| Pattern suite | 82 passed | 0 |
+| Full repository suite | 1,156 passed, 4 skipped, 5 warnings in 523.24 seconds | 0 |
+| Fatal flake8 | 0 findings, same private-environment exclusions | 0 |
+| Broad Ruff / Black / mypy | 1,234 findings / 74 failing files / 103 errors, unchanged baseline diagnostic identities and failing file sets | 1 each |
+| Focused Ruff / Black / mypy | Pass; 12 Python files formatted, 8 source files type-checked | 0 each |
+| JavaScript syntax, diff and conflict-marker checks | Pass | 0 |
+| Credential-free CLI/API stub smoke | Checkout import, notebook/HTML/manifest and nbformat v4 verified | 0 |
+
+The fresh broad checks remain non-green; no additional diagnostic identities or
+failing files were found after normalizing paths and shifted line numbers against
+the saved exact-base logs. The four skips remain the opt-in emulator test and three
+packaging smoke checks. Emulator, staging and production qualification remain
+unperformed. The new composite index is proposed only; real index deployment,
+existing-data backfill and server query execution require separate qualification.
