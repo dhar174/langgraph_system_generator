@@ -621,6 +621,9 @@ function extractErrorMessage(payload, fallback = null) {
             }
         }
     }
+    if (typeof fallback === 'string' && fallback.trim()) {
+        return fallback.trim();
+    }
     if (fallback && typeof fallback === 'object') {
         return extractErrorMessage(fallback, null);
     }
@@ -738,18 +741,20 @@ function streamGeneration(streamUrl) {
                 rejectStream('The completed job returned an invalid result reference.');
                 return;
             }
+            const unavailableMessage = `Generation completed, but its process-local result is temporarily unavailable. Result reference: ${resultUrl.pathname}`;
             try {
-                const response = await fetch(resultUrl.pathname + resultUrl.search, {
-                    headers: { 'Accept': 'application/json' }
-                });
+                const response = await fetchCompletedJobResult(resultUrl.pathname + resultUrl.search);
                 const result = await response.json();
                 if (!response.ok) {
-                    rejectStream(extractErrorMessage(result, 'The job result is no longer available on this process.'));
+                    const fallback = response.status === 429 || response.status >= 500
+                        ? unavailableMessage
+                        : 'The job result is no longer available on this process.';
+                    rejectStream(extractErrorMessage(result, fallback));
                     return;
                 }
                 resolveStream(result);
             } catch (err) {
-                rejectStream('Generation completed, but its process-local result is temporarily unavailable. Reconnect to inspect job status.');
+                rejectStream(unavailableMessage);
             }
         });
 
@@ -780,6 +785,24 @@ function streamGeneration(streamUrl) {
             );
         };
     });
+}
+
+async function fetchCompletedJobResult(path) {
+    // A terminal SSE event already confirms completion. Briefly retry transient
+    // result transport failures without launching another generation.
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+        try {
+            const response = await fetch(path, { headers: { 'Accept': 'application/json' } });
+            if ((response.status !== 429 && response.status < 500) || attempt === 2) {
+                return response;
+            }
+        } catch (err) {
+            if (attempt === 2) {
+                throw err;
+            }
+        }
+        await new Promise(resolve => setTimeout(resolve, 250 * (attempt + 1)));
+    }
 }
 
 async function startAsyncGeneration(data) {

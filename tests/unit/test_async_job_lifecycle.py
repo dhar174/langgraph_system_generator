@@ -32,6 +32,7 @@ async def isolated_api_state(tmp_path, monkeypatch):
     monkeypatch.setattr(server, "_shutting_down", False)
     monkeypatch.setattr(streaming, "_active_jobs", {})
     monkeypatch.setattr(streaming, "_owned_tasks", {})
+    monkeypatch.setattr(streaming, "_stream_subscribers", set())
     yield
     assert await streaming.shutdown_owned_tasks(timeout=1) == 0
 
@@ -43,6 +44,83 @@ async def _settle(job_id):
     done = asyncio.get_running_loop().create_future()
     asyncio.get_running_loop().call_soon(done.set_result, None)
     await done
+
+
+@pytest.mark.parametrize("requested", [None, ""])
+def test_default_output_parent_uses_current_trusted_root(
+    tmp_path, monkeypatch, requested
+):
+    monkeypatch.setattr(
+        server, "_DEFAULT_API_OUTPUT", tmp_path.parent / "old-root" / "api"
+    )
+    assert server._resolve_output_dir(requested) == tmp_path / "api"
+
+
+@pytest.mark.asyncio
+async def test_artifact_registration_is_idempotent(monkeypatch):
+    monkeypatch.setattr(
+        server, "generate_artifacts", AsyncMock(side_effect=_fake_generation)
+    )
+    response = await server.generate_notebook(_request())
+    run = server._api_runs[response.run_id]
+    artifacts = {"manifest": response.manifest, "manifest_path": response.manifest_path}
+    manifest = server._register_api_artifacts(run, artifacts)
+    entries = manifest["artifact_contract"]["standalone_files"]
+    assert sum(entry.get("manifest_key") == "manifest_path" for entry in entries) == 1
+    persisted = json.loads(Path(response.manifest_path).read_text(encoding="utf-8"))
+    assert persisted == manifest
+    manifest_entry = next(
+        entry for entry in entries if entry["manifest_key"] == "manifest_path"
+    )
+    assert manifest_entry["size_bytes"] == Path(response.manifest_path).stat().st_size
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "status", ["accepted", "running", "failed", "cancelled", "expired"]
+)
+async def test_result_conflict_identifies_execution_status(status):
+    job_id = streaming.create_job()
+    if status == "running":
+        streaming.mark_job_running(job_id)
+    elif status != "accepted":
+        streaming.emit_error(job_id, "No result", status=status)
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=server.app), base_url="http://test"
+    ) as client:
+        response = await client.get(f"/jobs/{job_id}/result")
+    assert response.status_code == 409
+    assert response.json()["detail"]["job_status"] == status
+
+
+@pytest.mark.parametrize("replace_ancestor", [False, True])
+def test_publication_rejects_replaced_namespace_without_writing_outside_root(
+    monkeypatch, tmp_path, replace_ancestor
+):
+    trusted = tmp_path / "trusted"
+    monkeypatch.setattr(server, "_BASE_OUTPUT", trusted)
+    run = server._reserve_api_run(server._resolve_output_dir("shared"))
+    replaced = run.output_path.parent if replace_ancestor else run.output_path
+    moved = replaced.with_name(replaced.name + "-original")
+    outside = tmp_path / "outside"
+    target = outside / run.run_id if replace_ancestor else outside
+    target.mkdir(parents=True)
+    manifest = target / "manifest.json"
+    manifest.write_text("private original", encoding="utf-8")
+    replaced.rename(moved)
+    try:
+        replaced.symlink_to(outside, target_is_directory=True)
+    except OSError as exc:
+        pytest.skip(f"OS cannot create directory symlinks: {exc}")
+    artifacts = {
+        "manifest": {},
+        "manifest_path": str(run.output_path / "manifest.json"),
+    }
+    with pytest.raises(GenerationError, match="accessible manifest"):
+        server._register_api_artifacts(run, artifacts)
+    assert manifest.read_text(encoding="utf-8") == "private original"
+    assert run.active
+    assert not run.files
 
 
 def _request(prompt="test generation"):

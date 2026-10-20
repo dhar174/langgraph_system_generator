@@ -72,7 +72,7 @@ def test_browser_generation_mode_and_connection_states_are_explicit():
     assert "new EventSource(streamUrl)" in content
     assert "Reconnecting to progress stream" in content
     assert "payload.result_url" in content
-    assert "fetch(resultUrl.pathname" in content
+    assert "fetchCompletedJobResult(resultUrl.pathname" in content
     assert "local artifact references may have expired" in content
 
 
@@ -110,13 +110,25 @@ class EventSource {
     close() { this.readyState = 2; }
     fire(name, data) { return (this.listeners[name] || this.onerror)(data === undefined ? {} : { data: JSON.stringify(data) }); }
 }
+let fetchFailures = [];
+let fetchCalls = 0;
+const setTimeout = (callback) => { callback(); };
 async function fetch(path) {
+    fetchCalls += 1;
     assert.equal(path, '/jobs/example/result');
-    return { ok: true, json: async () => ({success: true, manifest: {cell_count: 7}}) };
+    const failure = fetchFailures.shift();
+    if (failure instanceof Error) { throw failure; }
+    if (failure) { return {ok: false, status: failure, json: async () => ({})}; }
+    return { ok: true, status: 200, json: async () => ({success: true, manifest: {cell_count: 7}}) };
 }
 """
     scenarios = r"""
 (async () => {
+    assert.equal(extractErrorMessage({}, '  Result unavailable  '), 'Result unavailable');
+    assert.equal(extractErrorMessage({detail: {}}, 'Result unavailable'), 'Result unavailable');
+    assert.equal(extractErrorMessage({message: 'Specific error'}, 'Fallback'), 'Specific error');
+    assert.equal(extractErrorMessage({}, {error: 'Object fallback'}), 'Object fallback');
+    assert.match(extractErrorMessage({}, '  '), /Generation failed/);
     let outcome = 'pending';
     const promise = streamGeneration('/stream/example');
     promise.then(() => outcome = 'resolved', () => outcome = 'rejected');
@@ -130,6 +142,27 @@ async function fetch(path) {
     const result = await promise;
     assert.equal(result.manifest.cell_count, 7);
     assert.equal(source.readyState, EventSource.CLOSED);
+    for (const failures of [[new Error('offline')], [503, 429]]) {
+        fetchFailures = [...failures];
+        const before = fetchCalls;
+        const retry = streamGeneration('/stream/example');
+        await currentEventSource.fire('complete', {result_url: '/jobs/example/result'});
+        assert.equal((await retry).manifest.cell_count, 7);
+        assert.equal(fetchCalls - before, failures.length + 1);
+    }
+    for (const [failures, attempts, message] of [
+        [[404], 1, /no longer available/],
+        [[503, 503, 503], 3, /Generation completed.*Result reference: \/jobs\/example\/result/],
+        [[new Error('offline'), new Error('offline'), new Error('offline')], 3, /Generation completed.*Result reference: \/jobs\/example\/result/],
+    ]) {
+        fetchFailures = [...failures];
+        const before = fetchCalls;
+        const retry = streamGeneration('/stream/example');
+        const rejection = assert.rejects(retry, message);
+        await currentEventSource.fire('complete', {result_url: '/jobs/example/result'});
+        await rejection;
+        assert.equal(fetchCalls - before, attempts);
+    }
     const failed = streamGeneration('/stream/failed');
     const rejected = assert.rejects(failed, /cancelled/);
     currentEventSource.fire('error', {error: 'Generation cancelled', status: 'cancelled'});

@@ -338,7 +338,7 @@ async def _await_generation(
 def _resolve_output_dir(path: str | os.PathLike[str] | None) -> Path:
     """Resolve an allowed API output parent and reject symlink components."""
     base = _BASE_OUTPUT.resolve()
-    requested = Path(path or _DEFAULT_API_OUTPUT.relative_to(base))
+    requested = Path(path) if path else Path("api")
     if ".." in requested.parts:
         raise HTTPException(
             status_code=400,
@@ -507,12 +507,15 @@ def _reserve_api_run(parent: Path, job_id: str | None = None) -> _ApiRun:
 
 def _safe_run_file(run: _ApiRun, name: str) -> Path | None:
     """Resolve a registered artifact only while its original file remains safe."""
-    if name not in _API_ARTIFACT_NAMES:
-        return None
     path = run.files.get(name)
-    if path is None or path.is_symlink() or run.output_path.is_symlink():
+    return _safe_run_candidate(run, path, name) if path is not None else None
+
+
+def _safe_run_candidate(run: _ApiRun, path: Path, name: str) -> Path | None:
+    """Validate the same namespace boundary for publication and downloads."""
+    if name not in _API_ARTIFACT_NAMES or path.parent != run.output_path:
         return None
-    if not path.is_file():
+    if path.is_symlink() or run.output_path.is_symlink() or not path.is_file():
         return None
     try:
         base = _BASE_OUTPUT.resolve()
@@ -527,7 +530,7 @@ def _safe_run_file(run: _ApiRun, name: str) -> Path | None:
         if real_file.parent != real_run or real_file.name != name:
             return None
         real_file.relative_to(base)
-    except (ValueError, FileNotFoundError):
+    except (ValueError, OSError):
         return None
     return real_file
 
@@ -563,34 +566,17 @@ def _register_api_artifacts(
             continue
         candidate = Path(raw_path)
         name = candidate.name
-        try:
-            if (
-                name not in _API_ARTIFACT_NAMES
-                or candidate.parent != run.output_path
-                or candidate.is_symlink()
-                or run.output_path.is_symlink()
-                or candidate.resolve(strict=True).parent
-                != run.output_path.resolve(strict=True)
-                or candidate.resolve(strict=True).name != name
-                or not candidate.is_file()
-            ):
-                raise ValueError("not a registered run file")
-        except (ValueError, FileNotFoundError, OSError):
+        safe_candidate = _safe_run_candidate(run, candidate, name)
+        if safe_candidate is None:
             entry["exists"] = False
             entry.pop("api_download_path", None)
             continue
-        discovered[name] = candidate.resolve(strict=True)
+        discovered[name] = safe_candidate
 
     manifest_path = Path(artifacts["manifest_path"])
-    if (
-        manifest_path.parent == run.output_path
-        and not manifest_path.is_symlink()
-        and manifest_path.is_file()
-        and manifest_path.resolve(strict=True).parent
-        == run.output_path.resolve(strict=True)
-        and manifest_path.resolve(strict=True).name == "manifest.json"
-    ):
-        discovered["manifest.json"] = manifest_path.resolve(strict=True)
+    safe_manifest = _safe_run_candidate(run, manifest_path, "manifest.json")
+    if safe_manifest is not None:
+        discovered["manifest.json"] = safe_manifest
 
     run.files = discovered
     if "manifest.json" not in discovered:
@@ -615,19 +601,17 @@ def _register_api_artifacts(
         "manifest_key": "manifest_path",
         "availability": "standalone",
         "path_type": "server_local",
-        "path": (
-            str(discovered["manifest.json"]) if "manifest.json" in discovered else None
-        ),
+        "path": str(discovered["manifest.json"]),
         "relative_path": "manifest.json",
-        "exists": "manifest.json" in discovered,
+        "exists": True,
         "size_bytes": None,
-        "api_download_path": (
-            f"/artifacts?run_id={run.run_id}&artifact=manifest.json"
-            if "manifest.json" in discovered
-            else None
-        ),
+        "api_download_path": f"/artifacts?run_id={run.run_id}&artifact=manifest.json",
     }
-    standalone[:] = [entry for entry in standalone if isinstance(entry, dict)]
+    standalone[:] = [
+        entry
+        for entry in standalone
+        if isinstance(entry, dict) and entry.get("manifest_key") != "manifest_path"
+    ]
     standalone.append(manifest_entry)
     contract["api_downloads"] = {
         name: f"/artifacts?run_id={run.run_id}&artifact={name}"
@@ -635,17 +619,16 @@ def _register_api_artifacts(
     }
     contract["access_scope"] = "trusted_single_operator"
 
-    if "manifest.json" in discovered:
-        manifest_file = discovered["manifest.json"]
-        for _ in range(3):
-            _persist_api_manifest(manifest_file, manifest)
-            actual_size = manifest_file.stat().st_size
-            if manifest_entry["size_bytes"] == actual_size:
-                break
-            manifest_entry["size_bytes"] = actual_size
-        else:
-            manifest_entry["size_bytes"] = None
-            _persist_api_manifest(manifest_file, manifest)
+    manifest_file = discovered["manifest.json"]
+    for _ in range(3):
+        _persist_api_manifest(manifest_file, manifest)
+        actual_size = manifest_file.stat().st_size
+        if manifest_entry["size_bytes"] == actual_size:
+            break
+        manifest_entry["size_bytes"] = actual_size
+    else:
+        manifest_entry["size_bytes"] = None
+        _persist_api_manifest(manifest_file, manifest)
     run.active = False
     run.completed_at = time.time()
     return manifest
@@ -959,6 +942,7 @@ async def get_job_result(job_id: str) -> dict[str, Any]:
             status_code=409,
             detail={
                 "code": "job_result_not_ready",
+                "job_status": status["status"],
                 "message": "The job has no successful result.",
             },
         )

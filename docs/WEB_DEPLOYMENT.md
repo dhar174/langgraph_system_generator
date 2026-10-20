@@ -127,7 +127,13 @@ with an indicator. Subscribers observe independent copies of the retained histor
 Disconnecting a stream does not cancel execution. The browser allows EventSource
 to reconnect and distinguishes transport interruption from generation failure.
 Compact completion events reference `/jobs/{job_id}/result`, avoiding large manifest
-payloads in bounded SSE storage.
+payloads in bounded SSE storage. The browser retries network errors, HTTP 429 and
+HTTP 5xx responses up to three result-fetch attempts, with 250 ms and 500 ms delays.
+It does not retry unavailable/expired results (HTTP 404/410) or start another job.
+If transient retries are exhausted, the message preserves completion and the
+result reference for inspection while the originating process retains it.
+`GET /jobs/{job_id}/result` returns `409 job_result_not_ready` with `job_status`
+when execution is still active or ended without a successful result.
 
 Limits are read at process startup. Restart after changing them. Invalid integer
 values use safe defaults and valid values are clamped to supported bounds.
@@ -172,8 +178,12 @@ Job/event and artifact retention are separate. Completed records are retained fo
 five minutes by default; artifacts for fifteen minutes after terminal generation.
 A single maintenance loop plus admission/access checks prune expired state. Active
 generation is not removed because its creation time is old. Cleanup targets only
-server-reserved run namespaces. Restart invalidates artifact references even if
-files remain; Phase A does not reconstruct authorization from filesystem discovery.
+server-reserved run namespaces. New SSE subscriptions enforce the same terminal
+retention deadline as job inspection; a subscriber already reading a terminal
+record may finish that replay. Forced cleanup of active execution records a
+replayable cancellation before the normal retention deadline removes its record.
+Restart invalidates artifact references even if files remain; Phase A does not
+reconstruct authorization from filesystem discovery.
 File bytes consume Cloud Run memory and are not a durable storage budget.
 
 | Situation | Expected behavior |

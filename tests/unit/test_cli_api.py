@@ -1348,7 +1348,8 @@ async def test_api_download_artifact_endpoint(
         assert generated.status_code == 200
         contract = generated.json()["manifest"]["artifact_contract"]
         notebook = next(
-            entry for entry in contract["standalone_files"]
+            entry
+            for entry in contract["standalone_files"]
             if entry.get("manifest_key") == "notebook_path"
         )
         response = await client.get(notebook["api_download_path"])
@@ -1378,7 +1379,10 @@ async def test_api_download_artifact_rejects_invalid_path(
 
     # Filesystem paths no longer grant artifact access, even inside the base.
     assert response.status_code == 422
-    assert {item["loc"][-1] for item in response.json()["detail"]} == {"run_id", "artifact"}
+    assert {item["loc"][-1] for item in response.json()["detail"]} == {
+        "run_id",
+        "artifact",
+    }
 
 
 def test_health_endpoint():

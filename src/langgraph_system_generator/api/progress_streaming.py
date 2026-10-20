@@ -162,11 +162,18 @@ def _compact_event_data(data: dict[str, Any]) -> dict[str, Any]:
     return compact
 
 
+def _store_event(record: JobRecord, event: dict[str, Any], size: int) -> int:
+    """Store a sanitized, sized event without repeating serialization."""
+    record.next_event_id += 1
+    record.events.append(event)
+    record.event_bytes += size
+    return int(event["id"])
+
+
 def _append_event(
     record: JobRecord, event_type: str, data: dict[str, Any], *, terminal: bool = False
 ) -> int:
     event_id = record.next_event_id
-    record.next_event_id += 1
     cleaned = sanitize_generation_payload(data)
     event = {"id": event_id, "event": event_type, "data": cleaned}
     if _event_size(event) > _MAX_EVENT_BYTES:
@@ -179,9 +186,7 @@ def _append_event(
     if terminal and size + record.event_bytes > _MAX_JOB_EVENT_BYTES:
         event["data"] = _compact_event_data(data)
         size = _event_size(event)
-    record.events.append(event)
-    record.event_bytes += size
-    return event_id
+    return _store_event(record, event, size)
 
 
 def _notify_subscribers(record: JobRecord) -> None:
@@ -243,11 +248,12 @@ def emit_progress(
         "event": event_type,
         "data": sanitize_generation_payload(data),
     }
+    size = _event_size(event)
     if (
         len([item for item in record.events if item["event"] != "events_truncated"])
         >= _MAX_EVENTS_PER_JOB
-        or _event_size(event) > _MAX_EVENT_BYTES
-        or record.event_bytes + _event_size(event) > _MAX_JOB_EVENT_BYTES
+        or size > _MAX_EVENT_BYTES
+        or record.event_bytes + size > _MAX_JOB_EVENT_BYTES
     ):
         # Allocate an ID to the omitted event so replay cursors remain IDs, not list offsets.
         record.next_event_id += 1
@@ -255,7 +261,7 @@ def emit_progress(
         _notify_subscribers(record)
         return False
 
-    _append_event(record, event_type, data)
+    _store_event(record, event, size)
     _notify_subscribers(record)
     if log:
         logger.debug("Job %s: %s", job_id, event_type)
@@ -318,7 +324,12 @@ def emit_error(
 
 
 def cleanup_job(job_id: str, *, force: bool = False) -> bool:
-    """Clean terminal history; forced cleanup explicitly cancels active jobs."""
+    """Remove terminal history, or cancel an active job when forced.
+
+    Forced cancellation retains its terminal record for the normal retention
+    window so subscribers can observe the outcome. It does not immediately evict
+    that newly cancelled record.
+    """
     record = _active_jobs.get(job_id)
     if record is None:
         return False
@@ -344,6 +355,7 @@ async def progress_generator(
     last_event_id: str | None = None,
 ) -> AsyncGenerator[dict[str, Any], None]:
     """Replay stored events by their actual IDs, then await new events."""
+    _prune_expired_jobs()
     record = _active_jobs.get(job_id)
     if record is None:
         yield {
@@ -412,11 +424,11 @@ async def progress_generator(
     subscriber = asyncio.Event()
     record.subscribers.add(subscriber)
     _stream_subscribers.add(subscriber)
-    retained_truncation_marker = any(
-        event["event"] == "events_truncated" for event in record.events
-    )
     try:
         while True:
+            retained_truncation_marker = any(
+                event["event"] == "events_truncated" for event in record.events
+            )
             pending = [
                 event
                 for event in record.events

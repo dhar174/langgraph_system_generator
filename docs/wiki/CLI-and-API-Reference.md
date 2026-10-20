@@ -179,8 +179,12 @@ uvicorn langgraph_system_generator.api.server:app --reload
 uvicorn langgraph_system_generator.api.server:app \
   --host 0.0.0.0 \
   --port 8000 \
-  --workers 4
+  --workers 1
 ```
+
+Phase A jobs and artifact registrations belong to one process. Use one worker;
+multiple workers do not share job state or download registrations. See
+[Web Deployment](../WEB_DEPLOYMENT.md) for the supported hosted operating mode.
 
 **Docker:**
 ```bash

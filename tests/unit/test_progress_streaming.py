@@ -10,6 +10,17 @@ import pytest
 from langgraph_system_generator.api import progress_streaming
 
 
+@pytest.fixture(autouse=True)
+async def isolated_streaming_state(monkeypatch):
+    """Keep retained records, owned tasks and subscriber capacity test-local."""
+    monkeypatch.setattr(progress_streaming, "_active_jobs", {})
+    monkeypatch.setattr(progress_streaming, "_owned_tasks", {})
+    monkeypatch.setattr(progress_streaming, "_stream_subscribers", set())
+    yield
+    assert await progress_streaming.shutdown_owned_tasks(timeout=1) == 0
+    assert not progress_streaming._stream_subscribers
+
+
 async def _collect_events(job_id: str, last_event_id: str | None = None):
     events = []
     async for event in progress_streaming.progress_generator(
@@ -131,6 +142,59 @@ async def test_reconnect_uses_ids_after_an_omitted_event(monkeypatch):
     replay_after_marker = await _collect_events(job_id, str(marker["id"]))
     assert [event["event"] for event in replay_after_marker] == ["complete"]
     progress_streaming.cleanup_job(job_id)
+
+
+@pytest.mark.asyncio
+async def test_live_subscriber_gets_one_marker_when_history_fills(monkeypatch):
+    monkeypatch.setattr(progress_streaming, "_MAX_EVENTS_PER_JOB", 1)
+    job_id = progress_streaming.create_job()
+    progress_streaming.emit_node_progress(job_id, "start", 1, "Starting")
+    stream = progress_streaming.progress_generator(job_id)
+    assert (await anext(stream))["event"] == "progress"
+    pending = asyncio.create_task(anext(stream))
+    # Let the subscriber reach its wait before emitting the omitted event.
+    ready = asyncio.get_running_loop().create_future()
+    asyncio.get_running_loop().call_soon(ready.set_result, None)
+    await ready
+    assert not pending.done()
+    progress_streaming.emit_log(job_id, "info", "Omitted")
+    marker = await asyncio.wait_for(pending, timeout=1)
+    progress_streaming.emit_complete(job_id, {"success": True})
+    remaining = [event async for event in stream]
+    assert marker["event"] == "events_truncated"
+    assert marker.get("id") == "2"
+    assert [event["event"] for event in remaining] == ["complete"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("at_expiry", [False, True])
+async def test_stream_access_enforces_terminal_retention(monkeypatch, at_expiry):
+    clock = [100.0]
+    monkeypatch.setattr(progress_streaming.time, "time", lambda: clock[0])
+    job_id = progress_streaming.create_job()
+    progress_streaming.emit_complete(job_id, {"success": True})
+    clock[0] += progress_streaming._COMPLETED_JOB_TTL_SECONDS - (not at_expiry)
+    events = await _collect_events(job_id)
+    if at_expiry:
+        assert events[0]["data"]["code"] == "job_unavailable"
+        assert job_id not in progress_streaming._active_jobs
+    else:
+        assert events[0]["event"] == "complete"
+        assert job_id in progress_streaming._active_jobs
+
+
+@pytest.mark.asyncio
+async def test_forced_active_cleanup_retains_cancellation_until_expiry(monkeypatch):
+    clock = [100.0]
+    monkeypatch.setattr(progress_streaming.time, "time", lambda: clock[0])
+    job_id = progress_streaming.create_job()
+    assert progress_streaming.cleanup_job(job_id, force=True)
+    assert progress_streaming.get_job_status(job_id)["status"] == "cancelled"
+    events = await _collect_events(job_id)
+    assert len(events) == 1
+    assert events[0]["data"]["status"] == "cancelled"
+    clock[0] += progress_streaming._COMPLETED_JOB_TTL_SECONDS
+    assert progress_streaming.get_job_status(job_id) is None
 
 
 @pytest.mark.asyncio
