@@ -38,15 +38,31 @@ class MemoryDatabase:
             self.documents = candidate
             return result
 
-    def due(self, collection: str, field: str, now: float, limit: int) -> list[str]:
+    def due(
+        self,
+        collection: str,
+        field: str,
+        now: float,
+        limit: int,
+        *,
+        deadline_field: str | None = None,
+    ) -> list[str]:
         with self.lock:
             candidates = [
-                (data[field], path)
+                (
+                    (
+                        (data[deadline_field], data[field])
+                        if deadline_field
+                        else (data[field],)
+                    ),
+                    path,
+                )
                 for path, data in self.documents.items()
                 if path.count("/") == 1
                 and path.startswith(collection + "/")
                 and data.get(field) is not None
                 and data[field] <= now
+                and (deadline_field is None or data.get(deadline_field, 0) > now)
             ]
             return [path for _, path in sorted(candidates)[:limit]]
 

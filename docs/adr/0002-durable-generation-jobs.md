@@ -195,7 +195,7 @@ Use a dedicated Firestore Native database. Documents:
 | --- | --- |
 | `jobs/{opaque_job_id}` | complete DurableJob v1, confidential envelope, immutable owner, result identity; one bounded document |
 | `idempotency/{HMAC_SHA256(owner_tuple_and_key)}` | original job ID, canonical fingerprint, 24-hour expiry |
-| `dispatch/{job_id}` | current DispatchIntent, `due_at` numeric query projection, job expiry |
+| `dispatch/{job_id}` | current DispatchIntent, numeric `due_at` and `deadline_at` query projections, job expiry |
 | `jobs/{job_id}/events/{cursor_20_digits}` | one bounded JobEvent, cursor monotonically allocated by job transaction |
 
 All retained records receive a timestamp `delete_after` for TTL; numeric epoch
@@ -208,12 +208,25 @@ are capped at 64 KiB, keeping documents below Firestore's document size limit.
 No unbounded arrays, event histories or manifests live in the job document.
 
 Reads by job, idempotency and event ID use document paths. Pending dispatch uses
-`dispatch.due_at <= now`, ordered by `due_at`, limit 1–100. Reconciliation uses
-`jobs.next_action_at <= now`, ordered by that field, limit 1–100. These require the
-default ascending single-field indexes, no composite indexes. Inactive projections
-are null and excluded by the numeric range queries. Ties use Firestore document
+`dispatch.due_at <= now AND dispatch.deadline_at > now`, ordered by `deadline_at`
+then `due_at`, limit 1–100. Both filters run before the limit, so overdue pending
+intents cannot fill a page and hide eligible work while reconciliation is delayed.
+The deadline-first order avoids scanning the expired prefix of the dispatch index.
+The transaction still samples a fresh clock and checks current job eligibility.
+This read does not reconcile or mutate overdue jobs; reconciliation owns their
+terminal transition. Reconciliation uses `jobs.next_action_at <= now`, ordered by
+that field, limit 1–100, with its default ascending single-field index. Dispatch
+requires the proposed ascending composite index `(deadline_at, due_at)`. Inactive
+`due_at` projections are null and excluded by the numeric range query. Ties use Firestore document
 ordering; no same-timestamp chronology is inferred. A subsequent pass revisits
 remaining due records. No user/owner listing or request-content queries exist.
+
+Firestore's [multiple-range-field query documentation](https://docs.cloud.google.com/firestore/native/docs/query-data/multiple-range-fields)
+was verified on 2026-10-20 for server-side filtering, composite ordering and index
+entry scan costs. The index proposal remains unapplied. Before selecting this
+query against any preexisting experimental B1 data, rebuild missing dispatch
+`deadline_at` projections from the authoritative job and deploy/verify the index;
+missing fields are ineligible. B1 has no activated durable public deployment.
 
 Reviewable [index and TTL proposal](../config/firestore-jobs.indexes.json) exempts
 request/owner/result maps and TTL timestamps from indexing. It is not applied.

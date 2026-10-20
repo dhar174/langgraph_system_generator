@@ -1,5 +1,14 @@
 {
-  "indexes": [],
+  "indexes": [
+    {
+      "collectionGroup": "dispatch",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {"fieldPath": "deadline_at", "order": "ASCENDING"},
+        {"fieldPath": "due_at", "order": "ASCENDING"}
+      ]
+    }
+  ],
   "fieldOverrides": [
     {"collectionGroup": "jobs", "fieldPath": "request", "indexes": []},
     {"collectionGroup": "jobs", "fieldPath": "owner", "indexes": []},

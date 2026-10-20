@@ -74,7 +74,15 @@ class FirestoreDatabase:
             # Never reflect ADC paths, endpoints, prompts or SDK response bodies.
             raise JobError("job_backend_unavailable", 503) from None
 
-    def due(self, collection: str, field: str, now: float, limit: int) -> list[str]:
+    def due(
+        self,
+        collection: str,
+        field: str,
+        now: float,
+        limit: int,
+        *,
+        deadline_field: str | None = None,
+    ) -> list[str]:
         try:
             from google.cloud.firestore_v1.base_query import FieldFilter
 
@@ -82,9 +90,12 @@ class FirestoreDatabase:
                 self._connect()
                 .collection(collection)
                 .where(filter=FieldFilter(field, "<=", now))
-                .order_by(field)
-                .limit(limit)
             )
+            if deadline_field is not None:
+                query = query.where(
+                    filter=FieldFilter(deadline_field, ">", now)
+                ).order_by(deadline_field)
+            query = query.order_by(field).limit(limit)
             return [snapshot.reference.path for snapshot in query.stream(timeout=10)]
         except Exception:  # noqa: BLE001 - sanitize SDK failures at storage boundary
             raise JobError("job_backend_unavailable", 503) from None

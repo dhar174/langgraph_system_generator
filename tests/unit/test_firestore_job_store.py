@@ -67,12 +67,20 @@ class FakeClient:
         client = self
 
         class Query:
+            def __init__(self):
+                self.filters = []
+                self.orders = []
+                self.maximum = None
+
             def where(self, *, filter):
-                self.filter = filter
+                assert self.maximum is None, "filter must precede limit"
+                assert filter.op_string in {"<=", ">"}
+                self.filters.append(filter)
                 return self
 
             def order_by(self, field):
-                assert field == self.filter.field_path
+                assert any(field == item.field_path for item in self.filters)
+                self.orders.append(field)
                 return self
 
             def limit(self, limit):
@@ -81,15 +89,25 @@ class FakeClient:
 
             def stream(self, *, timeout):
                 assert timeout == 10
-                field = self.filter.field_path
+
+                def matches(data):
+                    for item in self.filters:
+                        value = data.get(item.field_path)
+                        if value is None:
+                            return False
+                        if item.op_string == "<=" and value > item.value:
+                            return False
+                        if item.op_string == ">" and value <= item.value:
+                            return False
+                    return True
+
                 with client.lock:
                     rows = [
-                        (data[field], path)
+                        (tuple(data[field] for field in self.orders), path)
                         for path, data in client.documents.items()
                         if path.count("/") == 1
                         and path.startswith(name + "/")
-                        and data.get(field) is not None
-                        and data[field] <= self.filter.value
+                        and matches(data)
                     ]
                 return [
                     SimpleNamespace(reference=SimpleNamespace(path=path))
@@ -184,3 +202,63 @@ def test_adapter_failures_are_structured(monkeypatch):
         store.pending_dispatch()
     assert error.value.status == 503
     assert "secret" not in str(error.value)
+
+
+def test_real_sdk_dispatch_query_matches_index_proposal(monkeypatch):
+    import json
+    from pathlib import Path
+
+    firestore = pytest.importorskip("google.cloud.firestore")
+    auth = pytest.importorskip("google.auth.credentials")
+    from google.cloud.firestore_v1.query import Query
+    from google.cloud.firestore_v1.types import StructuredQuery
+
+    captured = []
+
+    def stream(query, *, timeout):
+        assert timeout == 10
+        captured.append(query._to_protobuf()._pb)
+        return iter(())
+
+    monkeypatch.setattr(Query, "stream", stream)
+    client = firestore.Client(
+        project="offline-project", credentials=auth.AnonymousCredentials()
+    )
+    db = FirestoreDatabase("offline-project", client=client)
+    assert db.due("dispatch", "due_at", 1000.0, 1, deadline_field="deadline_at") == []
+    query = captured[0]
+    assert {
+        (
+            item.field_filter.field.field_path,
+            item.field_filter.op,
+            item.field_filter.value.double_value,
+        )
+        for item in query.where.composite_filter.filters
+    } == {
+        ("due_at", StructuredQuery.FieldFilter.Operator.LESS_THAN_OR_EQUAL, 1000.0),
+        ("deadline_at", StructuredQuery.FieldFilter.Operator.GREATER_THAN, 1000.0),
+    }
+    assert query.limit.value == 1
+    assert [item.field.field_path for item in query.order_by] == [
+        "deadline_at",
+        "due_at",
+    ]
+    assert all(
+        item.direction == StructuredQuery.Direction.ASCENDING for item in query.order_by
+    )
+    proposal = json.loads(
+        (
+            Path(__file__).resolve().parents[2]
+            / "docs/config/firestore-jobs.indexes.json"
+        ).read_text(encoding="utf-8")
+    )
+    assert proposal["indexes"] == [
+        {
+            "collectionGroup": "dispatch",
+            "queryScope": "COLLECTION",
+            "fields": [
+                {"fieldPath": "deadline_at", "order": "ASCENDING"},
+                {"fieldPath": "due_at", "order": "ASCENDING"},
+            ],
+        }
+    ]

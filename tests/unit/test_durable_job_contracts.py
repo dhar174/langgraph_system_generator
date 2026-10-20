@@ -90,6 +90,22 @@ def test_concurrent_idempotent_acceptance(store):
     assert len(backend.pending_dispatch()) == 1
 
 
+def test_overdue_dispatch_backlog_does_not_hide_eligible_intents(store):
+    backend, clock = store
+    overdue = [
+        backend.accept(OWNER, f"old-{index}", REQUEST).job for index in range(100)
+    ]
+    clock.now = overdue[0].deadline_at
+    eligible = backend.accept(OWNER, "eligible", REQUEST).job
+
+    # No reconciliation or TTL deletion: a full old page must not hide new work.
+    assert backend.pending_dispatch(limit=100) == (eligible.dispatch,)
+    assert backend.pending_dispatch(limit=1) == (eligible.dispatch,)
+    assert backend.get(OWNER, overdue[0].job_id) == overdue[0]
+    clock.now = eligible.deadline_at
+    assert backend.pending_dispatch() == ()
+
+
 def test_conflicting_replay_and_owner_isolation(store):
     backend, _ = store
     job = accepted(backend)

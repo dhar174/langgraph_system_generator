@@ -42,7 +42,15 @@ class Transaction(Protocol):
 
 class Database(Protocol):
     def run(self, callback: Callable[[Transaction], T]) -> T: ...
-    def due(self, collection: str, field: str, now: float, limit: int) -> list[str]: ...
+    def due(
+        self,
+        collection: str,
+        field: str,
+        now: float,
+        limit: int,
+        *,
+        deadline_field: str | None = None,
+    ) -> list[str]: ...
 
 
 def _json(value: object) -> bytes:
@@ -160,11 +168,12 @@ class TransactionalJobStore:
             )
         tx.set(self._path(job.job_id), job.model_dump(mode="json"))
         dispatch_data = job.dispatch.model_dump(mode="json")
-        # A single range index suffices; inactive intents cannot starve pending ones.
+        # Deadline eligibility must be filtered before the bounded query result.
         dispatch_data["due_at"] = (
             job.dispatch.available_at if job.dispatch.pending else None
         )
         dispatch_data["expires_at"] = job.expires_at
+        dispatch_data["deadline_at"] = job.deadline_at
         tx.set(f"dispatch/{job.job_id}", dispatch_data)
         return job
 
@@ -447,7 +456,9 @@ class TransactionalJobStore:
     def pending_dispatch(self, limit: int = 100) -> tuple[DispatchIntent, ...]:
         self._limit(limit)
         now = self.clock()
-        paths = self.db.due("dispatch", "due_at", now, limit)
+        paths = self.db.due(
+            "dispatch", "due_at", now, limit, deadline_field="deadline_at"
+        )
 
         def operation(tx: Transaction) -> tuple[DispatchIntent, ...]:
             now = self.clock()
