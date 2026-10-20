@@ -179,8 +179,12 @@ uvicorn langgraph_system_generator.api.server:app --reload
 uvicorn langgraph_system_generator.api.server:app \
   --host 0.0.0.0 \
   --port 8000 \
-  --workers 4
+  --workers 1
 ```
+
+Phase A jobs and artifact registrations belong to one process. Use one worker;
+multiple workers do not share job state or download registrations. See
+[Web Deployment](../WEB_DEPLOYMENT.md) for the supported hosted operating mode.
 
 **Docker:**
 ```bash
@@ -222,23 +226,31 @@ curl http://localhost:8000/health
 
 #### `GET /artifacts`
 
-Downloads an artifact path returned by a generation manifest. Paths are
-resolved under the trusted output base.
+Downloads a registered API-generated artifact using the manifest's
+`artifact_contract.standalone_files[].api_download_path`. Raw filesystem paths
+do not authorize access. CLI/package output is local and is not published by the
+API. Download references expire and are unavailable after process replacement.
 
 **Query Parameters:**
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
-| `path` | string | Artifact path returned in a manifest |
+| `run_id` | string | Opaque server-assigned API generation namespace |
+| `artifact` | string | Registered filename from that run's artifact contract |
 
 **Example:**
 ```bash
-curl "http://localhost:8000/artifacts?path=./output/api/notebook.ipynb"
+curl "http://localhost:8000/artifacts?run_id=RETURNED_RUN_ID&artifact=notebook.ipynb"
 ```
 
 #### `POST /generate`
 
 Generate a multi-agent system from a prompt.
+
+API `output_dir` chooses an allowed parent; the server allocates a unique
+`generations/<run_id>` child. Direct CLI/package output directory handling is
+unchanged. See [the operational runbook](../WEB_DEPLOYMENT.md) for hosted
+single-operator admission, request-bound fallback and SSE retention semantics.
 
 **Request Body:**
 ```json

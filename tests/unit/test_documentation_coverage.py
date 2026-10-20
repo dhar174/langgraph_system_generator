@@ -50,7 +50,7 @@ def test_required_examples_present() -> None:
         "README.md": [
             'lnf generate "Create a router-based customer support chatbot"',
             "LANGSMITH_API_KEY",
-            "GET /artifacts?path=...",
+            "GET /artifacts?run_id=...&artifact=...",
         ],
         "docs/wiki/Developer-Onboarding.md": [
             'pip install -e ".[full,dev]"',

@@ -18,6 +18,7 @@ const progressText = document.getElementById('progressText');
 const progressPercentage = document.getElementById('progressPercentage');
 const progressSteps = document.getElementById('progressSteps');
 let currentEventSource = null;
+let serverCapabilities = null;
 
 // Validation constants
 const CHAR_COUNT_MIN = 10;
@@ -102,8 +103,32 @@ function getCharacterCount(text) {
     return Array.from(text || '').length;
 }
 
-function buildArtifactDownloadUrl(path) {
-    return `/artifacts?path=${encodeURIComponent(path)}`;
+function buildArtifactDownloadUrl(reference) {
+    if (typeof reference !== 'string') {
+        return null;
+    }
+    let url;
+    try {
+        url = new URL(reference, window.location.origin);
+    } catch (error) {
+        return null;
+    }
+    const allowedArtifacts = new Set([
+        'manifest.json', 'generated_cells.json', 'notebook_plan.json',
+        'notebook.ipynb', 'notebook.html', 'notebook.md', 'notebook.docx',
+        'notebook.pdf', 'notebook_bundle.zip'
+    ]);
+    const runId = url.searchParams.get('run_id');
+    const artifact = url.searchParams.get('artifact');
+    if (
+        url.origin !== window.location.origin ||
+        url.pathname !== '/artifacts' ||
+        !/^[a-f0-9]{32}$/i.test(runId || '') ||
+        !allowedArtifacts.has(artifact)
+    ) {
+        return null;
+    }
+    return `/artifacts?run_id=${encodeURIComponent(runId)}&artifact=${encodeURIComponent(artifact)}`;
 }
 
 function showToast(message, duration = 2000) {
@@ -327,9 +352,14 @@ async function checkHealth() {
     try {
         const response = await fetch('/health');
         if (response.ok) {
+            serverCapabilities = await response.json();
             statusDot.classList.add('healthy');
             statusDot.classList.remove('error');
-            statusText.textContent = 'Server Online';
+            statusText.textContent = serverCapabilities.generation_enabled === false
+                ? 'Generation Unavailable'
+                : (serverCapabilities.async_generation === false
+                    ? 'Server Online (request-bound generation)'
+                    : 'Server Online');
         } else {
             throw new Error('Health check failed');
         }
@@ -472,8 +502,8 @@ function showResult(data) {
         appendLabeledValue(resultWrapper, 'Notebook Cells', String(manifest.cell_count));
     }
 
-    if (data.output_dir) {
-        appendLabeledValue(resultWrapper, 'Output Directory', data.output_dir, {
+    if (data.run_id) {
+        appendLabeledValue(resultWrapper, 'Run ID', data.run_id, {
             asCode: true,
         });
     }
@@ -518,26 +548,45 @@ function showResult(data) {
     exportButtons.style.gap = '0.75rem';
     exportButtons.style.flexWrap = 'wrap';
 
-    [
-        { path: manifest.notebook_path, label: 'Notebook (.ipynb)' },
-        { path: manifest.html_path, label: 'HTML' },
-        { path: data.manifest_path, label: 'Manifest (JSON)' },
-        { path: manifest.docx_path, label: 'Word Doc' },
-        { path: manifest.pdf_path, label: 'PDF' },
-        { path: manifest.zip_path, label: 'ZIP Bundle' },
-        { path: manifest.markdown_path, label: 'Markdown (.md)' }
-    ].forEach((format) => {
-        if (format.path) {
+    const artifactLabels = {
+        notebook_path: 'Notebook (.ipynb)',
+        html_path: 'HTML',
+        manifest_path: 'Manifest (JSON)',
+        docx_path: 'Word Doc',
+        pdf_path: 'PDF',
+        zip_path: 'ZIP Bundle',
+        markdown_path: 'Markdown (.md)',
+        cells_path: 'Generated Cells (JSON)',
+        plan_path: 'Notebook Plan (JSON)'
+    };
+    const standaloneFiles = manifest.artifact_contract &&
+        Array.isArray(manifest.artifact_contract.standalone_files)
+        ? manifest.artifact_contract.standalone_files
+        : [];
+    let downloadCount = 0;
+    standaloneFiles.forEach((artifact) => {
+        if (!artifact || artifact.exists === false) {
+            return;
+        }
+        const href = buildArtifactDownloadUrl(artifact.api_download_path);
+        if (href) {
             const btn = document.createElement('a');
             btn.className = 'btn btn-secondary';
-            btn.href = buildArtifactDownloadUrl(format.path);
+            btn.href = href;
             btn.download = '';
             btn.style.display = 'inline-flex';
             btn.style.textDecoration = 'none';
-            btn.textContent = format.label;
+            btn.textContent = artifactLabels[artifact.manifest_key] || artifact.name || 'Download Artifact';
             exportButtons.appendChild(btn);
+            downloadCount += 1;
         }
     });
+
+    if (downloadCount === 0) {
+        const unavailable = document.createElement('p');
+        unavailable.textContent = 'No generated downloads are available. The local artifact references may have expired.';
+        exportSection.appendChild(unavailable);
+    }
 
     const copyBtn = document.createElement('button');
     copyBtn.className = 'btn btn-secondary';
@@ -571,6 +620,9 @@ function extractErrorMessage(payload, fallback = null) {
                 return extractErrorMessage(payload.detail, fallback);
             }
         }
+    }
+    if (typeof fallback === 'string' && fallback.trim()) {
+        return fallback.trim();
     }
     if (fallback && typeof fallback === 'object') {
         return extractErrorMessage(fallback, null);
@@ -643,6 +695,24 @@ function streamGeneration(streamUrl) {
             );
         });
 
+        eventSource.addEventListener('events_truncated', (event) => {
+            let payload = {};
+            try {
+                payload = JSON.parse(event.data);
+            } catch (err) {
+                payload = {};
+            }
+            if (payload.reason === 'future_event_id') {
+                rejectStream('This progress replay cursor is ahead of the job history on this process. The generation may still be running; reconnect with a current job reference or start a new request.');
+                return;
+            }
+            showProgress(
+                'history',
+                parseInt(progressPercentage.textContent, 10) || 12,
+                payload.message || 'Some progress history is unavailable; showing retained events.'
+            );
+        });
+
         eventSource.addEventListener('log', (event) => {
             const payload = JSON.parse(event.data);
             if (payload.level === 'error') {
@@ -650,12 +720,45 @@ function streamGeneration(streamUrl) {
             }
         });
 
-        eventSource.addEventListener('complete', (event) => {
+        eventSource.addEventListener('complete', async (event) => {
+            if (streamSettled) {
+                return;
+            }
+            eventSource.close();
             const payload = JSON.parse(event.data);
-            resolveStream(payload);
+            if (!payload.result_url) {
+                resolveStream(payload);
+                return;
+            }
+            let resultUrl;
+            try {
+                resultUrl = new URL(payload.result_url, window.location.origin);
+            } catch (err) {
+                rejectStream('The completed job returned an invalid result reference.');
+                return;
+            }
+            if (resultUrl.origin !== window.location.origin || !resultUrl.pathname.startsWith('/jobs/')) {
+                rejectStream('The completed job returned an invalid result reference.');
+                return;
+            }
+            const unavailableMessage = `Generation completed, but its process-local result is temporarily unavailable. Result reference: ${resultUrl.pathname}`;
+            try {
+                const response = await fetchCompletedJobResult(resultUrl.pathname + resultUrl.search);
+                const result = await response.json();
+                if (!response.ok) {
+                    const fallback = response.status === 429 || response.status >= 500
+                        ? unavailableMessage
+                        : 'The job result is no longer available on this process.';
+                    rejectStream(extractErrorMessage(result, fallback));
+                    return;
+                }
+                resolveStream(result);
+            } catch (err) {
+                rejectStream(unavailableMessage);
+            }
         });
 
-        eventSource.addEventListener('error', (event) => {
+        eventSource.onerror = (event) => {
             if (event.data) {
                 let payload = {};
                 try {
@@ -667,23 +770,39 @@ function streamGeneration(streamUrl) {
                 return;
             }
 
-            showProgress(
-                'reconnecting',
-                parseInt(progressPercentage.textContent, 10) || 12,
-                'Connection interrupted. Reconnecting to progress stream...'
-            );
-        });
-
-        eventSource.onerror = () => {
             if (eventSource.readyState === EventSource.CLOSED) {
                 const terminalMessage =
                     latestErrorDetails && Object.keys(latestErrorDetails).length > 0
                         ? extractErrorMessage(latestErrorDetails)
                         : 'Connection to the progress stream was lost. Please try again.';
                 rejectStream(terminalMessage);
+                return;
             }
+            showProgress(
+                'reconnecting',
+                parseInt(progressPercentage.textContent, 10) || 12,
+                'Connection interrupted. Reconnecting to progress stream...'
+            );
         };
     });
+}
+
+async function fetchCompletedJobResult(path) {
+    // A terminal SSE event already confirms completion. Briefly retry transient
+    // result transport failures without launching another generation.
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+        try {
+            const response = await fetch(path, { headers: { 'Accept': 'application/json' } });
+            if ((response.status !== 429 && response.status < 500) || attempt === 2) {
+                return response;
+            }
+        } catch (err) {
+            if (attempt === 2) {
+                throw err;
+            }
+        }
+        await new Promise(resolve => setTimeout(resolve, 250 * (attempt + 1)));
+    }
 }
 
 async function startAsyncGeneration(data) {
@@ -702,6 +821,32 @@ async function startAsyncGeneration(data) {
 
     showProgress('queued', 12, 'Generation accepted. Connecting to progress stream...');
     return streamGeneration(payload.stream_url);
+}
+
+async function startSyncGeneration(data) {
+    showProgress('generation', 15, 'Generating within this request. Keep this page open until it finishes...');
+    const response = await fetch('/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data)
+    });
+    const payload = await response.json();
+    if (!response.ok) {
+        throw new Error(extractErrorMessage(payload));
+    }
+    return payload;
+}
+
+async function resolveServerCapabilities() {
+    if (serverCapabilities) {
+        return serverCapabilities;
+    }
+    const response = await fetch('/health');
+    if (!response.ok) {
+        throw new Error('The server capability check failed.');
+    }
+    serverCapabilities = await response.json();
+    return serverCapabilities;
 }
 
 // Handle form submission
@@ -768,7 +913,13 @@ form.addEventListener('submit', async (e) => {
     showProgress('validation', 10, 'Validating input...');
 
     try {
-        const result = await startAsyncGeneration(data);
+        const capabilities = await resolveServerCapabilities();
+        if (capabilities.generation_enabled === false) {
+            throw new Error('Generation is disabled until the hosted service is configured for the trusted single-operator access mode.');
+        }
+        const result = capabilities.async_generation === false
+            ? await startSyncGeneration(data)
+            : await startAsyncGeneration(data);
         showResult(result);
     } catch (error) {
         console.error('Generation error:', error);

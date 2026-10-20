@@ -233,8 +233,30 @@ REST endpoints:
 - `POST /generate-async`: Start an async generation job.
 - `GET /stream/{job_id}`: Server-Sent Events progress stream. Supports
   `Last-Event-ID` replay.
-- `GET /artifacts?path=...`: Download a generated artifact path listed in the
-  manifest.
+- `GET /jobs/{job_id}`: Process-local execution status (`durable: false`).
+- `GET /jobs/{job_id}/result`: Retained completed result referenced by compact
+  SSE completion events.
+- `GET /artifacts?run_id=...&artifact=...`: Download a registered API-generated
+  artifact using the URL returned in `artifact_contract`. Raw filesystem paths
+  do not authorize downloads.
+
+API generations reserve distinct server-assigned output namespaces beneath the
+requested `output_dir` parent. CLI and direct package output paths are unchanged.
+Jobs, events and download references are **ephemeral and process-local**. Active
+jobs have owned tasks and explicit terminal states; completed records default to
+five-minute retention and artifacts to fifteen minutes. SSE history is bounded,
+replays by event ID and reports omissions. Stream disconnects do not cancel jobs.
+Restart or instance replacement can lose all local state; another instance cannot
+resume a job. Completion preserves existing artifact QA semantics.
+
+Hosted use supports a trusted single operator/admin boundary, with no per-user
+ownership guarantee. On Cloud Run, generation and artifact access fail closed
+until `LNF_API_ACCESS_MODE=single-operator` is explicitly configured after reviewing
+IAP access. Background admission defaults off; the browser uses request-bound
+generation in that mode. Local SSE generation remains available. Optional hosted
+background execution needs explicit CPU/billing review and still provides no
+durability. See the [operational runbook](docs/WEB_DEPLOYMENT.md) for status,
+retention, migration, deployment settings and remaining Phase B work under #380.
 
 Example:
 
@@ -488,6 +510,17 @@ The deployment workflow sets the Cloud Run memory limit to `2Gi`. Live
 generation can exceed the Cloud Run default of `512Mi` while loading the app,
 running model-backed generation, and packaging notebook artifacts.
 
+Phase A proposes request-based CPU, zero minimum instances, service/revision
+maximum one, HTTP concurrency eight and a 300-second HTTP timeout. Generation
+concurrency is separately capped at two with a 240-second cooperative deadline.
+The repository variable `GCP_API_ACCESS_MODE` defaults to `disabled`; set it to
+`single-operator` only after the owner reviews the IAP trust boundary. The browser
+then uses request-bound generation. The workflow does not enable billable
+background CPU or minimum instances. These are proposed workflow settings until
+an owner deploys and verifies them; maximum one and session affinity do not make
+jobs durable. Follow [the deployment runbook](docs/WEB_DEPLOYMENT.md) before
+enabling hosted asynchronous execution.
+
 ### 5) Trigger deployment
 
 - Push to `main` (automatic), or
@@ -560,7 +593,16 @@ Common environment variables:
 - `DEFAULT_MODEL`: Default live model, currently `gpt-5-mini`.
 - `MAX_REPAIR_ATTEMPTS`: Bounded QA repair loop count.
 - `LNF_OUTPUT_BASE`: Constrains production-facing output paths.
-- `LNF_MAX_CONCURRENT_GENERATIONS`: Async API generation concurrency.
+- `LNF_MAX_CONCURRENT_GENERATIONS`: Shared sync/async API generation concurrency.
+- `LNF_API_ACCESS_MODE`: Hosted access acknowledgment; only `single-operator`
+  enables hosted generation/job/artifact access.
+- `LNF_EPHEMERAL_ASYNC_ENABLED`: Hosted background execution opt-in (false by
+  default on Cloud Run); requires separately reviewed CPU/billing configuration.
+- `LNF_JOB_TIMEOUT_SECONDS`: Cooperative API execution deadline (default 240).
+- `LNF_MAX_TRACKED_JOBS`, `LNF_MAX_EVENTS_PER_JOB`, `LNF_MAX_JOB_EVENT_BYTES`:
+  bounded process-local job/event retention controls.
+- `LNF_COMPLETED_JOB_TTL_SECONDS`, `LNF_ARTIFACT_TTL_SECONDS`: Separate terminal
+  job/event and artifact retention windows; see the deployment runbook.
 
 Internal extension hooks accept JSON arrays or comma-separated module names:
 

@@ -3,11 +3,17 @@
 from __future__ import annotations
 
 import asyncio
-from contextlib import asynccontextmanager
+import json
 import logging
 import os
+import shutil
+import time
+from collections.abc import Coroutine
+from contextlib import asynccontextmanager
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, Literal, Optional
+from typing import Any, Literal, NoReturn
+from uuid import uuid4
 
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.exceptions import RequestValidationError
@@ -16,30 +22,37 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from langgraph_system_generator import __version__
-from langgraph_system_generator.constants import _BASE_OUTPUT, resolve_under_base
+from langgraph_system_generator.api.progress_streaming import (
+    JobCapacityError,
+    _prune_expired_jobs,
+    create_job,
+    discard_job,
+    emit_complete,
+    emit_error,
+    emit_log,
+    emit_node_progress,
+    get_job_status,
+    get_stream_response,
+    mark_job_running,
+    register_owned_task,
+    shutdown_owned_tasks,
+)
 from langgraph_system_generator.cli import (
     GenerationArtifacts,
     GenerationMode,
     generate_artifacts,
 )
-from langgraph_system_generator.api.progress_streaming import (
-    create_job,
-    emit_complete,
-    emit_error,
-    emit_log,
-    emit_node_progress,
-    get_stream_response,
-)
+from langgraph_system_generator.constants import _BASE_OUTPUT
 from langgraph_system_generator.utils.credential_redaction import (
     _sanitize_text_credentials,
 )
-from langgraph_system_generator.utils.llm_endpoint_security import authorize_endpoint
 from langgraph_system_generator.utils.error_handling import GenerationError
 from langgraph_system_generator.utils.generation_options import (
     SUPPORTED_AGENT_TYPES,
     normalize_agent_type,
     normalize_optional_string,
 )
+from langgraph_system_generator.utils.llm_endpoint_security import authorize_endpoint
 from langgraph_system_generator.utils.logging_utils import configure_logging_from_env
 from langgraph_system_generator.utils.optional_deps import OptionalDependencyError
 
@@ -47,10 +60,25 @@ logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
-async def _lifespan(app_: FastAPI):  # noqa: ARG001
-    """FastAPI lifespan: configure logging at startup, tear down at shutdown."""
+async def _lifespan(app_: FastAPI):
+    """Configure bounded cleanup and cancel owned jobs at application shutdown."""
+    global _shutting_down
     configure_logging_from_env()
-    yield
+    _shutting_down = False
+    cleanup_task = asyncio.create_task(_cleanup_process_local_state())
+    try:
+        yield
+    finally:
+        _shutting_down = True
+        cleanup_task.cancel()
+        try:
+            await asyncio.wait_for(cleanup_task, timeout=1.0)
+        except (  # noqa: UP041 - Python 3.10
+            asyncio.CancelledError,
+            asyncio.TimeoutError,
+        ):
+            cleanup_task.cancel()
+        await shutdown_owned_tasks(timeout=5.0)
 
 
 app = FastAPI(
@@ -77,10 +105,112 @@ if _STATIC_DIR.exists():
 
 _DEFAULT_API_OUTPUT = (_BASE_OUTPUT / "api").resolve()
 
+
+def _positive_int_env(name: str, default: int, maximum: int) -> int:
+    raw = os.getenv(name, str(default))
+    try:
+        value = int(raw)
+    except (TypeError, ValueError):
+        logger.warning("Invalid %s; using default %d", name, default)
+        return default
+    return min(max(value, 1), maximum)
+
+
+_MAX_TRACKED_API_RUNS = _positive_int_env("LNF_MAX_TRACKED_JOBS", 100, 10_000)
+_API_ARTIFACT_RETENTION_SECONDS = _positive_int_env(
+    "LNF_ARTIFACT_TTL_SECONDS", 900, 86_400
+)
+_MAX_JOB_TIMEOUT_SECONDS = 240
+_JOB_TIMEOUT_SECONDS = _positive_int_env(
+    "LNF_JOB_TIMEOUT_SECONDS", _MAX_JOB_TIMEOUT_SECONDS, _MAX_JOB_TIMEOUT_SECONDS
+)
+_API_ARTIFACT_NAMES = {
+    "manifest.json",
+    "generated_cells.json",
+    "notebook_plan.json",
+    "notebook.ipynb",
+    "notebook.html",
+    "notebook.md",
+    "notebook.docx",
+    "notebook.pdf",
+    "notebook_bundle.zip",
+}
+_api_runs: dict[str, _ApiRun] = {}
+
+
+@dataclass
+class _ApiRun:
+    run_id: str
+    output_path: Path
+    created_at: float
+    job_id: str | None = None
+    active: bool = True
+    completed_at: float | None = None
+    files: dict[str, Path] = field(default_factory=dict)
+
+
+@dataclass
+class _GenerationLease:
+    """One idempotent release token for an admitted generation."""
+
+    released: bool = False
+
+    def release(self) -> None:
+        global _active_generation_count
+        if self.released:
+            return
+        self.released = True
+        _active_generation_count = max(0, _active_generation_count - 1)
+
+
+def _env_true(name: str) -> bool:
+    """Read a strict opt-in boolean; malformed values fail closed."""
+    value = os.getenv(name, "false").strip().lower()
+    return value in {"1", "true", "yes", "on"}
+
+
+def _is_hosted() -> bool:
+    return bool(os.getenv("K_SERVICE"))
+
+
+def _hosted_access_enabled() -> bool:
+    return (
+        not _is_hosted()
+        or os.getenv("LNF_API_ACCESS_MODE", "").strip() == "single-operator"
+    )
+
+
+def _async_generation_enabled() -> bool:
+    return not _is_hosted() or _env_true("LNF_EPHEMERAL_ASYNC_ENABLED")
+
+
+def _require_supported_access() -> None:
+    if _is_hosted() and not _hosted_access_enabled():
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "code": "hosted_access_mode_required",
+                "message": "Hosted generation is disabled until the trusted single-operator access mode is explicitly configured.",
+                "hint": "Set LNF_API_ACCESS_MODE=single-operator only when IAP is restricted to one trusted operator.",
+            },
+        )
+
+
+async def _cleanup_process_local_state() -> None:
+    """Periodically prune terminal job history and expired API artifact trees."""
+    while True:
+        await asyncio.sleep(30.0)
+        _prune_expired_jobs()
+        _prune_api_runs()
+
+
 # Concurrency limit for async generation (prevent resource exhaustion)
-_MAX_CONCURRENT_GENERATIONS = int(os.getenv("LNF_MAX_CONCURRENT_GENERATIONS", "5"))
+_MAX_CONCURRENT_GENERATIONS = _positive_int_env(
+    "LNF_MAX_CONCURRENT_GENERATIONS", 5, 100
+)
 _generation_lock = asyncio.Lock()
 _active_generation_count = 0
+_shutting_down = False
 
 
 def _generation_error_payload(exc: Exception) -> dict[str, Any]:
@@ -116,7 +246,7 @@ def _generation_error_payload(exc: Exception) -> dict[str, Any]:
     }
 
 
-def _raise_generation_http_error(exc: Exception) -> None:
+def _raise_generation_http_error(exc: Exception) -> NoReturn:
     """Raise an HTTPException from a normalized generation error."""
 
     payload = _generation_error_payload(exc)
@@ -127,7 +257,11 @@ async def _try_acquire_generation_slot() -> bool:
     """Reserve a generation slot if capacity is available."""
     global _active_generation_count
 
+    if _shutting_down:
+        return False
     async with _generation_lock:
+        if _shutting_down:
+            return False
         if _active_generation_count >= _MAX_CONCURRENT_GENERATIONS:
             return False
         _active_generation_count += 1
@@ -146,6 +280,14 @@ async def _release_generation_slot() -> None:
 async def _acquire_generation_slot_or_raise() -> None:
     """Acquire a generation slot or raise when capacity is exhausted."""
     if not await _try_acquire_generation_slot():
+        if _shutting_down:
+            raise HTTPException(
+                status_code=503,
+                detail={
+                    "code": "server_shutting_down",
+                    "message": "The server is shutting down and cannot accept new generations.",
+                },
+            )
         raise HTTPException(
             status_code=503,
             detail=(
@@ -166,51 +308,334 @@ async def _generation_slot():
         await _release_generation_slot()
 
 
-def _resolve_output_dir(path: str | os.PathLike[str] | None) -> Path:
-    """Resolve and validate an output directory under the trusted base root.
+async def _await_generation(
+    coroutine: Coroutine[Any, Any, GenerationArtifacts],
+) -> GenerationArtifacts:
+    """Preserve timeout/cancellation intent even if a collaborator suppresses it.
 
-    All user-provided paths are treated as relative to the base directory,
-    providing defense-in-depth against path traversal attacks.
+    The owner retains capacity and the output reservation until the nested
+    execution actually exits. Shutdown bounds its wait for that owner separately;
+    a dependency that never cooperates cannot be safely preempted in-process.
     """
-    base = _BASE_OUTPUT.resolve()
-
-    # If no path is provided, default to the API output directory under the base.
-    if not path:
-        return _DEFAULT_API_OUTPUT
-
-    # Treat path as relative to base (safer approach that prevents absolute path injection)
-    target = (base / path).resolve()
-
-    # Ensure the resolved target is still within base (prevents .. escapes)
     try:
-        target.relative_to(base)
+        execution = asyncio.create_task(coroutine)
+    except BaseException:
+        coroutine.close()
+        raise
+    try:
+        done, _ = await asyncio.wait({execution}, timeout=_JOB_TIMEOUT_SECONDS)
+        if not done:
+            execution.cancel()
+            await asyncio.gather(execution, return_exceptions=True)
+            raise asyncio.TimeoutError  # noqa: UP041 - Python 3.10
+        return execution.result()
+    except asyncio.CancelledError:
+        execution.cancel()
+        await asyncio.gather(execution, return_exceptions=True)
+        raise
+
+
+def _resolve_output_dir(path: str | os.PathLike[str] | None) -> Path:
+    """Resolve an allowed API output parent and reject symlink components."""
+    base = _BASE_OUTPUT.resolve()
+    requested = Path(path) if path else Path("api")
+    if ".." in requested.parts:
+        raise HTTPException(
+            status_code=400,
+            detail="output_dir cannot contain parent-directory traversal.",
+        )
+    lexical_target = Path(
+        os.path.abspath(requested if requested.is_absolute() else base / requested)
+    )
+    try:
+        relative = lexical_target.relative_to(base)
     except ValueError:
         raise HTTPException(
             status_code=400,
             detail="output_dir must reside within the allowed base directory.",
         )
-
-    return target
-
-
-def _resolve_artifact_path(path: str | os.PathLike[str]) -> Path:
-    """Resolve and validate an artifact path under the trusted base output root."""
+    current = base
+    for part in relative.parts:
+        current = current / part
+        if current.is_symlink():
+            raise HTTPException(
+                status_code=400,
+                detail="output_dir cannot contain a symbolic link.",
+            )
     try:
-        artifact_path = resolve_under_base(Path(path))
-    except ValueError as exc:
+        lexical_target.resolve(strict=False).relative_to(base)
+    except ValueError:
         raise HTTPException(
             status_code=400,
-            detail="Artifact path must reside within the allowed base directory.",
+            detail="output_dir escapes the allowed base directory.",
+        ) from None
+    return lexical_target
+
+
+def _make_directory_tree(path: Path) -> None:
+    """Create directories beneath the trusted root without following symlinks."""
+    base = _BASE_OUTPUT.resolve()
+    if not base.exists():
+        base.mkdir(parents=True, exist_ok=True)
+    if base.is_symlink() or not base.is_dir():
+        raise HTTPException(
+            status_code=400, detail="The trusted output root is not a safe directory."
+        )
+    try:
+        relative = path.relative_to(base)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=400, detail="Output path is outside the trusted root."
         ) from exc
+    current = base
+    for part in relative.parts:
+        current = current / part
+        if current.is_symlink():
+            raise HTTPException(
+                status_code=400, detail="Output path cannot contain a symbolic link."
+            )
+        if not current.exists():
+            try:
+                current.mkdir()
+            except FileExistsError:
+                pass
+        if current.is_symlink() or not current.is_dir():
+            raise HTTPException(
+                status_code=400, detail="Output path is not a safe directory."
+            )
+        try:
+            current.resolve(strict=True).relative_to(base)
+        except (ValueError, FileNotFoundError) as exc:
+            raise HTTPException(
+                status_code=400, detail="Output path escapes the trusted root."
+            ) from exc
 
-    if not artifact_path.is_file():
-        raise HTTPException(status_code=404, detail="Artifact not found.")
 
-    return artifact_path
+def _delete_run_directory(run: _ApiRun) -> None:
+    """Delete a server-owned run directory only after containment checks."""
+    path = run.output_path
+    if not path.exists():
+        return
+    base = _BASE_OUTPUT.resolve()
+    try:
+        relative = path.relative_to(base)
+    except (ValueError, FileNotFoundError):
+        logger.error("Refusing to remove an API run outside the trusted root.")
+        return
+    current = base
+    for part in relative.parts:
+        current = current / part
+        if current.is_symlink():
+            logger.error("Refusing to remove an API run with a symbolic-link ancestor.")
+            return
+    try:
+        resolved = path.resolve(strict=True)
+        resolved.relative_to(base)
+    except (ValueError, FileNotFoundError):
+        logger.error("Refusing to remove an API run outside the trusted root.")
+        return
+    if resolved.name != run.run_id or not resolved.is_dir():
+        logger.error("Refusing to remove an API run with an unexpected directory name.")
+        return
+    shutil.rmtree(resolved)
+
+
+def _discard_api_run(run_id: str) -> None:
+    """Forget and delete an unpublishable partial generation namespace."""
+    run = _api_runs.pop(run_id, None)
+    if run is not None:
+        run.active = False
+        _delete_run_directory(run)
+
+
+def _prune_api_runs(now: float | None = None) -> list[str]:
+    """Remove expired completed API artifacts, independently of job-event TTL."""
+    current = time.time() if now is None else now
+    expired = [
+        run_id
+        for run_id, run in _api_runs.items()
+        if not run.active
+        and run.completed_at is not None
+        and current - run.completed_at >= _API_ARTIFACT_RETENTION_SECONDS
+    ]
+    for run_id in expired:
+        run = _api_runs.pop(run_id)
+        _delete_run_directory(run)
+    return expired
+
+
+def _reserve_api_run(parent: Path, job_id: str | None = None) -> _ApiRun:
+    """Exclusively allocate a unique per-request namespace under the API parent."""
+    _prune_api_runs()
+    if len(_api_runs) >= _MAX_TRACKED_API_RUNS:
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "code": "artifact_capacity_exhausted",
+                "message": "The server has reached its retained API output limit. Try again after artifact retention expires.",
+            },
+        )
+
+    generations = parent / "generations"
+    _make_directory_tree(generations)
+    base = _BASE_OUTPUT.resolve()
+    for _ in range(3):
+        run_id = uuid4().hex
+        output_path = generations / run_id
+        try:
+            output_path.mkdir()
+        except FileExistsError:
+            continue
+        if output_path.is_symlink():
+            raise HTTPException(
+                status_code=400, detail="Output namespace cannot be a symbolic link."
+            )
+        try:
+            output_path.resolve(strict=True).relative_to(base)
+        except (ValueError, FileNotFoundError) as exc:
+            _delete_run_directory(_ApiRun(run_id, output_path, time.time()))
+            raise HTTPException(
+                status_code=400, detail="Output namespace escapes the trusted root."
+            ) from exc
+        run = _ApiRun(run_id, output_path.resolve(strict=True), time.time(), job_id)
+        _api_runs[run_id] = run
+        return run
+    raise HTTPException(
+        status_code=503, detail="Could not reserve a unique output namespace."
+    )
+
+
+def _safe_run_file(run: _ApiRun, name: str) -> Path | None:
+    """Resolve a registered artifact only while its original file remains safe."""
+    path = run.files.get(name)
+    return _safe_run_candidate(run, path, name) if path is not None else None
+
+
+def _safe_run_candidate(run: _ApiRun, path: Path, name: str) -> Path | None:
+    """Validate the same namespace boundary for publication and downloads."""
+    if name not in _API_ARTIFACT_NAMES or path.parent != run.output_path:
+        return None
+    if path.is_symlink() or run.output_path.is_symlink() or not path.is_file():
+        return None
+    try:
+        base = _BASE_OUTPUT.resolve()
+        relative = path.relative_to(base)
+        current = base
+        for part in relative.parts:
+            current = current / part
+            if current.is_symlink():
+                return None
+        real_run = run.output_path.resolve(strict=True)
+        real_file = path.resolve(strict=True)
+        if real_file.parent != real_run or real_file.name != name:
+            return None
+        real_file.relative_to(base)
+    except (ValueError, OSError):
+        return None
+    return real_file
+
+
+def _persist_api_manifest(path: Path, manifest: dict[str, Any]) -> None:
+    path.write_text(
+        json.dumps(manifest, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
+    )
+
+
+def _register_api_artifacts(
+    run: _ApiRun, artifacts: GenerationArtifacts
+) -> dict[str, Any]:
+    """Publish only known, regular files created inside this request's run directory."""
+    manifest = artifacts["manifest"]
+    contract = manifest.setdefault("artifact_contract", {})
+    contract["path_semantics"] = (
+        "API artifact downloads use process-local run references. Files are isolated "
+        "per request and are not durable across process or instance replacement."
+    )
+    contract["run_id"] = run.run_id
+    contract["retention_seconds"] = _API_ARTIFACT_RETENTION_SECONDS
+    standalone = contract.setdefault("standalone_files", [])
+    discovered: dict[str, Path] = {}
+
+    for entry in standalone:
+        if not isinstance(entry, dict):
+            continue
+        raw_path = entry.get("path")
+        if not isinstance(raw_path, str):
+            entry["exists"] = False
+            entry.pop("api_download_path", None)
+            continue
+        candidate = Path(raw_path)
+        name = candidate.name
+        safe_candidate = _safe_run_candidate(run, candidate, name)
+        if safe_candidate is None:
+            entry["exists"] = False
+            entry.pop("api_download_path", None)
+            continue
+        discovered[name] = safe_candidate
+
+    manifest_path = Path(artifacts["manifest_path"])
+    safe_manifest = _safe_run_candidate(run, manifest_path, "manifest.json")
+    if safe_manifest is not None:
+        discovered["manifest.json"] = safe_manifest
+
+    run.files = discovered
+    if "manifest.json" not in discovered:
+        raise GenerationError(
+            "Generation did not produce an accessible manifest in its reserved namespace.",
+            code="artifact_manifest_unavailable",
+            phase="artifact_publication",
+            status_code=500,
+        )
+    for entry in standalone:
+        if not isinstance(entry, dict):
+            continue
+        name = Path(str(entry.get("path") or "")).name
+        if name in discovered:
+            entry["api_download_path"] = (
+                f"/artifacts?run_id={run.run_id}&artifact={name}"
+            )
+
+    manifest_entry: dict[str, Any] = {
+        "name": "manifest",
+        "format": "json",
+        "manifest_key": "manifest_path",
+        "availability": "standalone",
+        "path_type": "server_local",
+        "path": str(discovered["manifest.json"]),
+        "relative_path": "manifest.json",
+        "exists": True,
+        "size_bytes": None,
+        "api_download_path": f"/artifacts?run_id={run.run_id}&artifact=manifest.json",
+    }
+    standalone[:] = [
+        entry
+        for entry in standalone
+        if isinstance(entry, dict) and entry.get("manifest_key") != "manifest_path"
+    ]
+    standalone.append(manifest_entry)
+    contract["api_downloads"] = {
+        name: f"/artifacts?run_id={run.run_id}&artifact={name}"
+        for name in sorted(discovered)
+    }
+    contract["access_scope"] = "trusted_single_operator"
+
+    manifest_file = discovered["manifest.json"]
+    for _ in range(3):
+        _persist_api_manifest(manifest_file, manifest)
+        actual_size = manifest_file.stat().st_size
+        if manifest_entry["size_bytes"] == actual_size:
+            break
+        manifest_entry["size_bytes"] = actual_size
+    else:
+        manifest_entry["size_bytes"] = None
+        _persist_api_manifest(manifest_file, manifest)
+    run.active = False
+    run.completed_at = time.time()
+    return manifest
 
 
 def _validate_advanced_options(
-    request: "GenerationRequest",
+    request: GenerationRequest,
 ) -> tuple[str | None, str | None, str | None]:
     """Normalize and validate supported advanced options."""
     normalized_model = normalize_optional_string(request.model)
@@ -248,7 +673,7 @@ def _validate_advanced_options(
     return normalized_model, normalized_custom_endpoint, normalized_agent_type
 
 
-def _normalize_request(request: "GenerationRequest") -> "GenerationRequest":
+def _normalize_request(request: GenerationRequest) -> GenerationRequest:
     """Return a copy of the request with normalized advanced option values."""
     normalized_model, normalized_custom_endpoint, normalized_agent_type = (
         _validate_advanced_options(request)
@@ -263,7 +688,7 @@ def _normalize_request(request: "GenerationRequest") -> "GenerationRequest":
 
 
 def _request_dialog_messages(
-    request: "GenerationRequest",
+    request: GenerationRequest,
 ) -> list[dict[str, str]] | None:
     """Return normalized dialog messages for iterative requirements refinement."""
 
@@ -272,7 +697,7 @@ def _request_dialog_messages(
     return [message.model_dump() for message in request.messages]
 
 
-def _request_prompt(request: "GenerationRequest") -> str:
+def _request_prompt(request: GenerationRequest) -> str:
     """Return the single prompt value used by legacy generation surfaces."""
 
     prompt = request.prompt or ""
@@ -312,12 +737,12 @@ class DialogMessage(BaseModel):
 class GenerationRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    prompt: Optional[str] = Field(
+    prompt: str | None = Field(
         default=None,
         description="User prompt describing the desired system",
         max_length=5000,
     )
-    messages: Optional[list[DialogMessage]] = Field(
+    messages: list[DialogMessage] | None = Field(
         default=None,
         description=(
             "Optional multi-turn requirements dialog. When provided, live intake "
@@ -334,7 +759,7 @@ class GenerationRequest(BaseModel):
         default="./output/api",
         description="Directory to write generation artifacts.",
     )
-    formats: Optional[list[str]] = Field(
+    formats: list[str] | None = Field(
         default=None,
         description=(
             "List of output formats to generate (ipynb, html, markdown, pdf, docx, zip). "
@@ -342,15 +767,15 @@ class GenerationRequest(BaseModel):
         ),
     )
     # Advanced options
-    model: Optional[str] = Field(
+    model: str | None = Field(
         default=None,
         description="OpenAI-compatible model to use for generation. Uses the default OpenAI-compatible model if not specified.",
     )
-    custom_endpoint: Optional[str] = Field(
+    custom_endpoint: str | None = Field(
         default=None,
         description="Administrator-registered OpenAI-compatible endpoint. Arbitrary hosted destinations are forbidden.",
     )
-    temperature: Optional[float] = Field(
+    temperature: float | None = Field(
         default=None,
         ge=0.0,
         le=2.0,
@@ -362,19 +787,19 @@ class GenerationRequest(BaseModel):
             "may cause downstream API errors."
         ),
     )
-    max_tokens: Optional[int] = Field(
+    max_tokens: int | None = Field(
         default=None,
         ge=1,
         le=32768,
         description="Maximum tokens for LLM response. Controls output length and must not exceed the model's context window (capped at 32768 here).",
     )
-    agent_type: Optional[str] = Field(
+    agent_type: str | None = Field(
         default=None,
         description="Type of agent architecture (router, subagents, hybrid, autoagent, deepagents, etc.) when overriding auto-detection.",
     )
 
     @model_validator(mode="after")
-    def _require_prompt_or_messages(self) -> "GenerationRequest":
+    def _require_prompt_or_messages(self) -> GenerationRequest:
         """Require either a legacy prompt or at least one dialog message."""
 
         if not (self.prompt and self.prompt.strip()) and not self.messages:
@@ -384,14 +809,18 @@ class GenerationRequest(BaseModel):
 
 class GenerationResponse(BaseModel):
     success: bool
-    mode: Optional[str] = None
-    prompt: Optional[str] = (
+    mode: str | None = None
+    prompt: str | None = (
         None  # Note: User prompt echoed back for confirmation; may contain sensitive data if logged
     )
-    manifest: Optional[Dict[str, Any]] = None
-    manifest_path: Optional[str] = None
-    output_dir: Optional[str] = None
-    error: Optional[str] = None
+    manifest: dict[str, Any] | None = None
+    manifest_path: str | None = None
+    output_dir: str | None = None
+    error: str | None = None
+    run_id: str | None = Field(
+        default=None,
+        description="Server-assigned per-request artifact namespace reference.",
+    )
 
 
 class GenerationStartResponse(BaseModel):
@@ -402,7 +831,10 @@ class GenerationStartResponse(BaseModel):
         ..., description="SSE endpoint URL for streaming progress updates"
     )
     status: str = Field(
-        default="started", description="Initial status (always 'started')"
+        default="started", description="Compatibility field for accepted async work"
+    )
+    execution_status: str = Field(
+        default="accepted", description="Initial process-local execution status"
     )
 
 
@@ -419,19 +851,130 @@ async def root():
 
 
 @app.get("/health")
-async def health() -> Dict[str, str]:
-    """Simple health check."""
-
-    return {"status": "ok"}
+async def health() -> dict[str, Any]:
+    """Report health and the configured ephemeral execution capabilities."""
+    access_enabled = _hosted_access_enabled()
+    return {
+        "status": "ok",
+        "execution_mode": "ephemeral_process_local",
+        "durable_jobs": False,
+        "generation_enabled": access_enabled,
+        "async_generation": access_enabled and _async_generation_enabled(),
+        "artifact_retention_seconds": _API_ARTIFACT_RETENTION_SECONDS,
+        "job_retention_seconds": _positive_int_env(
+            "LNF_COMPLETED_JOB_TTL_SECONDS", 300, 86_400
+        ),
+        "max_tracked_jobs": _MAX_TRACKED_API_RUNS,
+        "max_concurrent_generations": _MAX_CONCURRENT_GENERATIONS,
+        "job_timeout_seconds": _JOB_TIMEOUT_SECONDS,
+    }
 
 
 @app.get("/artifacts")
 async def download_artifact(
-    path: str = Query(..., description="Artifact path returned by the generation API"),
+    run_id: str = Query(..., min_length=32, max_length=32),
+    artifact: str = Query(..., min_length=1, max_length=64),
 ):
-    """Download a generated artifact from the trusted output directory."""
-    artifact_path = _resolve_artifact_path(path)
+    """Download one explicitly registered artifact from an API run namespace."""
+    _require_supported_access()
+    _prune_api_runs()
+    run = _api_runs.get(run_id)
+    if run is None:
+        raise HTTPException(
+            status_code=404,
+            detail={
+                "code": "artifact_unavailable",
+                "message": "The artifact run is unavailable or expired.",
+            },
+        )
+    if run.active:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "artifact_not_ready",
+                "message": "Artifacts are not ready until generation completes.",
+            },
+        )
+    artifact_path = _safe_run_file(run, artifact)
+    if artifact_path is None:
+        raise HTTPException(
+            status_code=404,
+            detail={
+                "code": "artifact_unavailable",
+                "message": "The requested generated artifact is unavailable or expired.",
+            },
+        )
     return FileResponse(artifact_path, filename=artifact_path.name)
+
+
+@app.get("/jobs/{job_id}")
+async def inspect_job(job_id: str) -> dict[str, Any]:
+    """Return execution state while the owning process retains the job record."""
+    _require_supported_access()
+    status = get_job_status(job_id)
+    if status is None:
+        raise HTTPException(
+            status_code=404,
+            detail={
+                "code": "job_unavailable",
+                "message": "Job state is unavailable in this process or its retention period expired.",
+            },
+        )
+    return status
+
+
+@app.get("/jobs/{job_id}/result")
+async def get_job_result(job_id: str) -> dict[str, Any]:
+    """Return a completed result from the registered run manifest."""
+    _require_supported_access()
+    _prune_api_runs()
+    status = get_job_status(job_id)
+    if status is None:
+        raise HTTPException(
+            status_code=404,
+            detail={
+                "code": "job_unavailable",
+                "message": "Job state is unavailable in this process or its retention period expired.",
+            },
+        )
+    if status["status"] != "completed":
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "job_result_not_ready",
+                "job_status": status["status"],
+                "message": "The job has no successful result.",
+            },
+        )
+    run = next((item for item in _api_runs.values() if item.job_id == job_id), None)
+    manifest_path = _safe_run_file(run, "manifest.json") if run else None
+    if run is None or manifest_path is None:
+        raise HTTPException(
+            status_code=404,
+            detail={
+                "code": "artifact_unavailable",
+                "message": "The generated manifest is unavailable or expired.",
+            },
+        )
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        raise HTTPException(
+            status_code=410,
+            detail={
+                "code": "job_result_unavailable",
+                "message": "The completed result could not be read from local artifact storage.",
+            },
+        ) from None
+    return {
+        "success": True,
+        "mode": manifest.get("mode"),
+        "prompt": manifest.get("prompt"),
+        "manifest": manifest,
+        "manifest_path": str(manifest_path),
+        "output_dir": str(manifest_path.parent),
+        "run_id": run.run_id,
+    }
 
 
 @app.get("/.well-known/appspecific/com.chrome.devtools.json")
@@ -449,41 +992,62 @@ async def chrome_devtools_endpoint():
 async def generate_notebook(request: GenerationRequest) -> GenerationResponse:
     """Generate notebook artifacts via the generator pipeline."""
     normalized_request = _normalize_request(request)
+    _require_supported_access()
     prompt = _request_prompt(normalized_request)
     requirements_messages = _request_dialog_messages(normalized_request)
 
-    # Use the secure path resolution function
-    output_path = _resolve_output_dir(request.output_dir)
+    output_parent = _resolve_output_dir(request.output_dir)
 
     async with _generation_slot():
+        run = _reserve_api_run(output_parent)
         try:
-            artifacts: GenerationArtifacts = await generate_artifacts(
-                prompt,
-                output_dir=str(output_path),
-                mode=request.mode,
-                formats=request.formats,
-                model=normalized_request.model,
-                temperature=request.temperature,
-                max_tokens=request.max_tokens,
-                agent_type=normalized_request.agent_type,
-                custom_endpoint=normalized_request.custom_endpoint,
-                endpoint_policy="hosted",
-                requirements_messages=requirements_messages,
+            artifacts: GenerationArtifacts = await _await_generation(
+                generate_artifacts(
+                    prompt,
+                    output_dir=str(run.output_path),
+                    mode=request.mode,
+                    formats=request.formats,
+                    model=normalized_request.model,
+                    temperature=request.temperature,
+                    max_tokens=request.max_tokens,
+                    agent_type=normalized_request.agent_type,
+                    custom_endpoint=normalized_request.custom_endpoint,
+                    endpoint_policy="hosted",
+                    requirements_messages=requirements_messages,
+                ),
             )
+            manifest = _register_api_artifacts(run, artifacts)
             return GenerationResponse(
                 success=True,
                 mode=artifacts["mode"],
                 prompt=artifacts["prompt"],
-                manifest=artifacts["manifest"],
-                manifest_path=artifacts["manifest_path"],
-                output_dir=artifacts["output_dir"],
+                manifest=manifest,
+                manifest_path=str(
+                    run.files.get("manifest.json", Path(artifacts["manifest_path"]))
+                ),
+                output_dir=str(run.output_path),
+                run_id=run.run_id,
             )
+        except asyncio.TimeoutError:  # noqa: UP041 - Python 3.10
+            _discard_api_run(run.run_id)
+            raise HTTPException(
+                status_code=504,
+                detail={
+                    "code": "generation_timeout",
+                    "message": f"Generation exceeded the configured {_JOB_TIMEOUT_SECONDS}-second execution limit.",
+                },
+            ) from None
+        except asyncio.CancelledError:
+            _discard_api_run(run.run_id)
+            raise
         except (GenerationError, OptionalDependencyError) as exc:
+            _discard_api_run(run.run_id)
             logger.error(
                 "Generation request failed for /generate: %s", type(exc).__name__
             )
             _raise_generation_http_error(exc)
         except ValueError as exc:  # pragma: no cover - surfaced via HTTPException
+            _discard_api_run(run.run_id)
             logger.error(
                 "Generation request failed for /generate: %s", type(exc).__name__
             )
@@ -495,6 +1059,7 @@ async def generate_notebook(request: GenerationRequest) -> GenerationResponse:
                 )
             )
         except Exception as exc:  # noqa: BLE001 - sanitize public failure boundary
+            _discard_api_run(run.run_id)
             logger.error(
                 "Generation request failed for /generate: %s", type(exc).__name__
             )
@@ -521,26 +1086,77 @@ async def start_async_generation(
         HTTPException 503: When concurrent generation limit is reached
     """
     normalized_request = _normalize_request(request)
-    output_path = _resolve_output_dir(request.output_dir)
+    _require_supported_access()
+    if not _async_generation_enabled():
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "code": "ephemeral_async_disabled",
+                "message": "Hosted asynchronous generation is disabled; use request-bound synchronous generation.",
+                "hint": "Enable LNF_EPHEMERAL_ASYNC_ENABLED only after configuring instance-based CPU allocation for the Cloud Run service.",
+            },
+        )
+    output_parent = _resolve_output_dir(request.output_dir)
 
     # Acquire capacity before the job is accepted so overload requests fail fast.
     await _acquire_generation_slot_or_raise()
 
-    # Create job and start generation task
-    job_id = create_job()
-
+    lease = _GenerationLease()
+    run: _ApiRun | None = None
+    job_id: str | None = None
+    coroutine = None
+    task: asyncio.Task[Any] | None = None
     try:
-        asyncio.create_task(
-            _run_generation_with_progress(job_id, normalized_request, output_path)
+        run = _reserve_api_run(output_parent)
+        reserved_run = run
+        job_id = create_job()
+        run.job_id = job_id
+        coroutine = _run_generation_with_progress(
+            job_id, normalized_request, run, lease
         )
-    except Exception:
-        await _release_generation_slot()
-        raise
+        task = asyncio.create_task(coroutine)
+
+        def finish_owner(_done: asyncio.Task[Any]) -> None:
+            lease.release()
+            if reserved_run.active:
+                # A task cancelled before its coroutine's first step cannot run
+                # the runner's finally block, so its reservation is released here.
+                _discard_api_run(reserved_run.run_id)
+
+        register_owned_task(job_id, task, on_done=finish_owner)
+    except BaseException as exc:
+        if task is not None:
+            task.cancel()
+        elif coroutine is not None:
+            coroutine.close()
+        if job_id is not None:
+            discard_job(job_id)
+        if run is not None:
+            _discard_api_run(run.run_id)
+        lease.release()
+        if isinstance(exc, (KeyboardInterrupt, SystemExit, asyncio.CancelledError)):
+            raise
+        logger.error("Could not accept an async generation: %s", type(exc).__name__)
+        if isinstance(exc, JobCapacityError):
+            raise HTTPException(
+                status_code=503,
+                detail={"code": "job_capacity_exhausted", "message": str(exc)},
+            ) from None
+        if isinstance(exc, HTTPException):
+            raise
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "code": "generation_task_unavailable",
+                "message": "The server could not safely register the generation task.",
+            },
+        ) from None
 
     return GenerationStartResponse(
         job_id=job_id,
         stream_url=f"/stream/{job_id}",
         status="started",
+        execution_status="accepted",
     )
 
 
@@ -560,13 +1176,15 @@ async def stream_job_progress(job_id: str, request: Request):
     Returns:
         EventSourceResponse: SSE stream
     """
+    _require_supported_access()
     return get_stream_response(job_id, request.headers.get("Last-Event-ID"))
 
 
 async def _run_generation_with_progress(
     job_id: str,
     request: GenerationRequest,
-    output_path: Path,
+    run: _ApiRun | Path,
+    lease: _GenerationLease | None = None,
 ) -> None:
     """Run generation task with progress tracking.
 
@@ -579,9 +1197,13 @@ async def _run_generation_with_progress(
     Args:
         job_id: Job identifier for progress tracking
         request: Generation request parameters
-        output_path: Resolved output directory path
+        run: Reserved API namespace, or an explicit path for legacy direct callers
+        lease: Idempotent generation capacity release handle, when route-owned
     """
+    api_run = None if isinstance(run, Path) else run
+    output_path = run if api_run is None else api_run.output_path
     try:
+        mark_job_running(job_id)
         # Emit start event
         emit_node_progress(job_id, "start", 0, "Starting generation...")
 
@@ -623,49 +1245,70 @@ async def _run_generation_with_progress(
 
         prompt = _request_prompt(request)
         requirements_messages = _request_dialog_messages(request)
-        artifacts: GenerationArtifacts = await generate_artifacts(
-            prompt,
-            output_dir=str(output_path),
-            mode=request.mode,
-            formats=request.formats,
-            model=request.model,
-            temperature=request.temperature,
-            max_tokens=request.max_tokens,
-            agent_type=request.agent_type,
-            custom_endpoint=request.custom_endpoint,
-            endpoint_policy="hosted",
-            requirements_messages=requirements_messages,
-            progress_callback=progress_callback,
+        artifacts: GenerationArtifacts = await _await_generation(
+            generate_artifacts(
+                prompt,
+                output_dir=str(output_path),
+                mode=request.mode,
+                formats=request.formats,
+                model=request.model,
+                temperature=request.temperature,
+                max_tokens=request.max_tokens,
+                agent_type=request.agent_type,
+                custom_endpoint=request.custom_endpoint,
+                endpoint_policy="hosted",
+                requirements_messages=requirements_messages,
+                progress_callback=progress_callback,
+            ),
         )
-
-        emit_complete(
-            job_id,
-            {
+        if api_run is None:
+            result = {
                 "success": True,
                 "mode": artifacts["mode"],
                 "prompt": artifacts["prompt"],
                 "manifest": artifacts["manifest"],
                 "manifest_path": artifacts["manifest_path"],
                 "output_dir": artifacts["output_dir"],
-            },
+            }
+        else:
+            _register_api_artifacts(api_run, artifacts)
+            result = {
+                "success": True,
+                "run_id": api_run.run_id,
+                "result_url": f"/jobs/{job_id}/result",
+            }
+        emit_complete(
+            job_id,
+            result,
         )
 
+    except asyncio.CancelledError:
+        if api_run is not None and api_run.active:
+            _discard_api_run(api_run.run_id)
+        emit_error(
+            job_id,
+            "Generation was cancelled before it completed.",
+            status="cancelled",
+            code="generation_cancelled",
+        )
+        raise
+    except asyncio.TimeoutError:  # noqa: UP041 - Python 3.10
+        if api_run is not None and api_run.active:
+            _discard_api_run(api_run.run_id)
+        emit_error(
+            job_id,
+            f"Generation exceeded the configured {_JOB_TIMEOUT_SECONDS}-second execution limit.",
+            {"timeout_seconds": _JOB_TIMEOUT_SECONDS},
+            status="expired",
+            code="generation_timeout",
+        )
     except Exception as exc:  # noqa: BLE001 - sanitize SSE failure boundary
+        if api_run is not None and api_run.active:
+            _discard_api_run(api_run.run_id)
         logger.error(
             "Generation failed for async job %s: %s", job_id, type(exc).__name__
         )
         payload = _generation_error_payload(exc)
-        emit_log(
-            job_id,
-            "error",
-            payload["message"],
-            details={
-                "phase": payload.get("phase"),
-                "code": payload.get("code"),
-                "hint": payload.get("hint"),
-                "details": payload.get("details", {}),
-            },
-        )
         emit_error(
             job_id,
             payload["message"],
@@ -677,6 +1320,9 @@ async def _run_generation_with_progress(
                 "status_code": payload.get("status_code"),
                 "details": payload.get("details", {}),
             },
+            status="failed",
+            code=payload.get("code", "generation_error"),
         )
     finally:
-        await _release_generation_slot()
+        if lease is not None:
+            lease.release()

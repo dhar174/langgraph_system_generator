@@ -93,11 +93,17 @@ jobs:
           image: ${{ env.IMAGE }}
           env_vars: |-
             LNF_LLM_ENDPOINT_POLICY=hosted
+            LNF_API_ACCESS_MODE=${{ vars.GCP_API_ACCESS_MODE || 'disabled' }}
+            LNF_EPHEMERAL_ASYNC_ENABLED=false
+            LNF_JOB_TIMEOUT_SECONDS=240
+            LNF_MAX_CONCURRENT_GENERATIONS=2
           env_vars_update_strategy: merge
           secrets: |-
             OPENAI_API_KEY=${{ env.OPENAI_API_KEY_SECRET }}:latest
           secrets_update_strategy: merge
-          flags: --port=8000 --memory=2Gi --iap --no-allow-unauthenticated
+          # Request-bound generation by default. Background CPU is an owner-reviewed
+          # opt-in documented in docs/WEB_DEPLOYMENT.md; never silently increase billing.
+          flags: --port=8000 --memory=2Gi --iap --no-allow-unauthenticated --cpu-throttling --concurrency=8 --max=1 --max-instances=1 --min=0 --min-instances=0 --timeout=300
 
       - name: Verify Cloud Run health
         shell: bash

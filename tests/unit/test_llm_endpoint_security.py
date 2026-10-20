@@ -3,6 +3,7 @@
 import asyncio
 import json
 import socket
+from pathlib import Path
 from unittest.mock import AsyncMock
 
 import httpx
@@ -704,27 +705,30 @@ def test_registered_nondefault_port_is_exact(monkeypatch):
 @pytest.mark.parametrize("route", ["/generate", "/generate-async"])
 async def test_allowed_routes_forward_canonical_binding(route, monkeypatch, tmp_path):
     register(monkeypatch)
-    generated = AsyncMock(
-        return_value={
+
+    async def fake_generation(prompt, **kwargs):
+        output = Path(kwargs["output_dir"])
+        manifest_path = output / "manifest.json"
+        manifest_path.write_text("{}", encoding="utf-8")
+        return {
             "mode": "live",
-            "prompt": "test",
+            "prompt": prompt,
             "manifest": {},
-            "manifest_path": "fake",
-            "output_dir": str(tmp_path),
+            "manifest_path": str(manifest_path),
+            "output_dir": str(output),
         }
-    )
+
+    generated = AsyncMock(side_effect=fake_generation)
     monkeypatch.setattr(server, "generate_artifacts", generated)
+    monkeypatch.setattr(server, "_BASE_OUTPUT", tmp_path)
+    monkeypatch.setattr(server, "_api_runs", {})
+    monkeypatch.setattr(server, "_shutting_down", False)
     monkeypatch.setattr(server, "_resolve_output_dir", lambda path: tmp_path)
-    monkeypatch.setattr(server, "_acquire_generation_slot_or_raise", AsyncMock())
-    monkeypatch.setattr(server, "_release_generation_slot", AsyncMock())
-    monkeypatch.setattr(server, "create_job", lambda: "security-test-job")
-    for name in ("emit_node_progress", "emit_complete", "emit_log", "emit_error"):
-        monkeypatch.setattr(server, name, lambda *args, **kwargs: None)
     tasks = []
     create_task = asyncio.create_task
 
-    def track_task(coroutine):
-        task = create_task(coroutine)
+    def track_task(coroutine, **kwargs):
+        task = create_task(coroutine, **kwargs)
         tasks.append(task)
         return task
 
