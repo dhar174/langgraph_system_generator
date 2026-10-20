@@ -261,7 +261,7 @@ async def test_pdf_only_generation_records_implicit_notebook_export_result(
 
 
 def test_web_ui_uses_async_generation_and_eventsource():
-    """The web UI should use SSE-backed async generation instead of fake sync progress."""
+    """SSE remains available with an explicit request-bound hosted fallback."""
     repo_root = Path(__file__).resolve().parent.parent.parent
     app_js = (repo_root / "src/langgraph_system_generator/api/static/app.js").read_text(
         encoding="utf-8"
@@ -269,7 +269,9 @@ def test_web_ui_uses_async_generation_and_eventsource():
 
     assert "/generate-async" in app_js
     assert "new EventSource(" in app_js
-    assert "fetch('/generate'" not in app_js
+    assert "serverCapabilities.async_generation === false" in app_js
+    assert "startSyncGeneration(data)" in app_js
+    assert "startAsyncGeneration(data)" in app_js
 
 
 def test_web_ui_avoids_innerhtml_for_manifest_values():
@@ -310,7 +312,7 @@ def test_web_ui_only_treats_server_sent_sse_errors_as_terminal():
         encoding="utf-8"
     )
 
-    assert "eventSource.addEventListener('error'" in app_js
+    assert "eventSource.onerror = (event) => {" in app_js
     assert "if (event.data)" in app_js
     assert "'reconnecting'" in app_js
 
@@ -322,7 +324,7 @@ def test_web_ui_rejects_when_sse_reconnect_is_no_longer_possible():
         encoding="utf-8"
     )
 
-    marker = "eventSource.onerror = () => {"
+    marker = "eventSource.onerror = (event) => {"
     assert marker in app_js
     onerror_block = app_js.split(marker, 1)[1].split("});", 1)[0]
     assert "eventSource.readyState === EventSource.CLOSED" in onerror_block

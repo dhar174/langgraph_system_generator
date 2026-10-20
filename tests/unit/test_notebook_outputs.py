@@ -250,6 +250,7 @@ async def test_manifest_artifact_contract_marks_standalone_files_and_zip_members
         assert entry["exists"] is True
         assert constants_module.resolve_under_base(Path(entry["path"])).is_file()
         assert entry["relative_path"]
+        assert entry.get("api_download_path") is None
 
     zip_path = constants_module.resolve_under_base(Path(manifest["zip_path"]))
     with zipfile.ZipFile(zip_path, "r") as zf:

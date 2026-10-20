@@ -344,7 +344,10 @@ async def test_api_generate_stub(tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     assert payload["mode"] == "stub"
     assert payload["prompt"] == "API prompt"
     assert "output_dir" in payload
-    assert payload["output_dir"] == str(output_dir)
+    resolved_output = Path(payload["output_dir"])
+    assert resolved_output.parent == output_dir / "generations"
+    assert resolved_output.name == payload["run_id"]
+    assert Path(payload["manifest_path"]).parent == resolved_output
     assert payload["manifest"]["requirements_feedback"]["fallback_used"] is False
     assert payload["manifest"]["architecture_feedback"]["fallback_used"] is False
     assert payload["manifest"]["tool_planning_feedback"]["fallback_used"] is False
@@ -1331,19 +1334,24 @@ async def test_api_download_artifact_endpoint(
     importlib.reload(cli_module)
     importlib.reload(server_module)
 
-    artifacts = await cli_module.generate_artifacts(
-        "Artifact download prompt",
-        output_dir=str(constants_module._BASE_OUTPUT / tmp_path.name),
-        mode="stub",
-        formats=["ipynb"],
-    )
-
     transport = httpx.ASGITransport(app=server_module.app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
-        response = await client.get(
-            "/artifacts",
-            params={"path": artifacts["manifest"]["notebook_path"]},
+        generated = await client.post(
+            "/generate",
+            json={
+                "prompt": "Artifact download prompt",
+                "output_dir": str(constants_module._BASE_OUTPUT / tmp_path.name),
+                "mode": "stub",
+                "formats": ["ipynb"],
+            },
         )
+        assert generated.status_code == 200
+        contract = generated.json()["manifest"]["artifact_contract"]
+        notebook = next(
+            entry for entry in contract["standalone_files"]
+            if entry.get("manifest_key") == "notebook_path"
+        )
+        response = await client.get(notebook["api_download_path"])
 
     assert response.status_code == 200
     assert "notebook.ipynb" in response.headers.get("content-disposition", "")
@@ -1368,8 +1376,9 @@ async def test_api_download_artifact_rejects_invalid_path(
             "/artifacts", params={"path": str(tmp_path / ".." / "escape.txt")}
         )
 
-    assert response.status_code == 400
-    assert "allowed base directory" in response.json()["detail"]
+    # Filesystem paths no longer grant artifact access, even inside the base.
+    assert response.status_code == 422
+    assert {item["loc"][-1] for item in response.json()["detail"]} == {"run_id", "artifact"}
 
 
 def test_health_endpoint():
@@ -1441,12 +1450,15 @@ async def test_api_generate_respects_concurrency_limit(
 
     async def slow_generate_artifacts(*_args, **_kwargs):
         await gate.wait()
+        actual_output = Path(_kwargs["output_dir"])
+        manifest_path = actual_output / "manifest.json"
+        manifest_path.write_text("{}", encoding="utf-8")
         return {
             "mode": "stub",
             "prompt": "slow",
             "manifest": {},
-            "manifest_path": str(constants_module._BASE_OUTPUT / "manifest.json"),
-            "output_dir": str(constants_module._BASE_OUTPUT / tmp_path.name / "gen1"),
+            "manifest_path": str(manifest_path),
+            "output_dir": str(actual_output),
         }
 
     monkeypatch.setattr(server_module, "generate_artifacts", slow_generate_artifacts)
@@ -1633,8 +1645,13 @@ async def test_api_generate_async_with_stream(
         # Verify completion data
         final_result = complete_events[0]["data"]
         assert final_result.get("success") is True
-        assert final_result.get("mode") == "stub"
-        assert "manifest" in final_result
+        assert final_result["status"] == "completed"
+        result_response = await client.get(final_result["result_url"])
+        assert result_response.status_code == 200
+        retained_result = result_response.json()
+        assert retained_result["mode"] == "stub"
+        assert "manifest" in retained_result
+        assert retained_result["run_id"] == final_result["run_id"]
 
 
 @pytest.mark.asyncio

@@ -16,7 +16,6 @@ import zipfile
 from pathlib import Path
 from time import perf_counter
 from typing import Any, Dict, List, Literal, TypedDict
-from urllib.parse import quote
 
 import langgraph_system_generator.constants as constants_module
 from langgraph_system_generator.generator.state import (
@@ -388,8 +387,9 @@ def _artifact_path_entry(
         "exists": exists,
         "size_bytes": os.path.getsize(resolved_real) if exists else None,
     }
-    if exists:
-        entry["api_download_path"] = f"/artifacts?path={quote(resolved_real, safe='')}"
+    # API publication adds a run-scoped reference after verifying ownership.
+    # CLI/package files alone do not authorize downloads from a running server.
+    entry["api_download_path"] = None
     return entry
 
 
@@ -453,8 +453,9 @@ def _build_artifact_contract(
         "version": 1,
         "path_semantics": (
             "Legacy *_path fields and standalone_files.path values are server-local "
-            "filesystem paths under output_dir. API clients should use "
-            "api_download_path for downloadable standalone artifacts."
+            "filesystem paths under output_dir. API publication supplies "
+            "api_download_path only after registering a generated run; local "
+            "CLI/package output does not grant server download access."
         ),
         "output_dir": os.path.realpath(os.fspath(output_dir)),
         "standalone_files": standalone_files,

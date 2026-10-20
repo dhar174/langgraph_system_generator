@@ -118,6 +118,33 @@ def test_cloud_run_workflow_smoke_checks_private_service_after_deploy() -> None:
     assert "GCP_SERVICE_ACCOUNT_KEY" not in workflow
     assert "private_key" not in workflow
 
+
+def test_cloud_run_ephemeral_defaults_require_owner_ack_without_extra_billing() -> None:
+    workflow = _read(".github/workflows/deploy-cloud-run.yml")
+    assert (
+        "LNF_API_ACCESS_MODE=${{ vars.GCP_API_ACCESS_MODE || 'disabled' }}" in workflow
+    )
+    assert "LNF_EPHEMERAL_ASYNC_ENABLED=false" in workflow
+    assert "LNF_JOB_TIMEOUT_SECONDS=240" in workflow
+    assert "LNF_MAX_CONCURRENT_GENERATIONS=2" in workflow
+    flags = next(
+        line for line in workflow.splitlines() if line.strip().startswith("flags:")
+    )
+    for flag in (
+        "--cpu-throttling",
+        "--concurrency=8",
+        "--max=1",
+        "--max-instances=1",
+        "--min=0",
+        "--min-instances=0",
+        "--timeout=300",
+    ):
+        assert flag in flags
+    assert "--no-cpu-throttling" not in flags
+    dockerfile = _read("Dockerfile")
+    assert '"--timeout-graceful-shutdown", "3"' in dockerfile
+    assert '"--workers"' not in dockerfile  # One process owns local job/artifact state.
+
 def test_cloud_run_requirements_include_live_runtime_qa_dependencies() -> None:
     requirements = _read("requirements.txt")
 
