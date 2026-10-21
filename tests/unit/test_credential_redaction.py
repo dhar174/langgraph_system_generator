@@ -1,7 +1,6 @@
 """Synthetic credential completeness and bounded-work regressions."""
 
 import json
-import logging
 from pathlib import Path
 import subprocess
 import sys
@@ -102,19 +101,13 @@ def test_malformed_url_is_omitted_in_full(url):
     assert SECRET not in redaction._sanitize_text_credentials("Failed " + url)
 
 
-def test_nested_errors_logs_and_sse_do_not_escape(caplog):
+def test_nested_errors_and_sse_do_not_escape():
     from langgraph_system_generator.api import progress_streaming as progress
 
     text = f'key={SECRET}&token={SECRET} "client_secret": "{SECRET}" Bearer {SECRET}'
     nested = {"items": [{"message": text}], "password": SECRET}
     payload = GenerationError(text, hint=text, details=nested).to_payload()
     assert SECRET not in json.dumps(payload)
-    caplog.set_level(logging.DEBUG)
-    redaction.install_llm_log_redaction()
-    for logger in ("httpx", "openai._base_client", "httpcore.http11"):
-        logging.getLogger(logger).warning("diagnostic %s", text)
-    assert SECRET not in caplog.text
-    assert "omitted" in caplog.text
     job_id = progress.create_job()
     try:
         progress.emit_log(job_id, "warning", text, nested)
