@@ -25,11 +25,12 @@ jobs:
         with:
           python-version: '3.10'
       - name: Install runtime and tests without the cloud extra
+        timeout-minutes: 10
         run: |
           python -m venv .venv
           .venv/bin/python -m pip install -r requirements.txt -e . psutil
       - name: Core imports and ephemeral lifecycle without cloud SDKs
-        run: .venv/bin/python scripts/qualify_durable_backend.py --level core --receipts output/qualification/core
+        run: .venv/bin/python scripts/qualify_durable_backend.py --level core --test-timeout 180 --receipts output/qualification/core
       - name: Publish sanitized core summary
         if: always()
         run: |
@@ -52,7 +53,7 @@ jobs:
 
   sdk-and-emulator:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v7.0.1
         with:
@@ -68,6 +69,7 @@ jobs:
           distribution: temurin
           java-version: '21'
       - name: Install runtime, tests, and optional SDKs
+        timeout-minutes: 10
         run: |
           python -m venv .venv
           .venv/bin/python -m pip install -r requirements.txt -e '.[gcp]' psutil
@@ -76,9 +78,9 @@ jobs:
           curl --fail --location --max-time 180 --output "$RUNNER_TEMP/firestore.jar" https://storage.googleapis.com/firebase-preview-drop/emulator/cloud-firestore-emulator-v1.22.0.jar
           echo '9b6498b7f62714d67f48f59b3818883cd682dbcd46b9f59511de81c97bb5166c  '"$RUNNER_TEMP/firestore.jar" | sha256sum --check
       - name: SDK-equipped injected-transport contracts (no credentials)
-        run: .venv/bin/python scripts/qualify_durable_backend.py --level sdk --receipts output/qualification/sdk
+        run: .venv/bin/python scripts/qualify_durable_backend.py --level sdk --test-timeout 300 --receipts output/qualification/sdk
       - name: Independent-process emulator recovery, two fresh namespaces
-        run: .venv/bin/python scripts/qualify_durable_backend.py --level emulator --emulator-jar "$RUNNER_TEMP/firestore.jar" --repeat 2 --receipts output/qualification/emulator
+        run: .venv/bin/python scripts/qualify_durable_backend.py --level emulator --emulator-jar "$RUNNER_TEMP/firestore.jar" --repeat 2 --test-timeout 300 --receipts output/qualification/emulator
       - name: Publish sanitized SDK and emulator summaries
         if: always()
         run: |

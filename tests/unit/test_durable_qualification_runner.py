@@ -78,7 +78,7 @@ load_dotenv(os.environ['HOME']+'/.env')
 assert 'QUALIFICATION_SENTINEL' not in os.environ
 for host in ('metadata.google.internal','169.254.169.254','api.openai.com'):
     try: socket.create_connection((host,443),timeout=.1)
-    except OSError: pass
+    except OSError as error: assert 'qualification permits loopback' in str(error)
     else: raise AssertionError('external socket permitted')
 try:
     import grpc

@@ -65,11 +65,13 @@ def test_emulator_acceptance_contention_and_fresh_instance_replay(record_propert
                 retries[index] += 1
                 time.sleep(0.25 * (index + 1) * (attempt + 1))
 
-    with ThreadPoolExecutor(max_workers=4) as pool:
-        results = list(pool.map(accept, range(4)))
+    try:
+        with ThreadPoolExecutor(max_workers=4) as pool:
+            results = list(pool.map(accept, range(4)))
+    finally:
+        record_property("acceptance_transient_503_replays", json.dumps(retries))
+        print("acceptance transient 503 replays:", retries)
     assert sum(item.created for item in results) == 1
-    record_property("acceptance_transient_503_replays", json.dumps(retries))
-    print("acceptance transient 503 replays:", retries)
     job = results[0].job
     assert len({item.job.job_id for item in results}) == 1
     fresh_client = firestore.Client(
@@ -184,7 +186,9 @@ for attempt in range(3):
         break
     except JobError as error:
         if error.code=='job_backend_unavailable' and error.status==503:
-            if attempt==2: raise
+            if attempt==2:
+                print(json.dumps({'worker':worker,'error':error.code,'replays':attempt}),flush=True)
+                raise
             time.sleep(.25*(1 if worker=='worker-a' else 2)*(attempt+1))
             continue
         print(json.dumps({'worker':worker,'error':error.code,'replays':attempt}))
@@ -202,6 +206,7 @@ c.close()
         )
         for worker in workers
     ]
+    results = []
     try:
         deadline = time.monotonic() + 30
         while not all((tmp_path / worker).is_file() for worker in workers):
@@ -212,25 +217,25 @@ c.close()
             time.sleep(0.02)
         (tmp_path / "go").write_text("go", encoding="utf-8")
         assert (tmp_path / "go").read_text(encoding="utf-8") == "go"
-        results = []
         for process in processes:
             stdout, stderr = process.communicate(timeout=120)
+            if stdout.strip():
+                results.append(json.loads(stdout.strip().splitlines()[-1]))
             assert process.returncode == 0, stdout + stderr
-            results.append(json.loads(stdout.strip().splitlines()[-1]))
         winners = [result for result in results if "fence" in result]
         assert len(winners) == 1, results
         assert [result["error"] for result in results if "error" in result] == [
             "job_conflict"
         ]
+        current = store.get(owner, job.job_id)
+        assert current.attempt_count == current.fencing_token == 1
+        assert current.lease.worker_id == winners[0]["worker"]
+    finally:
         record_property(
             "claim_transient_503_replays",
             json.dumps([result["replays"] for result in results]),
         )
         print("claim transient 503 replays:", [result["replays"] for result in results])
-        current = store.get(owner, job.job_id)
-        assert current.attempt_count == current.fencing_token == 1
-        assert current.lease.worker_id == winners[0]["worker"]
-    finally:
         for process in processes:
             if process.poll() is None:
                 process.kill()

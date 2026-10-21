@@ -396,6 +396,7 @@ def main():
         receipt["error"] = str(exc)
     finally:
         if emulator is not None:
+            receipt["emulator_terminated_by_runner"] = emulator.poll() is None
             stop(emulator, emulator_identity)
             receipt["emulator_exit"] = emulator.returncode
         if emulator_log is not None:

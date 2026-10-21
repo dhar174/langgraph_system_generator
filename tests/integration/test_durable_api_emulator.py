@@ -148,6 +148,7 @@ def test_separate_api_worker_processes_survive_loss_and_read_same_committed_resu
         == "accepted"
     )
     old = run("crash", 1000, job["job_id"], expected=23)
+    assert run("stale", 1240, job["job_id"])["error"] == "job_lease_lost"
     recovered = run("recover", 1240, job["job_id"])
     assert recovered["fence"] > old["fence"]
     assert run("stale", 1240, job["job_id"])["error"] in {
