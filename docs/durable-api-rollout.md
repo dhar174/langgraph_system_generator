@@ -235,6 +235,83 @@ and budgets before activation; this proposal makes no price guarantee.
 
 ## Qualification recipe and receipt capture
 
+### Credential-free postmerge qualification
+
+The repeatable entry point is `scripts/qualify_durable_backend.py`. Run it with
+a task-private virtualenv Python from this checkout. Setup may download packages
+and the official emulator; test execution uses sanitized subprocess settings,
+disables dotenv and tracing, and permits loopback Python/gRPC connections only.
+It replaces HOME/USERPROFILE and Google CLI configuration with temporary
+directories. It never reads ADC or authenticates a cloud project. Do not pass
+production configuration or keys. Every invocation requires a new receipt path.
+
+Use the supported Python 3.10 baseline. An additional Python/platform run is
+separate evidence. Install Node for the browser harness, Java 21+ for the
+emulator, and `psutil` for bounded cleanup of owned process descendants:
+
+```powershell
+py -3.10 -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt -e . psutil
+.\.venv\Scripts\python.exe scripts/qualify_durable_backend.py --level core --receipts output/qualification/core
+.\.venv\Scripts\python.exe -m pip install -e ".[gcp]"
+.\.venv\Scripts\python.exe scripts/qualify_durable_backend.py --level sdk --receipts output/qualification/sdk
+```
+
+The core level must run before installing the GCP extra; its preflight rejects
+cloud SDK installations. The SDK level imports the actual optional packages
+before collecting identity, store, dispatch, worker, artifact, API and browser
+contracts with injected transports. The original core CI workflow is unchanged.
+
+Install the emulator using the [official instructions](https://docs.cloud.google.com/firestore/native/docs/emulator).
+The runner launches the official emulator JAR directly, as the Firebase CLI does,
+to own one Java process without a global CLI installation or cloud configuration.
+The CI workflow pins emulator 1.22.0 and checks its SHA-256 against the
+[Firebase tools download manifest](https://github.com/firebase/firebase-tools/blob/master/src/emulator/downloadableEmulatorInfo.json).
+For a Windows local setup, download that JAR, verify the same digest, and supply
+its path plus a Java 21+ executable (the Java and JAR paths below are examples):
+
+```powershell
+.\.venv\Scripts\python.exe scripts/qualify_durable_backend.py --level emulator --java C:/tools/java21/bin/java.exe --emulator-jar C:/tools/cloud-firestore-emulator-v1.22.0.jar --port 8081 --repeat 2 --receipts output/qualification/emulator
+```
+
+On Linux use `.venv/bin/python` with the same runner arguments. The runner sets
+`LNF_TEST_FIRESTORE_EMULATOR=1` and `FIRESTORE_EMULATOR_HOST=127.0.0.1:8081`
+for pytest and its independent application subprocesses. It refuses an occupied
+port, binds only loopback, probes the Firestore REST service for at most 60
+seconds, and limits each pytest run to 900 seconds. Both runs use fresh
+`demo-lnf-...` projects in the same live emulator. Application process replacement
+is tested; the emulator's in-memory database does not survive emulator restart.
+
+The emulator's lock model can exhaust the SDK's five transaction attempts with
+`ABORTED / Transaction lock timeout`. The contention tests keep simultaneous
+first requests and allow at most two additional **caller** replays of only
+`job_backend_unavailable`/503, using a deterministic stagger. Acceptance retains
+the same owner/key/body; claim replays retain the original version/fence/intent.
+They still require exactly one created job, one winning claim and a conflicting
+loser. Exhausted caller replays fail the test. JUnit properties record replay
+counts. This is bounded request replay qualification; it does not promise every
+contending request succeeds immediately or change production retry behavior.
+
+Each receipt directory contains the dependency/import preflight, Java version
+and JAR digest where applicable, exact pytest commands, collected node IDs,
+JUnit XML, test output, emulator diagnostics and `receipt.json`. Exit 0 requires
+nonempty matching collection/results, every designated suite present, all
+required emulator node IDs, and no unexpected skips. The only core platform
+exceptions are the two exact Windows-only lifecycle tests and their exact
+reasons on non-Windows systems. Missing SDKs, missing Node, missing Java/JAR,
+startup failure, timeout, partial results, skipped emulator cases and failed
+tests return nonzero. Logs contain only the sanitized test configuration and
+synthetic test identities; no environment dump or live credentials are captured.
+
+`.github/workflows/durable-qualification.yml` runs these three levels in separate
+Python 3.10 jobs/environments on ordinary PR/push events, retaining receipts for
+seven days. It uses read-only repository permission, with no cloud authentication,
+environment activation, secrets, id-token permission or deployment steps.
+SDK transport mocks, emulator persistence, approved staging and production remain
+separate evidence levels. The disk object transport is a test double; passing
+this workflow does not qualify GCS, Tasks redelivery, IAP/OIDC, IAM, production
+indexes, service limits or activation.
+
 Offline deterministic commands are in the B3 qualification receipt. The optional
 emulator command is:
 
