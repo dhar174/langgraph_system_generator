@@ -200,6 +200,14 @@ File bytes consume Cloud Run memory and are not a durable storage budget.
 
 ## Remaining Phase B
 
+B1 contracts are accepted through PR #392. B2 supplies executable private
+Cloud Tasks dispatch, a separate authenticated worker/reconciler service and
+fenced private object publication; see the [B2 worker runbook](durable-worker.md).
+The worker requires its own reviewed 330-second Cloud Run timeout and private
+Invoker bindings. The public application/workflow above continues to use Phase A;
+public durable admission remains disabled. No resource/IAM/deployment change is
+implied by checked-in adapters or configuration proposals.
+
 B1's [durable jobs ADR](adr/0002-durable-generation-jobs.md) defines the versioned
 storage/identity foundation and offline runbook. `LNF_JOB_BACKEND=ephemeral` remains
 the default. Selecting `firestore` does not enable public generation: B1 routes

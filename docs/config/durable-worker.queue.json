@@ -1,0 +1,11 @@
+{
+  "proposal_only": true,
+  "rateLimits": {"maxDispatchesPerSecond": 1, "maxConcurrentDispatches": 2},
+  "retryConfig": {
+    "maxAttempts": 5,
+    "maxRetryDuration": "900s",
+    "minBackoff": "5s",
+    "maxBackoff": "60s",
+    "maxDoublings": 4
+  }
+}

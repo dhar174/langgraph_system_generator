@@ -101,6 +101,8 @@ class DurableJob(Record):
     state: JobState = JobState.ACCEPTED
     version: int = 1
     attempt_count: int = 0
+    attempt_limit: int = Field(default=3, ge=1, le=3)
+    dispatch_limit: int = Field(default=12, ge=1, le=12)
     fencing_token: int = 0
     lease: AttemptLease | None = None
     cancellation_requested: bool = False

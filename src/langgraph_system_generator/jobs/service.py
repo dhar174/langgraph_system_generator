@@ -215,6 +215,7 @@ class TransactionalJobStore:
                 owner=principal,
                 request=request,
                 request_fingerprint=fingerprint,
+                attempt_limit=self.max_attempts,
                 created_at=now,
                 deadline_at=now + 900,
                 expires_at=now + 7 * 86400,
@@ -273,8 +274,10 @@ class TransactionalJobStore:
         def transition(job: DurableJob, now: float) -> tuple[DurableJob, EventKind]:
             if job.dispatch.intent_id != intent_id:
                 raise JobError("dispatch_conflict")
-            if now >= job.deadline_at or job.attempt_count >= self.max_attempts:
+            if now >= job.deadline_at or job.attempt_count >= job.attempt_limit:
                 raise JobError("job_attempts_exhausted")
+            if now < job.dispatch.available_at:
+                raise JobError("dispatch_not_due")
             if (
                 job.state == JobState.RUNNING
                 and job.lease
@@ -347,7 +350,10 @@ class TransactionalJobStore:
     def _retry(self, job: DurableJob, now: float) -> tuple[DurableJob, EventKind]:
         if now >= job.deadline_at:
             return self._terminal(job, JobState.EXPIRED), "terminal"
-        if job.attempt_count >= self.max_attempts:
+        if (
+            job.attempt_count >= job.attempt_limit
+            or job.dispatch.generation >= job.dispatch_limit
+        ):
             return self._terminal(job, JobState.FAILED), "terminal"
         generation = job.dispatch.generation + 1
         return (
@@ -440,11 +446,48 @@ class TransactionalJobStore:
                     update={
                         "dispatch": job.dispatch.model_copy(
                             update={"pending": False, "task_ref": task_ref}
-                        )
+                        ),
+                        "next_action_at": min(now + 60, job.deadline_at),
                     }
                 ),
                 None,
             )
+
+        return self._mutate(job_id, version, fence, transition)
+
+    def reschedule_dispatch(
+        self,
+        job_id: str,
+        version: int,
+        fence: int,
+        intent_id: str,
+        delay_seconds: int = 5,
+    ) -> DurableJob:
+        """B2: rotate an unclaimed lost/tombstoned wakeup in the existing store.
+
+        The CAS prevents concurrent reconcilers from rotating twice. This does not
+        grant a generation attempt or authorize a running worker to publish.
+        """
+        if type(delay_seconds) is not int or not 1 <= delay_seconds <= 60:
+            raise JobError("dispatch_delay_invalid", 400)
+
+        def transition(job: DurableJob, now: float) -> tuple[DurableJob, EventKind]:
+            if job.state != JobState.ACCEPTED or job.dispatch.intent_id != intent_id:
+                raise JobError("dispatch_conflict")
+            updated, kind = self._retry(job, now)
+            if updated.state == JobState.ACCEPTED:
+                updated = updated.model_copy(
+                    update={
+                        "dispatch": updated.dispatch.model_copy(
+                            update={
+                                "available_at": min(
+                                    now + delay_seconds, job.deadline_at
+                                ),
+                            }
+                        ),
+                    }
+                )
+            return updated, kind
 
         return self._mutate(job_id, version, fence, transition)
 
