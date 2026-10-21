@@ -103,6 +103,31 @@ from `make_llm()` and pass that model instance into the optional SDK; standalone
 Deep Agents snippets keep their model-string configuration. Tool-specific
 credentials remain separate.
 
+### Bounded credential diagnostics
+
+Compound secret names in query/key=value and JSON/dict diagnostics are scanned
+as disjoint Unicode word/hyphen tokens. Each name is checked against a fixed
+set of secret fragments, each value is consumed once, and output slices are
+joined once. This removes the ambiguous repeated matching reported as CodeQL
+security alerts 277 and 278, including the malformed-URL fallback. URL trailing
+punctuation is separated with one strip and slice rather than repeated copying.
+Public sanitizer signatures and Python 3.10 compatibility are preserved.
+
+Valid RAG URLs retain safe host/path/query provenance; generation diagnostics
+continue to omit complete endpoints. URLs that cannot be parsed are replaced
+in full with `[invalid URL omitted]`. Quoted credentials honor escaped quotes;
+an unterminated quoted secret consumes the rest of that diagnostic string.
+These intentional omissions prevent partial secrets from being returned.
+There is no input truncation or chunking before redaction. SDK/HTTPcore payload
+suppression and the endpoint isolation established by #379 remain in force.
+
+`tests/fixtures/credential_redaction_probe.py` provides synthetic legacy and
+candidate inputs. Run it only through a parent subprocess watchdog (as in
+`tests/unit/test_credential_redaction.py`); it caps the child at 512 MiB and
+accepts at most 65,536 repetitions. Regression assertions check output and
+generous watchdog completion, with a separate Python traversal-step bound.
+Timing observations are diagnostic evidence, not portable timing thresholds.
+
 ### Network assumptions and limitations
 
 This is an exact administrator allowlist, not a custom DNS resolver. The process
