@@ -1,0 +1,35 @@
+name: Review durable staging configuration
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  review:
+    # Owner must review configuration AND environment protection before opting in.
+    # This job only validates; provisioning and staging execution are separate gates.
+    if: vars.LNF_DURABLE_STAGING_REVIEW_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    environment: durable-staging
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - name: Require reviewed inputs
+        env:
+          CONFIG_REVIEWED: ${{ vars.LNF_DURABLE_CONFIG_REVIEWED }}
+        run: test "$CONFIG_REVIEWED" = true
+      - name: Install approved Terraform runtime
+        uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd
+        with:
+          terraform_version: 1.13.5
+          terraform_wrapper: false
+      - name: Validate Terraform with installed approved runtime
+        run: |
+          set -euo pipefail
+          command -v terraform
+          terraform -chdir=docs/config/durable init -backend=false -input=false -lockfile=readonly
+          terraform -chdir=docs/config/durable fmt -check
+          terraform -chdir=docs/config/durable validate
+      - name: Publish qualification instructions
+        run: cat docs/durable-api-rollout.md >> "$GITHUB_STEP_SUMMARY"

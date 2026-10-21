@@ -1,5 +1,7 @@
 FROM python:3.11-slim
 
+ARG LNF_INSTALL_GCP=false
+
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
 
@@ -13,7 +15,7 @@ COPY src ./src
 COPY data ./data
 COPY docs ./docs
 
-RUN pip install --no-cache-dir .
+RUN if [ "$LNF_INSTALL_GCP" = "true" ]; then pip install --no-cache-dir '.[gcp]'; else pip install --no-cache-dir .; fi
 
 EXPOSE 8000
 

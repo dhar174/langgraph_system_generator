@@ -39,9 +39,29 @@ def select_job_store(environ: Mapping[str, str] | None = None) -> JobStore | Non
     ):
         raise JobError("job_configuration_invalid", 503)
     from .firestore_store import FirestoreJobStore
+    from .service import AdmissionLimits
+
+    try:
+        limits = AdmissionLimits(
+            *(
+                int(values.get(name, default))
+                for name, default in (
+                    ("LNF_JOB_MAX_PENDING", "100"),
+                    ("LNF_JOB_MAX_ACTIVE", "10"),
+                    ("LNF_JOB_OWNER_PENDING", "5"),
+                    ("LNF_JOB_OWNER_ACTIVE", "2"),
+                )
+            )
+        )
+    except ValueError:
+        raise JobError("job_configuration_invalid", 503) from None
 
     return FirestoreJobStore(
-        project, secret, database, approved_provider_refs=provider_refs
+        project,
+        secret,
+        database,
+        approved_provider_refs=provider_refs,
+        admission_limits=limits,
     )
 
 

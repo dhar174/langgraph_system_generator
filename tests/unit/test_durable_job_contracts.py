@@ -441,12 +441,16 @@ def test_backend_selection_and_fail_closed_api(monkeypatch):
     with pytest.raises(JobError, match="job_configuration_invalid"):
         select_job_store({"LNF_JOB_BACKEND": "firestore"})
     monkeypatch.setenv("LNF_JOB_BACKEND", "firestore")
+    monkeypatch.delenv("LNF_API_ACCESS_MODE", raising=False)
     with TestClient(server.app) as client:
         assert client.get("/health").json()["generation_enabled"] is False
-        for route in ("/generate", "/generate-async"):
+        for route, expected_status, expected_code in (
+            ("/generate", 409, "durable_requires_async"),
+            ("/generate-async", 503, "durable_identity_mode_required"),
+        ):
             response = client.post(route, json={"prompt": "test", "mode": "stub"})
-            assert response.status_code == 503
-            assert response.json()["detail"]["code"] == "durable_admission_disabled"
+            assert response.status_code == expected_status
+            assert response.json()["detail"]["code"] == expected_code
 
 
 def test_imports_without_cloud_credentials_or_network(tmp_path):

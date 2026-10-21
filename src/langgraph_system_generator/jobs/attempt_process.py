@@ -13,6 +13,9 @@ from .models import DurableJob, JobError
 
 async def generate(payload: dict, send) -> None:
     from langgraph_system_generator.cli import generate_artifacts
+    from langgraph_system_generator.utils.credential_redaction import (
+        _sanitize_text_credentials,
+    )
 
     from .execution import trusted_directory
     from .gcs_artifacts import GCSArtifactStore
@@ -24,10 +27,27 @@ async def generate(payload: dict, send) -> None:
     directory.relative_to(root)
     provider = resolve_provider(job.request)
     last_progress = 0.0
+    last_log = 0.0
 
     def progress(event, percentage=None, message=None):
-        nonlocal last_progress
+        nonlocal last_progress, last_log
         now = time.monotonic()
+        if isinstance(event, dict) and event.get("event") == "log":
+            if now - last_log >= 1:
+                last_log = now
+                level = event.get("level", event.get("status", "info"))
+                send(
+                    {
+                        "kind": "log",
+                        "level": (
+                            level if level in {"info", "warning", "error"} else "info"
+                        ),
+                        "message": _sanitize_text_credentials(
+                            str(event.get("message", ""))
+                        )[:512],
+                    }
+                )
+            return
         if now - last_progress < 1:
             return
         value = event.get("percentage") if isinstance(event, dict) else percentage
@@ -43,7 +63,14 @@ async def generate(payload: dict, send) -> None:
         agent_type=job.request.architecture,
         custom_endpoint=provider.endpoint,
         endpoint_policy="hosted",
-        formats=["ipynb", "html", "markdown", "zip"],
+        formats=list(job.request.formats) if job.request.formats is not None else None,
+        temperature=job.request.temperature,
+        max_tokens=job.request.max_tokens,
+        requirements_messages=[
+            {"role": turn.role, "content": turn.content}
+            for turn in job.request.messages
+        ]
+        or None,
         progress_callback=progress,
     )
     # The generator owns QA and transport-scope cleanup. No new notebook runtime
@@ -84,7 +111,20 @@ def main() -> int:
                     configured_reconciler,
                 )
 
-                send(configured_reconciler().reconcile_once())
+                from .gcs_artifacts import GCSArtifactStore
+                from .retention import RetentionCleaner
+
+                reconciler = configured_reconciler()
+                counts = reconciler.reconcile_once(pages=2, seconds=15)
+                counts.update(
+                    RetentionCleaner(
+                        reconciler.store,
+                        GCSArtifactStore(
+                            os.environ["LNF_JOB_ARTIFACT_BUCKET"], Path.cwd()
+                        ),
+                    ).sweep()
+                )
+                send(counts)
             else:
                 raw = sys.stdin.buffer.readline(131073)
                 if len(raw) > 131072:

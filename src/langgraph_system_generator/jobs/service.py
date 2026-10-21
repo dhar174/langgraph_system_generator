@@ -7,9 +7,13 @@ import re
 import time
 import uuid
 from collections.abc import Callable
+from dataclasses import dataclass
 from typing import Any, Protocol, TypeVar
 
 from langgraph_system_generator import __version__
+from langgraph_system_generator.utils.credential_redaction import (
+    _sanitize_text_credentials,
+)
 
 from .models import (
     TERMINAL,
@@ -24,6 +28,7 @@ from .models import (
     JobError,
     JobEvent,
     JobState,
+    LogLevel,
     Principal,
     Reconciliation,
     ServiceIdentity,
@@ -59,6 +64,26 @@ def _json(value: object) -> bytes:
     ).encode("utf-8")
 
 
+@dataclass(frozen=True)
+class AdmissionLimits:
+    pending: int = 100
+    active: int = 10
+    owner_pending: int = 5
+    owner_active: int = 2
+
+    def __post_init__(self) -> None:
+        if any(
+            type(value) is not int or not 1 <= value <= 100
+            for value in (
+                self.pending,
+                self.active,
+                self.owner_pending,
+                self.owner_active,
+            )
+        ):
+            raise JobError("job_configuration_invalid", 503)
+
+
 class TransactionalJobStore:
     """All public worker methods are internal-service ports, not HTTP endpoints.
 
@@ -76,6 +101,7 @@ class TransactionalJobStore:
         lease_seconds: int = 240,
         max_attempts: int = 3,
         approved_provider_refs: frozenset[str] = frozenset({"openai-v1"}),
+        admission_limits: AdmissionLimits | None = None,
     ):
         if (
             len(idempotency_secret) < 32
@@ -96,6 +122,51 @@ class TransactionalJobStore:
         self.lease_seconds = lease_seconds
         self.max_attempts = max_attempts
         self.approved_provider_refs = approved_provider_refs
+        self.admission_limits = admission_limits
+
+    def _capacity(self, tx: Transaction, job: DurableJob, now: float) -> None:
+        """One bounded transactional ledger shared by API and all worker instances.
+
+        Deadline expiry releases admission, while the worker supervisor separately
+        kills/reaps attempts. No in-process count authorizes durable work.
+        """
+        limits = self.admission_limits
+        if limits is None:
+            return
+        ledger = tx.get("capacity/global") or {"jobs": {}}
+        entries = {
+            key: value
+            for key, value in ledger["jobs"].items()
+            if value["deadline"] > now and key != job.job_id
+        }
+        owner = hashlib.sha256(_json(job.owner.owner)).hexdigest()
+        if job.state not in TERMINAL and now < job.deadline_at:
+            state = job.state.value
+            # Pending admission includes all outstanding work. Retries move
+            # between queued/running without consuming a second reservation.
+            selected = [
+                value
+                for value in entries.values()
+                if job.state == JobState.ACCEPTED or value["state"] == state
+            ]
+            maximum = (
+                limits.pending if job.state == JobState.ACCEPTED else limits.active
+            )
+            owner_maximum = (
+                limits.owner_pending
+                if job.state == JobState.ACCEPTED
+                else limits.owner_active
+            )
+            if len(selected) >= maximum:
+                raise JobError("job_global_capacity", 503)
+            if sum(value["owner"] == owner for value in selected) >= owner_maximum:
+                raise JobError("job_owner_capacity", 429)
+            entries[job.job_id] = {
+                "state": state,
+                "owner": owner,
+                "deadline": job.deadline_at,
+            }
+        tx.set("capacity/global", {"jobs": entries})
 
     @staticmethod
     def _path(job_id: str) -> str:
@@ -143,7 +214,9 @@ class TransactionalJobStore:
         now: float,
         kind: EventKind | None = None,
         progress: int | None = None,
+        log: tuple[LogLevel, str] | None = None,
     ) -> DurableJob:
+        self._capacity(tx, job, now)
         # No reads after this point: Firestore transactions require reads first.
         if kind:
             cursor = job.event_cursor + 1
@@ -155,6 +228,8 @@ class TransactionalJobStore:
                 kind=kind,
                 state=job.state,
                 progress=progress,
+                log_level=log[0] if log else None,
+                log_message=log[1] if log else None,
                 created_at=now,
                 expires_at=job.event_expires_at,
             )
@@ -222,7 +297,10 @@ class TransactionalJobStore:
                 event_expires_at=now + 86400,
                 dispatch=intent,
                 next_action_at=now + 900,
+                cleanup_at=now + 900 + 86400,
             )
+            job = self._write(tx, job, now, "accepted")
+            tx.set(f"runs/{run_id}", {"job_id": job_id, "expires_at": job.expires_at})
             tx.set(
                 f"idempotency/{key_id}",
                 {
@@ -231,7 +309,7 @@ class TransactionalJobStore:
                     "expires_at": now + 86400,
                 },
             )
-            return Acceptance(job=self._write(tx, job, now, "accepted"), created=True)
+            return Acceptance(job=job, created=True)
 
         return self.db.run(operation)
 
@@ -247,6 +325,22 @@ class TransactionalJobStore:
         """Internal port; use WorkerJobService after verified IAM authorization."""
         return self.db.run(lambda tx: self._load(tx, job_id, self.clock()))
 
+    def get_run(self, principal: Principal, run_id: str) -> DurableJob:
+        if not re.fullmatch(r"[a-f0-9]{32}", run_id):
+            raise JobError("job_unavailable", 404)
+
+        def operation(tx: Transaction) -> DurableJob:
+            mapping = tx.get(f"runs/{run_id}")
+            if not mapping:
+                raise JobError("job_unavailable", 404)
+            job = self._load(tx, mapping["job_id"], self.clock())
+            self._owner(job, principal)
+            if job.run_id != run_id:
+                raise JobError("job_unavailable", 404)
+            return job
+
+        return self.db.run(operation)
+
     def _mutate(
         self,
         job_id: str,
@@ -255,6 +349,7 @@ class TransactionalJobStore:
         transition: Callable[[DurableJob, float], tuple[DurableJob, EventKind | None]],
         progress: int | None = None,
         principal: Principal | None = None,
+        log: tuple[LogLevel, str] | None = None,
     ) -> DurableJob:
         def operation(tx: Transaction) -> DurableJob:
             now = self.clock()
@@ -264,7 +359,7 @@ class TransactionalJobStore:
             self._expected(job, version, fence)
             updated, kind = transition(job, now)
             updated = updated.model_copy(update={"version": job.version + 1})
-            return self._write(tx, updated, now, kind, progress)
+            return self._write(tx, updated, now, kind, progress, log)
 
         return self.db.run(operation)
 
@@ -346,6 +441,25 @@ class TransactionalJobStore:
                 "dispatch": job.dispatch.model_copy(update={"pending": False}),
             }
         )
+
+    def append_log(
+        self,
+        job_id: str,
+        version: int,
+        fence: int,
+        worker_id: str,
+        level: LogLevel,
+        message: str,
+    ) -> DurableJob:
+        if level not in {"info", "warning", "error"} or not isinstance(message, str):
+            raise JobError("job_log_invalid", 400)
+        message = _sanitize_text_credentials(message)[:512]
+
+        def transition(job: DurableJob, now: float) -> tuple[DurableJob, EventKind]:
+            self._live(job, worker_id, now)
+            return job, "log"
+
+        return self._mutate(job_id, version, fence, transition, log=(level, message))
 
     def _retry(self, job: DurableJob, now: float) -> tuple[DurableJob, EventKind]:
         if now >= job.deadline_at:
@@ -541,9 +655,84 @@ class TransactionalJobStore:
             return EventPage(
                 events=tuple(events),
                 next_cursor=events[-1].event_id if events else job.event_cursor,
-                truncated=expired or after < job.first_event_id - 1,
+                truncated=expired
+                or after < job.first_event_id - 1
+                or len(events)
+                < max(0, min(job.event_cursor + 1, start + limit) - start),
                 latest_cursor=job.event_cursor,
             )
+
+        return self.db.run(operation)
+
+    def cleanup_candidates(self, limit: int = 10) -> tuple[DurableJob, ...]:
+        self._limit(limit)
+        paths = self.db.due("jobs", "cleanup_at", self.clock(), limit)
+
+        def operation(tx: Transaction) -> tuple[DurableJob, ...]:
+            rows = [tx.get(path) for path in paths]
+            return tuple(DurableJob.model_validate(row) for row in rows if row)
+
+        return self.db.run(operation)
+
+    def cleanup_metadata(
+        self, job_id: str, *, objects_deleted: bool = False, limit: int = 100
+    ) -> bool:
+        """Scheduler only. Delete child events before parent; bounded per call.
+
+        Expired parent deletion requires a successful private-object sweep. Parent
+        Firestore TTL is deliberately disabled to retain this inventory.
+        """
+        self._limit(limit)
+
+        def operation(tx: Transaction) -> bool:
+            now = self.clock()
+            data = tx.get(self._path(job_id))
+            if not data:
+                return True
+            job = DurableJob.model_validate(data)
+            if (
+                now < job.event_expires_at
+                or now < job.deadline_at
+                or (now >= job.expires_at and not objects_deleted)
+            ):
+                raise JobError("job_cleanup_not_due", 409)
+            end = min(job.event_cursor + 1, job.first_event_id + limit)
+            for cursor in range(job.first_event_id, end):
+                tx.delete(f"jobs/{job_id}/events/{cursor:020d}")
+            if end <= job.event_cursor:
+                tx.set(
+                    self._path(job_id),
+                    job.model_copy(update={"first_event_id": end}).model_dump(
+                        mode="json"
+                    ),
+                )
+                return False
+            if now >= job.expires_at:
+                tx.delete(self._path(job_id))
+                tx.delete(f"runs/{job.run_id}")
+                tx.delete(f"dispatch/{job_id}")
+            else:
+                tx.set(
+                    self._path(job_id),
+                    job.model_copy(
+                        update={"first_event_id": end, "cleanup_at": job.expires_at}
+                    ).model_dump(mode="json"),
+                )
+            return True
+
+        return self.db.run(operation)
+
+    def cleanup_idempotency(self, limit: int = 100) -> int:
+        self._limit(limit)
+        now = self.clock()
+        paths = self.db.due("idempotency", "expires_at", now, limit)
+
+        def operation(tx: Transaction) -> int:
+            rows = [(path, tx.get(path)) for path in paths]
+            expired = [path for path, row in rows if row and row["expires_at"] <= now]
+            for path in expired:
+                tx.delete(path)
+            return len(expired)
 
         return self.db.run(operation)
 
@@ -636,6 +825,13 @@ class WorkerJobService:
     def relinquish(self, job: DurableJob, worker_id: str) -> DurableJob:
         return self.store.relinquish(
             job.job_id, job.version, job.fencing_token, worker_id
+        )
+
+    def append_log(
+        self, job: DurableJob, worker_id: str, level: LogLevel, message: str
+    ) -> DurableJob:
+        return self.store.append_log(
+            job.job_id, job.version, job.fencing_token, worker_id, level, message
         )
 
     def finalize(

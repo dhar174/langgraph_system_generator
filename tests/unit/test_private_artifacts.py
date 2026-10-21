@@ -41,6 +41,16 @@ class Blob:
         assert str(if_generation_match) == "1" and retry is None
         return self.objects[self.name][0]
 
+    def download_to_file(
+        self, target, *, if_generation_match, checksum, retry, timeout
+    ):
+        assert checksum == "crc32c"
+        target.write(
+            self.download_as_bytes(
+                if_generation_match=if_generation_match, retry=retry, timeout=timeout
+            )
+        )
+
     def delete(self, *, if_generation_match, retry, timeout):
         assert str(if_generation_match) == "1" and retry is None
         del self.objects[self.name]
@@ -57,7 +67,7 @@ class Storage:
         )
 
     def list_blobs(self, bucket, *, prefix, max_results, retry, timeout):
-        assert max_results == 10 and retry is None
+        assert 1 <= max_results <= 100 and retry is None
         return [
             Blob(name, self.objects, 1)
             for name in sorted(self.objects)

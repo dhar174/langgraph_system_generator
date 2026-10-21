@@ -10,7 +10,15 @@ from typing import Any, Protocol
 from pydantic import Field
 
 from .execution import ExecutionLimits, trusted_directory
-from .models import TERMINAL, ArtifactRef, DurableJob, JobError, JobState, Record
+from .models import (
+    TERMINAL,
+    ArtifactRef,
+    DurableJob,
+    JobError,
+    JobState,
+    LogLevel,
+    Record,
+)
 from .protocols import JobStore
 from .service import WorkerJobService
 
@@ -67,12 +75,15 @@ class ManagedWorker:
             directory = parent / f"attempt-{job.fencing_token}-{worker_id}"
             directory.mkdir()  # exclusive; never reuse another attempt's files
             latest: int | None = None
+            latest_log: tuple[LogLevel, str] | None = None
 
-            def progress(value: int) -> None:
-                nonlocal latest
-                # One coalescing slot, no per-log task or growing buffer. Prompt,
-                # provider bodies and arbitrary log messages never enter events.
-                latest = value
+            def progress(value: int | tuple[LogLevel, str]) -> None:
+                nonlocal latest, latest_log
+                # Two bounded coalescing slots, never per-log tasks or SDK stderr.
+                if isinstance(value, tuple):
+                    latest_log = value
+                else:
+                    latest = value
 
             execution = asyncio.create_task(self.runner.run(job, directory, progress))
             started = asyncio.get_running_loop().time()
@@ -82,6 +93,11 @@ class ManagedWorker:
                 )
                 # Renew is also the durable cancellation/fence/deadline check.
                 job = await asyncio.to_thread(service.renew, job, worker_id)
+                if latest_log is not None:
+                    job = await asyncio.to_thread(
+                        service.append_log, job, worker_id, *latest_log
+                    )
+                    latest_log = None
                 if done:
                     break
                 if (

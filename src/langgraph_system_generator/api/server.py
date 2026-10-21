@@ -22,6 +22,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from langgraph_system_generator import __version__
+from langgraph_system_generator.api import durable
 from langgraph_system_generator.api.progress_streaming import (
     JobCapacityError,
     _prune_expired_jobs,
@@ -44,7 +45,10 @@ from langgraph_system_generator.cli import (
 )
 from langgraph_system_generator.constants import _BASE_OUTPUT
 from langgraph_system_generator.jobs.models import JobError
-from langgraph_system_generator.jobs.registry import require_ephemeral_admission
+from langgraph_system_generator.jobs.registry import (
+    backend_name,
+    require_ephemeral_admission,
+)
 from langgraph_system_generator.utils.credential_redaction import (
     _sanitize_text_credentials,
 )
@@ -88,6 +92,46 @@ app = FastAPI(
     version=__version__,
     lifespan=_lifespan,
 )
+
+
+@app.exception_handler(JobError)
+async def _safe_job_error(request: Request, exc: JobError):
+    return JSONResponse(
+        status_code=exc.status,
+        content={"detail": {"code": exc.code}},
+        headers={"Cache-Control": "private, no-store"},
+    )
+
+
+@app.middleware("http")
+async def _bound_durable_requests(request: Request, call_next):
+    if (
+        request.url.path in {"/generate", "/generate-async"}
+        and os.getenv("LNF_JOB_BACKEND", "ephemeral") != "ephemeral"
+    ):
+        raw = bytearray()
+        async for chunk in request.stream():
+            if len(raw) + len(chunk) > 65536:
+                return JSONResponse(
+                    status_code=413,
+                    content={"detail": {"code": "job_request_too_large"}},
+                )
+            raw.extend(chunk)
+        request._body = bytes(raw)
+    response = await call_next(request)
+    if request.url.path.startswith(("/jobs/", "/stream/", "/artifacts", "/generate")):
+        response.headers["Cache-Control"] = "private, no-store"
+    return response
+
+
+def _durable_selected() -> bool:
+    return backend_name() == "firestore"
+
+
+def _http_context(request: Request | None) -> Request:
+    if request is None:
+        raise JobError("identity_required", 401)
+    return request
 
 
 # Request validation errors otherwise include the rejected raw input.
@@ -345,6 +389,10 @@ def _resolve_output_dir(path: str | os.PathLike[str] | None) -> Path:
     """Resolve an allowed API output parent and reject symlink components."""
     base = _BASE_OUTPUT.resolve()
     requested = Path(path) if path else Path("api")
+    if "\x00" in os.fspath(requested):
+        raise HTTPException(
+            status_code=400, detail="output_dir cannot contain a null byte."
+        )
     if ".." in requested.parts:
         raise HTTPException(
             status_code=400,
@@ -360,6 +408,16 @@ def _resolve_output_dir(path: str | os.PathLike[str] | None) -> Path:
             status_code=400,
             detail="output_dir must reside within the allowed base directory.",
         )
+    # Rebuild from the trusted root to preserve its casing on Windows. Check
+    # the normalized value used below, including a separator so sibling-prefix
+    # paths cannot pass and the root itself remains a valid output parent.
+    checked_target = os.path.join(os.path.abspath(base / relative), "")
+    if not checked_target.startswith(os.path.join(os.fspath(base), "")):
+        raise HTTPException(
+            status_code=400,
+            detail="output_dir must reside within the allowed base directory.",
+        )
+    lexical_target = Path(checked_target)
     current = base
     for part in relative.parts:
         current = current / part
@@ -842,6 +900,10 @@ class GenerationStartResponse(BaseModel):
     execution_status: str = Field(
         default="accepted", description="Initial process-local execution status"
     )
+    durable: bool = False
+    execution_mode: str = "ephemeral_process_local"
+    run_id: str | None = None
+    idempotent_replay: bool = False
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -857,10 +919,42 @@ async def root():
 
 
 @app.get("/health")
-async def health() -> dict[str, Any]:
+async def health(http_request: Request) -> dict[str, Any]:
     """Report health and the configured ephemeral execution capabilities."""
     access_enabled = _hosted_access_enabled()
     backend_error = None
+    try:
+        if _durable_selected():
+            runtime = durable.runtime_for(http_request)
+            await asyncio.to_thread(runtime.probe)
+            return {
+                "status": "ok",
+                "ready": True,
+                "execution_mode": "durable_firestore",
+                "durable_jobs": True,
+                "job_backend_error": None,
+                "generation_enabled": runtime.submissions,
+                "async_generation": runtime.submissions,
+                "sync_generation": False,
+                "generation_route": "/generate-async",
+                "identity_mode": "verified_iap",
+                "artifact_storage": "gcs_private",
+                "artifact_readiness": "verified_on_access",
+                "job_retention_seconds": 7 * 86400,
+                "event_retention_seconds": 86400,
+                "idempotency_retention_seconds": 86400,
+            }
+    except JobError as exc:
+        return {
+            "status": "ok",
+            "ready": False,
+            "execution_mode": "durable_unavailable",
+            "durable_jobs": False,
+            "generation_enabled": False,
+            "async_generation": False,
+            "sync_generation": False,
+            "job_backend_error": exc.code,
+        }
     try:
         require_ephemeral_admission()
     except JobError as exc:
@@ -868,11 +962,13 @@ async def health() -> dict[str, Any]:
         backend_error = exc.code
     return {
         "status": "ok",
+        "ready": access_enabled,
         "execution_mode": "ephemeral_process_local",
         "durable_jobs": False,
         "job_backend_error": backend_error,
         "generation_enabled": access_enabled,
         "async_generation": access_enabled and _async_generation_enabled(),
+        "sync_generation": access_enabled,
         "artifact_retention_seconds": _API_ARTIFACT_RETENTION_SECONDS,
         "job_retention_seconds": _positive_int_env(
             "LNF_COMPLETED_JOB_TTL_SECONDS", 300, 86_400
@@ -883,12 +979,21 @@ async def health() -> dict[str, Any]:
     }
 
 
+@app.get("/ready")
+async def readiness(http_request: Request):
+    capabilities = await health(http_request)
+    return JSONResponse(capabilities, status_code=200 if capabilities["ready"] else 503)
+
+
 @app.get("/artifacts")
 async def download_artifact(
+    http_request: Request,
     run_id: str = Query(..., min_length=32, max_length=32),
     artifact: str = Query(..., min_length=1, max_length=64),
 ):
     """Download one explicitly registered artifact from an API run namespace."""
+    if _durable_selected():
+        return await durable.download(http_request, run_id, artifact)
     _require_supported_access()
     _prune_api_runs()
     run = _api_runs.get(run_id)
@@ -921,8 +1026,16 @@ async def download_artifact(
 
 
 @app.get("/jobs/{job_id}")
-async def inspect_job(job_id: str) -> dict[str, Any]:
+async def _inspect_job_http(job_id: str, http_request: Request) -> dict[str, Any]:
+    return await inspect_job(job_id, http_request)
+
+
+async def inspect_job(
+    job_id: str, http_request: Request | None = None
+) -> dict[str, Any]:
     """Return execution state while the owning process retains the job record."""
+    if _durable_selected():
+        return await durable.inspect(_http_context(http_request), job_id)
     _require_supported_access()
     status = get_job_status(job_id)
     if status is None:
@@ -937,8 +1050,16 @@ async def inspect_job(job_id: str) -> dict[str, Any]:
 
 
 @app.get("/jobs/{job_id}/result")
-async def get_job_result(job_id: str) -> dict[str, Any]:
+async def _get_job_result_http(job_id: str, http_request: Request) -> dict[str, Any]:
+    return await get_job_result(job_id, http_request)
+
+
+async def get_job_result(
+    job_id: str, http_request: Request | None = None
+) -> dict[str, Any]:
     """Return a completed result from the registered run manifest."""
+    if _durable_selected():
+        return await durable.result(_http_context(http_request), job_id)
     _require_supported_access()
     _prune_api_runs()
     status = get_job_status(job_id)
@@ -1002,8 +1123,18 @@ async def chrome_devtools_endpoint():
 
 
 @app.post("/generate", response_model=GenerationResponse)
-async def generate_notebook(request: GenerationRequest) -> GenerationResponse:
+async def _generate_notebook_http(
+    request: GenerationRequest, http_request: Request
+) -> GenerationResponse:
+    return await generate_notebook(request, http_request)
+
+
+async def generate_notebook(
+    request: GenerationRequest, http_request: Request | None = None
+) -> GenerationResponse:
     """Generate notebook artifacts via the generator pipeline."""
+    if _durable_selected():
+        raise JobError("durable_requires_async", 409)
     normalized_request = _normalize_request(request)
     _require_supported_access()
     prompt = _request_prompt(normalized_request)
@@ -1080,8 +1211,15 @@ async def generate_notebook(request: GenerationRequest) -> GenerationResponse:
 
 
 @app.post("/generate-async", response_model=GenerationStartResponse)
+async def _start_async_generation_http(
+    request: GenerationRequest, http_request: Request
+) -> GenerationStartResponse:
+    return await start_async_generation(request, http_request)
+
+
 async def start_async_generation(
     request: GenerationRequest,
+    http_request: Request | None = None,
 ) -> GenerationStartResponse:
     """Start async notebook generation with SSE progress tracking.
 
@@ -1099,6 +1237,14 @@ async def start_async_generation(
         HTTPException 503: When concurrent generation limit is reached
     """
     normalized_request = _normalize_request(request)
+    if _durable_selected():
+        return GenerationStartResponse(
+            **await durable.submit(
+                _http_context(http_request),
+                normalized_request,
+                _request_prompt(normalized_request),
+            )
+        )
     _require_supported_access()
     if not _async_generation_enabled():
         raise HTTPException(
@@ -1189,8 +1335,18 @@ async def stream_job_progress(job_id: str, request: Request):
     Returns:
         EventSourceResponse: SSE stream
     """
+    if _durable_selected():
+        return await durable.stream(request, job_id)
     _require_supported_access()
     return get_stream_response(job_id, request.headers.get("Last-Event-ID"))
+
+
+@app.post("/jobs/{job_id}/cancel")
+async def cancel_job(job_id: str, request: Request):
+    if _durable_selected():
+        return await durable.cancel(request, job_id)
+    _require_supported_access()
+    raise JobError("cancellation_requires_durable", 409)
 
 
 async def _run_generation_with_progress(
@@ -1339,3 +1495,17 @@ async def _run_generation_with_progress(
     finally:
         if lease is not None:
             lease.release()
+
+
+def create_api_app(runtime: durable.DurableRuntime | None = None) -> FastAPI:
+    """Independent ASGI app state for embedding and multi-instance qualification.
+
+    Runtime injection is trusted Python construction, never request selectable.
+    Durable routes consult only that runtime's shared store/object adapters.
+    """
+    created = FastAPI(title=app.title, version=app.version, lifespan=_lifespan)
+    created.router.routes = list(app.router.routes)
+    created.exception_handlers = dict(app.exception_handlers)
+    created.user_middleware = list(app.user_middleware)
+    created.state.durable_runtime = runtime
+    return created

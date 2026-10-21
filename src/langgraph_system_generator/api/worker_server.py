@@ -71,6 +71,8 @@ def configured_runtime() -> WorkerRuntime:
         or scheduler == config.service_account
         or not root
         or not bucket
+        or os.getenv("LNF_INTERNAL_SERVICE_ROLE", "both")
+        not in {"both", "worker", "maintenance"}
     ):
         raise JobError("worker_configuration_invalid", 503)
     try:
@@ -87,12 +89,13 @@ def configured_runtime() -> WorkerRuntime:
         raise JobError("worker_configuration_invalid", 503)
     limits = ExecutionLimits()
     worker = ManagedWorker(store, SubprocessAttempt(limits), output_root, limits=limits)
+    internal_audience = os.getenv("LNF_INTERNAL_AUDIENCE", config.audience)
     return WorkerRuntime(
         store,
         worker,
         reconciliation_process,
-        GoogleOIDCVerifier(config.audience),
-        config.audience,
+        GoogleOIDCVerifier(internal_audience),
+        internal_audience,
         frozenset({config.service_account}),
         frozenset({scheduler}),
     )
@@ -132,6 +135,8 @@ def create_worker_app(runtime: WorkerRuntime | None = None) -> FastAPI:
 
     @app.post("/internal/execute")
     async def execute(request: Request):
+        if os.getenv("LNF_INTERNAL_SERVICE_ROLE", "both") == "maintenance":
+            return Response(status_code=404)
         try:
             selected, service = await authorized(request, False)
             raw = bytearray()
@@ -153,6 +158,8 @@ def create_worker_app(runtime: WorkerRuntime | None = None) -> FastAPI:
 
     @app.post("/internal/reconcile")
     async def reconcile(request: Request):
+        if os.getenv("LNF_INTERNAL_SERVICE_ROLE", "both") == "worker":
+            return Response(status_code=404)
         try:
             selected, _ = await authorized(request, True)
             return await selected.reconcile()
