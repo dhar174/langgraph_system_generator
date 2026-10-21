@@ -65,6 +65,7 @@ setup(
     },
     install_requires=CORE_DEPENDENCIES,
     extras_require={
+        "gcp": ["google-cloud-firestore>=2.19,<3", "PyJWT[crypto]>=2.10,<3"],
         "api": API_DEPENDENCIES,
         "full": FULL_DEPENDENCIES,
         "dev": DEV_DEPENDENCIES,

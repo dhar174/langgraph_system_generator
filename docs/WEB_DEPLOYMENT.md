@@ -200,6 +200,12 @@ File bytes consume Cloud Run memory and are not a durable storage budget.
 
 ## Remaining Phase B
 
+B1's [durable jobs ADR](adr/0002-durable-generation-jobs.md) defines the versioned
+storage/identity foundation and offline runbook. `LNF_JOB_BACKEND=ephemeral` remains
+the default. Selecting `firestore` does not enable public generation: B1 routes
+fail closed with `durable_admission_disabled`, and health reports disabled
+generation. Queue execution and object publication remain B2/B3 acceptance gates.
+
 Issue #380 stays open for managed queue/worker dispatch, durable status/events,
 finalized object-storage artifacts, verified principal ownership, cross-instance
 replay, idempotency, retry/cancellation and worker-failure reconciliation. Cloud
