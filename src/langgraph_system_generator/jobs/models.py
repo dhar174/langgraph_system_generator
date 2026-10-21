@@ -31,12 +31,26 @@ class ServiceIdentity(Record):
 class GenerationRequestEnvelope(Record):
     prompt: str = Field(min_length=1, max_length=16000, repr=False)
     mode: Literal["stub", "live"] = "stub"
-    architecture: Literal[
-        "router", "subagents", "hybrid", "autoagent", "deepagents"
-    ] = "router"
+    architecture: (
+        Literal["router", "subagents", "hybrid", "autoagent", "deepagents"] | None
+    ) = "router"
     model: str = Field(default="gpt-4o-mini", pattern=r"^[A-Za-z0-9_.:/-]{1,128}$")
     provider_ref: str = Field(default="openai-v1", pattern=r"^[a-z0-9_-]{1,80}$")
     generator_version: str = Field(default="1.0.0", pattern=r"^[A-Za-z0-9_.-]{1,64}$")
+    formats: (
+        tuple[Literal["ipynb", "html", "markdown", "pdf", "docx", "zip"], ...] | None
+    ) = Field(default=None, max_length=6)
+    temperature: float | None = Field(default=None, ge=0, le=2)
+    max_tokens: int | None = Field(default=None, ge=1, le=32768)
+    messages: tuple["RequirementsTurn", ...] = Field(default=(), max_length=50)
+
+
+class RequirementsTurn(Record):
+    role: Literal["system", "user", "assistant"]
+    content: str = Field(min_length=1, max_length=5000, repr=False)
+
+
+GenerationRequestEnvelope.model_rebuild()
 
 
 class JobState(str, Enum):
@@ -78,7 +92,8 @@ class ArtifactRef(Record):
     size_bytes: int = Field(ge=0)
 
 
-EventKind = Literal["accepted", "running", "progress", "retry", "terminal"]
+EventKind = Literal["accepted", "running", "progress", "retry", "terminal", "log"]
+LogLevel = Literal["info", "warning", "error"]
 
 
 class JobEvent(Record):
@@ -88,6 +103,8 @@ class JobEvent(Record):
     kind: EventKind
     state: JobState
     progress: int | None = Field(default=None, ge=0, le=100)
+    log_level: LogLevel | None = None
+    log_message: str | None = Field(default=None, max_length=512)
     created_at: float
     expires_at: float
 
@@ -116,6 +133,8 @@ class DurableJob(Record):
     result: ArtifactRef | None = None
     # Query projection, absent for terminal jobs. Never an execution authority.
     next_action_at: float | None
+    # Scheduler inventory survives event pruning; parent TTL must stay disabled.
+    cleanup_at: float | None = None
 
 
 class Acceptance(Record):

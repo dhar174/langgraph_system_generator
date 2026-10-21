@@ -1,4 +1,10 @@
-# Web deployment and ephemeral generation runbook
+# Web deployment and generation runbook
+
+For the opt-in durable API, private worker/maintenance services, owner-scoped
+downloads, migration, staged qualification and rollback/drain gates, start with
+[B3 durable rollout](durable-api-rollout.md). `LNF_JOB_BACKEND=ephemeral` remains
+the default. The sections below describe **Phase A ephemeral mode** unless noted.
+The production deployment workflow is now manual only; this change does not deploy.
 
 Phase A of [#380](https://github.com/dhar174/langgraph_system_generator/issues/380)
 hardens the existing process-local API. It does not provide a durable job backend.
@@ -198,24 +204,27 @@ File bytes consume Cloud Run memory and are not a durable storage budget.
 | Artifact retention ends or file disappears | Download unavailable |
 | Another instance receives the job ID | Unavailable in that process, without fabricated cross-instance state |
 
-## Remaining Phase B
+## Durable implementation and remaining qualification
 
 B1 contracts are accepted through PR #392. B2 supplies executable private
 Cloud Tasks dispatch, a separate authenticated worker/reconciler service and
 fenced private object publication; see the [B2 worker runbook](durable-worker.md).
 The worker requires its own reviewed 330-second Cloud Run timeout and private
-Invoker bindings. The public application/workflow above continues to use Phase A;
-public durable admission remains disabled. No resource/IAM/deployment change is
-implied by checked-in adapters or configuration proposals.
+Invoker bindings. B3 now wires the public routes to those contracts and provides
+a separate maintenance service. Defaults continue to select Phase A, and durable
+submissions require a separate explicit activation flag. No resource/IAM/deployment
+change is implied by checked-in adapters or configuration proposals.
 
 B1's [durable jobs ADR](adr/0002-durable-generation-jobs.md) defines the versioned
 storage/identity foundation and offline runbook. `LNF_JOB_BACKEND=ephemeral` remains
-the default. Selecting `firestore` does not enable public generation: B1 routes
-fail closed with `durable_admission_disabled`, and health reports disabled
-generation. Queue execution and object publication remain B2/B3 acceptance gates.
+the default. Selecting `firestore` requires verified IAP access, optional packages,
+the configured shared store/private bucket and explicit activation for new work.
+Misconfiguration fails closed; there is no local fallback. `/generate` returns
+`409 durable_requires_async`. Paused durable services retain authenticated
+readback and drain capability. See the B3 runtime matrix and qualification gates.
 
-Issue #380 stays open for managed queue/worker dispatch, durable status/events,
-finalized object-storage artifacts, verified principal ownership, cross-instance
-replay, idempotency, retry/cancellation and worker-failure reconciliation. Cloud
-packages must remain optional and lazy. Phase A is unsuitable for untrusted
-multi-user production and must not be represented as durable.
+Issue #380 stays open for the owner's staged acceptance of the implementation,
+including real two-principal IAP, queue/worker restart, object readback and
+deployment receipts. Cloud packages remain optional and lazy. Offline/fake or
+emulator tests do not qualify cloud IAM or production. Phase A is unsuitable for
+untrusted multi-user production and must not be represented as durable.

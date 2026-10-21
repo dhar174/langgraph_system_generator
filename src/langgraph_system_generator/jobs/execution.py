@@ -8,7 +8,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
-from .models import ArtifactRef, DurableJob, JobError
+from .models import ArtifactRef, DurableJob, JobError, LogLevel
 
 
 @dataclass(frozen=True)
@@ -73,7 +73,10 @@ class SubprocessAttempt:
         self.clock = clock
 
     async def run(
-        self, job: DurableJob | None, directory: Path, progress: Callable[[int], None]
+        self,
+        job: DurableJob | None,
+        directory: Path,
+        progress: Callable[[int | tuple[LogLevel, str]], None],
     ) -> ArtifactRef:
         process = await asyncio.create_subprocess_exec(
             *self.command,
@@ -131,6 +134,14 @@ class SubprocessAttempt:
                     event.get("kind") == "progress" and type(event.get("value")) is int
                 ):
                     progress(max(0, min(99, event["value"])))
+                elif event.get("kind") == "log":
+                    if (
+                        event.get("level") not in {"info", "warning", "error"}
+                        or not isinstance(event.get("message"), str)
+                        or len(event["message"]) > 512
+                    ):
+                        raise JobError("attempt_protocol_invalid", 503)
+                    progress((event["level"], event["message"]))
                 elif event.get("kind") == "result":
                     receipt = ArtifactRef.model_validate(event["ref"])
                 elif event.get("kind") == "error":

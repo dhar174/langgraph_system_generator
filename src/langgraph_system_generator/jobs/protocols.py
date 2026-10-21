@@ -11,6 +11,7 @@ from .models import (
     EventPage,
     GenerationRequestEnvelope,
     JobState,
+    LogLevel,
     Principal,
     Reconciliation,
     ServiceIdentity,
@@ -22,6 +23,12 @@ class JobStore(Protocol):
         self, principal: Principal, key: str, request: GenerationRequestEnvelope
     ) -> Acceptance: ...
     def get(self, principal: Principal, job_id: str) -> DurableJob: ...
+    def get_run(self, principal: Principal, run_id: str) -> DurableJob: ...
+    def cleanup_candidates(self, limit: int = 10) -> tuple[DurableJob, ...]: ...
+    def cleanup_metadata(
+        self, job_id: str, *, objects_deleted: bool = False, limit: int = 100
+    ) -> bool: ...
+    def cleanup_idempotency(self, limit: int = 100) -> int: ...
     def inspect_attempt(self, job_id: str) -> DurableJob:
         """Internal authenticated worker only; never a user-facing lookup."""
         ...
@@ -37,6 +44,15 @@ class JobStore(Protocol):
     ) -> DurableJob: ...
     def append_event(
         self, job_id: str, version: int, fence: int, worker_id: str, progress: int
+    ) -> DurableJob: ...
+    def append_log(
+        self,
+        job_id: str,
+        version: int,
+        fence: int,
+        worker_id: str,
+        level: LogLevel,
+        message: str,
     ) -> DurableJob: ...
     def replay(
         self, principal: Principal, job_id: str, after: int = 0, limit: int = 100

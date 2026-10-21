@@ -3,9 +3,10 @@
 import hashlib
 import json
 import re
+import tempfile
 import zipfile
 from pathlib import Path
-from typing import Any
+from typing import Any, BinaryIO, cast
 
 from .models import ArtifactRef, DurableJob, JobError
 from .protocols import JobStore
@@ -208,6 +209,18 @@ class GCSArtifactStore:
                 return value
 
             manifest = stable(manifest)
+            downloads = {
+                name: f"/artifacts?run_id={job.run_id}&artifact={name}"
+                for name in (*content, "manifest.json")
+            }
+            contract = manifest["artifact_contract"]
+            contract.update(
+                storage_type="gcs_private",
+                access_scope="verified_owner",
+                run_id=job.run_id,
+                expires_at=job.expires_at,
+                api_downloads=downloads,
+            )
             # Refresh standalone sizes against serialized bytes, preserving graph,
             # tooling, QA and other generator metadata rather than rebuilding it.
             for entry in manifest.get("artifact_contract", {}).get(
@@ -216,6 +229,22 @@ class GCSArtifactStore:
                 ref = entry.get("path")
                 if isinstance(ref, dict):
                     entry["size_bytes"] = len(content[ref["artifact"]])
+                    entry["api_download_path"] = downloads[ref["artifact"]]
+            manifest_entry = {
+                "name": "manifest",
+                "manifest_key": "manifest_path",
+                "format": "json",
+                "path_type": "durable_reference",
+                "path": {
+                    "job_id": job.job_id,
+                    "run_id": job.run_id,
+                    "artifact": "manifest.json",
+                },
+                "exists": True,
+                "size_bytes": 0,
+                "api_download_path": downloads["manifest.json"],
+            }
+            contract["standalone_files"].append(manifest_entry)
             if "notebook_bundle.zip" in content:
                 import io
 
@@ -283,11 +312,17 @@ class GCSArtifactStore:
                 fencing_token=fence,
                 objects=objects,
             )
-            data = json.dumps(
-                manifest, sort_keys=True, separators=(",", ":"), ensure_ascii=False
-            ).encode()
+            for _ in range(8):
+                data = json.dumps(
+                    manifest, sort_keys=True, separators=(",", ":"), ensure_ascii=False
+                ).encode()
+                if manifest_entry["size_bytes"] == len(data):
+                    break
+                manifest_entry["size_bytes"] = len(data)
+            else:
+                raise JobError("artifact_manifest_invalid", 422)
             if (
-                len(data) > self.max_file_bytes
+                len(data) > min(self.max_file_bytes, 1024 * 1024)
                 or sum(map(len, content.values())) + len(data) > self.max_total_bytes
             ):
                 raise JobError("artifact_set_too_large", 422)
@@ -304,25 +339,159 @@ class GCSArtifactStore:
             raise JobError("artifact_storage_unavailable", 503) from None
 
     def read_manifest(self, ref: ArtifactRef) -> bytes:
+        if ref.size_bytes > 1024 * 1024:
+            raise JobError("artifact_reference_invalid", 404)
+        with self.open_verified(ref) as source:
+            return source.read()
+
+    def open_verified(self, ref: ArtifactRef) -> BinaryIO:
+        """Stage one bounded exact-generation object before sending HTTP headers.
+
+        Disk spooling bounds memory and verifies corruption/missing data before a
+        successful download response. The caller closes the returned file.
+        """
         if ref.bucket != self.bucket or ref.size_bytes > self.max_file_bytes:
             raise JobError("artifact_reference_invalid", 404)
+        # Ownership transfers to the HTTP stream after verification.
+        target = tempfile.TemporaryFile()  # noqa: SIM115
         try:
+            digest = hashlib.sha256()
+            size = 0
+
+            class Sink:
+                def write(self, data: bytes) -> int:
+                    nonlocal size
+                    size += len(data)
+                    if size > ref.size_bytes:
+                        raise ValueError("object too large")
+                    digest.update(data)
+                    return target.write(data)
+
             blob = (
                 self._connect()
                 .bucket(self.bucket)
                 .blob(ref.object_name, generation=int(ref.generation))
             )
-            data = blob.download_as_bytes(
-                if_generation_match=int(ref.generation), retry=None, timeout=10
+            blob.download_to_file(
+                Sink(),
+                if_generation_match=int(ref.generation),
+                checksum="crc32c",
+                retry=None,
+                timeout=10,
             )
-            if (
-                len(data) != ref.size_bytes
-                or hashlib.sha256(data).hexdigest() != ref.sha256
-            ):
+            if size != ref.size_bytes or digest.hexdigest() != ref.sha256:
                 raise ValueError("checksum")
-            return data
+            target.seek(0)
+            return cast(BinaryIO, target)
         except Exception:  # noqa: BLE001 - sanitize SDK failures
+            target.close()
             raise JobError("artifact_storage_unavailable", 503) from None
+
+    def committed_manifest(self, job: DurableJob) -> dict[str, Any]:
+        if job.result is None:
+            raise JobError("job_result_not_ready", 409)
+        prefix = f"runs/{job.run_id}/attempt-{job.fencing_token}/"
+        if job.result.object_name != prefix + "manifest.json":
+            raise JobError("artifact_reference_invalid", 503)
+        try:
+            manifest = json.loads(self.read_manifest(job.result))
+            if (
+                manifest["job_id"] != job.job_id
+                or manifest["run_id"] != job.run_id
+                or manifest["fencing_token"] != job.fencing_token
+            ):
+                raise ValueError("wrong committed manifest")
+            objects = manifest["objects"]
+            if not isinstance(objects, list) or not 1 <= len(objects) < len(TYPES):
+                raise ValueError("invalid object set")
+            names = set()
+            for entry in objects:
+                name = entry["object_name"].removeprefix(prefix)
+                if (
+                    name not in TYPES
+                    or name == "manifest.json"
+                    or name in names
+                    or entry["content_type"] != TYPES[name]
+                ):
+                    raise ValueError("invalid object")
+                names.add(name)
+                ref = ArtifactRef(
+                    bucket=self.bucket,
+                    **{
+                        key: entry[key]
+                        for key in ("object_name", "generation", "sha256", "size_bytes")
+                    },
+                )
+                if ref.size_bytes > self.max_file_bytes:
+                    raise ValueError("oversized object")
+            return manifest
+        except JobError:
+            raise
+        except Exception:  # noqa: BLE001 - sanitize malformed private receipts
+            raise JobError("artifact_manifest_invalid", 503) from None
+
+    def committed_ref(
+        self, job: DurableJob, manifest: dict[str, Any], name: str
+    ) -> ArtifactRef:
+        if name == "manifest.json" and job.result:
+            return job.result
+        prefix = f"runs/{job.run_id}/attempt-{job.fencing_token}/"
+        for entry in manifest["objects"]:
+            if entry["object_name"] == prefix + name and name in TYPES:
+                return ArtifactRef(
+                    bucket=self.bucket,
+                    **{
+                        key: entry[key]
+                        for key in ("object_name", "generation", "sha256", "size_bytes")
+                    },
+                )
+        raise JobError("artifact_unavailable", 404)
+
+    def cleanup_run(self, job: DurableJob, *, now: float, limit: int = 32) -> bool:
+        """Trusted scheduler inventory only, preserve all unexpired winning objects.
+
+        No current attempt can retain authority a day after the overall deadline.
+        A partial page leaves the parent inventory for the next bounded sweep.
+        """
+        if (
+            not 1 <= limit <= 100
+            or now < job.deadline_at + 86400
+            or (job.lease is not None)
+        ):
+            raise JobError("artifact_cleanup_requires_retention", 409)
+        prefix = f"runs/{job.run_id}/"
+        winner = (
+            f"runs/{job.run_id}/attempt-{job.fencing_token}/"
+            if job.result and now < job.expires_at
+            else None
+        )
+        try:
+            blobs = list(
+                self._connect().list_blobs(
+                    self.bucket, prefix=prefix, max_results=limit, retry=None, timeout=1
+                )
+            )
+            for blob in blobs:
+                if (
+                    not re.fullmatch(
+                        re.escape(prefix)
+                        + r"attempt-[0-9]{1,3}/("
+                        + "|".join(re.escape(name) for name in TYPES)
+                        + r")",
+                        blob.name,
+                    )
+                    or not blob.generation
+                ):
+                    raise JobError("artifact_cleanup_ownership_invalid", 409)
+                if winner is None or not blob.name.startswith(winner):
+                    blob.delete(
+                        if_generation_match=int(blob.generation), retry=None, timeout=1
+                    )
+            return len(blobs) < limit
+        except JobError:
+            raise
+        except Exception:  # noqa: BLE001 - sanitize SDK failures
+            raise JobError("artifact_cleanup_unavailable", 503) from None
 
     def delete(self, ref: ArtifactRef) -> None:
         # B3's retention inventory must prove non-winning ownership before using

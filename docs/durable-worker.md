@@ -3,7 +3,8 @@
 Part of #380; relates to #378; preserves #379 and #385. B1 is accepted through
 PR #392, merge `305274f7eca82655e3556b2df50f0406f2d7905c`. B2 adds executable
 dispatch, worker, publication and reconciliation adapters. **Public durable
-admission remains disabled.** This document and the configuration proposals do
+admission requires B3's explicit activation.** See [B3 rollout](durable-api-rollout.md)
+for the current service split and qualification gates. This document and the configuration proposals do
 not provision resources, grant IAM, change production variables or deploy.
 
 ## Service and identity boundary
@@ -40,10 +41,10 @@ Proposed least-privilege bindings for owner review:
 | Identity | Necessary authority and boundary |
 | --- | --- |
 | Cloud Tasks caller SA | `roles/run.invoker` on this worker service only; allowlisted only for `/internal/execute` |
-| Scheduler caller SA | `roles/run.invoker` on this worker service only; allowlisted only for `/internal/reconcile` |
-| Worker runtime SA | Firestore access for the configured database; `roles/cloudtasks.enqueuer` on the one queue and `iam.serviceAccounts.actAs` on the Tasks caller SA; private bucket object create/read; provider-specific secret access |
-| Cloud Tasks service agent | Owner must verify its documented token-minting permissions; do not create or replace credentials here |
-| Retention operator | Separate reviewed private object list/delete and store-read permissions for explicit orphan cleanup; no public cleanup route |
+| Scheduler caller SA | `roles/run.invoker` on the separate maintenance service only; allowlisted only for `/internal/reconcile` |
+| Worker runtime SA | Firestore access for the dedicated database; private bucket object create/read; approved provider-specific secret access; no object delete or queue authority |
+| Maintenance runtime SA | Dedicated database access, bucket list/delete/get, queue-scoped `cloudtasks.tasks.create` and `cloudtasks.tasks.get`, plus `iam.serviceAccounts.actAs` on the Tasks caller SA; no model credentials |
+| Cloud Tasks service agent | `roles/iam.serviceAccountUser` on the Tasks caller SA for OIDC minting; preserve its managed service-agent role |
 
 Use uniform bucket-level access and public access prevention. No `allUsers` or
 `allAuthenticatedUsers` grants, public object ACLs, signed URLs or client-selected
@@ -70,7 +71,9 @@ The worker process must receive these administrator settings; examples in
 
 | Setting | Required relationship |
 | --- | --- |
-| `LNF_JOB_BACKEND` | `firestore` for the separate worker; public API stays fail-closed for durable admission |
+| `LNF_JOB_BACKEND` | `firestore` for durable services; public API requires B3 IAP ownership and explicit submissions activation |
+| `LNF_INTERNAL_SERVICE_ROLE` | `worker` exposes execute; `maintenance` exposes reconciliation; the other route returns 404 |
+| `LNF_INTERNAL_AUDIENCE` | This internal service's own exact audience, separate from the worker dispatch destination |
 | `LNF_JOB_GCP_PROJECT`, `LNF_JOB_FIRESTORE_DATABASE` | Explicit B1 project/database and deployed B1 indexes |
 | `LNF_JOB_IDEMPOTENCY_SECRET` | Stable existing secret binding, at least 32 bytes; never put a value in YAML/queue |
 | `LNF_JOB_TASK_QUEUE` | Full `projects/PROJECT/locations/REGION/queues/QUEUE` resource |
@@ -140,14 +143,16 @@ same task name. A dispatched job unclaimed for 60 seconds is eligible for a new
 generation through the store's reconciliation transition. Old deliveries then
 return stale without adopting the newer intent. There is no second logical job.
 
-Invoke `POST /internal/reconcile` with Scheduler OIDC, exact worker audience and
+Invoke `POST /internal/reconcile` on maintenance with Scheduler OIDC, exact maintenance audience and
 the separate Scheduler caller SA, proposed once per minute. Do not disable IAM or
 send a user JWT. One request runs the configured reconciler in a supervised
 subprocess with a 60-second ceiling. `reconcile_once` defaults to five pages of
 ten due jobs/intents and a 30-second cooperative scan budget between bounded
 RPCs; the process ceiling also bounds stuck SDK transactions. Mutations move
 processed records out of due queries, so successive pages/passes progress without
-an in-memory cursor. CAS handles concurrent reconcilers. It recovers expired
+an in-memory cursor. The B3 child uses two pages and a 15-second reconciliation
+budget followed by bounded retention cleanup within that same supervised process.
+CAS handles concurrent reconcilers. It recovers expired
 leases, missing dispatch, lost acknowledgments, queue exhaustion, attempts/deadline
 exhaustion and eligible retries without API/browser traffic. Deployment must
 monitor backlog; bounded passes are not a guarantee of zero scheduling latency.

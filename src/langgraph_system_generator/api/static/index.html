@@ -82,7 +82,7 @@
                                 aria-describedby="outputDirHelp"
                             >
                             <small class="help-text" id="outputDirHelp">
-                                Path where generated files will be saved (relative or absolute).
+                                Local mode accepts an output parent. Durable mode accepts the default label; private downloads use the job reference.
                             </small>
                         </div>
                     </div>
@@ -335,6 +335,11 @@
             </div>
 
             <!-- Progress Card -->
+            <div id="durableJob" hidden aria-live="polite">
+                <p id="durableJobStatus"></p>
+                <button type="button" id="recoverDurableJob">Inspect / reconnect</button>
+                <button type="button" id="cancelDurableJob">Cancel job</button>
+            </div>
             <div class="card progress-card" id="progressCard" style="display: none;" aria-live="polite" aria-atomic="true">
                 <h2>Generation Progress</h2>
                 <div class="progress-container">

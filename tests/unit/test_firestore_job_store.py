@@ -148,7 +148,7 @@ def test_adapter_retried_acceptance_is_atomic(firestore_transport, monkeypatch):
         GenerationRequestEnvelope(prompt="confidential prompt"),
     )
     assert client.callbacks == 2 and client.commits == 1
-    assert len(client.documents) == 4  # job, idempotency, intent, first event
+    assert len(client.documents) == 5  # job, idempotency, intent, event, run index
     assert len(store.pending_dispatch()) == 1
     assert all("secret-user-key" not in path for path in client.documents)
     assert all("delete_after" in row for row in client.documents.values())

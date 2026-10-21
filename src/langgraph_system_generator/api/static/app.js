@@ -19,6 +19,51 @@ const progressPercentage = document.getElementById('progressPercentage');
 const progressSteps = document.getElementById('progressSteps');
 let currentEventSource = null;
 let serverCapabilities = null;
+let durableJobId = null;
+
+function rememberDurableJob(jobId, state) {
+    if (!/^[a-f0-9]{32}$/.test(jobId || '')) return;
+    durableJobId = jobId;
+    sessionStorage.setItem('durableJobId', jobId);
+    const panel = document.getElementById('durableJob');
+    if (panel) panel.hidden = false;
+    const label = document.getElementById('durableJobStatus');
+    if (label) label.textContent = `Durable job ${jobId}: ${state}.`;
+}
+
+async function cancelDurableJob() {
+    if (!durableJobId) return;
+    try {
+        const response = await fetch(`/jobs/${durableJobId}/cancel`, {method: 'POST'});
+        const payload = await response.json();
+        if (!response.ok) throw new Error(extractErrorMessage(payload));
+        rememberDurableJob(durableJobId, payload.status);
+    } catch (error) {
+        showError('Cancellation could not be confirmed. Inspect the same job before retrying.');
+    }
+}
+
+async function recoverDurableJob() {
+    const jobId = durableJobId || sessionStorage.getItem('durableJobId');
+    if (!/^[a-f0-9]{32}$/.test(jobId || '')) return;
+    try {
+        const response = await fetch(`/jobs/${jobId}`);
+        const payload = await response.json();
+        if (!response.ok) throw new Error(extractErrorMessage(payload));
+        rememberDurableJob(jobId, payload.status);
+        const result = await streamGeneration(`/stream/${jobId}`);
+        showResult(result);
+    } catch (error) {
+        showError(error.message || 'The existing job could not be read. No new generation was started.');
+    }
+}
+
+const durableJobPanel = document.getElementById('durableJob');
+if (durableJobPanel) durableJobPanel.onclick = (event) => {
+    const action = event.target.closest('button')?.id;
+    if (action === 'cancelDurableJob') cancelDurableJob();
+    if (action === 'recoverDurableJob') recoverDurableJob();
+};
 
 // Validation constants
 const CHAR_COUNT_MIN = 10;
@@ -688,6 +733,7 @@ function streamGeneration(streamUrl) {
 
         eventSource.addEventListener('progress', (event) => {
             const payload = JSON.parse(event.data);
+            if (durableJobId && payload.job_status) rememberDurableJob(durableJobId, payload.job_status);
             showProgress(
                 payload.node || payload.phase || 'generation',
                 payload.percentage || 0,
@@ -741,14 +787,14 @@ function streamGeneration(streamUrl) {
                 rejectStream('The completed job returned an invalid result reference.');
                 return;
             }
-            const unavailableMessage = `Generation completed, but its process-local result is temporarily unavailable. Result reference: ${resultUrl.pathname}`;
+            const unavailableMessage = `Generation completed, but its result is temporarily unavailable. Result reference: ${resultUrl.pathname}`;
             try {
                 const response = await fetchCompletedJobResult(resultUrl.pathname + resultUrl.search);
                 const result = await response.json();
                 if (!response.ok) {
                     const fallback = response.status === 429 || response.status >= 500
                         ? unavailableMessage
-                        : 'The job result is no longer available on this process.';
+                        : 'The job result is no longer available or has expired.';
                     rejectStream(extractErrorMessage(result, fallback));
                     return;
                 }
@@ -806,18 +852,35 @@ async function fetchCompletedJobResult(path) {
 }
 
 async function startAsyncGeneration(data) {
-    const response = await fetch('/generate-async', {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(data)
-    });
+    const durable = serverCapabilities?.durable_jobs === true;
+    // One key per user action, held in memory only. Transport retries of this
+    // submission use that key; SSE/result recovery never invokes this function.
+    const key = durable ? crypto.randomUUID() : null;
+    let response;
+    let payload;
+    for (let attempt = 0; attempt < (durable ? 3 : 1); attempt += 1) {
+        try {
+            response = await fetch('/generate-async', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    ...(key ? {'Idempotency-Key': key} : {}),
+                },
+                body: JSON.stringify(data)
+            });
+            payload = await response.json();
+            if (!durable || (response.status !== 429 && response.status < 500) || attempt === 2) break;
+        } catch (error) {
+            if (!durable || attempt === 2) throw new Error('Submission acceptance could not be confirmed. No further request was started.');
+        }
+        await new Promise(resolve => setTimeout(resolve, 250 * (attempt + 1)));
+    }
 
-    const payload = await response.json();
     if (!response.ok) {
         throw new Error(extractErrorMessage(payload));
     }
+
+    if (payload.durable) rememberDurableJob(payload.job_id, payload.execution_status);
 
     showProgress('queued', 12, 'Generation accepted. Connecting to progress stream...');
     return streamGeneration(payload.stream_url);
@@ -915,8 +978,9 @@ form.addEventListener('submit', async (e) => {
     try {
         const capabilities = await resolveServerCapabilities();
         if (capabilities.generation_enabled === false) {
-            throw new Error('Generation is disabled until the hosted service is configured for the trusted single-operator access mode.');
+            throw new Error('Generation is unavailable until service readiness and access configuration are restored. Existing jobs can be inspected separately.');
         }
+        if (capabilities.durable_jobs && capabilities.async_generation === false) throw new Error('Durable submissions are paused. Existing jobs remain available through their job references.');
         const result = capabilities.async_generation === false
             ? await startSyncGeneration(data)
             : await startAsyncGeneration(data);
@@ -932,6 +996,8 @@ form.addEventListener('submit', async (e) => {
 
 // Check health on load
 checkHealth();
+const savedDurableJob = sessionStorage.getItem('durableJobId');
+if (savedDurableJob) rememberDurableJob(savedDurableJob, 'use Inspect / reconnect to recover');
 
 // Periodically check health
 const healthCheckInterval = setInterval(checkHealth, 30000); // Check every 30 seconds
