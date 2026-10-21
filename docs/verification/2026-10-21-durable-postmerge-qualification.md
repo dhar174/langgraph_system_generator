@@ -283,3 +283,56 @@ remains a test double. Live GCS generations/IAM, Tasks dispatch/redelivery and
 OIDC, two-principal IAP access, production composite indexes/limits, reviewed
 migration, budgets, staging teardown and owner acceptance are still required.
 No merge, cloud activation, deployment or closure of #380 is authorized here.
+
+## PR review follow-up
+
+The [review of publication head a7e42c0](https://github.com/dhar174/langgraph_system_generator/pull/395#pullrequestreview-5606102443)
+identified five qualification-harness concerns. This follow-up addresses each
+without changing product source, dependencies, cloud configuration or activation.
+
+| Concern | Correction and regression evidence |
+| --- | --- |
+| Zombie descendants falsely reported as executing | Cleanup assertions accept absence, a non-running identity or `STATUS_ZOMBIE`, with a bounded wait for termination. A deterministic zombie regression covers a PID that still exists. Windows does not reproduce the Linux container reaping condition; Linux results are reported separately in PR CI. |
+| Orphans survive a normal parent exit | Commands and the emulator use an owned POSIX session/process group or an unnamed Windows Job Object. A Windows launcher waits on a private pipe until job assignment, so command descendants inherit membership before execution. Cleanup runs after success and timeout, without discovering children through a reaped PID. A real normal-exit orphan regression also verifies an unrelated process remains alive. |
+| Class methods mismatch JUnit reconstruction | Map collected IDs forward to JUnit's module/class/name tuple, preserving parameter text. Synthetic same-method/different-class coverage and an actual pytest parameterized class-method run pass; missing, duplicate, failed and unexpected-skipped results remain fatal. |
+| Trailing warnings corrupt preflight parsing | Emit one explicitly prefixed JSON record and read it independently of surrounding warnings/blank lines. Missing, malformed or invalid records fail closed. |
+| Early failures have no CI summary detail | Both summary steps include escaped receipt errors even when `runs` is empty. Execute both actual workflow snippets against a synthetic early-startup failure to verify the diagnostic is present and HTML-escaped. |
+
+A probe loading the exact reviewed runner from `git show a7e42c0:scripts/qualify_durable_backend.py`
+reproduced a live orphan after normal exit and class-identity rejection; the old
+final-line parsing expression also rejected trailing teardown output. The probe
+terminated only the child it created. Results are in ignored
+`output/qualification/review395-probes.json`.
+
+Local follow-up uses the same private Python 3.10.19 environments and SDK/Java/JAR
+versions recorded above. The focused runner file passed 19 tests; the updated
+SDK runner passed 232/232 and the separate core runner passed 64/64, all with zero
+skips and exits 0. The emulator runner also passed 4/4, zero skips, twice in
+`demo-lnf-40bff50b45544034` and `demo-lnf-b30b1eeda8e64c49`, keeping the same
+emulator alive across application replacements. Its runner/test exits were 0;
+the owned Windows launcher/job was intentionally terminated (exit 1), and port
+8081 was available after teardown. Receipts are `review395-sdk310/`,
+`review395-core310/`, `review395-emulator310/` and `review395-focused-final.xml`
+under `output/qualification/`. Run commands use the documented private core/SDK
+interpreters with `--level core`, `--level sdk`, or `--level emulator --java
+<private-java21> --emulator-jar <verified-1.22.0.jar> --port 8081 --repeat 2`,
+`--test-timeout 300` and the corresponding fresh `--receipts` directory. Focused Ruff,
+Black and mypy pass for the three changed Python files; the fatal Flake8 gate
+again reports 0 findings/exit 0. Intermediate static checks rejected an exception
+type and the direct-script import layout; both were corrected before the clean
+checks. The broad static debt and earlier full-suite results above remain
+historical observations; this harness-only follow-up does not relabel them as
+new passes. Ordinary hosted results for the follow-up SHA are recorded in the PR.
+
+The process containment is for this runner's cooperative test commands. POSIX
+process groups do not contain a command deliberately escaping into a new session;
+this is resource cleanup, not an operating-system security sandbox. Windows
+cleanup uses the job handle and returns its intentional termination code
+separately from test/runner exits. The emulator still stays alive across the
+application replacements; object storage is still a double and live cloud gates
+remain unqualified.
+
+Process ownership follows Python's documented
+[`start_new_session` behavior](https://docs.python.org/3/library/subprocess.html)
+and Microsoft's documented
+[Job Object membership and termination](https://learn.microsoft.com/en-us/windows/win32/procthread/job-objects).

@@ -22,6 +22,11 @@ import uuid
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
+if not __package__:
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from scripts.qualification_support.process_scope import ProcessScope
+
 ROOT = Path(__file__).resolve().parents[1]
 SUPPORT = ROOT / "scripts" / "qualification_support"
 CORE = [
@@ -104,10 +109,13 @@ def environment(private: Path) -> dict[str, str]:
     return env
 
 
-def stop(process: subprocess.Popen, identity) -> None:
+def stop(process: subprocess.Popen, identity, scope=None) -> None:
     """Bounded cleanup of this process and its descendants only."""
     import psutil
 
+    if scope is not None:
+        scope.stop(process)
+        return
     # Popen retains the original OS handle. Do not look up a reaped/reused PID.
     if process.poll() is not None:
         return
@@ -138,17 +146,37 @@ def stop(process: subprocess.Popen, identity) -> None:
 
 
 def run(command, env, log, timeout):
-    import psutil
-
     with log.open("w", encoding="utf-8") as output:
-        process = subprocess.Popen(
-            command, cwd=ROOT, env=env, stdout=output, stderr=subprocess.STDOUT
-        )
-        identity = psutil.Process(process.pid)
+        scope = ProcessScope()
+        process = None
         try:
+            process = scope.start(
+                command, cwd=ROOT, env=env, stdout=output, stderr=subprocess.STDOUT
+            )
             return process.wait(timeout=timeout)
         finally:
-            stop(process, identity)
+            if process is not None:
+                stop(process, None, scope)
+            else:
+                scope.close()
+
+
+PREFLIGHT_PREFIX = "LNF_QUALIFICATION_PREFLIGHT="
+
+
+def read_preflight(log: Path):
+    """Read the explicit record independently of import/teardown warnings."""
+    records = [
+        line[len(PREFLIGHT_PREFIX) :]
+        for line in log.read_text(encoding="utf-8").splitlines()
+        if line.startswith(PREFLIGHT_PREFIX)
+    ]
+    if len(records) != 1:
+        raise RuntimeError("expected one preflight record; see preflight.log")
+    record = json.loads(records[0])
+    if not isinstance(record, dict) or not isinstance(record.get("versions"), dict):
+        raise TypeError("invalid preflight record; see preflight.log")
+    return record
 
 
 def account(collection: Path, junit: Path, allow_skips=None):
@@ -157,11 +185,23 @@ def account(collection: Path, junit: Path, allow_skips=None):
     if not ids or len(set(ids)) != len(ids):
         raise RuntimeError("empty or duplicate test collection")
     cases = ET.parse(junit).getroot().findall(".//testcase")
+    identities = {}
+    for node in ids:
+        address, bracket, parameters = node.partition("[")
+        path, *names = address.split("::")
+        key = (
+            ".".join([path.removesuffix(".py").replace("/", "."), *names[:-1]]),
+            names[-1] + bracket + parameters,
+        )
+        if key in identities:
+            raise RuntimeError("ambiguous collected JUnit identity")
+        identities[key] = node
     results = {}
     for case in cases:
-        node = (
-            case.attrib["classname"].replace(".", "/") + ".py::" + case.attrib["name"]
-        )
+        key = (case.attrib["classname"], case.attrib["name"])
+        if key not in identities:
+            raise RuntimeError("JUnit identities do not match collected tests")
+        node = identities[key]
         if node in results:
             raise RuntimeError("duplicate JUnit test result: " + node)
         results[node] = case
@@ -207,6 +247,7 @@ def main():
     }
     emulator = None
     emulator_identity = None
+    emulator_scope = None
     emulator_log = None
     temporary = tempfile.TemporaryDirectory(prefix="lnf-qualification-")
     try:
@@ -235,7 +276,7 @@ def main():
             f"assert Path(p.__file__).resolve().is_relative_to(Path({str(ROOT / 'src')!r})); "
             f"mods={SDK_MODULES if args.level != 'core' else []!r}; "
             "[importlib.import_module(m) for m in mods]; "
-            "print(json.dumps({'import':p.__file__,'versions':{d:version(d) for d in "
+            f"print({PREFLIGHT_PREFIX!r}+json.dumps({{'import':p.__file__,'versions':{{d:version(d) for d in "
             "['pytest','pydantic','psutil']+(['google-cloud-firestore','google-cloud-tasks',"
             "'google-cloud-storage','google-auth','PyJWT'] if mods else [])}}))"
         )
@@ -244,10 +285,7 @@ def main():
         )
         if code:
             raise RuntimeError("dependency/import preflight failed; see preflight.log")
-        # SDK support warnings are retained in the log; the final line is JSON.
-        receipt["preflight"] = json.loads(
-            (receipt_dir / "preflight.log").read_text(encoding="utf-8").splitlines()[-1]
-        )
+        receipt["preflight"] = read_preflight(receipt_dir / "preflight.log")
         if args.level == "sdk" and shutil.which("node", path=env.get("PATH")) is None:
             raise RuntimeError("Node is required for the durable browser tests")
         if args.level == "core":
@@ -310,7 +348,8 @@ def main():
                 str(args.port),
             ]
             receipt["emulator_command"] = command
-            emulator = subprocess.Popen(
+            emulator_scope = ProcessScope()
+            emulator = emulator_scope.start(
                 command,
                 cwd=private,
                 env=env,
@@ -388,6 +427,7 @@ def main():
         receipt["exit"] = 0
     except (
         OSError,
+        TypeError,
         ValueError,
         RuntimeError,
         subprocess.TimeoutExpired,
@@ -397,8 +437,10 @@ def main():
     finally:
         if emulator is not None:
             receipt["emulator_terminated_by_runner"] = emulator.poll() is None
-            stop(emulator, emulator_identity)
+            stop(emulator, emulator_identity, emulator_scope)
             receipt["emulator_exit"] = emulator.returncode
+        elif emulator_scope is not None:
+            emulator_scope.close()
         if emulator_log is not None:
             emulator_log.close()
         temporary.cleanup()

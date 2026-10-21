@@ -35,12 +35,14 @@ jobs:
         if: always()
         run: |
           python - <<'PY'
-          import json, os
+          import html, json, os
           from pathlib import Path
           with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as summary:
               for path in Path('output/qualification').rglob('receipt.json'):
                   receipt = json.loads(path.read_text())
                   summary.write(f"{receipt['level']}: exit {receipt['exit']}\n\n")
+                  if receipt.get('error'):
+                      summary.write(f"Error: <pre>{html.escape(receipt['error'])}</pre>\n\n")
                   for run in receipt['runs']:
                       summary.write(f"Collected {run.get('collected', 'unverified')}; passed {run.get('passed', 'unverified')}; skips {run.get('skipped', 'unverified')}\n\n")
           PY
@@ -85,12 +87,14 @@ jobs:
         if: always()
         run: |
           python - <<'PY'
-          import json, os
+          import html, json, os
           from pathlib import Path
           with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as summary:
               for path in Path('output/qualification').rglob('receipt.json'):
                   receipt = json.loads(path.read_text())
                   summary.write(f"{receipt['level']}: exit {receipt['exit']}\n\n")
+                  if receipt.get('error'):
+                      summary.write(f"Error: <pre>{html.escape(receipt['error'])}</pre>\n\n")
                   for run in receipt['runs']:
                       summary.write(f"Collected {run.get('collected', 'unverified')}; passed {run.get('passed', 'unverified')}; skips {run.get('skipped', 'unverified')}\n\n")
           PY

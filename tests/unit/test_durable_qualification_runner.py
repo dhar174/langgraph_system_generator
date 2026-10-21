@@ -3,10 +3,18 @@
 import json
 import subprocess
 import sys
+import time
 
 import pytest
 
-from scripts.qualify_durable_backend import ROOT, account, environment, run
+from scripts.qualify_durable_backend import (
+    PREFLIGHT_PREFIX,
+    ROOT,
+    account,
+    environment,
+    read_preflight,
+    run,
+)
 
 
 def evidence(tmp_path, collection, cases):
@@ -49,6 +57,109 @@ def test_exact_collection_and_junit_pass(tmp_path):
         )
     )
     assert result == {"collected": 1, "passed": 1, "skipped": []}
+
+
+def test_class_and_parameterized_junit_identities(tmp_path):
+    result = account(
+        *evidence(
+            tmp_path,
+            [
+                "tests/unit/test_demo.py::TestRecovery::test_one[a::b.c]",
+                "tests/unit/test_demo.py::TestOther::test_one[a::b.c]",
+            ],
+            '<testcase classname="tests.unit.test_demo.TestRecovery" name="test_one[a::b.c]"/>'
+            '<testcase classname="tests.unit.test_demo.TestOther" name="test_one[a::b.c]"/>',
+        )
+    )
+    assert result == {"collected": 2, "passed": 2, "skipped": []}
+
+
+def test_real_pytest_class_and_parameterized_junit(tmp_path):
+    fixture = tmp_path / "test_recovery.py"
+    fixture.write_text(
+        "import pytest\nclass TestRecovery:\n"
+        "    @pytest.mark.parametrize('value', ['a::b.c'])\n"
+        "    def test_case(self, value):\n        assert value == 'a::b.c'\n",
+        encoding="utf-8",
+    )
+    env = environment(tmp_path)
+    collection = tmp_path / "collection.json"
+    junit = tmp_path / "junit.xml"
+    env["LNF_QUALIFICATION_COLLECTION"] = str(collection)
+    assert (
+        run(
+            [
+                sys.executable,
+                "-m",
+                "pytest",
+                str(fixture),
+                "--rootdir=" + str(tmp_path),
+                "-p",
+                "collection_plugin",
+                "-o",
+                "junit_family=xunit1",
+                "--junitxml=" + str(junit),
+            ],
+            env,
+            tmp_path / "pytest.log",
+            30,
+        )
+        == 0
+    )
+    assert account(collection, junit) == {"collected": 1, "passed": 1, "skipped": []}
+
+
+def test_zombie_is_stopped_even_when_pid_exists(monkeypatch):
+    import psutil
+
+    class Zombie:
+        def is_running(self):
+            return True
+
+        def status(self):
+            return psutil.STATUS_ZOMBIE
+
+    monkeypatch.setattr(psutil, "Process", lambda pid: Zombie())
+    assert_stopped(123)
+
+
+def test_preflight_record_survives_teardown_warnings_and_blank_lines(tmp_path):
+    log = tmp_path / "preflight.log"
+    record = {"import": "checkout/src/__init__.py", "versions": {"pytest": "test"}}
+    log.write_text(
+        "import warning\n"
+        + PREFLIGHT_PREFIX
+        + json.dumps(record)
+        + "\nResourceWarning: interpreter teardown\n\n  \n",
+        encoding="utf-8",
+    )
+    assert read_preflight(log) == record
+
+
+@pytest.mark.parametrize(
+    "record", ["", "{}", PREFLIGHT_PREFIX + "{}", PREFLIGHT_PREFIX + "bad"]
+)
+def test_preflight_rejects_missing_or_invalid_record(tmp_path, record):
+    log = tmp_path / "preflight.log"
+    log.write_text(record, encoding="utf-8")
+    with pytest.raises((ValueError, TypeError, RuntimeError)):
+        read_preflight(log)
+
+
+def assert_stopped(pid):
+    """A zombie has stopped execution even if container PID 1 never reaps it."""
+    import psutil
+
+    deadline = time.monotonic() + 5
+    while True:
+        try:
+            process = psutil.Process(pid)
+            if not process.is_running() or process.status() == psutil.STATUS_ZOMBIE:
+                return
+        except psutil.NoSuchProcess:
+            return
+        assert time.monotonic() < deadline, f"owned process {pid} is still executing"
+        time.sleep(0.05)
 
 
 def test_environment_excludes_credentials_and_hosting(monkeypatch, tmp_path):
@@ -102,8 +213,6 @@ else:
 
 
 def test_timeout_stops_owned_process_and_preserves_log(tmp_path):
-    import psutil
-
     log = tmp_path / "timeout.log"
     with pytest.raises(subprocess.TimeoutExpired):
         run(
@@ -117,12 +226,10 @@ def test_timeout_stops_owned_process_and_preserves_log(tmp_path):
             2,
         )
     pid = int(log.read_text(encoding="utf-8").strip())
-    assert not psutil.pid_exists(pid)
+    assert_stopped(pid)
 
 
 def test_timeout_stops_owned_descendant_tree(tmp_path):
-    import psutil
-
     log = tmp_path / "tree-timeout.log"
     code = (
         "import subprocess,sys,time; "
@@ -131,7 +238,24 @@ def test_timeout_stops_owned_descendant_tree(tmp_path):
     )
     with pytest.raises(subprocess.TimeoutExpired):
         run([sys.executable, "-c", code], environment(tmp_path), log, 2)
-    assert not psutil.pid_exists(int(log.read_text(encoding="utf-8").strip()))
+    assert_stopped(int(log.read_text(encoding="utf-8").strip()))
+
+
+def test_normal_exit_stops_orphan_without_touching_unrelated_process(tmp_path):
+    unrelated = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"])
+    try:
+        log = tmp_path / "normal-exit.log"
+        code = (
+            "import subprocess,sys; "
+            "child=subprocess.Popen([sys.executable,'-c','import time; time.sleep(60)']); "
+            "print(child.pid,flush=True)"
+        )
+        assert run([sys.executable, "-c", code], environment(tmp_path), log, 10) == 0
+        assert_stopped(int(log.read_text(encoding="utf-8").strip()))
+        assert unrelated.poll() is None
+    finally:
+        unrelated.terminate()
+        unrelated.wait(timeout=5)
 
 
 def test_cleanup_does_not_inspect_reaped_pid():
