@@ -102,6 +102,41 @@ rerun or wait indefinitely for owner-disabled execution.
 
 ## Official documentation checked 2026-10-20
 
+### B2 implementation addendum
+
+B1 was accepted in PR #392 at merge
+`305274f7eca82655e3556b2df50f0406f2d7905c`. B2 reuses this store/service and
+adds the private worker and object publication from the current assignment;
+B3 retains public integration, global retention inventory and activation.
+See the [B2 operations runbook](../durable-worker.md) for exact auth, retry,
+HTTP outcome and publication behavior. No resource is provisioned here.
+
+The existing `JobStore` gains the additive internal port
+`reschedule_dispatch(job_id, version, fence, intent_id, delay_seconds=5)` for a
+CAS-protected unclaimed task-name tombstone/outage transition. Marked dispatches
+set `next_action_at` to at most 60 seconds from acknowledgment; reconciliation
+can rotate an unclaimed lost delivery independently of Cloud Tasks retention.
+Job records persist `attempt_limit` (1–3) and `dispatch_limit` (1–12); older
+experimental records receive conservative default caps when read. All durable
+readers must use B2 code before writing these extra v1 fields: B1's frozen
+`extra=forbid` readers reject them. This is not a mixed B1/B2 rolling schema
+deployment. Admission is still disabled, and experimental data/index/backfill
+must be reviewed before activation. Public and CLI/package contracts do not change.
+
+Generation keeps 240 seconds, publication has 45 seconds and the 300-second
+attempt ceiling leaves settlement/cleanup room before the 330-second worker
+HTTP timeout and 360-second task deadline. The maximum file-set storage RPC
+budget is 27 seconds (nine objects, upload/reload/read, one second each, no
+SDK retries). A supervised subprocess enforces generation/publication ceilings;
+async task cancellation alone is not hard termination. Queue retries, dispatch
+generations, generation attempts and internal generator repair remain separate.
+
+The application publication boundary remains B1's fenced transaction committing
+one winning final-manifest `ArtifactRef` plus terminal event. GCS uploads are
+private immutable attempts, outside the transaction; orphan retention uses
+generation-match deletion and winning-attempt exclusion. No exactly-once provider
+execution or cross-service transaction is claimed.
+
 - [IAP signed headers](https://docs.cloud.google.com/iap/docs/signed-headers-howto):
   ES256, trusted IAP keys, issuer, exact audience, iat/exp, bounded key caching.
 - [Direct Cloud Run IAP](https://docs.cloud.google.com/run/docs/securing/identity-aware-proxy-cloud-run):

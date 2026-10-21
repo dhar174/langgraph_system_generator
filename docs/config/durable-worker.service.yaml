@@ -1,0 +1,35 @@
+# REVIEW PROPOSAL ONLY. Substitute image/identity/settings and verify IAM before use.
+# This is a separate private service, never the public IAP service deployment.
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: lnf-private-worker
+  annotations:
+    run.googleapis.com/invoker-iam-disabled: 'false'
+spec:
+  template:
+    metadata:
+      annotations:
+        autoscaling.knative.dev/minScale: '0'
+        autoscaling.knative.dev/maxScale: '1'
+        run.googleapis.com/cpu-throttling: 'true'
+    spec:
+      serviceAccountName: REPLACE_WITH_WORKER_RUNTIME_SERVICE_ACCOUNT
+      timeoutSeconds: 330
+      containerConcurrency: 2
+      containers:
+        - image: REPLACE_WITH_REVIEWED_WORKER_IMAGE
+          command: [python, -m, uvicorn]
+          args: [langgraph_system_generator.api.worker_server:app, --host, 0.0.0.0, --port, '8080', --workers, '1', --timeout-graceful-shutdown, '5']
+          ports: [{containerPort: 8080}]
+          resources:
+            limits: {cpu: '1', memory: 2Gi}
+          env:
+            - {name: LNF_JOB_BACKEND, value: firestore}
+            - {name: LNF_LLM_ENDPOINT_POLICY, value: hosted}
+            - {name: LNF_OUTPUT_BASE, value: '.'}
+            - {name: LNF_WORKER_OUTPUT_ROOT, value: ./output/worker}
+# Required project/database, queue, worker URL/audience, task/Scheduler SAs,
+# private bucket and provider-ref settings are listed in ../durable-worker.md.
+# Mount existing idempotency/provider secrets through owner-reviewed bindings.
+# No real secret, project identity, endpoint registration or IAM grant is included.

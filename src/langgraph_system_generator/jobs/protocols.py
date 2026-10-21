@@ -57,6 +57,14 @@ class JobStore(Protocol):
         self, job_id: str, version: int, fence: int, intent_id: str, task_ref: str
     ) -> DurableJob: ...
     def pending_dispatch(self, limit: int = 100) -> tuple[DispatchIntent, ...]: ...
+    def reschedule_dispatch(
+        self,
+        job_id: str,
+        version: int,
+        fence: int,
+        intent_id: str,
+        delay_seconds: int = 5,
+    ) -> DurableJob: ...
     def reconcile(self, limit: int = 100) -> Reconciliation: ...
 
 

@@ -20,6 +20,9 @@ exports, and structured QA feedback.
   QA validation scope details.
 - **Portable notebooks**: Generated notebooks target local Jupyter and Google
   Colab.
+- **Private durable worker adapters**: Optional Cloud Tasks, Firestore and GCS
+  execution/recovery foundation; [B2 runbook](docs/durable-worker.md). Public
+  durable admission remains disabled pending B3 integration and qualification.
 - **Multi-format export**: Write IPYNB, HTML, Markdown, DOCX, ZIP, and optional
   PDF outputs.
 
@@ -40,6 +43,8 @@ exports, and structured QA feedback.
    - `pip install -e ".[api]"` installs the FastAPI/web server.
    - `pip install -e ".[full]"` installs notebook generation, export, and live-mode dependencies.
    - `pip install -e ".[full,dev]"` installs contributor/test tooling.
+   - `pip install -e ".[api,full,gcp]"` adds optional private worker cloud SDKs;
+     imports remain local and credential-free.
 
 2. Copy `.env.example` to `.env` and add credentials when you need live mode:
 
