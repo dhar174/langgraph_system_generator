@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import zipfile
 from pathlib import Path
 from unittest.mock import AsyncMock
@@ -44,6 +45,66 @@ async def _settle(job_id):
     done = asyncio.get_running_loop().create_future()
     asyncio.get_running_loop().call_soon(done.set_result, None)
     await done
+
+
+@pytest.mark.parametrize("relative", [".", "api", "Nested Dir/Case", "encoded%2fpart"])
+@pytest.mark.parametrize("absolute", [False, True])
+def test_output_parent_boundary_preserves_allowed_paths(tmp_path, relative, absolute):
+    expected = tmp_path / relative
+    requested = expected if absolute else relative
+    parent = server._resolve_output_dir(requested)
+    assert parent == expected
+    run = server._reserve_api_run(parent)
+    assert run.output_path.parent == expected / "generations"
+    assert run.output_path.is_dir()
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows path casing contract")
+def test_output_parent_accepts_root_case_alias_without_changing_child_case(tmp_path):
+    requested = str(tmp_path).swapcase() + "\\NestedCase"
+    parent = server._resolve_output_dir(requested)
+    assert parent == tmp_path / "NestedCase"
+    assert parent.name == "NestedCase"
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows trailing-space path alias")
+def test_output_parent_rejects_windows_parent_alias(tmp_path):
+    with pytest.raises(server.HTTPException) as error:
+        server._resolve_output_dir(tmp_path / ".. " / "escape")
+    assert error.value.status_code == 400
+
+
+@pytest.mark.parametrize("suffix", ["-sibling", "-sibling/child"])
+def test_output_parent_rejects_absolute_sibling_prefix(tmp_path, suffix):
+    outside = Path(str(tmp_path) + suffix)
+    with pytest.raises(server.HTTPException) as error:
+        server._resolve_output_dir(outside)
+    assert error.value.status_code == 400
+    assert not outside.exists()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("route", ["/generate", "/generate-async"])
+@pytest.mark.parametrize("value", ["bad\\u0000name", "\\u002e\\u002e/escape"])
+async def test_malformed_output_parent_rejected_before_admission(
+    monkeypatch, route, value
+):
+    generator = AsyncMock()
+    monkeypatch.setattr(server, "generate_artifacts", generator)
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=server.app, raise_app_exceptions=False),
+        base_url="http://test",
+    ) as client:
+        response = await client.post(
+            route,
+            content='{"prompt":"test","mode":"stub","output_dir":"' + value + '"}',
+            headers={"Content-Type": "application/json"},
+        )
+    assert response.status_code == 400
+    generator.assert_not_awaited()
+    assert not server._api_runs
+    assert not streaming._active_jobs
+    assert server._active_generation_count == 0
 
 
 @pytest.mark.parametrize("requested", [None, ""])

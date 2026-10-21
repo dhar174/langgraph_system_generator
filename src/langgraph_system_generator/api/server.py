@@ -389,6 +389,10 @@ def _resolve_output_dir(path: str | os.PathLike[str] | None) -> Path:
     """Resolve an allowed API output parent and reject symlink components."""
     base = _BASE_OUTPUT.resolve()
     requested = Path(path) if path else Path("api")
+    if "\x00" in os.fspath(requested):
+        raise HTTPException(
+            status_code=400, detail="output_dir cannot contain a null byte."
+        )
     if ".." in requested.parts:
         raise HTTPException(
             status_code=400,
@@ -404,6 +408,16 @@ def _resolve_output_dir(path: str | os.PathLike[str] | None) -> Path:
             status_code=400,
             detail="output_dir must reside within the allowed base directory.",
         )
+    # Rebuild from the trusted root to preserve its casing on Windows. Check
+    # the normalized value used below, including a separator so sibling-prefix
+    # paths cannot pass and the root itself remains a valid output parent.
+    checked_target = os.path.join(os.path.abspath(base / relative), "")
+    if not checked_target.startswith(os.path.join(os.fspath(base), "")):
+        raise HTTPException(
+            status_code=400,
+            detail="output_dir must reside within the allowed base directory.",
+        )
+    lexical_target = Path(checked_target)
     current = base
     for part in relative.parts:
         current = current / part

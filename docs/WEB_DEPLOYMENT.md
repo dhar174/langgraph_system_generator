@@ -170,7 +170,9 @@ That event does not claim the underlying generation failed.
 
 API `output_dir` selects an allowed parent. Each sync/async request reserves an
 exclusive opaque run namespace beneath it and returns the actual resolved directory.
-Traversal, symlink components and namespace reuse are rejected. CLI/package output
+The normalized path is checked against the trusted root with a directory separator
+boundary before it is used. Traversal, null bytes, symlink components and namespace
+reuse are rejected. Absolute paths beneath the root remain supported. CLI/package output
 directories are unchanged.
 
 Only registered generated files are downloadable through returned
