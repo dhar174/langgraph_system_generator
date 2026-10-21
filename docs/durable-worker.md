@@ -29,7 +29,9 @@ signing keys; deployed proxy behavior and IAM require staging verification.
 
 The worker audience must match its configured HTTPS `*.run.app` service URL.
 Task URLs always end in `/internal/execute`. Queue and task service account must
-belong to the same project. Neither URL, queue, service account, bucket, output
+belong to the same project. Tasks and Scheduler must use different service
+accounts; identical accounts fail configuration with HTTP 503 before the store
+is constructed. Neither URL, queue, service account, bucket, output
 root, owner nor credentials can be selected by the task payload. Its only fields
 are `schema_version=1`, opaque `job_id` and `dispatch_generation` (1–12).
 
@@ -50,6 +52,13 @@ delete permission. Private bucket/IAM configuration is an activation gate;
 offline fakes cannot establish actual object privacy.
 
 ## Reviewable configuration
+
+`LNF_WORKER_OUTPUT_ROOT` is resolved and must lie within both the current working
+directory and the generator's resolved output base (`LNF_OUTPUT_BASE`, or the
+existing `BASE_OUTPUT_DIR` test override). Escaping `..` components and roots
+outside a narrower configured base fail with HTTP 503 `worker_output_root_invalid`
+before any job is claimed or directory created. Accepted roots are passed to the
+worker and artifact store in canonical form. CLI/package path behavior is unchanged.
 
 Install `.[api,full,gcp]` in the worker image. Google SDKs and credentials remain
 lazy: importing core, public API, worker app or adapters initializes no Google

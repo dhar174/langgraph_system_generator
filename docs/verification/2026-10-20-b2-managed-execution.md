@@ -163,3 +163,40 @@ and the latest main Python/Documentation runs on the B1 merge had succeeded;
 the prompt's earlier startup_failure receipts are historical failures. No workflow
 was enabled, rerun or deployment approved. The final B2 PR's exact-head hosted
 state must be read separately and is reported in the PR/conversation.
+
+## PR 393 configuration review follow-up
+
+[Codex review 5594183996](https://github.com/dhar174/langgraph_system_generator/pull/393#pullrequestreview-5594183996)
+identified two P2 configuration defects at published head
+`34e1d74de6e03e74bf26d8f4162acf21e26f06d3`:
+
+- The worker accepted roots outside a narrower `LNF_OUTPUT_BASE`, including
+  lexical `..` escapes. It now resolves the root, requires containment within
+  both the current directory and the existing generator output-base contract,
+  and passes the canonical root to the worker/artifact store. Invalid roots
+  return `503 worker_output_root_invalid` before store construction, job claim
+  or directory creation. The shared generator helper retains its existing
+  `BASE_OUTPUT_DIR` test override; CLI/package behavior is unchanged.
+- Equal Tasks/Scheduler service accounts collapsed the route allowlists. The
+  configured runtime now rejects that configuration with
+  `503 worker_configuration_invalid` before store construction on either route.
+
+All seven new configuration regression cases failed against the reviewed head:
+unsafe settings reached identity verification (`401` instead of configuration
+`503`), invalid output bases were accepted, and valid normalized roots retained
+lexical `..` segments. All seven then passed after the correction. The expanded
+B2/B1 focused set passed 139 tests, and the unit suite passed 1,134 tests with
+five existing warnings. Patterns passed 82 tests. The final full suite exited 0:
+**1,252 passed, 5 skipped, 5 warnings in 373.69 seconds**. Focused Ruff/Black/mypy,
+fatal flake8, JavaScript syntax, documentation coverage (5 tests), diff/conflict
+checks and credential-free real CLI/API stub generation/download all passed.
+Broad Ruff/Black/mypy remain non-green with the same 1,234 findings / 74 files /
+103 errors in 13 files as the exact base. Fresh comparison verified identical
+Ruff file/code counts, Black failing files and mypy error identities/messages.
+Receipts use the same Windows/Python/optional-SDK profile and credential-free
+environment described above. The exact correction SHA and its separate hosted
+receipt are reported in the PR; the earlier head's CI does not qualify this fix.
+
+The PR had been marked ready for review externally; the follow-up preserves that
+state and keeps it open. Emulator/staging/production gates remain unperformed,
+and public durable admission remains disabled.

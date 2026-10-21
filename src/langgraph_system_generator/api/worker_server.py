@@ -63,24 +63,30 @@ def configured_reconciler() -> Reconciler:
 
 def configured_runtime() -> WorkerRuntime:
     config = dispatch_config()
-    store = select_job_store()
     scheduler = os.getenv("LNF_SCHEDULER_SERVICE_ACCOUNT", "")
     root = os.getenv("LNF_WORKER_OUTPUT_ROOT", "")
     bucket = os.getenv("LNF_JOB_ARTIFACT_BUCKET", "")
     if (
-        store is None
-        or not scheduler.endswith(".iam.gserviceaccount.com")
+        not scheduler.endswith(".iam.gserviceaccount.com")
+        or scheduler == config.service_account
         or not root
         or not bucket
     ):
         raise JobError("worker_configuration_invalid", 503)
     try:
-        Path(root).absolute().relative_to(Path.cwd().resolve())
-    except ValueError:
+        from langgraph_system_generator.constants import _compute_base_output
+
+        output_root = Path(root).resolve()
+        output_root.relative_to(Path.cwd().resolve())
+        output_root.relative_to(_compute_base_output())
+    except (OSError, RuntimeError, ValueError):
         raise JobError("worker_output_root_invalid", 503) from None
-    GCSArtifactStore(bucket, Path(root))  # configuration only; no Google/ADC/client
+    GCSArtifactStore(bucket, output_root)  # configuration only; no Google/ADC/client
+    store = select_job_store()
+    if store is None:
+        raise JobError("worker_configuration_invalid", 503)
     limits = ExecutionLimits()
-    worker = ManagedWorker(store, SubprocessAttempt(limits), Path(root), limits=limits)
+    worker = ManagedWorker(store, SubprocessAttempt(limits), output_root, limits=limits)
     return WorkerRuntime(
         store,
         worker,
