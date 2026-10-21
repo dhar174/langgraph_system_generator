@@ -4,7 +4,7 @@ status: Proposed foundation; public durable admission disabled
 date: 2026-10-20
 ---
 
-## Decision and boundary
+## Decision and boundary 
 
 Part of #380; relates to #378; preserves #379 and #385. Base reviewed:
 `60e205b7e9d80c31a57de5601d8ab4789045823c`. No intervening main commits or
