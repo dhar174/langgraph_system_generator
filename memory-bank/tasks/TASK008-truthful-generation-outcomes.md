@@ -59,6 +59,14 @@ and readable. Generated execution and stub static QA remain not run.
   and final outcomes are tracked in PR #397. Hosted SDK qualification passed
   241/241; emulator recovery passed 4/4 in each of two fresh namespaces on code
   head 0d3a3b9.
+- The first local SDK trial hit its outer timeout after an existing synthetic
+  one-second child missed progress during SDK/site startup and an unbounded test
+  readiness wait remained pending. Narrow test fixtures now use minimal startup
+  for trusted PID/sleep/progress programs, bound readiness and always gather
+  owned tasks. PID timeout fixtures allow guarded launcher startup within a
+  ten-second test deadline. Production commands/deadlines and separate native
+  gRPC/socket/dotenv guard assertions are unchanged. All four affected cases
+  pass in the hermetic environment; final SDK/full receipts are linked in PR #397.
 - Independent review covered final-candidate routing, missing/stale evidence,
   retry boundaries and immutable artifact consistency; no substantive findings
   remain. PR #397 records the final head, inspected gate receipts and handoff.
