@@ -14,6 +14,7 @@ from langgraph_system_generator.generator.state import CellSpec, QAReport
 from langgraph_system_generator.notebook.composer import (
     NotebookComposer as NotebookFileComposer,
 )
+from langgraph_system_generator.qa.outcomes import candidate_id
 from langgraph_system_generator.qa.registry import (
     QARepairRegistry,
     get_qa_repair_registry,
@@ -187,6 +188,10 @@ class NotebookRepairAgent:
             candidate_reports,
             accepted=accepted,
         )
+        validation_summary["selected_candidate_id"] = candidate_id(
+            candidate_cells if accepted else original_cells
+        )
+        validation_summary["attempted_candidate_id"] = candidate_id(candidate_cells)
         if accepted:
             return RepairOutcome(
                 status="applied",

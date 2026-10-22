@@ -55,7 +55,7 @@ async def generate(payload: dict, send) -> None:
             last_progress = now
             send({"kind": "progress", "value": max(0, min(99, value))})
 
-    artifacts = await generate_artifacts(
+    await generate_artifacts(
         job.request.prompt,
         output_dir=directory,
         mode=job.request.mode,
@@ -73,16 +73,9 @@ async def generate(payload: dict, send) -> None:
         or None,
         progress_callback=progress,
     )
-    # The generator owns QA and transport-scope cleanup. No new notebook runtime
-    # evaluation is introduced here. Reject its permanent QA/validation failures.
-    manifest = artifacts["manifest"]
-    qa = manifest.get("qa_summary", {})
-    if isinstance(qa, dict) and (
-        qa.get("artifacts_usable") is False
-        or qa.get("passed") is False
-        or qa.get("status") == "failed"
-    ):
-        raise JobError("attempt_qa_failed", 422)
+    # Quality is in the manifest. A valid diagnostic result is authoritative
+    # completion, not a reason to retry a whole generation. Structural artifact
+    # validation, provider authorization and infrastructure policy stay intact.
     send({"kind": "publishing"})
     # Reauthorize after generation too; removed registrations cannot publish a
     # policy-bypassing result after a long provider call.

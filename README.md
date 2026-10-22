@@ -28,6 +28,21 @@ exports, and structured QA feedback.
 
 ## Quickstart
 
+Generation results include a versioned `generation_outcome` describing pipeline
+completion, produced artifacts, static QA, trusted environment smoke, generated
+execution and usability independently. `completed` / `no_known_blockers` do not
+mean functional verification. Generated-notebook execution is `not_run`; the
+offline stub shortcut also leaves static QA `not_run` and usability `unknown`.
+
+CLI exit codes are **0** for completed, advisory or unverified artifact results,
+**2** for blocked diagnostic results, and **1** for failures without a returned
+artifact result. Diagnostic paths remain available with exit 2. API `success:true`
+and durable job `completed` indicate a returned/committed result, including
+diagnostic results; inspect `generation_outcome` for quality. Legacy manifests
+remain readable with limited qualification. See the
+[generation outcome contract](docs/generation-outcomes.md) for fields, candidate
+provenance, compatibility and validation limits.
+
 1. Create a Python `3.10+` virtual environment and install the package:
 
    ```bash

@@ -49,6 +49,10 @@ from langgraph_system_generator.jobs.registry import (
     backend_name,
     require_ephemeral_admission,
 )
+from langgraph_system_generator.qa.outcomes import (
+    GenerationOutcome,
+    read_generation_outcome,
+)
 from langgraph_system_generator.utils.credential_redaction import (
     _sanitize_text_credentials,
 )
@@ -873,6 +877,7 @@ class GenerationRequest(BaseModel):
 
 class GenerationResponse(BaseModel):
     success: bool
+    generation_outcome: GenerationOutcome | None = None
     mode: str | None = None
     prompt: str | None = (
         None  # Note: User prompt echoed back for confirmation; may contain sensitive data if logged
@@ -1102,6 +1107,7 @@ async def get_job_result(
         ) from None
     return {
         "success": True,
+        "generation_outcome": read_generation_outcome(manifest).model_dump(mode="json"),
         "mode": manifest.get("mode"),
         "prompt": manifest.get("prompt"),
         "manifest": manifest,
@@ -1163,6 +1169,7 @@ async def generate_notebook(
             manifest = _register_api_artifacts(run, artifacts)
             return GenerationResponse(
                 success=True,
+                generation_outcome=read_generation_outcome(manifest),
                 mode=artifacts["mode"],
                 prompt=artifacts["prompt"],
                 manifest=manifest,
@@ -1433,6 +1440,9 @@ async def _run_generation_with_progress(
         if api_run is None:
             result = {
                 "success": True,
+                "generation_outcome": read_generation_outcome(
+                    artifacts["manifest"]
+                ).model_dump(mode="json"),
                 "mode": artifacts["mode"],
                 "prompt": artifacts["prompt"],
                 "manifest": artifacts["manifest"],

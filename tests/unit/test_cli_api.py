@@ -973,6 +973,7 @@ async def test_generate_artifacts_describes_runtime_smoke_test_scope(
                         "execution_scope": "trusted_smoke_test",
                     },
                     "message": "runtime smoke notebook passed",
+                    "candidate_id": cli_module.candidate_id(result["generated_cells"]),
                 },
             }
         ]
@@ -1029,7 +1030,9 @@ async def test_generate_artifacts_surfaces_non_blocking_qa_advisories(
                 "suggestions": ["Check graph object naming."],
                 "stage": "static",
                 "attempt": 0,
-                "evidence": {},
+                "evidence": {
+                    "candidate_id": cli_module.candidate_id(result["generated_cells"])
+                },
             }
         ]
         result["qa_repair_feedback"] = {

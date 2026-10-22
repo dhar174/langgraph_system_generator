@@ -1,4 +1,9 @@
-# Generation outcomes (version 1)
+---
+title: Generation outcomes (version 1)
+description: Candidate-bound QA qualification, diagnostic artifacts and compatibility.
+---
+
+## Generation outcomes (version 1)
 
 Issue #382 separates generation completion, candidate quality, export availability,
 and publication. `generation_outcome` is additive. The authoritative derivation
@@ -76,10 +81,10 @@ authorization and infrastructure failures retain their established policy.
 
 ## Implementation and verification checklist
 
-- [ ] Shared typed derivation and deterministic candidate provenance.
-- [ ] Final-candidate graph routing and configured repair cap.
-- [ ] Package/export, CLI, API and browser integration.
-- [ ] Diagnostic durable publication and immutable receipt regression.
+- [x] Shared typed derivation and deterministic candidate provenance.
+- [x] Final-candidate graph routing and configured repair cap.
+- [x] Package/export, CLI, API and browser integration.
+- [x] Diagnostic durable publication and immutable receipt regression.
 - [ ] Full regression matrix, broad gates and offline export smoke.
 - [ ] Independent final review and exact-head PR evidence.
 

@@ -2,6 +2,8 @@
 
 ## In Progress
 
+- [TASK008 - Truthful generation outcomes (#382)](TASK008-truthful-generation-outcomes.md)
+
 - [TASK005 - Pattern/intake modernization wave](TASK005-pattern-intake-modernization-wave.md)
 
 ## Completed

@@ -170,6 +170,29 @@ class GCSArtifactStore:
                 notebook.cells
             ):
                 raise JobError("artifact_notebook_mismatch", 422)
+            if "generation_outcome" in manifest:
+                from langgraph_system_generator.qa.outcomes import (
+                    GenerationOutcome,
+                    derive_generation_outcome,
+                    notebook_candidate_id,
+                )
+
+                outcome = GenerationOutcome.model_validate(
+                    manifest["generation_outcome"]
+                )
+                expected = derive_generation_outcome(
+                    manifest["qa_reports"],
+                    candidate_sha256=notebook_candidate_id(notebook),
+                    pipeline=outcome.pipeline,
+                    has_cells=bool(notebook.cells),
+                    artifacts_present=True,
+                    artifacts_available=True,
+                    repair_attempts=outcome.repair.attempts,
+                    max_repair_attempts=outcome.repair.limit,
+                    rollback_used=outcome.repair.rollback_used,
+                )
+                if outcome != expected:
+                    raise JobError("artifact_outcome_mismatch", 422)
             entries = manifest.get("artifact_contract", {}).get("standalone_files", [])
             if not isinstance(entries, list) or {
                 Path(entry.get("path", "")).name

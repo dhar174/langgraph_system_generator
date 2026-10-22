@@ -38,7 +38,7 @@ def build_state(**overrides):
     base_state = {
         "qa_reports": [],
         "repair_attempts": 0,
-        "generated_cells": [],
+        "generated_cells": [CellSpec(cell_type="code", content="x = 1")],
     }
     base_state.update(overrides)
     return base_state
@@ -99,13 +99,13 @@ def test_should_repair_attempts_remaining(failing_report):
 
 
 def test_should_repair_attempts_exhausted(failing_report):
-    """Failures with attempts exhausted should fail."""
+    """Failures with cells at the budget cap package diagnostics."""
     state = build_state(
         qa_reports=[failing_report],
         repair_attempts=settings.max_repair_attempts,
     )
 
-    assert should_repair(state) == "fail"
+    assert should_repair(state) == "package"
 
 
 def test_should_repair_runtime_unavailable_live_fails_fast():
@@ -139,7 +139,7 @@ def test_should_retry_after_repair_attempts_exhausted_with_cells():
         generated_cells=[cell],
     )
 
-    assert should_retry_after_repair(state) == "success"
+    assert should_retry_after_repair(state) == "retry_qa"
 
 
 def test_should_retry_after_repair_attempts_exhausted_no_cells():

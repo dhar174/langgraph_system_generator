@@ -7,6 +7,71 @@ from pathlib import Path
 import pytest
 
 
+def test_browser_renders_outcome_and_keeps_diagnostic_downloads():
+    node = shutil.which("node")
+    if not node:
+        pytest.skip("Node required for executable browser rendering")
+    source = (
+        Path(__file__).parents[2] / "src/langgraph_system_generator/api/static/app.js"
+    )
+    script = r"""
+const fs = require('fs'), vm = require('vm'), assert = require('assert');
+const source = fs.readFileSync(process.argv[1], 'utf8');
+class Element {
+  constructor(tag) {this.tag = tag; this.children = []; this.style = {}; this.textContent = '';}
+  appendChild(child) {this.children.push(child); return child;}
+  replaceChildren() {this.children = [];}
+  addEventListener() {}
+  scrollIntoView() {}
+}
+const flatten = element => [element, ...element.children.flatMap(flatten)];
+const context = {
+  document: {createElement: tag => new Element(tag)},
+  resultContent: new Element('div'), resultCard: new Element('div'),
+  hideResults() {}, copyTextToClipboard() {},
+  buildArtifactDownloadUrl: path => path,
+  appendLabeledValue(parent, label, value) {
+    const element = new Element('p'); element.textContent = label + ': ' + value; parent.appendChild(element);
+  },
+};
+vm.createContext(context);
+vm.runInContext(source.slice(source.indexOf('function appendQaSummary('), source.indexOf('// Update character count')), context);
+vm.runInContext(source.slice(source.indexOf('function showResult('), source.indexOf('function extractErrorMessage(')), context);
+for (const [status, expected] of [
+  ['completed', 'No Known QA Blockers'], ['advisories', 'With Advisories'],
+  ['blocked', 'Diagnostic Downloads'], ['unverified', 'Qualification Unknown'],
+  ['failed', 'Pipeline Failed'], ['legacy', 'Qualification Unknown'],
+]) {
+  const outcome = {schema_version: 1, status, usability: status === 'blocked' || status === 'failed' ? 'blocked' : 'unknown',
+    static_qa: status === 'completed' ? 'passed' : 'not_run',
+    environment_smoke: {result: 'not_run'}, checks: ['static:python_syntax']};
+  const manifest = {warnings: [], qa_summary: {artifacts_usable: null, findings: [{severity: 'warning', message: 'Review advisory', suggestions: ['Inspect code']}]}, artifact_contract: {standalone_files: [
+    {exists: true, manifest_key: 'notebook_path', api_download_path: '/artifacts?run_id=opaque&artifact=notebook.ipynb'},
+  ]}};
+  if (status !== 'legacy') manifest.generation_outcome = outcome;
+  context.showResult({success: true, mode: 'stub', manifest});
+  const elements = flatten(context.resultContent), text = elements.map(e => e.textContent).join('\n');
+  assert(text.includes(expected), text);
+  assert(text.includes('Generated notebook execution: not_run'), text);
+  assert(text.includes('functional'), text);
+  assert(!text.includes('Generation Successful!'), text);
+  assert(!text.includes('remain usable'), text);
+  if (status === 'legacy' || status === 'unverified') assert(text.includes('Artifact usability is unknown'), text);
+  assert(elements.some(e => e.tag === 'a' && e.href.includes('notebook.ipynb')));
+}
+console.log('outcome banners, evidence limits and diagnostic downloads verified');
+"""
+    result = subprocess.run(
+        [node, "-e", script, str(source)],
+        capture_output=True,
+        text=True,
+        timeout=15,
+        check=False,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "verified" in result.stdout
+
+
 def test_browser_submit_retries_share_key_reconnect_and_result_never_generate():
     node = shutil.which("node")
     if not node:
