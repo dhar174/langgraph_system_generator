@@ -262,13 +262,14 @@ def run_case(
             timed_out = process.poll() is None and not overflow.is_set()
             scope.stop(process)  # Also kills descendants after normal child exit.
             stop_observed_descendants(descendants)
-            cleaned = True
-            result.cleanup_verified = True
             reader.join(timeout=5)
             if reader.is_alive():
+                result.cleanup_verified = False
                 raise RuntimeError(
                     "Child output pipe did not close after process-tree cleanup"
                 )
+            cleaned = True
+            result.cleanup_verified = True
             if receipt.exists():
                 result = ExecutionResult.model_validate_json(
                     receipt.read_text(encoding="utf-8")
@@ -313,7 +314,8 @@ def run_case(
             try:
                 if process is not None:
                     try:
-                        scope.stop(process)
+                        if os.name != "nt" or scope.job is not None:
+                            scope.stop(process)
                     finally:
                         stop_observed_descendants(descendants)
                 else:

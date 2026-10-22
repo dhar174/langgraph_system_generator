@@ -196,3 +196,57 @@ def test_observed_detached_process_is_killed_and_reaped(monkeypatch):
         if process.poll() is None:
             process.kill()
             process.wait(timeout=5)
+
+
+def test_open_output_pipe_cannot_claim_verified_cleanup(tmp_path, monkeypatch):
+    import importlib.util
+    from types import SimpleNamespace
+
+    monkeypatch.syspath_prepend(str(ROOT / "scripts"))
+    spec = importlib.util.spec_from_file_location(
+        "eval_pipe_cleanup", ROOT / "scripts/run_generated_notebook_eval.py"
+    )
+    runner = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(runner)
+    process = SimpleNamespace(poll=lambda: 0, returncode=0)
+
+    class Scope:
+        job = None
+
+        def start(self, *args, **kwargs):
+            return process
+
+        def stop(self, process):
+            pass
+
+    cleanup_calls = []
+    monkeypatch.setattr(runner, "ProcessScope", Scope)
+    monkeypatch.setattr(runner, "configure_limits", lambda *args: {})
+    monkeypatch.setattr(
+        runner, "stop_observed_descendants", lambda values: cleanup_calls.append(True)
+    )
+    monkeypatch.setattr(
+        runner.threading,
+        "Thread",
+        lambda **kwargs: SimpleNamespace(
+            start=lambda: None, join=lambda **kwargs: None, is_alive=lambda: True
+        ),
+    )
+    dataset = ExecutionDataset.model_validate_json(
+        (ROOT / "tests/evaluation/generated_notebook_cases.json").read_text()
+    )
+    result = runner.run_case(
+        dataset.cases[0],
+        tmp_path,
+        {
+            "generator_revision": "a" * 40,
+            "source_dirty": False,
+            "source_diff_sha256": "0" * 64,
+        },
+    )
+    assert result.status == "failed"
+    assert not result.cleanup_verified
+    assert len(cleanup_calls) >= 2
+    assert any(
+        "pipe did not close" in error.get("message", "") for error in result.errors
+    )
