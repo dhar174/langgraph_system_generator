@@ -183,15 +183,16 @@ async def invoke_graph(
 ):
     monkeypatch.setattr(settings, "max_repair_attempts", budget)
 
-    def mocked_stage():
-        mock = AsyncMock(return_value={})
+    stages = []
 
+    def traced_stage(name, operation):
         async def run(state):
-            return await mock(state)
+            stages.append(name)
+            return await operation(state)
 
         return run
 
-    for name in (
+    planning_stages = (
         "intake_node",
         "rag_retrieval_node",
         "architecture_selection_node",
@@ -199,8 +200,16 @@ async def invoke_graph(
         "graph_design_node",
         "tooling_plan_node",
         "notebook_assembly_node",
+    )
+    for name in planning_stages:
+        monkeypatch.setattr(graph, name, traced_stage(name, AsyncMock(return_value={})))
+    for name in (
+        "static_qa_node",
+        "runtime_qa_node",
+        "repair_node",
+        "package_outputs_node",
     ):
-        monkeypatch.setattr(graph, name, mocked_stage())
+        monkeypatch.setattr(graph, name, traced_stage(name, getattr(graph, name)))
     calls = {"static": 0, "runtime": 0, "repair": 0}
 
     def validate(self, notebook):
@@ -273,6 +282,13 @@ async def invoke_graph(
     }
     result = await graph.create_generator_graph().ainvoke(
         state, config={"recursion_limit": 30 + 3 * budget}
+    )
+    qa_stages = ["static_qa_node", "runtime_qa_node"]
+    assert stages == (
+        list(planning_stages)
+        + qa_stages
+        + ["repair_node", *qa_stages] * calls["repair"]
+        + ["package_outputs_node"]
     )
     return result, calls
 
@@ -456,13 +472,33 @@ async def test_incomplete_candidate_and_terminal_exception_are_explicit_failures
 
 
 @pytest.mark.parametrize(
-    "kind,exit_code", [("pass", 0), ("advisory", 0), ("empty", 0), ("block", 2)]
+    "kind,exit_code",
+    [
+        ("pass", 0),
+        ("advisory", 0),
+        ("empty", 0),
+        ("block", 2),
+        ("runtime_unavailable", 2),
+    ],
 )
 def test_cli_quality_exit_and_diagnostic_paths(monkeypatch, capsys, kind, exit_code):
     identity = "a" * 64
     reports = [] if kind == "empty" else [report(identity, passed=kind != "block")]
     if kind == "advisory":
         reports.append(report(identity, passed=False, severity="warning"))
+    if kind == "runtime_unavailable":
+        reports.append(
+            report(identity, passed=False, stage="runtime").model_copy(
+                update={
+                    "rule_id": "runtime_smoke_test",
+                    "evidence": {
+                        "candidate_id": identity,
+                        "failure_kind": "runtime_unavailable",
+                        "generation_mode": "live",
+                    },
+                }
+            )
+        )
     outcome = derive_generation_outcome(
         reports, candidate_sha256=identity, pipeline="completed", has_cells=True
     )
@@ -478,3 +514,6 @@ def test_cli_quality_exit_and_diagnostic_paths(monkeypatch, capsys, kind, exit_c
     assert cli.main(["generate", "offline"]) == exit_code
     text = capsys.readouterr().out
     assert "diagnostics.ipynb" in text and "not_run" in text
+    if kind == "runtime_unavailable":
+        assert outcome.status == "failed" and outcome.pipeline == "failed"
+        assert "Generation pipeline failed; diagnostic artifacts available" in text

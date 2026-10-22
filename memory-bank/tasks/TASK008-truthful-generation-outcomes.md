@@ -1,6 +1,6 @@
 # TASK008 - Truthful generation outcomes (#382)
 
-**Status:** In Progress
+**Status:** In Review (implementation complete; PR #397 open)
 
 **Added:** 2026-10-22
 
@@ -22,15 +22,16 @@ and readable. Generated execution and stub static QA remain not run.
 
 ## Progress Tracking
 
-**Overall Status:** In Progress - 65%
+**Overall Status:** Implementation complete; qualification evidence and owner review tracked in PR #397
 
 | Subtask | Status | Evidence |
 | --- | --- | --- |
 | Contract-first draft PR | Complete | #397, base 81d66f2, contract commit 57e0191 |
-| Shared outcome/routing and surfaces | Complete | Implementation present; focused checks underway |
-| Diagnostic publication regressions | In Progress | Real stub/export/store/worker and fake transports |
-| Required qualification | In Progress | Focused baseline 40 passed; broad checks pending |
-| Independent final review and handoff | Pending | Read-only preliminary findings being resolved |
+| Shared outcome/routing and surfaces | Complete | Current candidate evidence and final repair validation; focused tests pass |
+| Diagnostic publication regressions | Complete | Real stub/export/store/worker, fake transports, bytes/receipts and one publication |
+| Required qualification | See PR #397 | Unit 1,353 passed/1 skipped; patterns 82 passed; final SDK/full receipts and exact-head checks maintained in PR |
+| Independent final review | Complete | Read-only review confirmed through code head 0d3a3b9; no substantive findings |
+| PR handoff | Owner review | #397 remains open; readiness and final counts are recorded there after receipt inspection |
 
 ## Progress Log
 
@@ -42,6 +43,24 @@ and readable. Generated execution and stub static QA remain not run.
   CLI/API/browser integration and diagnostic durable completion.
 - Preliminary review identified legacy blocker retention, independent artifact
   facts and unknown-usability wording; fixes and regressions are included.
-- Full unit/pattern/full-suite, SDK qualification and final review remain gates.
-  No cloud resources, IAM, deployment or durable admission changed. #380 remains
+- Candidate/graph regression fixtures execute the compiled graph with real async
+  wrappers around AsyncMock and assert stage order, current candidate identity,
+  current reports and exact repair counts for budgets 0/1/3/6. Python 3.10 hosted
+  tests and Windows focused tests pass after correcting mock signatures.
+- Local unit gate: 1,353 passed/1 optional PDF skip, exit 0. Pattern gate:
+  82 passed, exit 0. All five architectures exported offline IPYNB/HTML/ZIP with
+  matching `unverified`/`not_run`/unknown qualification and file receipts.
+- Fatal lint across 271 tracked Python files, focused lint/format/type checks,
+  JavaScript syntax and diff checks pass. Broad Ruff (1,238), mypy (103) and Black
+  (76 files) retain baseline debt with no added diagnostic identities/files.
+- First full run: 1,469 passed/8 skipped/2 failures in unchanged process-cleanup
+  tests whose two-second deadlines expired before child PID output. Both pass
+  in isolation unchanged. Receipts are retained; serial SDK/full rerun receipts
+  and final outcomes are tracked in PR #397. Hosted SDK qualification passed
+  241/241; emulator recovery passed 4/4 in each of two fresh namespaces on code
+  head 0d3a3b9.
+- Independent review covered final-candidate routing, missing/stale evidence,
+  retry boundaries and immutable artifact consistency; no substantive findings
+  remain. PR #397 records the final head, inspected gate receipts and handoff.
+- No cloud resources, IAM, deployment or durable admission changed. #380 remains
   open; #381 is not implemented.

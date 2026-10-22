@@ -274,7 +274,9 @@ def test_nbformat_three_is_rejected_without_silent_conversion(store, tmp_path):
         ).publish_manifest(job, files, job.fencing_token)
 
 
-async def test_outcome_candidate_mismatch_is_rejected_before_any_upload(store, tmp_path, monkeypatch):
+async def test_outcome_candidate_mismatch_is_rejected_before_any_upload(
+    store, tmp_path, monkeypatch
+):
     from pathlib import Path
 
     from langgraph_system_generator.cli import generate_artifacts

@@ -36,8 +36,12 @@ completed worker cannot establish generated-notebook execution success.
 Candidate identity is SHA-256 over canonical UTF-8 JSON of the default-composed
 notebook's ordered cell types, exact sources and stable metadata, with a versioned
 domain prefix. Exclude cell IDs, outputs, execution counts and internally marked
-QA/repair summary cells. Reports bind to that identity. Stale evidence cannot
-qualify another candidate. Unbound positive reports never establish a pass;
+QA/repair summary Markdown cells. Executable cells are always included, even if
+their metadata uses a reserved summary marker. The hash input is the bytes
+`notebook-cells-v1\0` followed by canonical JSON (UTF-8, sorted keys, compact
+separators, exact Unicode sources, no NaN). Notebook-level metadata is outside
+this cell identity. Reports bind through `evidence.candidate_id`. Stale evidence
+cannot qualify another candidate. Unbound positive reports never establish a pass;
 known unbound blockers are conservative failures. `qa_history` is never an input
 to outcome derivation.
 
@@ -61,6 +65,27 @@ export failures without a returned artifact result. Available paths are printed
 before a diagnostic exit. Stub generation retains its shortcut: static QA and
 generated execution are not run, usability is unknown.
 
+## Result examples
+
+These are projections of the outcome, rather than complete model instances.
+Every row keeps `generated_execution.result=not_run`.
+
+| Evidence and result | Pipeline | Status | Usability | CLI exit |
+| --- | --- | --- | --- | --- |
+| Candidate-bound static checks pass, files exported | `completed` | `completed` | `no_known_blockers` | 0 |
+| Static checks pass with advisory findings | `completed` | `advisories` | `no_known_blockers` | 0 |
+| Blocking findings remain after the repair budget; diagnostic files exported | `completed` | `blocked` | `blocked` | 2 |
+| Stub shortcut or empty reports; files exported | `completed` | `unverified` | `unknown` | 0 |
+| Live runtime is unavailable; diagnostic files exported | `failed` | `failed` | `blocked` | 2 |
+| No cells or an incomplete terminal result | `failed` | `failed` | `blocked` | 1 |
+
+A diagnostic API result can contain `success: true` alongside
+`generation_outcome.status: "blocked"` or `"failed"`. That means the result was
+returned or committed, with available diagnostic downloads. Consumers must read
+the outcome to decide how to present artifact quality. A legacy manifest without
+this field yields limited, unknown qualification through the shared reader;
+known blocking reports still prevent a positive usability claim.
+
 ## Repair and publication
 
 Every allowed repair with cells returns through final static and runtime QA,
@@ -79,14 +104,15 @@ object rewrite is introduced. A valid diagnostic result commits the existing
 durable COMPLETED state and does not trigger quality-induced retries. Provider
 authorization and infrastructure failures retain their established policy.
 
-## Implementation and verification checklist
+## Verification references
 
-- [x] Shared typed derivation and deterministic candidate provenance.
-- [x] Final-candidate graph routing and configured repair cap.
-- [x] Package/export, CLI, API and browser integration.
-- [x] Diagnostic durable publication and immutable receipt regression.
-- [ ] Full regression matrix, broad gates and offline export smoke.
-- [ ] Independent final review and exact-head PR evidence.
+`tests/unit/test_generation_outcomes.py` exercises deterministic derivation,
+candidate provenance, compiled graph routing and repair counts, export claims,
+legacy qualification and CLI exits. The lifecycle, durable API/artifact and
+executable browser suites compare the shared result through publication,
+retrieval and rendering. Final commands, counts, exits, environment limits and
+independent review evidence are recorded in
+[PR #397](https://github.com/dhar174/langgraph_system_generator/pull/397).
 
 Use one production writer and read-only specialists. Preserve frozen durable
 schemas, owner access, publication fencing, endpoint isolation, lazy dependencies
