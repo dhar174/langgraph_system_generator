@@ -21,7 +21,6 @@ mainAgent: true
 subagent: false
 model: flash
 commandExecutionPolicy: auto
-inheritMcp: true
 skills:
   - multi-agent-architect
   - langgraph

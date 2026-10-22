@@ -12,9 +12,8 @@ tools:
   - run_command
 mainAgent: false
 subagent: true
-model: pro
+model: flash
 commandExecutionPolicy: sandbox
-inheritMcp: true
 skills:
   - langgraph
   - multi-agent-architect

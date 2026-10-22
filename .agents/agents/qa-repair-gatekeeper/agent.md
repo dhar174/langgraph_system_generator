@@ -12,9 +12,8 @@ tools:
   - run_command
 mainAgent: false
 subagent: true
-model: inherit
+model: flash
 commandExecutionPolicy: sandbox
-inheritMcp: true
 skills:
   - agent-qa-debug-fix
   - pytest-skill

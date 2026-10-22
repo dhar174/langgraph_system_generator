@@ -14,7 +14,6 @@ mainAgent: false
 subagent: true
 model: flash
 commandExecutionPolicy: sandbox
-inheritMcp: true
 skills:
   - rag-engineer
   - compile-knowledge
