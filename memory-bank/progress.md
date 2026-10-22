@@ -1,5 +1,13 @@
 ## What Works
 
+- PR #396 independent review & verification: CodeQL security alerts 277 & 278
+  (Polynomial ReDoS in credential redaction) verified resolved via linear
+  `_redact_named_credentials` scanner and `[invalid URL omitted]` fallback.
+  Synthetic watchdog probes (up to 65,536 repetitions) and `sys.settrace` step
+  bounds confirmed O(n) execution without polynomial blowup. 78 redaction unit,
+  82 pattern, and 132 durable/RAG tests passed locally; all 8 hosted CI checks
+  passed on head `8785c31abdd078699d145484ce650778cb828ec8`.
+
 - Issue #379 local qualification: 98 security tests, 898 unit tests, 82 pattern
   tests and the full repository suite (1,016 passed, 3 skipped) exited 0 in a
   fresh supported environment. CI fatal-error lint also exited 0. Broad Ruff,

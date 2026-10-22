@@ -1,5 +1,14 @@
 ## Current Work Focus
 
+- PR #396 (`codex/redaction-regex-hardening`): Independent architectural and
+  security review completed by Antigravity. Remediates CodeQL security alerts 277
+  and 278 (Polynomial ReDoS in credential redaction) via O(n) disjoint token
+  scanner `_redact_named_credentials` and malformed URL omission sentinel
+  `[invalid URL omitted]`. 8/8 CI checks green on head `8785c31abdd078699d145484ce650778cb828ec8`
+  with zero CodeQL findings. Review comments and approval recommendation submitted directly
+  to PR #396. Follow-up re-review at 8785c31abdd078699d145484ce650778cb828ec8 completed,
+  reconciling all six discussion threads and confirming final approval (Review #5608143329).
+
 - Issue #379: explicit LLM destination/credential binding and hosted default-deny
   registration are implemented. Local qualification passed (1,016 tests, 3 skips;
   fatal-error lint exit 0). Publication, exact-head CI and owner review remain
