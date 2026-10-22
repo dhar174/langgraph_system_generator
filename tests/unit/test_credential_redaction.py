@@ -157,6 +157,29 @@ def test_durable_log_redacts_before_clipping(request):
     assert "[REDACTED]" in serialized
 
 
+@pytest.mark.parametrize("mode", ["legacy", "candidate"])
+@pytest.mark.parametrize("family", ["query", "json", "fallback", "tail", "mixed"])
+def test_probe_mode_family_validation(mode, family):
+    result = subprocess.run(
+        [sys.executable, "-I", "-S", str(PROBE), mode, family, "1"],
+        capture_output=True,
+        text=True,
+        timeout=15,
+        check=False,
+    )
+    if mode == "legacy" and family in {"tail", "mixed"}:
+        assert result.returncode == 2
+        assert "legacy mode supports only query, json, and fallback" in result.stderr
+        assert "Traceback" not in result.stderr
+        assert not result.stdout
+    else:
+        assert result.returncode == 0, result.stderr
+        assert not result.stderr
+        observation = json.loads(result.stdout)
+        assert observation["family"] == family
+        assert observation["size"] == 1
+
+
 @pytest.mark.parametrize("family", ["query", "json", "fallback", "tail", "mixed"])
 @pytest.mark.parametrize("size", [4096, 16384, 65536])
 def test_long_inputs_under_subprocess_watchdog(family, size):

@@ -75,6 +75,8 @@ def main():
     )
     parser.add_argument("size", type=int, choices=range(1, 65537))
     args = parser.parse_args()
+    if args.mode == "legacy" and args.family not in {"query", "json", "fallback"}:
+        parser.error("legacy mode supports only query, json, and fallback families")
     limit_memory()
     repeated = "key" * args.size
     inputs = {
