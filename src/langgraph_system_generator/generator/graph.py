@@ -78,7 +78,7 @@ def should_retry_after_repair(
         state: Current generator state
 
     Returns:
-        Decision: "retry_qa", "fail", or "success"
+        Decision: "retry_qa" or "fail"
     """
     # Even the last accepted/rolled-back candidate must get current full QA.
     return "retry_qa" if state.get("generated_cells") else "fail"

@@ -1643,7 +1643,9 @@ async def generate_artifacts(
             if isinstance(cause, GenerationError):
                 cause.details.setdefault(
                     "generation_outcome",
-                    derive_generation_outcome(pipeline="failed").model_dump(mode="json"),
+                    derive_generation_outcome(pipeline="failed").model_dump(
+                        mode="json"
+                    ),
                 )
                 raise cause from None
             raise GenerationError(

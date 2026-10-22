@@ -33,6 +33,7 @@ def report(identity=None, *, passed=True, severity="error", stage="static"):
         message="OK" if passed else "Resolve the candidate finding.",
         stage=stage,
         evidence={"candidate_id": identity} if identity else {},
+        suggestions=[] if passed else ["Inspect the selected candidate."],
     )
 
 
@@ -380,6 +381,7 @@ async def test_real_exports_share_candidate_quality_and_receipts(
     )
     if kind == "block":
         assert "Resolve the candidate finding." in prose
+        assert "Inspect the selected candidate." in prose
     assert f"Outcome: {status}" in Path(manifest["html_path"]).read_text(
         encoding="utf-8"
     )
@@ -403,6 +405,45 @@ async def test_no_cells_package_fails_without_empty_manifest(monkeypatch, tmp_pa
         await cli.generate_artifacts("empty", output_dir=tmp_path / "empty")
     assert caught.value.details["generation_outcome"]["status"] == "failed"
     assert not (tmp_path / "empty" / "manifest.json").exists()
+
+
+async def test_real_stub_outcome_serialization_is_deterministic(monkeypatch, tmp_path):
+    monkeypatch.setenv("BASE_OUTPUT_DIR", str(tmp_path))
+    first = await cli.generate_artifacts(
+        "Create a router", output_dir=tmp_path / "one", formats=["ipynb"]
+    )
+    second = await cli.generate_artifacts(
+        "Create a router", output_dir=tmp_path / "two", formats=["ipynb"]
+    )
+    assert first["generation_outcome"] == second["generation_outcome"]
+    assert first["generation_outcome"]["static_qa"] == "not_run"
+    assert first["generation_outcome"]["usability"] == "unknown"
+
+
+async def test_incomplete_candidate_and_terminal_exception_are_explicit_failures(
+    monkeypatch, tmp_path
+):
+    monkeypatch.setenv("BASE_OUTPUT_DIR", str(tmp_path))
+    result = cli._build_stub_result("Create a router")
+    result["generation_complete"] = False
+    monkeypatch.setattr(cli, "_build_stub_result", lambda *a, **k: result)
+    with pytest.raises(GenerationError) as incomplete:
+        await cli.generate_artifacts(
+            "incomplete", output_dir=tmp_path / "incomplete", formats=["ipynb"]
+        )
+    assert incomplete.value.details["generation_outcome"]["pipeline"] == "failed"
+    fake_graph = type(
+        "Graph", (), {"ainvoke": AsyncMock(side_effect=RuntimeError("private failure"))}
+    )()
+    monkeypatch.setattr(cli, "_load_generator_graph", lambda: lambda: fake_graph)
+    with pytest.raises(GenerationError) as failure:
+        await cli.generate_artifacts(
+            "failure", mode="live", output_dir=tmp_path / "failure", formats=["ipynb"]
+        )
+    payload = failure.value.to_payload()
+    assert payload["details"]["generation_outcome"]["status"] == "failed"
+    assert "private failure" not in json.dumps(payload)
+    assert not (tmp_path / "failure" / "manifest.json").exists()
 
 
 @pytest.mark.parametrize(

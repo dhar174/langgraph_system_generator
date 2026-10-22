@@ -86,7 +86,7 @@ const submitCode = source.slice(source.indexOf('async function startAsyncGenerat
 const resultCode = source.slice(source.indexOf('async function fetchCompletedJobResult('), source.indexOf('async function startAsyncGeneration('));
 const streamCode = source.slice(source.indexOf('function streamGeneration('), source.indexOf('async function fetchCompletedJobResult('));
 const calls = [], events = [], listeners = {};
-let postCalls = 0, resultCalls = 0, uuid = 0;
+let postCalls = 0, resultCalls = 0, uuid = 0, resultUnavailable = false;
 class EventSource {
   constructor(path) {this.path = path; this.readyState = 0; events.push(this);}
   addEventListener(name, fn) {listeners[name] = fn;}
@@ -108,7 +108,7 @@ const context = {
       return {ok: true, status: 200, json: async () => ({durable: true, job_id: 'a'.repeat(32), stream_url: '/stream/' + 'a'.repeat(32)})};
     }
     resultCalls++;
-    if (resultCalls < 3) return {ok: false, status: 503};
+    if (resultCalls < 3 || resultUnavailable) return {ok: false, status: 503};
     return {ok: true, status: 200, json: async () => ({success: true})};
   }
 };
@@ -132,6 +132,13 @@ vm.runInContext(resultCode + streamCode + submitCode, context);
   listeners.complete({data: JSON.stringify({success: true})});
   await second;
   assert.equal(postCalls, 3);
+  resultUnavailable = true;
+  const third = context.startAsyncGeneration({prompt: 'committed result temporarily lost'});
+  for (let i=0;i<20 && events.length<3;i++) await Promise.resolve();
+  listeners.complete({data: JSON.stringify({result_url: '/jobs/' + 'a'.repeat(32) + '/result'})});
+  await assert.rejects(third, /Generation completed, but its result is temporarily unavailable/);
+  assert.equal(postCalls, 4); // only this explicit new user action submitted
+  assert.equal(resultCalls, 6); // bounded GET retries never submitted again
   assert(!source.includes('localStorage.setItem(\'Idempotency'));
   console.log('same-key submit recovery; same-job reconnect; bounded result retries; new-action key verified');
 })().catch(error => {console.error(error); process.exitCode=1;});
