@@ -8,6 +8,74 @@ from typing import Any
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 
+_SECRET_FRAGMENT = re.compile(
+    r"key|token|secret|password|auth|cred|signature", re.IGNORECASE
+)
+_NAME_TOKEN = re.compile(r"[\w-]+")
+
+
+def _skip_whitespace(text: str, position: int) -> int:
+    while position < len(text) and text[position].isspace():
+        position += 1
+    return position
+
+
+def _redact_named_credentials(text: str) -> str:
+    """Scan disjoint name tokens and values in O(n) work and O(n) space.
+
+    Each maximal name is checked against a fixed number of secret fragments.
+    Delimiter lookahead covers only adjacent whitespace. Consumed values are
+    skipped, and unchanged slices are joined once. Unterminated quoted secrets
+    consume the remaining diagnostic rather than exposing a partial value.
+    """
+    pieces: list[str] = []
+    copied_until = 0
+    for match in _NAME_TOKEN.finditer(text):
+        if match.start() < copied_until:
+            continue
+        if _SECRET_FRAGMENT.search(match.group()) is None:
+            continue
+        position = match.end()
+        if (
+            match.start() > 0
+            and text[match.start() - 1] in "\"'"
+            and position < len(text)
+            and text[position] in "\"'"
+        ):
+            position = _skip_whitespace(text, position + 1)
+            if position == len(text) or text[position] != ":":
+                continue
+        else:
+            position = _skip_whitespace(text, position)
+            if position == len(text) or text[position] != "=":
+                continue
+        position = _skip_whitespace(text, position + 1)
+        if position == len(text):
+            continue
+        if text[position] in "\"'":
+            quote = text[position]
+            value_start = position + 1
+            value_end = value_start
+            while value_end < len(text) and text[value_end] != quote:
+                value_end += 2 if text[value_end] == "\\" else 1
+            value_end = min(value_end, len(text))
+        else:
+            value_start = position
+            value_end = position
+            while (
+                value_end < len(text)
+                and not text[value_end].isspace()
+                and text[value_end] not in "&,'\"<>"
+            ):
+                value_end += 1
+        if value_end == value_start:
+            continue
+        pieces.extend((text[copied_until:value_start], "[REDACTED]"))
+        copied_until = value_end
+    pieces.append(text[copied_until:])
+    return "".join(pieces)
+
+
 class _LLMDiagnosticFilter(logging.Filter):
     """Keep SDK/HTTP diagnostics useful without logging endpoints or bodies."""
 
@@ -89,13 +157,24 @@ def _sanitize_header_for_logging(headers: dict[str, str]) -> dict[str, str]:
 
 
 def _sanitize_url_for_logging(url: str) -> str:
-    """Redact sensitive query params and basic auth credentials from a URL string."""
+    """Redact URL credentials; omit malformed URLs whose fields cannot be parsed."""
     if not url:
         return ""
     url_str = str(url)
     try:
+        prefix, separator, remainder = url_str.partition("//")
+        authority = re.split(r"[/?#]", remainder, maxsplit=1)[0]
+        safe_userinfo = ""
+        if separator and "@" in authority:
+            userinfo, _, host = authority.rpartition("@")
+            safe_userinfo = (
+                userinfo.split(":", 1)[0] + ":[REDACTED]@"
+                if ":" in userinfo
+                else "[REDACTED]@"
+            )
+            url_str = prefix + separator + remainder[len(userinfo) + 1 :]
         parts = urlsplit(url_str)
-        netloc = parts.netloc
+        netloc = safe_userinfo + parts.netloc
         if "@" in netloc:
             userinfo, host = netloc.split("@", 1)
             if ":" in userinfo:
@@ -128,19 +207,7 @@ def _sanitize_url_for_logging(url: str) -> str:
 
         return urlunsplit((parts.scheme, netloc, parts.path, query, parts.fragment))
     except Exception:  # noqa: BLE001 - malformed URLs still need redaction
-        # Fallback to regex if urlsplit/parse fails
-        sanitized = re.sub(
-            r"((?:[?&]|\b)[\w\-]*(?:key|token|secret|password|auth|cred|signature)[\w\-]*=)[^&\s]+",
-            r"\1[REDACTED]",
-            url_str,
-            flags=re.IGNORECASE,
-        )
-        sanitized = re.sub(
-            r"(://[^:/@\s]+:)[^@\s/]+@",
-            r"\1[REDACTED]@",
-            sanitized,
-        )
-        return sanitized
+        return "[invalid URL omitted]"
 
 
 def _sanitize_text_credentials(text: Any, endpoint: str | None = None) -> str:
@@ -156,11 +223,8 @@ def _sanitize_text_credentials(text: Any, endpoint: str | None = None) -> str:
     # 2. Extract and route all embedded URLs through _sanitize_url_for_logging
     def _replace_url(match: re.Match) -> str:
         raw_url = match.group(0)
-        trailing = ""
-        while raw_url and raw_url[-1] in "')]},;.:\"":
-            trailing = raw_url[-1] + trailing
-            raw_url = raw_url[:-1]
-        return _sanitize_url_for_logging(raw_url) + trailing
+        stripped_url = raw_url.rstrip("')]},;.:\"")
+        return _sanitize_url_for_logging(stripped_url) + raw_url[len(stripped_url) :]
 
     result = re.sub(r"https?://[^\s<>'\"]+", _replace_url, result)
 
@@ -172,21 +236,7 @@ def _sanitize_text_credentials(text: Any, endpoint: str | None = None) -> str:
         flags=re.IGNORECASE,
     )
 
-    # 4. Redact query/key-value tokens matching compound secret names (access_token, client_secret, etc.)
-    result = re.sub(
-        r"((?:[?&]|\b)[\w\-]*(?:key|token|secret|password|auth|cred|signature)[\w\-]*\s*=\s*)[^&\s,'\"<>]+",
-        r"\1[REDACTED]",
-        result,
-        flags=re.IGNORECASE,
-    )
-
-    # 5. Redact JSON/dict style key-value pairs with compound secret names
-    result = re.sub(
-        r'(["\'][\w\-]*(?:key|token|secret|password|auth|cred|signature)[\w\-]*["\']\s*:\s*["\'])[^"\']+',
-        r"\1[REDACTED]",
-        result,
-        flags=re.IGNORECASE,
-    )
+    result = _redact_named_credentials(result)
 
     # 6. Redact basic-auth credentials in any remaining URL/netloc patterns
     result = re.sub(
