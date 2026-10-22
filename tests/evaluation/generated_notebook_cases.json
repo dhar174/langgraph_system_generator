@@ -1,0 +1,39 @@
+{
+  "schema_version": 1,
+  "cases": [
+    {
+      "id": "support-router", "prompt": "Build a customer support router with billing, technical and fallback destinations.",
+      "architecture": "router", "generator_mode": "live", "fixture": "support-router-v1", "tool_fixture": "none",
+      "dependencies": ["langgraph", "langchain", "langchain-core", "langchain-openai", "nbformat", "nbclient", "ipykernel"],
+      "invocations": [
+        {"id": "billing", "text": "billing question", "thread_id": "billing", "expected_nodes": ["router", "billing"], "expected_state": {"route": "billing", "results": {"billing": "RESULT:billing"}, "final_output": "RESULT:billing"}},
+        {"id": "technical", "text": "technical question", "thread_id": "technical", "expected_nodes": ["router", "technical"], "expected_state": {"route": "technical", "results": {"technical": "RESULT:technical"}}},
+        {"id": "unsupported", "text": "sing an opera", "thread_id": "unsupported", "expected_nodes": ["router", "fallback"], "expected_state": {"route": "fallback", "results": {"fallback": "RESULT:fallback"}}}
+      ],
+      "untested": ["Live provider classification", "Prompt generalization beyond three controlled inputs", "Production deployment"]
+    },
+    {
+      "id": "supervisor", "prompt": "Build a support supervisor delegating independent ticket analysis to researcher and reviewer specialists, then synthesize results. Worker errors abort the invocation.",
+      "architecture": "subagents", "generator_mode": "live", "fixture": "supervisor-v1", "tool_fixture": "none",
+      "dependencies": ["langgraph", "langchain", "langchain-core", "langchain-openai", "nbformat", "nbclient", "ipykernel"],
+      "invocations": [
+        {"id": "fanout", "text": "Investigate ticket 42", "thread_id": "fanout", "expected_nodes": ["supervisor", "researcher", "reviewer", "supervisor", "finish"], "expected_state": {"iterations": 1}},
+        {"id": "worker-failure", "text": "Investigate ticket 42", "thread_id": "failure", "expected_nodes": ["supervisor"], "expected_error": "ValueError", "terminal": false}
+      ],
+      "untested": ["Live model planning", "Worker retry or recovery policies", "Cross-process checkpoint persistence"]
+    },
+    {
+      "id": "chatbot-tool", "prompt": "Build a stateful chatbot with thread-aware memory and a calculator ToolNode. Tool requests run through the assistant to tools and back, and normal turns finish without a tool. Disable interactive loops.",
+      "architecture": "router", "generator_mode": "live", "fixture": "chatbot-tool-v1", "tool_fixture": "calculator-v1",
+      "dependencies": ["langgraph", "langchain", "langchain-core", "langchain-openai", "nbformat", "nbclient", "ipykernel"],
+      "invocations": [
+        {"id": "first-turn", "text": "remember cobalt", "thread_id": "conversation-a", "expected_nodes": ["router", "chat"], "expected_state": {"turn_count": 1}},
+        {"id": "same-thread", "text": "what did I ask?", "thread_id": "conversation-a", "expected_nodes": ["router", "chat"], "expected_state": {"turn_count": 2, "final_response": "cobalt"}, "retained_text": "remember cobalt"},
+        {"id": "separate-thread", "text": "what did I ask?", "thread_id": "conversation-b", "expected_nodes": ["router", "chat"], "expected_state": {"turn_count": 1, "final_response": "Acknowledged"}, "absent_text": "cobalt"},
+        {"id": "tool-turn", "text": "add 2 and 3", "thread_id": "calculator", "expected_nodes": ["router", "chat", "tools", "chat"], "expected_tool_calls": 1, "expected_state": {"final_response": "Tool result: 5"}},
+        {"id": "no-tool", "text": "hello", "thread_id": "greeting", "expected_nodes": ["router", "chat"], "expected_state": {"final_response": "Acknowledged"}}
+      ],
+      "untested": ["Live tool selection", "Arbitrary tools", "Persistent checkpoints across kernel restart", "Interactive UI"]
+    }
+  ]
+}

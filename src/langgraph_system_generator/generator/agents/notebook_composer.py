@@ -242,6 +242,18 @@ class NotebookComposer:
         state_schema = dict(workflow_design.get("state_schema") or {})
         if not self._is_chatbot_workflow(workflow_design, notebook_plan):
             return state_schema
+        if any(
+            node.get("role") == "assistant" and node.get("required_tools")
+            for node in workflow_design.get("nodes", [])
+        ) and any(
+            entry.get("execution_path") == "tool_node"
+            for entry in workflow_design.get("tool_reachability", [])
+        ):
+            # A tool conversation uses reducer-backed messages for memory; it
+            # does not declare unwritten historical-persona/verifier fields.
+            state_schema.setdefault("final_response", "Final assistant response")
+            state_schema.setdefault("turn_count", "Number of completed conversation turns")
+            return state_schema
         for field_name, description in self._CHATBOT_STATE_FIELDS.items():
             state_schema.setdefault(field_name, description)
         return state_schema
@@ -1735,6 +1747,18 @@ Generate the complete Python function implementation."""
         node_purpose = node.get("purpose", "")
         architecture_type = workflow_design.get("architecture_type", "")
         safe_node_identifier = self._safe_node_identifier(node_name, "unknown")
+        if self._is_chatbot_workflow(workflow_design):
+            from langgraph_system_generator.notebook.tool_execution import (
+                chatbot_tool_node_code,
+            )
+
+            tool_code = chatbot_tool_node_code(
+                node,
+                self._canonical_graph_schema(workflow_design),
+                f"{safe_node_identifier}_node",
+            )
+            if tool_code is not None:
+                return tool_code
         safe_node_name = self._normalize_inline_text(node_name, "unknown node")
         safe_node_purpose = self._normalize_docstring_text(
             node_purpose,
@@ -2776,9 +2800,21 @@ def {safe_node_identifier}_node(state: WorkflowState) -> WorkflowState:
             if len(field_names) == 1:
                 field_tuple += ","
             default_key = json.dumps(spec["route_keys"][0])
+            fanout_code = ""
+            if architecture_type == "subagents" and source == "supervisor":
+                fanout_code = '''    from langgraph.types import Send
+    selected = state.get("next_agents", [])
+    if selected:
+        targets = list(dict.fromkeys(path_map[key] for key in selected if key in path_map))
+        if END in targets:
+            return next(key for key, target in path_map.items() if target == END)
+        if targets:
+            return [Send(target, state) for target in targets]
+'''
             route_blocks.append(
-                f"""def {route_name}(state: WorkflowState) -> str:
+                f"""def {route_name}(state: WorkflowState):
     path_map = {path_map}
+{fanout_code}\
     for field_name in ({field_tuple}):
         value = state.get(field_name)
         if value in path_map:

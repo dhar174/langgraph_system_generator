@@ -43,6 +43,11 @@ remain readable with limited qualification. See the
 [generation outcome contract](docs/generation-outcomes.md) for fields, candidate
 provenance, compatibility and validation limits.
 
+The repository also provides a separate, offline
+[generated-notebook behavioral evaluation harness](docs/generated-notebook-evaluation.md)
+for trusted router, supervisor and chatbot/tool fixtures. Its execution receipts
+remain separate from `generation_outcome` until phase #381-B.
+
 1. Create a Python `3.10+` virtual environment and install the package:
 
    ```bash

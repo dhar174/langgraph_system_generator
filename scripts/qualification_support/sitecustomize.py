@@ -45,6 +45,14 @@ if os.environ.get("LNF_QUALIFICATION_GUARD") == "1":
         setattr(socket.socket, name, replacement)
     socket.getaddrinfo = getaddrinfo
 
+    original_sendto = socket.socket.sendto
+
+    def sendto(self, data, *args):
+        check(args[-1])
+        return original_sendto(self, data, *args)
+
+    socket.socket.sendto = sendto
+
     # gRPC uses native sockets, bypassing Python's socket.connect.
     try:
         import grpc
