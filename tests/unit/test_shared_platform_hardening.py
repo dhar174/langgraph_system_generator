@@ -300,7 +300,7 @@ def test_web_ui_renders_qa_summary_details():
 
     assert "manifest.qa_summary" in app_js
     assert "Generation Completed With Advisories" in app_js
-    assert "appendQaSummary(resultWrapper, qaSummary)" in app_js
+    assert "appendQaSummary(resultWrapper, qaSummary, outcome)" in app_js
     assert "finding.check_name" in app_js
     assert "finding.suggestions" in app_js
 

@@ -182,6 +182,15 @@ async def invoke_graph(
     unavailable=None,
 ):
     monkeypatch.setattr(settings, "max_repair_attempts", budget)
+
+    def mocked_stage():
+        mock = AsyncMock(return_value={})
+
+        async def run(state):
+            return await mock(state)
+
+        return run
+
     for name in (
         "intake_node",
         "rag_retrieval_node",
@@ -191,7 +200,7 @@ async def invoke_graph(
         "tooling_plan_node",
         "notebook_assembly_node",
     ):
-        monkeypatch.setattr(graph, name, AsyncMock(return_value={}))
+        monkeypatch.setattr(graph, name, mocked_stage())
     calls = {"static": 0, "runtime": 0, "repair": 0}
 
     def validate(self, notebook):

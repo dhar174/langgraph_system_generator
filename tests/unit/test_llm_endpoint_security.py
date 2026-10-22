@@ -522,10 +522,11 @@ async def test_package_artifacts_exclude_server_configuration(
     register(monkeypatch)
 
     class Graph:
-        async def ainvoke(self, state):
+        async def ainvoke(self, state, *, config):
+            assert config["recursion_limit"] >= 25
             assert state["generation_config"].endpoint_policy == "hosted"
-            config = state["generation_config"].to_model_config("test-model")
-            composer = NotebookComposer(model_config=config)
+            model_config = state["generation_config"].to_model_config("test-model")
+            composer = NotebookComposer(model_config=model_config)
             cells = composer._create_config_cells(
                 composer._plan_dependencies([], {}), NotebookCompositionFeedback()
             )
