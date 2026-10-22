@@ -1,5 +1,14 @@
 ## Current Work Focus
 
+- Issue #382 / PR #397 (`codex/382-truthful-generation-outcomes`) implements
+  versioned candidate-bound generation outcomes across package/CLI, APIs and
+  browser. Static blockers can produce diagnostic results without quality-induced
+  durable retries. Final repaired candidates re-enter QA at the budget cap.
+  Stub QA remains explicitly not run; #381 execution is excluded. Independent
+  read-only review found no substantive issues. Final qualification receipts,
+  counts and review status are maintained in PR #397; see TASK008. The PR stays
+  open for owner review, with no merge, deployment or durable admission change.
+
 - PR #396 (`codex/redaction-regex-hardening`): Independent architectural and
   security review completed by Antigravity. Remediates CodeQL security alerts 277
   and 278 (Polynomial ReDoS in credential redaction) via O(n) disjoint token

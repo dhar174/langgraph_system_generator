@@ -22,6 +22,17 @@ over earlier plans and historical CI counts.
 
 ## Runtime and access matrix
 
+Result quality is carried by the committed manifest's versioned
+`generation_outcome`, also projected at the top level of the result response.
+`JobState.COMPLETED` and `success:true` mean an authoritative result is available;
+that result can contain blocked or failed diagnostic artifacts. QA blockers alone
+do not retry the queue task or generate another attempt. Infrastructure/provider
+failures retain their established retry/authorization policy. SSE stays compact:
+fetch `result_url` for quality, and retry retrieval without resubmitting generation.
+Older manifests project limited/unknown qualification without modifying objects.
+See [generation outcomes](generation-outcomes.md); generated execution remains
+`not_run` and this feature does not deliver #381 or authorize activation.
+
 | Configuration | Submission | Readback / ownership | Storage |
 | --- | --- | --- | --- |
 | Default `LNF_JOB_BACKEND=ephemeral`, local | Existing sync/async semantics | Phase A process trust domain | Local namespaces |

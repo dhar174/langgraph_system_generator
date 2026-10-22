@@ -124,6 +124,10 @@ Important patterns:
   replaced rather than concatenated.
 - `qa_reports` is the current QA snapshot for the active pass, while
   `qa_history` preserves bounded attempt-by-attempt QA and repair evidence.
+- `generation_outcome` is the versioned qualification derived by `qa/outcomes.py`
+  from the selected candidate and current evidence. Final repair candidates always
+  receive QA even at the repair cap. Packaging/job completion does not imply
+  usability or generated-code execution. See `docs/generation-outcomes.md`.
 - `repair_attempts` bounds retry behavior.
 - `artifacts_manifest` and `generation_complete` are the final packaging
   outputs expected by the CLI and API.

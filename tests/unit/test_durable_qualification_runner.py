@@ -218,12 +218,13 @@ def test_timeout_stops_owned_process_and_preserves_log(tmp_path):
         run(
             [
                 sys.executable,
+                "-S",  # This trusted PID/sleep fixture needs no SDK/site startup.
                 "-c",
                 "import os,time; print(os.getpid(),flush=True); time.sleep(60)",
             ],
             environment(tmp_path),
             log,
-            2,
+            10,  # Allow guarded Windows launcher startup before the PID fixture.
         )
     pid = int(log.read_text(encoding="utf-8").strip())
     assert_stopped(pid)
@@ -233,11 +234,11 @@ def test_timeout_stops_owned_descendant_tree(tmp_path):
     log = tmp_path / "tree-timeout.log"
     code = (
         "import subprocess,sys,time; "
-        "child=subprocess.Popen([sys.executable,'-c','import time; time.sleep(60)']); "
+        "child=subprocess.Popen([sys.executable,'-S','-c','import time; time.sleep(60)']); "
         "print(child.pid,flush=True); time.sleep(60)"
     )
     with pytest.raises(subprocess.TimeoutExpired):
-        run([sys.executable, "-c", code], environment(tmp_path), log, 2)
+        run([sys.executable, "-S", "-c", code], environment(tmp_path), log, 10)
     assert_stopped(int(log.read_text(encoding="utf-8").strip()))
 
 

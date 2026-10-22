@@ -272,6 +272,8 @@ async def _bounded_read(
 
 
 async def result(request: Request, job_id: str) -> dict[str, Any]:
+    from langgraph_system_generator.qa.outcomes import read_generation_outcome
+
     runtime, principal = await authorized(request)
     job = await asyncio.to_thread(runtime.store.get, principal, job_id)
     if job.state != JobState.COMPLETED:
@@ -283,6 +285,9 @@ async def result(request: Request, job_id: str) -> dict[str, Any]:
         runtime.store.get(principal, job_id)
         return {
             "success": True,
+            "generation_outcome": read_generation_outcome(manifest).model_dump(
+                mode="json"
+            ),
             "mode": manifest.get("mode"),
             "prompt": manifest.get("prompt"),
             "manifest": manifest,

@@ -8,6 +8,7 @@ from typing import Annotated, Any, Dict, List, Literal, Optional
 from pydantic import BaseModel, ConfigDict, Field
 from typing_extensions import TypedDict
 
+from langgraph_system_generator.generator.outcome_models import GenerationOutcome
 from langgraph_system_generator.utils.config import GenerationConfig
 
 DEFAULT_REQUIREMENTS_CONSTRAINT_TYPES = (
@@ -915,6 +916,7 @@ class GeneratorState(TypedDict):
     repair_attempts: int
     qa_repair_feedback: QARepairFeedback
     qa_summary: Dict[str, Any]
+    generation_outcome: GenerationOutcome
 
     # Output
     artifacts_manifest: Dict[str, Any]

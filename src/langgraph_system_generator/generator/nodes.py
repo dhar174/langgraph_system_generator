@@ -45,6 +45,11 @@ from langgraph_system_generator.notebook.runtime import (
     run_notebook_smoke_test,
 )
 from langgraph_system_generator.qa import NotebookRepairAgent, NotebookValidator
+from langgraph_system_generator.qa.outcomes import (
+    candidate_id,
+    derive_generation_outcome,
+    notebook_candidate_id,
+)
 from langgraph_system_generator.qa.summary import (
     build_qa_summary,
     build_tool_contract_summary,
@@ -297,10 +302,19 @@ def _stamp_reports(
     *,
     stage: str,
     attempt: int,
+    candidate_sha256: str | None = None,
 ) -> List[QAReport]:
     """Attach stage/attempt metadata to a batch of reports."""
 
-    return [_stamp_report(report, stage=stage, attempt=attempt) for report in reports]
+    return [
+        _stamp_report(
+            report,
+            stage=stage,
+            attempt=attempt,
+            evidence={"candidate_id": candidate_sha256} if candidate_sha256 else None,
+        )
+        for report in reports
+    ]
 
 
 def _qa_repair_feedback_from_reports(
@@ -338,7 +352,7 @@ def _qa_repair_feedback_from_reports(
         warnings.append("Blocking QA issues remain after validation or repair.")
     if counts["non_blocking"] or counts["informational"]:
         warnings.append(
-            "Non-blocking QA advisories were recorded; artifacts remain usable."
+            "Non-blocking QA advisories were recorded; see generation_outcome for qualification."
         )
     if rollback_used:
         warnings.append("A repair rollback preserved the previous notebook snapshot.")
@@ -1080,6 +1094,7 @@ async def static_qa_node(state: GeneratorState) -> Dict[str, Any]:
         reports,
         stage="static",
         attempt=int(state.get("repair_attempts", 0)),
+        candidate_sha256=notebook_candidate_id(notebook) if cells else None,
     )
     qa_history = bounded_qa_history(_qa_history_from_state(state), annotated_reports)
     qa_repair_feedback = _qa_repair_feedback_from_reports(
@@ -1199,6 +1214,12 @@ async def runtime_qa_node(state: GeneratorState) -> Dict[str, Any]:
                 },
             )
 
+    report = _stamp_report(
+        report,
+        stage="runtime",
+        attempt=attempt,
+        evidence={"candidate_id": candidate_id(state.get("generated_cells") or [])},
+    )
     combined_reports = [*existing_reports, report]
     qa_history = bounded_qa_history(_qa_history_from_state(state), [report])
     qa_repair_feedback = _qa_repair_feedback_from_reports(
@@ -1222,7 +1243,7 @@ async def repair_node(state: GeneratorState) -> Dict[str, Any]:
     Returns:
         Updated state with incremented repair attempts and repaired notebook data.
     """
-    repair_agent = NotebookRepairAgent()
+    repair_agent = NotebookRepairAgent(max_attempts=settings.max_repair_attempts)
 
     cells = state.get("generated_cells", [])
     qa_reports = list(state.get("qa_reports", []))
@@ -1238,6 +1259,7 @@ async def repair_node(state: GeneratorState) -> Dict[str, Any]:
         outcome.qa_reports,
         stage="static",
         attempt=attempt + 1,
+        candidate_sha256=candidate_id(outcome.cells),
     )
     extra_warnings: List[str] = []
     if outcome.status == "rolled_back":
@@ -1318,7 +1340,27 @@ async def package_outputs_node(state: GeneratorState) -> Dict[str, Any]:
     generation_context_pack = state.get("generation_context_pack")
     qa_repair_feedback = state.get("qa_repair_feedback")
     qa_reports = list(state.get("qa_reports") or [])
-    qa_summary = build_qa_summary(qa_reports)
+    cells = state.get("generated_cells") or []
+    feedback_payload = _qa_repair_feedback_from_state(state).model_dump()
+    generation_outcome = derive_generation_outcome(
+        qa_reports,
+        candidate_sha256=candidate_id(cells),
+        pipeline="completed" if cells else "failed",
+        has_cells=bool(cells),
+        artifacts_available=False if not cells else None,
+        repair_attempts=int(state.get("repair_attempts", 0)),
+        max_repair_attempts=max(0, settings.max_repair_attempts),
+        rollback_used=bool(feedback_payload.get("rollback_used")),
+    )
+    qa_summary = build_qa_summary(qa_reports, generation_outcome)
+    if not cells:
+        return {
+            "generation_outcome": generation_outcome,
+            "qa_summary": qa_summary,
+            "artifacts_manifest": {},
+            "generation_complete": False,
+            "error_message": "Generation produced no notebook cells.",
+        }
     manifest = {
         "notebook_plan": str(state.get("notebook_plan")),
         "cell_count": str(len(state.get("generated_cells", []))),
@@ -1391,11 +1433,13 @@ async def package_outputs_node(state: GeneratorState) -> Dict[str, Any]:
         ),
         "qa_reports": [serialize_qa_report(report) for report in qa_reports],
         "qa_summary": qa_summary,
+        "generation_outcome": generation_outcome.model_dump(mode="json"),
     }
 
     return {
         "artifacts_manifest": manifest,
         "qa_summary": qa_summary,
+        "generation_outcome": generation_outcome,
         "generation_complete": True,
         "error_message": None,
     }

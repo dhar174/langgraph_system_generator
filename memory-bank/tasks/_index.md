@@ -1,5 +1,9 @@
 # Tasks Index
 
+## In Review
+
+- [TASK008 - Truthful generation outcomes (#382)](TASK008-truthful-generation-outcomes.md)
+
 ## In Progress
 
 - [TASK005 - Pattern/intake modernization wave](TASK005-pattern-intake-modernization-wave.md)
@@ -24,6 +28,7 @@
   - `TASK005-pattern-intake-modernization-wave.md`
   - `TASK006-supervisor-context-window-restoration.md`
   - `TASK007-runtime-docs-source-precedence.md`
+  - `TASK008-truthful-generation-outcomes.md`
 - Task-level Memory Bank tracking covers the repository architecture visualizer
   docs sync, 1.0 release-readiness, Cloud Run deployment hardening, the
   generated-output quality wave, supervisor context-window restoration (PR #374

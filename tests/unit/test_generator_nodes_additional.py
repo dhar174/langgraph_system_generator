@@ -918,7 +918,7 @@ async def test_static_qa_node_surfaces_non_blocking_feedback(monkeypatch):
     assert result["qa_repair_feedback"].unrepaired_failures == []
     assert "Check for small naming typos." in result["qa_repair_feedback"].next_steps
     assert result["qa_repair_feedback"].warnings == [
-        "Non-blocking QA advisories were recorded; artifacts remain usable."
+        "Non-blocking QA advisories were recorded; see generation_outcome for qualification."
     ]
 
 
@@ -1562,6 +1562,9 @@ def test_tool_contract_summary_classifies_missing_reachability_contract():
 
 @pytest.mark.asyncio
 async def test_package_outputs_node_includes_qa_reports_and_summary():
+    from langgraph_system_generator.qa.outcomes import candidate_id
+
+    cells = [CellSpec(cell_type="markdown", content="Hi", metadata={})]
     report = QAReport(
         check_name="Undefined Names",
         passed=False,
@@ -1573,14 +1576,13 @@ async def test_package_outputs_node_includes_qa_reports_and_summary():
         suggestions=["Check graph object naming."],
         stage="static",
         attempt=0,
+        evidence={"candidate_id": candidate_id(cells)},
     )
 
     result = await package_outputs_node(
         {
             "notebook_plan": "Plan",
-            "generated_cells": [
-                CellSpec(cell_type="markdown", content="Hi", metadata={})
-            ],
+            "generated_cells": cells,
             "constraints": [Constraint(type="goal", value="Test", priority=1)],
             "selected_patterns": {"primary": "router"},
             "qa_reports": [report],

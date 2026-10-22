@@ -43,6 +43,12 @@ from langgraph_system_generator.qa.summary import (
     build_tool_contract_summary,
     serialize_qa_report,
 )
+from langgraph_system_generator.qa.outcomes import (
+    candidate_id,
+    derive_generation_outcome,
+    read_generation_outcome,
+    with_outcome_summary,
+)
 from langgraph_system_generator.generator.graph_design_registry import (
     build_graph_exports,
     graph_design_issue_messages,
@@ -86,6 +92,7 @@ class GenerationArtifacts(TypedDict):
     manifest_path: str
     output_dir: str
     result: Dict[str, Any]
+    generation_outcome: dict[str, Any]
 
 
 def _available_constraint_types() -> List[str]:
@@ -1618,19 +1625,39 @@ async def generate_artifacts(
                         generation_config,
                         generation_mode="live",
                         requirements_messages=requirements_messages,
-                    )
+                    ),
+                    config={
+                        "recursion_limit": max(
+                            25, 12 + 3 * max(0, settings.max_repair_attempts)
+                        )
+                    },
                 )
-        except GenerationError:
+        except GenerationError as exc:
+            exc.details.setdefault(
+                "generation_outcome",
+                derive_generation_outcome(pipeline="failed").model_dump(mode="json"),
+            )
             raise
         except Exception as exc:  # noqa: BLE001 - sanitize public generation boundary
             cause = exc.__cause__
             if isinstance(cause, GenerationError):
+                cause.details.setdefault(
+                    "generation_outcome",
+                    derive_generation_outcome(pipeline="failed").model_dump(
+                        mode="json"
+                    ),
+                )
                 raise cause from None
             raise GenerationError(
                 "Live generation failed.",
                 code="live_generation_failed",
                 phase="graph_invoke",
-                details={"error_type": type(exc).__name__},
+                details={
+                    "error_type": type(exc).__name__,
+                    "generation_outcome": derive_generation_outcome(
+                        pipeline="failed"
+                    ).model_dump(mode="json"),
+                },
             ) from None
         tracker.finish("graph_invoke", "Generator graph completed.", percentage=60)
     else:
@@ -1640,6 +1667,23 @@ async def generate_artifacts(
 
     tracker.start("serialize", "Serializing generation results...", percentage=62)
     serialized = _serialize(result)
+    if (
+        not serialized.get("generated_cells")
+        or serialized.get("generation_complete") is not True
+    ):
+        failure = derive_generation_outcome(
+            serialized.get("qa_reports") or [],
+            pipeline="failed",
+            has_cells=bool(serialized.get("generated_cells")),
+            artifacts_available=False,
+        )
+        raise GenerationError(
+            "Generation did not return a completed notebook candidate.",
+            code="generation_incomplete",
+            phase="serialize",
+            details={"generation_outcome": failure.model_dump(mode="json")},
+            status_code=422,
+        )
     tracker.finish("serialize", "Serialized generation results.", percentage=64)
     architecture_type = resolve_architecture_type(
         serialized.get("architecture_type"),
@@ -1668,7 +1712,23 @@ async def generate_artifacts(
     qa_repair_feedback = serialized.get("qa_repair_feedback") or {}
     qa_reports = serialized.get("qa_reports") or []
     serialized_qa_reports = [serialize_qa_report(report) for report in qa_reports]
-    qa_summary = build_qa_summary(serialized_qa_reports)
+    outcome_arguments: dict[str, Any] = {
+        "candidate_sha256": candidate_id(serialized["generated_cells"]),
+        "pipeline": "completed",
+        "has_cells": True,
+        "repair_attempts": int(serialized.get("repair_attempts", 0)),
+        "max_repair_attempts": max(0, settings.max_repair_attempts),
+        "rollback_used": bool(qa_repair_feedback.get("rollback_used")),
+    }
+    generation_outcome = derive_generation_outcome(
+        serialized_qa_reports, **outcome_arguments
+    )
+    serialized["generated_cells"] = _serialize(
+        with_outcome_summary(
+            serialized["generated_cells"], generation_outcome, serialized_qa_reports
+        )
+    )
+    qa_summary = build_qa_summary(serialized_qa_reports, generation_outcome)
     tool_contract_summary = build_tool_contract_summary(
         serialized.get("tools_plan") or [],
         graph_exports,
@@ -1695,6 +1755,7 @@ async def generate_artifacts(
         "qa_repair_feedback": qa_repair_feedback,
         "qa_reports": serialized_qa_reports,
         "qa_summary": qa_summary,
+        "generation_outcome": generation_outcome.model_dump(mode="json"),
         "warnings": [
             *_requirements_warning_entries(requirements_feedback),
             *_architecture_warning_entries(architecture_feedback),
@@ -1955,6 +2016,23 @@ async def generate_artifacts(
     tracker.finish("finalize", "Artifacts finalized.", percentage=100)
     manifest["phase_summary"] = list(tracker.summary)
     manifest["artifact_contract"] = _build_artifact_contract(manifest, target)
+    output_files_present = any(
+        entry.get("exists") is True
+        for entry in manifest["artifact_contract"]["standalone_files"]
+    )
+    generation_outcome = derive_generation_outcome(
+        serialized_qa_reports,
+        **outcome_arguments,
+        artifacts_present=output_files_present,
+        artifacts_available=output_files_present,
+    )
+    manifest["generation_outcome"] = generation_outcome.model_dump(mode="json")
+    serialized["generation_outcome"] = manifest["generation_outcome"]
+    serialized["qa_summary"] = qa_summary
+    if serialized.get("artifacts_manifest"):
+        serialized["artifacts_manifest"]["generation_outcome"] = manifest[
+            "generation_outcome"
+        ]
     manifest_path = target / "manifest.json"
     _write_json(manifest_path, manifest)
 
@@ -1965,6 +2043,7 @@ async def generate_artifacts(
         manifest_path=str(manifest_path),
         output_dir=str(target),
         result=serialized,
+        generation_outcome=manifest["generation_outcome"],
     )
 
 
@@ -2024,7 +2103,21 @@ def _run_generate(args: argparse.Namespace) -> int:
             print(f"  Hint: {exc.hint}")
         return 1
 
-    print(f"Generated artifacts in {artifacts['output_dir']}")
+    outcome = read_generation_outcome(artifacts["manifest"])
+    labels = {
+        "completed": "Generation completed; no known QA blockers",
+        "advisories": "Generation completed with advisories",
+        "blocked": "Generation blocked; diagnostic artifacts available",
+        "unverified": "Generation unverified; qualification is unknown",
+        "failed": "Generation pipeline failed; diagnostic artifacts available",
+    }
+    print(f"{labels[outcome.status]} in {artifacts['output_dir']}")
+    print(
+        f"  Static QA: {outcome.static_qa}; environment smoke: {outcome.environment_smoke.result}"
+    )
+    print(
+        "  Generated notebook execution: not_run; functional behavior remains unverified."
+    )
     print(f"  Manifest: {artifacts['manifest_path']}")
     if artifacts["manifest"].get("plan_path"):
         print(f"  Plan: {artifacts['manifest']['plan_path']}")
@@ -2044,7 +2137,7 @@ def _run_generate(args: argparse.Namespace) -> int:
         print(f"  ZIP Bundle: {artifacts['manifest']['zip_path']}")
     for warning in artifacts["manifest"].get("warnings", []):
         print(f"  Warning: {warning['message']}")
-    return 0
+    return 2 if outcome.usability == "blocked" else 0
 
 
 def _run_build_index(args: argparse.Namespace) -> int:

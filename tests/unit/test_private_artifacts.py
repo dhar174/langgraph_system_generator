@@ -274,6 +274,32 @@ def test_nbformat_three_is_rejected_without_silent_conversion(store, tmp_path):
         ).publish_manifest(job, files, job.fencing_token)
 
 
+async def test_outcome_candidate_mismatch_is_rejected_before_any_upload(
+    store, tmp_path, monkeypatch
+):
+    from pathlib import Path
+
+    from langgraph_system_generator.cli import generate_artifacts
+
+    backend, _ = store
+    job = running(backend)
+    monkeypatch.setenv("BASE_OUTPUT_DIR", str(tmp_path))
+    artifacts = await generate_artifacts(
+        "Create a router", output_dir=tmp_path / "candidate", formats=["ipynb"]
+    )
+    manifest_path = Path(artifacts["manifest_path"])
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["generation_outcome"]["candidate"]["sha256"] = "b" * 64
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+    client = Storage()
+    files = tuple(manifest_path.parent.iterdir())
+    with pytest.raises(JobError, match="artifact_outcome_mismatch"):
+        GCSArtifactStore(
+            "private-offline-bucket", tmp_path, client=client
+        ).publish_manifest(job, files, job.fencing_token)
+    assert client.objects == {}
+
+
 @pytest.mark.parametrize(
     "field",
     [

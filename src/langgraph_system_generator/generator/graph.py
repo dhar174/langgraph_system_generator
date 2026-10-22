@@ -41,6 +41,9 @@ def should_repair(
         report for report in failed_reports if report.severity == "error"
     ]
 
+    if not state.get("generated_cells"):
+        return "fail"
+
     # If there are no blocking failures, proceed to package. Warning/info
     # findings are advisory and remain visible through qa_summary.
     if not has_blocking_failures(qa_reports):
@@ -58,9 +61,9 @@ def should_repair(
         ):
             return "fail"
 
-    # If max repair attempts reached, fail
+    # The budget gates repairs, never diagnostic packaging or final validation.
     if state["repair_attempts"] >= settings.max_repair_attempts:
-        return "fail"
+        return "package"
 
     # Otherwise, attempt repair
     return "repair"
@@ -68,24 +71,17 @@ def should_repair(
 
 def should_retry_after_repair(
     state: GeneratorState,
-) -> Literal["retry_qa", "fail", "success"]:
+) -> Literal["retry_qa", "fail"]:
     """Decide whether to retry QA after repair attempt.
 
     Args:
         state: Current generator state
 
     Returns:
-        Decision: "retry_qa", "fail", or "success"
+        Decision: "retry_qa" or "fail"
     """
-    # After repair, retry QA if we haven't exhausted attempts
-    if state["repair_attempts"] < settings.max_repair_attempts:
-        return "retry_qa"
-
-    # If we've exhausted attempts, proceed with best effort if we have cells
-    if len(state.get("generated_cells", [])) > 0:
-        return "success"
-
-    return "fail"
+    # Even the last accepted/rolled-back candidate must get current full QA.
+    return "retry_qa" if state.get("generated_cells") else "fail"
 
 
 def create_generator_graph(*, generation_config=None) -> StateGraph:
@@ -127,7 +123,7 @@ def create_generator_graph(*, generation_config=None) -> StateGraph:
         {
             "repair": "repair",
             "package": "package_outputs",
-            "fail": END,
+            "fail": "package_outputs",
         },
     )
 
@@ -137,8 +133,7 @@ def create_generator_graph(*, generation_config=None) -> StateGraph:
         should_retry_after_repair,
         {
             "retry_qa": "static_qa",
-            "success": "package_outputs",
-            "fail": END,
+            "fail": "package_outputs",
         },
     )
 

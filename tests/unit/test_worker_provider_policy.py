@@ -14,10 +14,8 @@ from tests.unit.test_firestore_job_store import firestore_transport  # noqa: F40
 store = _store
 
 
-@pytest.mark.parametrize(
-    "failure", ["blocking_qa", "changed_registration", "removed_reference"]
-)
-async def test_policy_or_blocking_qa_changes_never_upload(
+@pytest.mark.parametrize("failure", ["changed_registration", "removed_reference"])
+async def test_provider_policy_changes_never_upload(
     store, tmp_path, monkeypatch, failure
 ):
     import langgraph_system_generator.jobs.gcs_artifacts as gcs

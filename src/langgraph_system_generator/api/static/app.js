@@ -218,7 +218,7 @@ function appendLabeledValue(parent, label, value, options = {}) {
     parent.appendChild(item);
 }
 
-function appendQaSummary(parent, qaSummary) {
+function appendQaSummary(parent, qaSummary, outcome = null) {
     if (!qaSummary || !Array.isArray(qaSummary.findings) || qaSummary.findings.length === 0) {
         return;
     }
@@ -238,9 +238,11 @@ function appendQaSummary(parent, qaSummary) {
     qaItem.appendChild(heading);
 
     const status = document.createElement('p');
-    status.textContent = qaSummary.artifacts_usable === false
-        ? 'Generated artifacts need review before use.'
-        : 'Generated artifacts remain usable.';
+    status.textContent = outcome && outcome.usability === 'blocked'
+        ? 'Diagnostic artifacts need review before use.'
+        : (outcome && outcome.usability === 'no_known_blockers'
+            ? 'No known QA blockers; functional behavior remains unverified.'
+            : 'Artifact usability is unknown; review the available evidence.');
     qaItem.appendChild(status);
 
     const findingsList = document.createElement('ul');
@@ -501,7 +503,7 @@ function showProgress(step, percentage, message) {
     });
 }
 
-// Show success result
+// Render committed/result quality; transport success is not QA qualification.
 function showResult(data) {
     hideResults();
 
@@ -509,7 +511,10 @@ function showResult(data) {
     const mode = data.mode || 'unknown';
     const warnings = Array.isArray(manifest.warnings) ? manifest.warnings : [];
     const qaSummary = manifest.qa_summary || {};
-    const hasQaAdvisories = qaSummary.status === 'advisories';
+    const suppliedOutcome = data.generation_outcome || manifest.generation_outcome;
+    const outcome = suppliedOutcome && suppliedOutcome.schema_version === 1
+        ? suppliedOutcome
+        : {status: 'unverified', usability: 'unknown', static_qa: 'not_run', checks: []};
 
     resultContent.replaceChildren();
 
@@ -520,11 +525,17 @@ function showResult(data) {
     successItem.className = 'result-item';
 
     const successHeading = document.createElement('h3');
-    successHeading.style.color = 'var(--success-color)';
+    successHeading.style.color = outcome.usability === 'blocked'
+        ? 'var(--error-color)' : 'var(--warning-color)';
     successHeading.style.marginBottom = '0.5rem';
-    successHeading.textContent = hasQaAdvisories
-        ? 'Generation Completed With Advisories'
-        : (warnings.length > 0 ? 'Generation Completed With Warnings' : 'Generation Successful!');
+    const outcomeTitles = {
+        completed: 'Generation Completed — No Known QA Blockers',
+        advisories: 'Generation Completed With Advisories',
+        blocked: 'Generation Blocked — Diagnostic Downloads',
+        unverified: 'Generation Unverified — Qualification Unknown',
+        failed: 'Generation Pipeline Failed — Diagnostic Downloads',
+    };
+    successHeading.textContent = outcomeTitles[outcome.status] || outcomeTitles.unverified;
 
     const successParagraph = document.createElement('p');
     successParagraph.textContent = `Your system was generated in ${mode} mode.`;
@@ -532,6 +543,16 @@ function showResult(data) {
     successItem.appendChild(successHeading);
     successItem.appendChild(successParagraph);
     resultWrapper.appendChild(successItem);
+    appendLabeledValue(resultWrapper, 'Usability', outcome.usability || 'unknown');
+    appendLabeledValue(resultWrapper, 'Static QA', outcome.static_qa || 'not_run');
+    appendLabeledValue(resultWrapper, 'Environment smoke (trusted notebook)',
+        outcome.environment_smoke ? outcome.environment_smoke.result : 'not_run');
+    appendLabeledValue(resultWrapper, 'Generated notebook execution',
+        'not_run — functional and prompt-specific behavior remain unverified.');
+    appendLabeledValue(resultWrapper, 'Checks evidenced',
+        Array.isArray(outcome.checks) && outcome.checks.length ? outcome.checks.join(', ') : 'none');
+    appendLabeledValue(resultWrapper, 'Qualification limit',
+        'No known blockers is not full functional verification.');
 
     if (manifest.architecture_type) {
         appendLabeledValue(resultWrapper, 'Architecture', manifest.architecture_type, {
@@ -576,7 +597,7 @@ function showResult(data) {
         resultWrapper.appendChild(warningItem);
     }
 
-    appendQaSummary(resultWrapper, qaSummary);
+    appendQaSummary(resultWrapper, qaSummary, outcome);
 
     const exportSection = document.createElement('div');
     exportSection.className = 'result-item';

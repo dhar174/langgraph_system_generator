@@ -135,6 +135,10 @@ async def test_api_a_accepts_api_b_reads_replays_downloads_after_fresh_instances
         result = await api_b.get(f"/jobs/{job.job_id}/result")
         assert result.status_code == 200
         manifest = result.json()["manifest"]
+        # Legacy committed bytes stay readable, but never become verified.
+        assert "generation_outcome" not in manifest
+        assert result.json()["generation_outcome"]["status"] == "unverified"
+        assert result.json()["generation_outcome"]["candidate"]["legacy_limited"]
         assert manifest["artifact_contract"]["storage_type"] == "gcs_private"
         stream = await api_b.get(accepted["stream_url"])
         assert stream.text.count("event: complete") == 1
@@ -150,6 +154,171 @@ async def test_api_a_accepts_api_b_reads_replays_downloads_after_fresh_instances
         expected = storage.objects[committed.result.object_name][0]
         assert json.loads(expected) == manifest
     generate.assert_not_awaited()
+
+
+@pytest.mark.parametrize(
+    "quality", ["blocked", "advisories", "completed", "unverified"]
+)
+async def test_real_stub_worker_commits_quality_once_and_api_reads_same_result(
+    harness, monkeypatch, tmp_path, quality
+):
+    import hashlib
+    import io
+    import zipfile
+
+    import nbformat
+
+    from langgraph_system_generator import cli
+    from langgraph_system_generator.generator.state import QAReport
+    from langgraph_system_generator.jobs import gcs_artifacts as gcs
+    from langgraph_system_generator.jobs.attempt_process import generate as real_attempt
+    from langgraph_system_generator.jobs.models import ArtifactRef
+    from langgraph_system_generator.jobs.worker import ManagedWorker
+    from langgraph_system_generator.qa.outcomes import (
+        candidate_id,
+        notebook_candidate_id,
+    )
+    from tests.unit.test_managed_worker import payload, service
+    from tests.unit.test_private_artifacts import Blob
+
+    backend, _, storage, _, client, _, _, forbidden_generate = harness
+    monkeypatch.setenv("LNF_WORKER_OUTPUT_ROOT", str(tmp_path))
+    monkeypatch.setenv("LNF_JOB_ARTIFACT_BUCKET", "private-offline-bucket")
+    monkeypatch.setenv("BASE_OUTPUT_DIR", str(tmp_path))
+    monkeypatch.setattr(cli.settings, "max_repair_attempts", 0)
+    real_stub = cli._build_stub_result
+
+    def stub_with_current_evidence(*args, **kwargs):
+        result = real_stub(*args, **kwargs)
+        identity = candidate_id(result["generated_cells"])
+        result["qa_reports"] = (
+            []
+            if quality == "unverified"
+            else [
+                QAReport(
+                    check_name="Static diagnostic",
+                    passed=quality != "blocked",
+                    severity="error",
+                    stage="static",
+                    rule_id="diagnostic_check",
+                    message=(
+                        "Resolve the diagnostic blocker."
+                        if quality == "blocked"
+                        else "OK"
+                    ),
+                    evidence={"candidate_id": identity},
+                )
+            ]
+        )
+        if quality == "advisories":
+            result["qa_reports"].append(
+                QAReport(
+                    check_name="Advisory",
+                    passed=False,
+                    severity="warning",
+                    stage="static",
+                    rule_id="diagnostic_advisory",
+                    message="Review the advisory.",
+                    evidence={"candidate_id": identity},
+                )
+            )
+        return result
+
+    monkeypatch.setattr(cli, "_build_stub_result", stub_with_current_evidence)
+    real_class = gcs.GCSArtifactStore
+    monkeypatch.setattr(
+        gcs,
+        "GCSArtifactStore",
+        lambda bucket, root: real_class(bucket, root, client=storage),
+    )
+    uploads = []
+    original_upload = Blob.upload_from_string
+
+    def counted_upload(self, *args, **kwargs):
+        uploads.append(self.name)
+        return original_upload(self, *args, **kwargs)
+
+    monkeypatch.setattr(Blob, "upload_from_string", counted_upload)
+
+    class RealRunner:
+        calls = 0
+
+        async def run(self, job, directory, progress):
+            self.calls += 1
+            events = []
+            await real_attempt(
+                {"job": job.model_dump(mode="json"), "directory": str(directory)},
+                events.append,
+            )
+            return ArtifactRef.model_validate(events[-1]["ref"])
+
+    async with client() as api:
+        accepted = await api.post(
+            "/generate-async", json={**BODY, "formats": ["ipynb", "html", "zip"]}
+        )
+        assert accepted.status_code == 200
+        job = backend.inspect_attempt(accepted.json()["job_id"])
+        runner = RealRunner()
+        worker = ManagedWorker(backend, runner, tmp_path)
+        assert (await worker.execute(service(backend), payload(job)))[0] == 200
+        committed = backend.inspect_attempt(job.job_id)
+        assert committed.state == JobState.COMPLETED and committed.attempt_count == 1
+        assert committed.dispatch.generation == job.dispatch.generation
+        assert committed.result is not None
+        raw = storage.objects[committed.result.object_name][0]
+        assert hashlib.sha256(raw).hexdigest() == committed.result.sha256
+        assert len(raw) == committed.result.size_bytes
+        response = await api.get(f"/jobs/{job.job_id}/result")
+        assert response.status_code == 200
+        manifest = response.json()["manifest"]
+        outcome = response.json()["generation_outcome"]
+        assert outcome == manifest["generation_outcome"]
+        assert outcome["status"] == quality
+        assert outcome["generated_execution"]["result"] == "not_run"
+        assert manifest["cell_count"] > 0
+        for receipt in manifest["objects"]:
+            data = storage.objects[receipt["object_name"]][0]
+            assert hashlib.sha256(data).hexdigest() == receipt["sha256"]
+            assert (
+                len(data) == receipt["size_bytes"] and str(receipt["generation"]) == "1"
+            )
+        notebook_bytes = next(
+            storage.objects[name][0]
+            for name in storage.objects
+            if name.endswith("/notebook.ipynb")
+        )
+        notebook = nbformat.reads(notebook_bytes.decode(), as_version=4)
+        assert notebook_candidate_id(notebook) == outcome["candidate"]["sha256"]
+        prose = "\n".join(cell.source for cell in notebook.cells)
+        assert f"Outcome: {quality}" in prose
+        html = next(
+            storage.objects[name][0]
+            for name in storage.objects
+            if name.endswith("/notebook.html")
+        )
+        assert f"Outcome: {quality}".encode() in html
+        bundle = next(
+            storage.objects[name][0]
+            for name in storage.objects
+            if name.endswith("/notebook_bundle.zip")
+        )
+        with zipfile.ZipFile(io.BytesIO(bundle)) as archive:
+            # Existing exporters use LF inside ZIP and native text newlines on
+            # disk; candidate content and each representation's receipt agree.
+            assert json.loads(archive.read("notebook.ipynb")) == json.loads(
+                notebook_bytes
+            )
+            assert archive.read("notebook.html") == html
+        stream = await api.get(accepted.json()["stream_url"])
+        assert stream.text.count("event: complete") == 1
+        assert f'"result_url":"/jobs/{job.job_id}/result"' in stream.text
+        assert '"generation_outcome"' not in stream.text  # compact result handoff
+        before = dict(storage.objects)
+        assert (await worker.execute(service(backend), payload(job)))[0] == 200
+        assert runner.calls == 1 and storage.objects == before
+        assert len(uploads) == len(set(uploads)) == len(storage.objects)
+        assert backend.inspect_attempt(job.job_id) == committed
+    forbidden_generate.assert_not_awaited()
 
 
 async def test_duplicate_lost_submit_response_conflict_and_distinct_action(harness):

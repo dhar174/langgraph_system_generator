@@ -286,17 +286,30 @@ async def test_noncooperative_process_holds_capacity_until_reaped(store, tmp_pat
         clock=clock,
         command=(
             sys.executable,
+            "-S",  # Trusted progress/sleep fixture, independent of SDK startup.
             "-c",
             'import sys,time; sys.stdin.readline(); print(\'{"kind":"progress","value":1}\',flush=True); time.sleep(60)',
         ),
     )
     worker = ManagedWorker(backend, runner, tmp_path, limits=limits)
     delivery = asyncio.create_task(worker.execute(service(backend), payload(job)))
-    await ready.wait()
-    assert (await worker.execute(service(backend), payload(job)))[0] == 503
-    assert not delivery.done() and runner.last_process.returncode is None
-    assert (await delivery)[0] == 200  # retry intent recorded after kill/reap
-    assert runner.last_process.returncode is not None
+    progress_seen = asyncio.create_task(ready.wait())
+    try:
+        done, _ = await asyncio.wait(
+            {progress_seen, delivery}, timeout=10, return_when=asyncio.FIRST_COMPLETED
+        )
+        assert progress_seen in done, (
+            delivery.result() if delivery.done() else "progress readiness timed out"
+        )
+        assert (await worker.execute(service(backend), payload(job)))[0] == 503
+        assert not delivery.done() and runner.last_process.returncode is None
+        assert (await delivery)[0] == 200  # retry intent recorded after kill/reap
+        assert runner.last_process.returncode is not None
+    finally:
+        for task in (progress_seen, delivery):
+            if not task.done():
+                task.cancel()
+        await asyncio.gather(progress_seen, delivery, return_exceptions=True)
 
 
 async def test_same_job_after_all_api_and_worker_dictionaries_are_discarded(

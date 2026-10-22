@@ -47,6 +47,89 @@ async def _settle(job_id):
     await done
 
 
+@pytest.mark.parametrize("route", ["/generate", "/generate-async"])
+@pytest.mark.parametrize(
+    "quality", ["completed", "advisories", "blocked", "unverified"]
+)
+async def test_real_ephemeral_export_outcome_matches_result_and_downloads(
+    monkeypatch, tmp_path, route, quality
+):
+    import copy
+
+    from langgraph_system_generator import cli
+    from langgraph_system_generator.generator.state import QAReport
+    from langgraph_system_generator.qa.outcomes import candidate_id
+
+    monkeypatch.setenv("BASE_OUTPUT_DIR", str(tmp_path))
+    monkeypatch.setenv("LNF_JOB_BACKEND", "ephemeral")
+    candidate = cli._build_stub_result("Create a support router")
+    identity = candidate_id(candidate["generated_cells"])
+    candidate["qa_reports"] = (
+        []
+        if quality == "unverified"
+        else [
+            QAReport(
+                check_name="Static candidate",
+                rule_id="candidate",
+                stage="static",
+                passed=quality != "blocked",
+                severity="error",
+                message="Candidate check",
+                evidence={"candidate_id": identity},
+            )
+        ]
+    )
+    if quality == "advisories":
+        candidate["qa_reports"].append(
+            QAReport(
+                check_name="Advisory",
+                rule_id="advisory",
+                stage="static",
+                passed=False,
+                severity="warning",
+                message="Review advisory",
+                evidence={"candidate_id": identity},
+            )
+        )
+    monkeypatch.setattr(
+        cli, "_build_stub_result", lambda *a, **k: copy.deepcopy(candidate)
+    )
+    generate = AsyncMock(side_effect=cli.generate_artifacts)
+    monkeypatch.setattr(server, "generate_artifacts", generate)
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=server.app), base_url="http://test"
+    ) as client:
+        response = await client.post(
+            route,
+            json={
+                "prompt": "Create a support router",
+                "mode": "stub",
+                "formats": ["ipynb", "html", "zip"],
+            },
+        )
+        assert response.status_code == 200
+        payload = response.json()
+        if route.endswith("async"):
+            await _settle(payload["job_id"])
+            stream = await client.get(payload["stream_url"])
+            assert stream.text.count("event: complete") == 1
+            assert f'/jobs/{payload["job_id"]}/result' in stream.text
+            response = await client.get(f'/jobs/{payload["job_id"]}/result')
+            assert response.status_code == 200
+            payload = response.json()
+        outcome = payload["generation_outcome"]
+        assert outcome == payload["manifest"]["generation_outcome"]
+        assert outcome["status"] == quality
+        assert outcome["generated_execution"]["result"] == "not_run"
+        assert payload["success"] is True  # result availability, including diagnostics
+        for artifact in payload["manifest"]["artifact_contract"]["standalone_files"]:
+            if artifact["manifest_key"] in {"notebook_path", "html_path"}:
+                download = await client.get(artifact["api_download_path"])
+                assert download.status_code == 200
+                assert f"Outcome: {quality}".encode() in download.content
+    generate.assert_awaited_once()
+
+
 @pytest.mark.parametrize("relative", [".", "api", "Nested Dir/Case", "encoded%2fpart"])
 @pytest.mark.parametrize("absolute", [False, True])
 def test_output_parent_boundary_preserves_allowed_paths(tmp_path, relative, absolute):

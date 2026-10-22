@@ -5,6 +5,11 @@ from __future__ import annotations
 from typing import Any, Iterable
 
 from langgraph_system_generator.generator.state import QAReport
+from langgraph_system_generator.qa.outcomes import (
+    GenerationOutcome,
+    classify_report,
+    derive_generation_outcome,
+)
 
 
 def serialize_qa_report(report: QAReport | dict[str, Any]) -> dict[str, Any]:
@@ -32,15 +37,7 @@ def serialize_qa_report(report: QAReport | dict[str, Any]) -> dict[str, Any]:
 def qa_failure_classification(report: QAReport | dict[str, Any]) -> str | None:
     """Classify failed QA reports by release impact."""
 
-    payload = serialize_qa_report(report)
-    if payload.get("passed", True):
-        return None
-    severity = str(payload.get("severity") or "info").lower()
-    if severity == "error":
-        return "blocking"
-    if severity == "warning":
-        return "non_blocking"
-    return "informational"
+    return classify_report(report)
 
 
 def has_blocking_failures(reports: Iterable[QAReport | dict[str, Any]]) -> bool:
@@ -49,10 +46,22 @@ def has_blocking_failures(reports: Iterable[QAReport | dict[str, Any]]) -> bool:
     return any(qa_failure_classification(report) == "blocking" for report in reports)
 
 
-def build_qa_summary(reports: Iterable[QAReport | dict[str, Any]]) -> dict[str, Any]:
+def build_qa_summary(
+    reports: Iterable[QAReport | dict[str, Any]],
+    outcome: GenerationOutcome | None = None,
+) -> dict[str, Any]:
     """Build a compact manifest/API summary for the current QA snapshot."""
 
     serialized_reports = [serialize_qa_report(report) for report in reports]
+    outcome = outcome or derive_generation_outcome(serialized_reports)
+    serialized_reports = [
+        report
+        for report in serialized_reports
+        if not outcome.candidate.sha256
+        or not (report.get("evidence") or {}).get("candidate_id")
+        or (report.get("evidence") or {}).get("candidate_id")
+        == outcome.candidate.sha256
+    ]
     findings: list[dict[str, Any]] = []
     counts = {
         "total": len(serialized_reports),
@@ -87,6 +96,8 @@ def build_qa_summary(reports: Iterable[QAReport | dict[str, Any]]) -> dict[str, 
 
     if counts["blocking"]:
         status = "blocking_failed"
+    elif outcome.static_qa == "not_run":
+        status = "not_run"
     elif counts["non_blocking"] or counts["informational"]:
         status = "advisories"
     else:
@@ -94,10 +105,12 @@ def build_qa_summary(reports: Iterable[QAReport | dict[str, Any]]) -> dict[str, 
 
     return {
         "status": status,
-        "artifacts_usable": counts["blocking"] == 0,
+        "artifacts_usable": (
+            None if outcome.usability == "unknown" else outcome.usability != "blocked"
+        ),
         "counts": counts,
         "findings": findings,
-        "validation_scope": _build_validation_scope(serialized_reports),
+        "validation_scope": _build_validation_scope(serialized_reports, outcome),
     }
 
 
@@ -278,7 +291,9 @@ def _tool_contract_qa_evidence(
     return {"reachable_tools": reachable_tools, "advisories": advisories}
 
 
-def _build_validation_scope(reports: list[dict[str, Any]]) -> dict[str, list[str]]:
+def _build_validation_scope(
+    reports: list[dict[str, Any]], outcome: GenerationOutcome
+) -> dict[str, list[str]]:
     """Describe what QA reports prove and what remains outside their scope."""
 
     validated: list[str] = []
@@ -296,7 +311,7 @@ def _build_validation_scope(reports: list[dict[str, Any]]) -> dict[str, list[str
     stages = {str(report.get("stage") or "").lower() for report in reports}
     rule_ids = {str(report.get("rule_id") or "") for report in reports}
 
-    if "static" in stages:
+    if "static" in stages and outcome.static_qa != "not_run":
         validated.append(
             "Static QA checked the generated notebook cells covered by qa_reports."
         )
@@ -328,7 +343,7 @@ def _build_validation_scope(reports: list[dict[str, Any]]) -> dict[str, list[str
         for report in runtime_reports
     )
 
-    if smoke_only:
+    if smoke_only and outcome.environment_smoke.result == "passed":
         validated.append(
             "Runtime QA validated that the Python/Jupyter environment can execute a trusted smoke notebook."
         )
@@ -336,9 +351,12 @@ def _build_validation_scope(reports: list[dict[str, Any]]) -> dict[str, list[str
             "Runtime QA did not execute the full generated notebook or verify prompt-specific behavior."
         )
     elif runtime_reports:
-        validated.append(
-            "Runtime QA is limited to the runtime checks reported in qa_reports."
+        not_validated.append(
+            "A passing environment smoke test is not established for this candidate."
         )
+    not_validated.append(
+        "Generated notebook execution and prompt-specific behavior remain unverified."
+    )
 
     if rule_ids - {"runtime_smoke_test"}:
         notes.append("See qa_reports for rule-level findings and evidence.")
