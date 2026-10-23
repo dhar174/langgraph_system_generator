@@ -165,9 +165,11 @@ def execute(
         "python": sys.version,
         "executable": sys.executable,
         "kernel": "private current-interpreter ipykernel",
-        "dependencies": {
-            name: importlib.metadata.version(name) for name in case.dependencies
-        },
+        "dependencies": {},
+    }
+    # Retain source identity even when dependency preflight is unavailable.
+    result.environment["dependencies"] = {
+        name: importlib.metadata.version(name) for name in case.dependencies
     }
     kernel_root = work / "kernels"
     kernel = kernel_root / "lnf-eval"

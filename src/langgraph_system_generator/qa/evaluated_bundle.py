@@ -124,7 +124,11 @@ def build_evaluated_bundle(
     if notebook is not None:
         # Copy exact source bytes before changing only derived Markdown.
         assert source_bytes is not None
-        source_copy = target / "executed-source.ipynb"
+        source_copy = target / (
+            "executed-source.ipynb"
+            if result.attempted_cells
+            else "source-notebook.ipynb"
+        )
         source_copy.write_bytes(source_bytes)
         if digest(source_copy.read_bytes()) != result.notebook_sha256:
             raise ValueError("Executed source changed before presentation export")
@@ -182,7 +186,7 @@ def build_evaluated_bundle(
         "qa_reports": reports,
         "qa_summary": build_qa_summary(reports, outcome),
         "artifact_inventory": inventory,
-        "presentation_note": "Original executed source is included; derived QA prose changed afterward.",
+        "presentation_note": "Source notebook is included; executed cells are recorded in the receipt. Derived QA prose changed afterward.",
     }
     output_manifest = target / "manifest.json"
     output_manifest.write_text(json.dumps(manifest, indent=2), encoding="utf-8")

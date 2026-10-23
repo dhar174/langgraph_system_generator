@@ -632,3 +632,32 @@ def test_new_bundle_preserves_original_and_has_no_hash_cycles(
             dataset_sha256=DATASET_SHA256,
             controls_verified=True,
         )
+
+
+def test_unavailable_environment_keeps_source_downloadable_without_execution_claim(
+    evidence, tmp_path, monkeypatch
+):
+    monkeypatch.setenv("BASE_OUTPUT_DIR", str(tmp_path))
+    raw = evidence["result"]
+    raw.status = "failed"
+    raw.attempted_cells = []
+    raw.completed_cells = []
+    raw.observations = []
+    raw.assertions = []
+    raw.executed = []
+    raw.errors = [{"phase": "generation_or_setup", "type": "PackageNotFoundError"}]
+    bundle = build_evaluated_bundle(
+        evidence["case"],
+        raw,
+        tmp_path,
+        provenance=evidence["provenance"],
+        dataset_sha256=DATASET_SHA256,
+        controls_verified=False,
+    )
+    assert bundle.outcome.generated_execution.result == "unavailable"
+    assert bundle.outcome.generated_execution.executed_notebook_sha256 is None
+    assert (
+        bundle.outcome.pipeline == "completed" and bundle.outcome.usability == "unknown"
+    )
+    assert (tmp_path / "evaluated/source-notebook.ipynb").is_file()
+    assert not (tmp_path / "evaluated/executed-source.ipynb").exists()

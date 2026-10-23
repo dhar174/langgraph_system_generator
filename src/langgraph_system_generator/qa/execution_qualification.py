@@ -314,7 +314,10 @@ def qualify_execution(
         "failure_classification": classification,
         "candidate_algorithm": "notebook-cells-v1",
         "candidate_sha256": identity,
-        "executed_notebook_sha256": result.notebook_sha256,
+        "source_notebook_sha256": result.notebook_sha256,
+        "executed_notebook_sha256": (
+            result.notebook_sha256 if result.attempted_cells else None
+        ),
         "generator_revision": result.generator_revision,
         "evaluator_source_sha256": result.source_tree_sha256,
         "raw_receipt_sha256": raw_receipt_sha256,
@@ -368,7 +371,9 @@ def qualify_execution(
         result=status,
         failure_classification=classification,
         candidate_sha256=identity,
-        executed_notebook_sha256=result.notebook_sha256,
+        executed_notebook_sha256=(
+            result.notebook_sha256 if result.attempted_cells else None
+        ),
         generator_revision=result.generator_revision,
         evaluator_version=EVALUATOR_VERSION,
         dataset_sha256=dataset_sha256,
