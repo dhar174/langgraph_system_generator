@@ -184,3 +184,18 @@ GeneratedExecutionOutcome's `not_run`, manifests, jobs and browser labels are
 preserved here. This PR adds no automatic runtime QA gating or API/worker
 arbitrary-notebook execution. Do not merge, deploy, provision infrastructure or
 close #381 as part of this assignment.
+
+## Review follow-up, 2026-10-23
+
+Two PR #398 findings are addressed after the qualified revisions above:
+deterministic chatbot tool nodes now record fallback provenance and a visible
+banner, and canonical subagent fan-out is supplied through the registered
+graph-section builder. Registered variants can reuse that builder with a
+renamed coordinator; the generic renderer retains scalar routing by default.
+Regression cases cover both tool-node kinds, renamed and legacy coordinators,
+two-worker dispatch, scalar fallback, terminal selection and registry opt-in.
+
+The user explicitly requested skipping local CI and pre-push checks for this
+review follow-up. These added regression cases were not run locally, and no
+earlier passing receipt qualifies the changed source or candidate identities.
+The historical results above retain their original revision associations.

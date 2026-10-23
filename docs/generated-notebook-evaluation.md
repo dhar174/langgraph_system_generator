@@ -149,6 +149,17 @@ and the corresponding named behavioral failure or classified runtime/timeout
 failure to appear. An unrelated import, generation or isolation error cannot
 count as detecting the mutation.
 
+## Composer extension behavior
+
+Canonical subagent fan-out is selected by the notebook-composer registry's
+`subagents_graph` section builder. Plugin architectures can reuse it with
+`section_overrides={"graph": "subagents_graph"}`. It identifies dispatch sources
+by coordinator/supervisor roles, or the entry point for legacy schemas without
+those roles. Other graph builders retain scalar routing unless they explicitly
+supply their own route prelude. Deterministic chatbot assistant and ToolNode
+cells carry fallback warnings and structured composition feedback like other
+deterministic node templates.
+
 ## Phase 381-B handoff
 
 B must validate a receipt's source/case/fixture/environment provenance and

@@ -17,6 +17,7 @@ from langchain_openai import ChatOpenAI
 
 from langgraph_system_generator.generator.agents._llm import build_chat_llm
 from langgraph_system_generator.generator.notebook_composer_registry import (
+    CanonicalRoutePreludeBuilder,
     NotebookComposerContext,
     NotebookComposerRegistry,
     get_notebook_composer_registry,
@@ -1747,6 +1748,15 @@ Generate the complete Python function implementation."""
         node_purpose = node.get("purpose", "")
         architecture_type = workflow_design.get("architecture_type", "")
         safe_node_identifier = self._safe_node_identifier(node_name, "unknown")
+        safe_node_name = self._normalize_inline_text(node_name, "unknown node")
+        warning = f'Deterministic fallback used for node "{safe_node_name}".'
+        self._record_fallback(
+            feedback,
+            kind="node",
+            item_name=safe_node_name,
+            reason=reason or "Primary node generation was unavailable.",
+            warning=warning,
+        )
         if self._is_chatbot_workflow(workflow_design):
             from langgraph_system_generator.notebook.tool_execution import (
                 chatbot_tool_node_code,
@@ -1758,19 +1768,14 @@ Generate the complete Python function implementation."""
                 f"{safe_node_identifier}_node",
             )
             if tool_code is not None:
-                return tool_code
-        safe_node_name = self._normalize_inline_text(node_name, "unknown node")
+                banner = self._fallback_banner(
+                    f'node "{safe_node_name}"',
+                    reason or "Primary node generation was unavailable.",
+                )
+                return banner + tool_code
         safe_node_purpose = self._normalize_docstring_text(
             node_purpose,
             f"Process workflow state in the {safe_node_name} node.",
-        )
-        warning = f'Deterministic fallback used for node "{safe_node_name}".'
-        self._record_fallback(
-            feedback,
-            kind="node",
-            item_name=safe_node_name,
-            reason=reason or "Primary node generation was unavailable.",
-            warning=warning,
         )
         routes = [
             candidate.get("name")
@@ -2481,12 +2486,18 @@ def {safe_node_identifier}_node(state: WorkflowState) -> WorkflowState:
         self,
         workflow_design: Dict[str, Any],
         max_iterations: int,
+        *,
+        route_prelude_builder: CanonicalRoutePreludeBuilder | None = None,
     ) -> List[CellSpec]:
         """Create graph construction cells using pattern library or custom generation."""
         canonical_schema = self._canonical_graph_schema(workflow_design)
         if canonical_schema:
             return self._wrap_graph_cells(
-                self._generate_canonical_graph_code(workflow_design, canonical_schema),
+                self._generate_canonical_graph_code(
+                    workflow_design,
+                    canonical_schema,
+                    route_prelude_builder=route_prelude_builder,
+                ),
                 canonical_schema=canonical_schema,
             )
 
@@ -2643,7 +2654,11 @@ def {safe_node_identifier}_node(state: WorkflowState) -> WorkflowState:
         return normalize_graph_schema_payload(schema)
 
     def _generate_canonical_graph_code(
-        self, workflow_design: Dict[str, Any], schema: Dict[str, Any]
+        self,
+        workflow_design: Dict[str, Any],
+        schema: Dict[str, Any],
+        *,
+        route_prelude_builder: CanonicalRoutePreludeBuilder | None = None,
     ) -> str:
         """Render executable graph wiring from canonical graph schema."""
 
@@ -2800,21 +2815,13 @@ def {safe_node_identifier}_node(state: WorkflowState) -> WorkflowState:
             if len(field_names) == 1:
                 field_tuple += ","
             default_key = json.dumps(spec["route_keys"][0])
-            fanout_code = ""
-            if architecture_type == "subagents" and source == "supervisor":
-                fanout_code = '''    from langgraph.types import Send
-    selected = state.get("next_agents", [])
-    if selected:
-        targets = list(dict.fromkeys(path_map[key] for key in selected if key in path_map))
-        if END in targets:
-            return next(key for key, target in path_map.items() if target == END)
-        if targets:
-            return [Send(target, state) for target in targets]
-'''
+            route_prelude = (
+                route_prelude_builder(source, schema) if route_prelude_builder else ""
+            )
             route_blocks.append(
                 f"""def {route_name}(state: WorkflowState):
     path_map = {path_map}
-{fanout_code}\
+{route_prelude}\
     for field_name in ({field_tuple}):
         value = state.get(field_name)
         if value in path_map:
