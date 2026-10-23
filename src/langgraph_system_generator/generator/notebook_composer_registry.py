@@ -21,6 +21,7 @@ NotebookSectionBuilder = Callable[
     [Any, "NotebookComposerContext"], NotebookSectionResult
 ]
 PluginHook = Callable[["NotebookComposerRegistry"], None]
+CanonicalRoutePreludeBuilder = Callable[[str, dict[str, Any]], str]
 
 
 def _normalize_architecture_id(value: str) -> str:
@@ -480,7 +481,39 @@ def _build_subagents_graph_section(
     return composer._create_graph_cells(
         context.workflow_design,
         context.feedback.resolved_max_iterations or 1,
+        route_prelude_builder=_subagents_route_prelude,
     )
+
+
+def _subagents_route_prelude(source: str, schema: dict[str, Any]) -> str:
+    """Render Send dispatch for coordinators in this registered graph builder.
+
+    Plugins can reuse ``subagents_graph`` under another architecture ID. Roles
+    identify coordinators; legacy schemas without roles use their entry point.
+    The generic canonical renderer keeps its scalar routing behavior.
+    """
+    nodes = [node for node in schema.get("nodes", []) if isinstance(node, dict)]
+    coordinators = {
+        node.get("name")
+        for node in nodes
+        if str(node.get("role") or "").lower() in {"coordinator", "supervisor"}
+    }
+    if not coordinators:
+        entry_point = schema.get("entry_point") or (
+            nodes[0].get("name") if nodes else None
+        )
+        coordinators = {entry_point}
+    if source not in coordinators:
+        return ""
+    return '''    from langgraph.types import Send
+    selected = state.get("next_agents", [])
+    if selected:
+        targets = list(dict.fromkeys(path_map[key] for key in selected if key in path_map))
+        if END in targets:
+            return next(key for key, target in path_map.items() if target == END)
+        if targets:
+            return [Send(target, state) for target in targets]
+'''
 
 
 def _build_hybrid_graph_section(

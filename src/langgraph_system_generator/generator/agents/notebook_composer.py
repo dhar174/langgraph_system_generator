@@ -17,6 +17,7 @@ from langchain_openai import ChatOpenAI
 
 from langgraph_system_generator.generator.agents._llm import build_chat_llm
 from langgraph_system_generator.generator.notebook_composer_registry import (
+    CanonicalRoutePreludeBuilder,
     NotebookComposerContext,
     NotebookComposerRegistry,
     get_notebook_composer_registry,
@@ -241,6 +242,18 @@ class NotebookComposer:
 
         state_schema = dict(workflow_design.get("state_schema") or {})
         if not self._is_chatbot_workflow(workflow_design, notebook_plan):
+            return state_schema
+        if any(
+            node.get("role") == "assistant" and node.get("required_tools")
+            for node in workflow_design.get("nodes", [])
+        ) and any(
+            entry.get("execution_path") == "tool_node"
+            for entry in workflow_design.get("tool_reachability", [])
+        ):
+            # A tool conversation uses reducer-backed messages for memory; it
+            # does not declare unwritten historical-persona/verifier fields.
+            state_schema.setdefault("final_response", "Final assistant response")
+            state_schema.setdefault("turn_count", "Number of completed conversation turns")
             return state_schema
         for field_name, description in self._CHATBOT_STATE_FIELDS.items():
             state_schema.setdefault(field_name, description)
@@ -1736,10 +1749,6 @@ Generate the complete Python function implementation."""
         architecture_type = workflow_design.get("architecture_type", "")
         safe_node_identifier = self._safe_node_identifier(node_name, "unknown")
         safe_node_name = self._normalize_inline_text(node_name, "unknown node")
-        safe_node_purpose = self._normalize_docstring_text(
-            node_purpose,
-            f"Process workflow state in the {safe_node_name} node.",
-        )
         warning = f'Deterministic fallback used for node "{safe_node_name}".'
         self._record_fallback(
             feedback,
@@ -1747,6 +1756,26 @@ Generate the complete Python function implementation."""
             item_name=safe_node_name,
             reason=reason or "Primary node generation was unavailable.",
             warning=warning,
+        )
+        if self._is_chatbot_workflow(workflow_design):
+            from langgraph_system_generator.notebook.tool_execution import (
+                chatbot_tool_node_code,
+            )
+
+            tool_code = chatbot_tool_node_code(
+                node,
+                self._canonical_graph_schema(workflow_design),
+                f"{safe_node_identifier}_node",
+            )
+            if tool_code is not None:
+                banner = self._fallback_banner(
+                    f'node "{safe_node_name}"',
+                    reason or "Primary node generation was unavailable.",
+                )
+                return banner + tool_code
+        safe_node_purpose = self._normalize_docstring_text(
+            node_purpose,
+            f"Process workflow state in the {safe_node_name} node.",
         )
         routes = [
             candidate.get("name")
@@ -2457,12 +2486,18 @@ def {safe_node_identifier}_node(state: WorkflowState) -> WorkflowState:
         self,
         workflow_design: Dict[str, Any],
         max_iterations: int,
+        *,
+        route_prelude_builder: CanonicalRoutePreludeBuilder | None = None,
     ) -> List[CellSpec]:
         """Create graph construction cells using pattern library or custom generation."""
         canonical_schema = self._canonical_graph_schema(workflow_design)
         if canonical_schema:
             return self._wrap_graph_cells(
-                self._generate_canonical_graph_code(workflow_design, canonical_schema),
+                self._generate_canonical_graph_code(
+                    workflow_design,
+                    canonical_schema,
+                    route_prelude_builder=route_prelude_builder,
+                ),
                 canonical_schema=canonical_schema,
             )
 
@@ -2619,7 +2654,11 @@ def {safe_node_identifier}_node(state: WorkflowState) -> WorkflowState:
         return normalize_graph_schema_payload(schema)
 
     def _generate_canonical_graph_code(
-        self, workflow_design: Dict[str, Any], schema: Dict[str, Any]
+        self,
+        workflow_design: Dict[str, Any],
+        schema: Dict[str, Any],
+        *,
+        route_prelude_builder: CanonicalRoutePreludeBuilder | None = None,
     ) -> str:
         """Render executable graph wiring from canonical graph schema."""
 
@@ -2776,9 +2815,13 @@ def {safe_node_identifier}_node(state: WorkflowState) -> WorkflowState:
             if len(field_names) == 1:
                 field_tuple += ","
             default_key = json.dumps(spec["route_keys"][0])
+            route_prelude = (
+                route_prelude_builder(source, schema) if route_prelude_builder else ""
+            )
             route_blocks.append(
-                f"""def {route_name}(state: WorkflowState) -> str:
+                f"""def {route_name}(state: WorkflowState):
     path_map = {path_map}
+{route_prelude}\
     for field_name in ({field_tuple}):
         value = state.get(field_name)
         if value in path_map:

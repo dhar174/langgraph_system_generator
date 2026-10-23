@@ -2689,3 +2689,135 @@ def test_shared_supervisor_context_fields_are_reserved_for_autoagent_and_hybrid(
     assert '"task_result_versions": {}' in execution
     assert '"task_results_summary": ""' in execution
     assert '"task_results_summary_fingerprint": ""' in execution
+
+
+@pytest.mark.parametrize("node_name", ["chat", "tools"])
+def test_chatbot_tool_fallback_records_provenance(monkeypatch, node_name):
+    monkeypatch.setattr(composer_module, "ChatOpenAI", DummyLLM)
+    composer = composer_module.NotebookComposer()
+    feedback = composer_module.NotebookCompositionFeedback()
+    nodes = [
+        {
+            "name": "chat",
+            "role": "assistant",
+            "purpose": "Chatbot with a calculator",
+            "required_tools": ["calculator"],
+        },
+        {"name": "tools", "role": "tool_executor"},
+    ]
+    workflow = {
+        "architecture_type": "router",
+        "nodes": nodes,
+        "conditional_edges": [
+            {"from": "chat", "branches": {"tools": "tools", "complete": "END"}}
+        ],
+        "tool_reachability": [
+            {"tool_id": "calculator", "execution_path": "tool_node", "node": "tools"}
+        ],
+    }
+    reason = "Offline deterministic chatbot fixture."
+    code = composer._generate_node_fallback(
+        next(node for node in nodes if node["name"] == node_name),
+        workflow,
+        reason=reason,
+        feedback=feedback,
+    )
+
+    assert code.startswith("# WARNING: Deterministic fallback generated")
+    assert f"# Reason: {reason}" in code
+    assert feedback.fallback_used
+    assert len(feedback.fallback_events) == 1
+    event = feedback.fallback_events[0]
+    assert (event.kind, event.item_name, event.reason) == ("node", node_name, reason)
+    assert event.warning in feedback.warnings
+    if node_name == "chat":
+        assert "make_llm().bind_tools(TOOLS).invoke" in code
+    else:
+        assert "tools_node = ToolNode(TOOLS, handle_tool_errors=True)" in code
+
+
+@pytest.mark.parametrize(
+    "architecture_id, coordinator, role, graph_builder",
+    [
+        ("subagents", "supervisor", "coordinator", "subagents_graph"),
+        ("support_team", "dispatcher", "coordinator", "subagents_graph"),
+        ("support_team", "dispatcher", None, "subagents_graph"),
+        ("scalar_team", "dispatcher", "coordinator", "graph"),
+    ],
+)
+@pytest.mark.parametrize(
+    "selected, expected",
+    [
+        (["alpha", "beta"], ["alpha", "beta"]),
+        ([], ["alpha"]),
+        (["END"], []),
+    ],
+)
+def test_registered_subagent_graph_executes_fanout(
+    monkeypatch, architecture_id, coordinator, role, graph_builder, selected, expected
+):
+    """Registered variants reuse fan-out with renamed and legacy coordinators."""
+    import operator
+    from typing import Annotated
+
+    from typing_extensions import TypedDict
+
+    monkeypatch.setattr(composer_module, "ChatOpenAI", DummyLLM)
+    registry = get_notebook_composer_registry().clone()
+    if architecture_id != "subagents":
+        registry.register(
+            NotebookComposerArchitectureRegistration(
+                architecture_id=architecture_id,
+                section_overrides={"graph": graph_builder},
+            )
+        )
+    composer = composer_module.NotebookComposer(registry=registry)
+    schema = {
+        "architecture_type": architecture_id,
+        "nodes": [
+            {"name": coordinator, "role": role},
+            {"name": "alpha", "role": "worker"},
+            {"name": "beta", "role": "worker"},
+        ],
+        "entry_point": coordinator,
+        "checkpointing": False,
+        "terminal_nodes": ["alpha", "beta"],
+        "conditional_edges": [
+            {
+                "from": coordinator,
+                "branches": {"alpha": "alpha", "beta": "beta", "END": "END"},
+            }
+        ],
+    }
+    context = registry_module.NotebookComposerContext(
+        notebook_plan=NotebookPlan(title="Fan-out", sections=[], patterns_used=[]),
+        workflow_design={"graph_exports": {"schema": schema}},
+        tools=[],
+        architecture={"architecture_type": architecture_id},
+        dependency_plan=composer_module.NotebookDependencyPlan(),
+        feedback=composer_module.NotebookCompositionFeedback(),
+        tool_planning_feedback=ToolPlanningFeedback(),
+    )
+    cells = registry.resolve_builder(architecture_id, "graph")(composer, context)
+    code = "\n\n".join(cell.content for cell in cells if cell.cell_type == "code")
+    workflow_state = TypedDict(
+        "WorkflowState",
+        {
+            "next_agents": list[str],
+            "next_agent": str,
+            "events": Annotated[list[str], operator.add],
+        },
+    )
+    namespace = {"WorkflowState": workflow_state}
+    namespace[f"{coordinator}_node"] = lambda state: {}
+    namespace["alpha_node"] = lambda state: {"events": ["alpha"]}
+    namespace["beta_node"] = lambda state: {"events": ["beta"]}
+    exec(code, namespace)
+    final = namespace["graph"].invoke(
+        {"next_agents": selected, "next_agent": "alpha", "events": []},
+        {"recursion_limit": 5},
+    )
+    assert sorted(final["events"]) == (
+        expected if graph_builder == "subagents_graph" else ["alpha"]
+    )
+    assert namespace["CANONICAL_GRAPH_SPEC"]["architecture_type"] == architecture_id
