@@ -255,9 +255,9 @@ def read_generation_outcome(
 ) -> SupportedGenerationOutcome:
     """Read additive outcomes; old/unknown versions get limited qualification."""
     try:
-        parsed = TypeAdapter(SupportedGenerationOutcome).validate_python(
-            manifest.get("generation_outcome")
-        )
+        parsed: SupportedGenerationOutcome = TypeAdapter(
+            SupportedGenerationOutcome
+        ).validate_python(manifest.get("generation_outcome"))
         if parsed.schema_version == 1:
             return parsed
         from langgraph_system_generator.qa.execution_qualification import (
@@ -310,9 +310,9 @@ def read_generation_outcome(
 
 def execution_description(outcome: SupportedGenerationOutcome) -> str:
     """Shared human wording, including precise scope for positive evidence."""
-    execution = outcome.generated_execution
     if outcome.schema_version == 1:
         return "not_run. Prompt-specific behavior remains unverified."
+    execution = outcome.generated_execution
     return (
         f"{execution.result}; case {execution.case_id} v{execution.case_version}; "
         f"{execution.assertions_passed}/{execution.assertions_required} assertions passed. "

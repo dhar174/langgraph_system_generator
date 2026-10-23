@@ -14,6 +14,8 @@ from typing import Any
 
 from langgraph_system_generator.generator.outcome_models import (
     EvaluatedExecutionOutcome,
+    ExecutionFailureClassification,
+    ExecutionStatus,
 )
 from langgraph_system_generator.qa.execution_models import (
     ExecutionCase,
@@ -92,7 +94,9 @@ def _mark_supervised(result: ExecutionResult, provenance: dict[str, Any]) -> Non
     result._supervision = (_SUPERVISION, dict(provenance))
 
 
-def _failure(result: ExecutionResult) -> tuple[str, str]:
+def _failure(
+    result: ExecutionResult,
+) -> tuple[ExecutionStatus, ExecutionFailureClassification]:
     """Attribute only observed defects; setup/partial evidence is not a defect."""
     if any(
         error.get("phase") in {"generation_or_setup", "isolation_setup_or_cleanup"}
@@ -276,13 +280,15 @@ def qualify_execution(
             ]
             if sources(derived.cells[1:-1]) != sources(expected_cells):
                 integrity.append("substituted_execution_source")
+    status: ExecutionStatus
+    classification: ExecutionFailureClassification
     status, classification = (
         ("incomplete", "evidence_integrity")
         if integrity
         else ("passed", "none") if result.status == "passed" else _failure(result)
     )
     # Only approved assertion identifiers enter public metadata, never details.
-    assertions = [
+    assertions: list[dict[str, Any]] = [
         {"name": item.name, "passed": item.passed}
         for item in result.assertions
         if item.name in expected

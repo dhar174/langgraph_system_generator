@@ -8,7 +8,9 @@ from typing import Annotated, Any, Dict, List, Literal, Optional
 from pydantic import BaseModel, ConfigDict, Field
 from typing_extensions import TypedDict
 
-from langgraph_system_generator.generator.outcome_models import SupportedGenerationOutcome
+from langgraph_system_generator.generator.outcome_models import (
+    SupportedGenerationOutcome,
+)
 from langgraph_system_generator.utils.config import GenerationConfig
 
 DEFAULT_REQUIREMENTS_CONSTRAINT_TYPES = (

@@ -2116,9 +2116,7 @@ def _run_generate(args: argparse.Namespace) -> int:
     print(
         f"  Static QA: {outcome.static_qa}; environment smoke: {outcome.environment_smoke.result}"
     )
-    print(
-        "  Generated notebook execution: " + execution_description(outcome)
-    )
+    print("  Generated notebook execution: " + execution_description(outcome))
     print(f"  Manifest: {artifacts['manifest_path']}")
     if artifacts["manifest"].get("plan_path"):
         print(f"  Plan: {artifacts['manifest']['plan_path']}")

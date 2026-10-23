@@ -57,21 +57,31 @@ def build_qa_summary(
     outcome = outcome or derive_generation_outcome(serialized_reports)
     if outcome.schema_version == 2:
         execution = outcome.generated_execution
-        serialized_reports.append({
-            "check_name": "Controlled generated notebook execution",
-            "rule_id": "generated_notebook_execution", "stage": "execution",
-            "passed": execution.result == "passed",
-            "severity": "error" if execution.result == "failed" else "info",
-            "message": execution_description(outcome), "repairable": False,
-            "suggestions": [] if execution.result == "passed" else [
-                "Inspect the evaluation receipt and rerun the explicit trusted evaluator."
-            ],
-            "evidence": {"candidate_id": outcome.candidate.sha256,
-                         "case_id": execution.case_id,
-                         "evaluator_version": execution.evaluator_version,
-                         "failure_classification": execution.failure_classification,
-                         "receipt_reference": execution.receipt_reference},
-        })
+        serialized_reports.append(
+            {
+                "check_name": "Controlled generated notebook execution",
+                "rule_id": "generated_notebook_execution",
+                "stage": "execution",
+                "passed": execution.result == "passed",
+                "severity": "error" if execution.result == "failed" else "info",
+                "message": execution_description(outcome),
+                "repairable": False,
+                "suggestions": (
+                    []
+                    if execution.result == "passed"
+                    else [
+                        "Inspect the evaluation receipt and rerun the explicit trusted evaluator."
+                    ]
+                ),
+                "evidence": {
+                    "candidate_id": outcome.candidate.sha256,
+                    "case_id": execution.case_id,
+                    "evaluator_version": execution.evaluator_version,
+                    "failure_classification": execution.failure_classification,
+                    "receipt_reference": execution.receipt_reference,
+                },
+            }
+        )
     serialized_reports = [
         report
         for report in serialized_reports
@@ -381,7 +391,9 @@ def _build_validation_scope(
         else:
             notes.append("Controlled generated notebook execution: " + description)
         not_validated.extend(outcome.generated_execution.untested)
-        not_validated.append("Requirements beyond the declared assertions remain unverified.")
+        not_validated.append(
+            "Requirements beyond the declared assertions remain unverified."
+        )
     else:
         not_validated.append(
             "Generated notebook execution and prompt-specific behavior remain unverified."

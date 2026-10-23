@@ -68,9 +68,19 @@ class GenerationOutcome(OutcomeDimensions):
     )
 
 
+ExecutionStatus = Literal["not_run", "passed", "failed", "unavailable", "incomplete"]
+ExecutionFailureClassification = Literal[
+    "none",
+    "generated_behavior",
+    "environment",
+    "evidence_integrity",
+    "partial_execution",
+]
+
+
 class EvaluatedExecutionOutcome(OutcomeRecord):
     scope: Literal["generated_notebook"] = "generated_notebook"
-    result: Literal["not_run", "passed", "failed", "unavailable", "incomplete"]
+    result: ExecutionStatus
     evidence_level: Literal["controlled_fixture_behavior"] = (
         "controlled_fixture_behavior"
     )
@@ -94,13 +104,7 @@ class EvaluatedExecutionOutcome(OutcomeRecord):
     failed_assertions: list[str] = Field(default_factory=list)
     receipt_reference: str | None = None
     receipt_sha256: str | None = Field(default=None, pattern=r"^[a-f0-9]{64}$")
-    failure_classification: Literal[
-        "none",
-        "generated_behavior",
-        "environment",
-        "evidence_integrity",
-        "partial_execution",
-    ]
+    failure_classification: ExecutionFailureClassification
     limitations: list[str] = Field(default_factory=list)
     requirements_verification: Literal["unverified"] = "unverified"
 
