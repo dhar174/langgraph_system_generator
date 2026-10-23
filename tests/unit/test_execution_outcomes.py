@@ -205,6 +205,8 @@ def outcome(evidence, **kwargs):
         pipeline="completed",
         has_cells=True,
         execution_evaluation=qualified,
+        artifacts_present=True,
+        artifacts_available=True,
         **kwargs,
     )
 
@@ -498,6 +500,29 @@ def test_reader_rederives_static_blockers_with_valid_execution(evidence):
         execution_evaluation=qualified,
     )
     assert read.static_qa == "failed" and read.usability == "blocked"
+
+
+def test_reader_uses_bound_artifact_and_repair_facts(evidence):
+    qualified = qualify_execution(**evidence)
+    payload = outcome(evidence).model_dump(mode="json")
+    payload["artifacts"].update(presence="missing", availability="not_available")
+    payload["repair"].update(attempts=999, limit=999, rollback_used=True)
+    read = read_generation_outcome(
+        {
+            "generation_outcome": payload,
+            "qa_reports": evidence["manifest"]["qa_reports"],
+        },
+        execution_evaluation=qualified,
+    )
+    assert (
+        read.artifacts.presence == "present"
+        and read.artifacts.availability == "available"
+    )
+    assert (
+        read.repair.attempts == 0
+        and read.repair.limit == 0
+        and not read.repair.rollback_used
+    )
 
 
 @pytest.mark.parametrize(

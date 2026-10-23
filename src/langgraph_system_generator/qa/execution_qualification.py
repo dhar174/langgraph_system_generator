@@ -333,6 +333,8 @@ def qualify_execution(
         "source_pipeline": manifest.get("generation_outcome", {}).get(
             "pipeline", "unknown"
         ),
+        "source_repair": manifest.get("generation_outcome", {}).get("repair", {}),
+        "source_artifacts_present": notebook is not None,
         "source_manifest_sha256": result.environment.get("source_manifest_sha256"),
         "source_cells_sha256": result.environment.get("source_cells_sha256"),
         "derived_notebook_sha256": result.derived_sha256,

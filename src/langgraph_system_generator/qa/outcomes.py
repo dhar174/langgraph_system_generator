@@ -285,16 +285,21 @@ def read_generation_outcome(
                         candidate_sha256=parsed.candidate.sha256,
                         pipeline=execution_evaluation.receipt["source_pipeline"],
                         has_cells=parsed.candidate.sha256 is not None,
-                        artifacts_present={"present": True, "missing": False}.get(
-                            parsed.artifacts.presence
+                        artifacts_present=execution_evaluation.receipt[
+                            "source_artifacts_present"
+                        ],
+                        artifacts_available=execution_evaluation.receipt[
+                            "source_artifacts_present"
+                        ],
+                        repair_attempts=execution_evaluation.receipt[
+                            "source_repair"
+                        ].get("attempts", 0),
+                        max_repair_attempts=execution_evaluation.receipt[
+                            "source_repair"
+                        ].get("limit", 0),
+                        rollback_used=execution_evaluation.receipt["source_repair"].get(
+                            "rollback_used", False
                         ),
-                        artifacts_available={
-                            "available": True,
-                            "not_available": False,
-                        }.get(parsed.artifacts.availability),
-                        repair_attempts=parsed.repair.attempts,
-                        max_repair_attempts=parsed.repair.limit,
-                        rollback_used=parsed.repair.rollback_used,
                         execution_evaluation=execution_evaluation,
                     )
         # Serialized metadata, including a digest-looking string, is not
