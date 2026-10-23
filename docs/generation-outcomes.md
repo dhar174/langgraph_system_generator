@@ -1,9 +1,75 @@
 ---
-title: Generation outcomes (version 1)
+title: Generation outcomes (versions 1 and 2)
 description: Candidate-bound QA qualification, diagnostic artifacts and compatibility.
 ---
 
-## Generation outcomes (version 1)
+## Generation outcomes
+
+Ordinary generation continues writing version 1. Explicit repository fixture
+evaluation can produce a subsequent version-2 outcome in a new local evaluated
+bundle. The historical contract below remains unchanged.
+
+## Version 2: controlled execution evidence
+
+The explicit evaluator's `--qualify-outcomes` option supports only the approved
+router, supervisor and chatbot/tool dataset. Execution results are `passed`,
+`failed`, `unavailable`, `incomplete`, or `not_run`, with scope `generated_notebook`
+and evidence level `controlled_fixture_behavior`. Each outcome identifies the
+candidate SHA (`notebook-cells-v1`), exact executed notebook byte hash, generator
+revision, distinct evaluator version, case/version, dataset digest, kernel and
+package versions, isolation, mocks, observed/untested paths, assertion counts,
+failed assertion IDs, and a digest/reference to a sanitized receipt. Requirements
+beyond these declared assertions always remain unverified.
+
+Only the current trusted runner admits the typed result. It validates the
+canonical case/configuration, clean source snapshot, exact notebook/serialized
+cells/manifest identities, required assertion inventory, invocation and cell
+coverage, permitted setup exclusions, derived execution source, isolation and
+cleanup, and negative controls. Parent-owned source facts and a non-serialized
+supervision capability prevent receipt JSON from being an admission interface.
+These are process-local trust controls, not cryptographic attestation. The
+operator, repository evaluator source, fixed fixtures and Python process are
+trusted. The supervised child uses JSON as bounded local IPC; neither it nor
+Python private names defend against hostile code with the same OS privileges.
+No arbitrary notebook or user prompt is accepted by this evaluation command.
+
+`read_generation_outcome` preserves v1. A serialized v2 claim alone receives
+limited qualification; it cannot recreate runner authority, even with a plausible
+receipt digest. A reader with the current admitted typed result additionally
+checks the summary and canonical receipt digest. There is no offline receipt
+import/reattestation command or API evaluated-bundle lookup in this version.
+API response types and browser labels understand v2 for trusted presentation;
+ordinary ephemeral/durable API generation results remain v1/`not_run`.
+
+| Explicit evaluation evidence | Execution | Quality meaning |
+| --- | --- | --- |
+| Complete required case assertions pass | `passed` | Only declared controlled behaviors passed; static QA remains independent |
+| Observed graph invocation has a code/assertion defect | `failed` | Completed generation can have blocked usability; no whole-job retry |
+| Kernel/dependency/isolation setup unavailable | `unavailable` | Unknown execution qualification, not a code defect |
+| Pre-graph error, stale identity, partial cells, missing assertions, exhausted evidence/output capture budget, unsupported evidence or ambiguous timeout | `incomplete` | Unknown execution qualification, never a pass |
+| Evaluation disabled | v1 `not_run` | Existing generation and exit behavior |
+
+Static blockers remain blocking with passing execution. A case pass cannot
+substitute for missing static QA. Execution failures do not turn completed
+generation into infrastructure failure. Incomplete/unavailable execution cannot
+award positive usability when the explicit gate was requested.
+
+The new bundle retains the original generation-time outcome separately. It
+includes the exact executed source notebook and a derivative with updated QA
+Markdown; only derived summaries are excluded from candidate identity. Their
+candidate IDs match, while byte hashes differ. The receipt hashes execution facts;
+the final manifest inventories receipt/notebook/HTML/ZIP bytes and is written last,
+excluding its own hash. No receipt/output self-hash cycle is formed. Do not
+describe the new presentation bytes as bytes executed by the kernel.
+
+Evaluated bundles are local-only. Durable publication rejects v2 execution claims
+before writing objects; workers retain fenced, at-most-one generation publication.
+A later cloud evaluation needs a separate immutable receipt channel and authorized
+reader, without rewriting original objects, generations, receipts or job results.
+
+See [explicit evaluation usage](generated-notebook-evaluation.md#execution-qualification-381-b).
+
+## Historical version-1 contract
 
 Issue #382 separates generation completion, candidate quality, export availability,
 and publication. `generation_outcome` is additive. The authoritative derivation

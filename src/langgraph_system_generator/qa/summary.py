@@ -6,9 +6,10 @@ from typing import Any, Iterable
 
 from langgraph_system_generator.generator.state import QAReport
 from langgraph_system_generator.qa.outcomes import (
-    GenerationOutcome,
+    SupportedGenerationOutcome,
     classify_report,
     derive_generation_outcome,
+    execution_description,
 )
 
 
@@ -48,12 +49,39 @@ def has_blocking_failures(reports: Iterable[QAReport | dict[str, Any]]) -> bool:
 
 def build_qa_summary(
     reports: Iterable[QAReport | dict[str, Any]],
-    outcome: GenerationOutcome | None = None,
+    outcome: SupportedGenerationOutcome | None = None,
 ) -> dict[str, Any]:
     """Build a compact manifest/API summary for the current QA snapshot."""
 
     serialized_reports = [serialize_qa_report(report) for report in reports]
     outcome = outcome or derive_generation_outcome(serialized_reports)
+    if outcome.schema_version == 2:
+        execution = outcome.generated_execution
+        serialized_reports.append(
+            {
+                "check_name": "Controlled generated notebook execution",
+                "rule_id": "generated_notebook_execution",
+                "stage": "execution",
+                "passed": execution.result == "passed",
+                "severity": "error" if execution.result == "failed" else "info",
+                "message": execution_description(outcome),
+                "repairable": False,
+                "suggestions": (
+                    []
+                    if execution.result == "passed"
+                    else [
+                        "Inspect the evaluation receipt and rerun the explicit trusted evaluator."
+                    ]
+                ),
+                "evidence": {
+                    "candidate_id": outcome.candidate.sha256,
+                    "case_id": execution.case_id,
+                    "evaluator_version": execution.evaluator_version,
+                    "failure_classification": execution.failure_classification,
+                    "receipt_reference": execution.receipt_reference,
+                },
+            }
+        )
     serialized_reports = [
         report
         for report in serialized_reports
@@ -96,6 +124,8 @@ def build_qa_summary(
 
     if counts["blocking"]:
         status = "blocking_failed"
+    elif outcome.schema_version == 2 and outcome.status == "unverified":
+        status = "unverified"
     elif outcome.static_qa == "not_run":
         status = "not_run"
     elif counts["non_blocking"] or counts["informational"]:
@@ -292,7 +322,7 @@ def _tool_contract_qa_evidence(
 
 
 def _build_validation_scope(
-    reports: list[dict[str, Any]], outcome: GenerationOutcome
+    reports: list[dict[str, Any]], outcome: SupportedGenerationOutcome
 ) -> dict[str, list[str]]:
     """Describe what QA reports prove and what remains outside their scope."""
 
@@ -354,9 +384,20 @@ def _build_validation_scope(
         not_validated.append(
             "A passing environment smoke test is not established for this candidate."
         )
-    not_validated.append(
-        "Generated notebook execution and prompt-specific behavior remain unverified."
-    )
+    if outcome.schema_version == 2:
+        description = execution_description(outcome)
+        if outcome.generated_execution.result == "passed":
+            validated.append("Controlled generated notebook execution: " + description)
+        else:
+            notes.append("Controlled generated notebook execution: " + description)
+        not_validated.extend(outcome.generated_execution.untested)
+        not_validated.append(
+            "Requirements beyond the declared assertions remain unverified."
+        )
+    else:
+        not_validated.append(
+            "Generated notebook execution and prompt-specific behavior remain unverified."
+        )
 
     if rule_ids - {"runtime_smoke_test"}:
         notes.append("See qa_reports for rule-level findings and evidence.")

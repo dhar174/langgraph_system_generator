@@ -1,13 +1,24 @@
 ## Current Work Focus
 
-- Issue #382 / PR #397 (`codex/382-truthful-generation-outcomes`) implements
+- #381-B integrates explicit trusted fixture execution into v2 outcomes in new
+  local evaluated bundles. Ordinary generation retains v1/not_run; API/worker
+  execution and cloud evaluation storage remain disabled. Source byte identity,
+  required assertions, parent supervision and clean provenance gate qualification.
+  PR #399 is open for review. At code head 185b073, full tests passed 1,558/7 skips,
+  SDK passed 243/243, and three cases passed 110 assertions with four controls.
+  Final source 11ef72a fixes external review findings in capture classification
+  and output provenance; 102 focused tests and fresh 110-assertion/four-control
+  evaluation plus artifact verification passed. Earlier receipts keep their SHA.
+  See TASK009 and the maintained verification receipt for exact source evidence.
+
+- Issue #382 / merged PR #397 (`codex/382-truthful-generation-outcomes`) implements
   versioned candidate-bound generation outcomes across package/CLI, APIs and
   browser. Static blockers can produce diagnostic results without quality-induced
   durable retries. Final repaired candidates re-enter QA at the budget cap.
-  Stub QA remains explicitly not run; #381 execution is excluded. Independent
+  Ordinary stub QA remains explicitly not run; #381 execution is a separate opt-in. Independent
   read-only review found no substantive issues. Final qualification receipts,
-  counts and review status are maintained in PR #397; see TASK008. The PR stays
-  open for owner review, with no merge, deployment or durable admission change.
+  counts and review status are maintained in PR #397; see TASK008. PR #397 merged
+  at 9cb1aad; no deployment or durable admission change is implied.
 
 - PR #396 (`codex/redaction-regex-hardening`): Independent architectural and
   security review completed by Antigravity. Remediates CodeQL security alerts 277

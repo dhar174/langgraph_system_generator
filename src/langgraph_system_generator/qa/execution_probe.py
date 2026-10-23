@@ -12,7 +12,10 @@ from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.graph.state import CompiledStateGraph
 
 from langgraph_system_generator.qa.execution_fixtures import RuntimeModel
-from langgraph_system_generator.qa.execution_models import ExecutionCase
+from langgraph_system_generator.qa.execution_models import (
+    EvidenceCaptureLimitError,
+    ExecutionCase,
+)
 
 
 def plain(value: Any) -> Any:
@@ -27,7 +30,9 @@ def plain(value: Any) -> Any:
     return str(value)
 
 
-def probe(namespace: dict[str, Any], payload: dict[str, Any]) -> dict[str, Any]:
+def probe(
+    namespace: dict[str, Any], payload: dict[str, Any], *, progress: Any = None
+) -> dict[str, Any]:
     """Observe streamed node updates and real thread checkpoints."""
     case = ExecutionCase.model_validate(payload)
     assertions: list[dict[str, Any]] = []
@@ -55,10 +60,33 @@ def probe(namespace: dict[str, Any], payload: dict[str, Any]) -> dict[str, Any]:
         RuntimeModel.calls.clear()
         RuntimeModel.fail_worker = "reviewer" if invocation.expected_error else None
         tool_events: list[dict[str, Any]] = []
+        invocation_started = False
 
         class ToolObserver(BaseCallbackHandler):
             def __init__(self, events: list[dict[str, Any]]):
                 self.events = events
+
+            def on_chain_start(
+                self, serialized: Any, inputs: Any, **kwargs: Any
+            ) -> None:
+                nonlocal invocation_started
+                if kwargs.get("parent_run_id") is None:
+                    invocation_started = True
+                if progress is not None and invocation_started:
+                    progress(
+                        {
+                            "assertions": assertions,
+                            "observations": [
+                                *observations,
+                                {
+                                    "invocation": invocation.id,
+                                    "phase": "graph_invocation_started",
+                                    "nodes": [],
+                                },
+                            ],
+                            "executed": ["LangGraph"],
+                        }
+                    )
 
             def on_tool_start(
                 self, serialized: Any, input_str: str, **kwargs: Any
@@ -218,6 +246,9 @@ def probe(namespace: dict[str, Any], payload: dict[str, Any]) -> dict[str, Any]:
         observations.append(
             {
                 "invocation": invocation.id,
+                "phase": (
+                    "graph_invocation_started" if invocation_started else "not_started"
+                ),
                 "thread_id": invocation.thread_id,
                 "updates": plain(steps),
                 "nodes": nodes,
@@ -246,8 +277,14 @@ def write_probe(namespace: dict[str, Any], case: dict[str, Any], path: str) -> N
     """Persist bounded evidence without depending on display formatting."""
     from pathlib import Path
 
-    result = probe(namespace, case)
-    encoded = json.dumps(result, ensure_ascii=False)
-    if len(encoded.encode("utf-8")) > case["capture_bytes"]:
-        raise RuntimeError("Execution evidence capture budget exceeded")
-    Path(path).write_text(encoded, encoding="utf-8")
+    def persist(result: dict[str, Any]) -> None:
+        encoded = json.dumps(result, ensure_ascii=False)
+        if len(encoded.encode("utf-8")) > case["capture_bytes"]:
+            raise EvidenceCaptureLimitError(
+                "Execution evidence capture budget exceeded"
+            )
+        temporary = Path(path).with_suffix(".tmp")
+        temporary.write_text(encoded, encoding="utf-8")
+        temporary.replace(path)
+
+    persist(probe(namespace, case, progress=persist))

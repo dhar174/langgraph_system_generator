@@ -2,6 +2,8 @@
 
 ## In Review
 
+- [TASK009 - Execution outcome integration (#381-B)](TASK009-execution-outcome-integration.md)
+
 - [TASK008 - Truthful generation outcomes (#382)](TASK008-truthful-generation-outcomes.md)
 
 ## In Progress

@@ -17,6 +17,7 @@ from nbclient import NotebookClient
 
 from langgraph_system_generator.qa.execution_models import (
     AssertionResult,
+    EvidenceCaptureLimitError,
     ExecutionCase,
     ExecutionResult,
 )
@@ -98,7 +99,7 @@ class BoundedClient(NotebookClient):
             json.dumps(msg.get("content", {}), default=str).encode("utf-8")
         )
         if self.captured_bytes > self.capture_limit:
-            raise RuntimeError("Kernel output capture budget exceeded")
+            raise EvidenceCaptureLimitError("Kernel output capture budget exceeded")
         return super().process_message(msg, cell, cell_index)
 
 
@@ -157,15 +158,19 @@ def execute(
     spec = manifest["graph_exports"]["schema"]
     result.assertions.append(AssertionResult(name="artifact_identity", passed=True))
     result.environment = {
+        "source_manifest_sha256": sha256(manifest_path),
+        "source_cells_sha256": sha256(Path(manifest["cells_path"])),
         "case_specification": case.model_dump(mode="json"),
         "generation_outcome": manifest["generation_outcome"],
         "tool_contract_summary": manifest.get("tool_contract_summary", {}),
         "python": sys.version,
         "executable": sys.executable,
         "kernel": "private current-interpreter ipykernel",
-        "dependencies": {
-            name: importlib.metadata.version(name) for name in case.dependencies
-        },
+        "dependencies": {},
+    }
+    # Retain source identity even when dependency preflight is unavailable.
+    result.environment["dependencies"] = {
+        name: importlib.metadata.version(name) for name in case.dependencies
     }
     kernel_root = work / "kernels"
     kernel = kernel_root / "lnf-eval"
@@ -282,6 +287,14 @@ def execute(
     persist(result, receipt)
     try:
         client.execute()
+    except Exception:
+        # Preserve observed graph-start evidence on a real invocation timeout;
+        # absence of this evidence must never become a behavioral failure claim.
+        if observed.is_file():
+            partial = json.loads(observed.read_text(encoding="utf-8"))
+            result.observations = partial.get("observations", [])
+            result.executed = partial.get("executed", [])
+        raise
     finally:
         executed_path = directory / f"{result.mutation or 'clean'}-executed.ipynb"
         nbformat.write(derived, executed_path)

@@ -46,7 +46,11 @@ provenance, compatibility and validation limits.
 The repository also provides a separate, offline
 [generated-notebook behavioral evaluation harness](docs/generated-notebook-evaluation.md)
 for trusted router, supervisor and chatbot/tool fixtures. Its execution receipts
-remain separate from `generation_outcome` until phase #381-B.
+remain separate from ordinary generation. Add `--qualify-outcomes` to the
+repository evaluation command to produce candidate-bound version-2 outcomes in
+new local evaluated bundles. Original exports remain unchanged; normal CLI/API
+generation does not execute notebooks. See the linked guide for exact scope and
+isolation limitations.
 
 1. Create a Python `3.10+` virtual environment and install the package:
 

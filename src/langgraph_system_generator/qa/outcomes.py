@@ -5,17 +5,22 @@ from __future__ import annotations
 import hashlib
 import json
 from collections.abc import Iterable, Mapping
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
-from pydantic import ValidationError
+from pydantic import TypeAdapter, ValidationError
 
 from langgraph_system_generator.generator.outcome_models import (
     ArtifactOutcome,
     CandidateEvidence,
     EnvironmentSmokeOutcome,
     GenerationOutcome,
+    GenerationOutcomeV2,
     RepairEvidence,
+    SupportedGenerationOutcome,
 )
+
+if TYPE_CHECKING:
+    from langgraph_system_generator.qa.execution_qualification import QualifiedExecution
 
 SUMMARY_SECTIONS = frozenset({"qa_repair_summary", "generation_outcome"})
 
@@ -95,7 +100,8 @@ def derive_generation_outcome(
     max_repair_attempts: int = 0,
     rollback_used: bool = False,
     legacy_limited: bool = False,
-) -> GenerationOutcome:
+    execution_evaluation: QualifiedExecution | None = None,
+) -> SupportedGenerationOutcome:
     """Derive from current reports and explicit facts, never QA history.
 
     Unbound failures remain conservative blockers; unbound passes prove nothing.
@@ -171,7 +177,7 @@ def derive_generation_outcome(
             )
         )
     )
-    return GenerationOutcome(
+    outcome = GenerationOutcome(
         status=status,
         pipeline=pipeline,
         artifacts=ArtifactOutcome(
@@ -211,19 +217,119 @@ def derive_generation_outcome(
             rollback_used=rollback_used,
         ),
     )
+    if execution_evaluation is None:
+        return outcome
+    from langgraph_system_generator.qa.execution_qualification import admitted
+
+    if not admitted(execution_evaluation):
+        raise ValueError("Execution evidence must come from the trusted evaluator")
+    execution = execution_evaluation.summary
+    if not candidate_sha256 or execution.candidate_sha256 != candidate_sha256:
+        execution = execution.model_copy(
+            update={
+                "result": "incomplete",
+                "failure_classification": "evidence_integrity",
+                "limitations": [
+                    *execution.limitations,
+                    "Selected candidate differs from evaluated candidate",
+                ],
+            }
+        )
+    values = outcome.model_dump(exclude={"schema_version", "generated_execution"})
+    if execution.result == "failed":
+        values.update(blocking_count=blocking + 1, usability="blocked")
+        if outcome.pipeline != "failed":
+            values["status"] = "blocked"
+    elif execution.result != "passed" and outcome.usability != "blocked":
+        values.update(usability="unknown", status="unverified")
+    values["checks"] = sorted(
+        {*outcome.checks, f"execution:{execution.case_id}:v{execution.case_version}"}
+    )
+    return GenerationOutcomeV2(**values, generated_execution=execution)
 
 
-def read_generation_outcome(manifest: Mapping[str, Any]) -> GenerationOutcome:
+def read_generation_outcome(
+    manifest: Mapping[str, Any],
+    *,
+    execution_evaluation: QualifiedExecution | None = None,
+) -> SupportedGenerationOutcome:
     """Read additive outcomes; old/unknown versions get limited qualification."""
     try:
-        return GenerationOutcome.model_validate(manifest.get("generation_outcome"))
+        parsed: SupportedGenerationOutcome = TypeAdapter(
+            SupportedGenerationOutcome
+        ).validate_python(manifest.get("generation_outcome"))
+        if parsed.schema_version == 1:
+            return parsed
+        from langgraph_system_generator.qa.execution_qualification import (
+            admitted,
+            digest,
+        )
+
+        if admitted(execution_evaluation):
+            assert execution_evaluation is not None
+            expected_digest = digest(
+                json.dumps(
+                    execution_evaluation.receipt, sort_keys=True, indent=2
+                ).encode("utf-8")
+            )
+            if (
+                parsed.generated_execution == execution_evaluation.summary
+                and parsed.generated_execution.receipt_sha256 == expected_digest
+            ):
+                source_qa = digest(
+                    json.dumps(manifest.get("qa_reports", []), sort_keys=True).encode()
+                )
+                if source_qa == execution_evaluation.receipt.get("source_qa_sha256"):
+                    return derive_generation_outcome(
+                        manifest.get("qa_reports") or [],
+                        candidate_sha256=parsed.candidate.sha256,
+                        pipeline=execution_evaluation.receipt["source_pipeline"],
+                        has_cells=parsed.candidate.sha256 is not None,
+                        artifacts_present=execution_evaluation.receipt[
+                            "source_artifacts_present"
+                        ],
+                        artifacts_available=execution_evaluation.receipt[
+                            "source_artifacts_present"
+                        ],
+                        repair_attempts=execution_evaluation.receipt[
+                            "source_repair"
+                        ].get("attempts", 0),
+                        max_repair_attempts=execution_evaluation.receipt[
+                            "source_repair"
+                        ].get("limit", 0),
+                        rollback_used=execution_evaluation.receipt["source_repair"].get(
+                            "rollback_used", False
+                        ),
+                        execution_evaluation=execution_evaluation,
+                    )
+        # Serialized metadata, including a digest-looking string, is not
+        # attestation. Ordinary API/durable readers have no local runner authority.
+        return derive_generation_outcome(
+            manifest.get("qa_reports") or [], legacy_limited=True
+        )
     except ValidationError:
         return derive_generation_outcome(
             manifest.get("qa_reports") or [], legacy_limited=True
         )
 
 
-def outcome_markdown(outcome: GenerationOutcome, reports: Iterable[Any] = ()) -> str:
+def execution_description(outcome: SupportedGenerationOutcome) -> str:
+    """Shared human wording, including precise scope for positive evidence."""
+    if outcome.schema_version == 1:
+        return "not_run. Prompt-specific behavior remains unverified."
+    execution = outcome.generated_execution
+    return (
+        f"{execution.result}; case {execution.case_id} v{execution.case_version}; "
+        f"{execution.assertions_passed}/{execution.assertions_required} assertions passed. "
+        f"Mocked: {', '.join(execution.mocked) or 'none declared'}. "
+        f"Untested: {'; '.join(execution.untested)}. "
+        "Requirements beyond these controlled assertions remain unverified."
+    )
+
+
+def outcome_markdown(
+    outcome: SupportedGenerationOutcome, reports: Iterable[Any] = ()
+) -> str:
     """Candidate-quality prose only; never predict export/publication receipts."""
     prose = "\n".join(
         [
@@ -233,7 +339,7 @@ def outcome_markdown(outcome: GenerationOutcome, reports: Iterable[Any] = ()) ->
             f"Usability: {outcome.usability} (not full functional verification).",
             f"Static QA: {outcome.static_qa}.",
             f"Environment smoke (trusted_smoke_test): {outcome.environment_smoke.result}.",
-            "Generated notebook execution: not_run. Prompt-specific behavior remains unverified.",
+            "Generated notebook execution: " + execution_description(outcome),
             f"Blocking findings: {outcome.blocking_count}; advisories: {outcome.advisory_count}.",
             f"Candidate (notebook-cells-v1): {outcome.candidate.sha256 or 'unknown'}.",
             f"Repair attempts: {outcome.repair.attempts}/{outcome.repair.limit}; rollback: {outcome.repair.rollback_used}.",
@@ -269,7 +375,9 @@ def outcome_markdown(outcome: GenerationOutcome, reports: Iterable[Any] = ()) ->
 
 
 def with_outcome_summary(
-    cells: Iterable[Any], outcome: GenerationOutcome, reports: Iterable[Any] = ()
+    cells: Iterable[Any],
+    outcome: SupportedGenerationOutcome,
+    reports: Iterable[Any] = (),
 ) -> list[Any]:
     """Replace derived prose so rejected/stale repair claims cannot survive."""
     from langgraph_system_generator.generator.state import CellSpec

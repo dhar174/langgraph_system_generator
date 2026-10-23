@@ -4,7 +4,11 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, model_validator
+
+
+class EvidenceCaptureLimitError(RuntimeError):
+    """The evaluator exhausted its evidence budget, not a graph assertion."""
 
 
 class StrictModel(BaseModel):
@@ -69,6 +73,7 @@ class AssertionResult(StrictModel):
 
 
 class ExecutionResult(StrictModel):
+    _supervision: Any = PrivateAttr(default=None)
     schema_version: Literal[1] = 1
     case_id: str
     case_version: Literal[1] = 1

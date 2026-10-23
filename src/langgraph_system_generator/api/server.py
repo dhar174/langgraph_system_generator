@@ -50,7 +50,7 @@ from langgraph_system_generator.jobs.registry import (
     require_ephemeral_admission,
 )
 from langgraph_system_generator.qa.outcomes import (
-    GenerationOutcome,
+    SupportedGenerationOutcome,
     read_generation_outcome,
 )
 from langgraph_system_generator.utils.credential_redaction import (
@@ -877,7 +877,7 @@ class GenerationRequest(BaseModel):
 
 class GenerationResponse(BaseModel):
     success: bool
-    generation_outcome: GenerationOutcome | None = None
+    generation_outcome: SupportedGenerationOutcome | None = None
     mode: str | None = None
     prompt: str | None = (
         None  # Note: User prompt echoed back for confirmation; may contain sensitive data if logged

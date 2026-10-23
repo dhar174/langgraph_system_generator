@@ -60,6 +60,26 @@ for (const [status, expected] of [
   assert(elements.some(e => e.tag === 'a' && e.href.includes('notebook.ipynb')));
 }
 console.log('outcome banners, evidence limits and diagnostic downloads verified');
+for (const [result, expected] of [
+  ['passed', 'Evaluation passed under declared conditions'],
+  ['failed', 'Evaluation failed'], ['unavailable', 'Evaluation unavailable'],
+  ['incomplete', 'Evaluation incomplete'], ['not_run', 'Not evaluated'],
+]) {
+  context.showResult({success: true, mode: 'live', manifest: {generation_outcome: {
+    schema_version: 2, status: result === 'failed' ? 'blocked' : 'unverified', usability: 'unknown',
+    generated_execution: {result, case_id: 'support-router', case_version: 1,
+      assertions_passed: 34, assertions_required: 34, failed_assertions: ['billing:executed_nodes'], executed: ['LangGraph'],
+      environment: {kernel: 'private fixture kernel'}, dependencies: {langgraph: 'unit-version'}, isolation: ['fixture child process'],
+      receipt_reference: 'evaluation-receipt.json', receipt_sha256: 'abc123',
+      mocked: ['fake model'], untested: ['live services'], limitations: ['trusted fixture only']},
+  }}});
+  const text = flatten(context.resultContent).map(e => e.textContent).join('\n');
+  for (const value of [expected, 'support-router v1', '34/34 assertions passed', 'billing:executed_nodes', 'LangGraph', 'fake model', 'live services', 'trusted fixture only', 'private fixture kernel', 'unit-version', 'fixture child process', 'evaluation-receipt.json', 'abc123']) {
+    assert(text.includes(value), text);
+  }
+}
+context.showResult({manifest: {generation_outcome: {schema_version: 99, generated_execution: {result: 'passed'}}}});
+assert(!flatten(context.resultContent).some(e => e.textContent.includes('Evaluation passed')));
 """
     result = subprocess.run(
         [node, "-e", script, str(source)],
