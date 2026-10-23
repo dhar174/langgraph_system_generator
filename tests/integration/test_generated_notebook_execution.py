@@ -34,8 +34,41 @@ def test_generated_graphs_and_negative_controls(tmp_path):
         text=True,
         timeout=900,
     )
-    assert process.returncode == 0, process.stdout + process.stderr
-    report = json.loads((output / "report.json").read_text(encoding="utf-8"))
+    report_path = output / "report.json"
+    report = (
+        json.loads(report_path.read_text(encoding="utf-8"))
+        if report_path.exists()
+        else {}
+    )
+    diagnostics = process.stdout + process.stderr
+    if process.returncode:
+        unexpected = [
+            case for case in report.get("cases", []) if case["status"] != "passed"
+        ]
+        unexpected.extend(
+            control["result"]
+            for control in report.get("negative_controls", [])
+            if not control["detected"]
+        )
+        for result in unexpected:
+            diagnostics += json.dumps(
+                {
+                    "case": result["case_id"],
+                    "mutation": result["mutation"],
+                    "errors": result["errors"],
+                    "failed_assertions": [
+                        item for item in result["assertions"] if not item["passed"]
+                    ],
+                }
+            )
+            log = (
+                output
+                / result["case_id"]
+                / f"{result['mutation'] or 'clean'}-process.log"
+            )
+            if log.exists():
+                diagnostics += log.read_text(encoding="utf-8")[-2000:]
+    assert process.returncode == 0, diagnostics[:20000]
     assert report["passed"]
     assert not report["skipped"]
     assert len(report["cases"]) == 3

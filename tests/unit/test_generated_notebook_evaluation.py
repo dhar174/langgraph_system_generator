@@ -171,6 +171,7 @@ def test_observed_detached_process_is_killed_and_reaped(monkeypatch):
     import os
     import subprocess
     import sys
+    import time
 
     import psutil
 
@@ -180,6 +181,7 @@ def test_observed_detached_process_is_killed_and_reaped(monkeypatch):
     )
     runner = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(runner)
+    started = time.monotonic()
     process = subprocess.Popen(
         [sys.executable, "-c", "import time; time.sleep(60)"],
         start_new_session=os.name != "nt",
@@ -191,7 +193,11 @@ def test_observed_detached_process_is_killed_and_reaped(monkeypatch):
         runner.stop_observed_descendants(
             {(observed.pid, observed.create_time()): observed}
         )
-        assert process.wait(timeout=5) != 0
+        # psutil may reap first on POSIX, so Popen cannot recover the exit code.
+        # Prove the 60-second sleeper is gone promptly rather than guessing it.
+        process.wait(timeout=5)
+        assert not observed.is_running()
+        assert time.monotonic() - started < 10
     finally:
         if process.poll() is None:
             process.kill()
