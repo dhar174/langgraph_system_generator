@@ -11,10 +11,13 @@
 
 ## Source and delivery
 
-Implementation and final execution source:
-`185b073f3e8825462a8445fd9db2b31ea010c5e4`.
+Final implementation and execution source:
+`11ef72a387a5d58960e59599213895b45a951e8d`.
+The full-suite checkpoint is `185b073f3e8825462a8445fd9db2b31ea010c5e4`;
+its receipts remain historical evidence. The final source adds two narrowly scoped
+review fixes, with committed-source focused tests and actual fixture reevaluation.
 The delivery follow-up updates documentation only; it must have no source, script
-or test diff from this revision. Its published SHA and exact-head hosted check
+or test diff from `11ef72a`. Its published SHA and exact-head hosted check
 state are recorded in [PR #399](https://github.com/dhar174/langgraph_system_generator/pull/399).
 The PR remains open and unmerged. #380 remains open. #381 was already closed when
 this work began; no issue state was changed.
@@ -30,24 +33,31 @@ under ignored `output/verification381b/`; JUnit confirms zero failures/errors.
 | Command or gate | Observed result |
 | --- | --- |
 | `python -m pytest tests/unit/ --asyncio-mode=auto -q --junitxml=output/verification381b/units.xml` | Exit 0; 1,438 passed, 0 skips, 5 warnings; began at `ec1ff43` before the last source-fact reader correction |
-| Final focused admission/compatibility tests | Exit 0; 50 passed after the final reader correction |
+| Focused admission/compatibility checkpoint | Exit 0; 50 passed at `185b073` after the final reader correction |
+| `python -m pytest tests/unit/test_execution_outcomes.py tests/unit/test_generated_notebook_evaluation.py tests/unit/test_generation_outcomes.py --asyncio-mode=auto -q` | Exit 0; 102 passed, 1 warning at committed `11ef72a`, including both external review regressions |
 | `python -m pytest tests/patterns/ -v --junitxml=output/verification381b/patterns.xml` | Exit 0; 82 passed at `185b073` |
 | `python -m pytest --asyncio-mode=auto -ra --basetemp=output/verification381b/full-artifacts --junitxml=output/verification381b/full.xml` | Exit 0; 1,558 passed, 7 skipped, 5 warnings; 1,565 collected, zero failures/errors at `185b073` |
 | `python scripts/qualify_durable_backend.py --level sdk --receipts output/verification381b/durable-sdk --test-timeout 900` | Exit 0; 243/243 passed, zero skips; real SDK imports, fake transports and credential-free guards |
 | `python scripts/run_generated_notebook_eval.py --qualify-outcomes --output output/verification381b/evaluated-final` | Exit 0 at clean `185b073`; 3 cases, 110 assertions, all 4 negative controls detected, cleanup verified |
+| `python scripts/run_generated_notebook_eval.py --qualify-outcomes --output output/verification381b/evaluated-review` | Exit 0 at clean `11ef72a`; 3 cases, 110 assertions, all 4 negative controls detected, cleanup verified; 06:42:11-06:45:06 UTC |
 | `python -m langgraph_system_generator.cli generate "Build a support router" --mode stub --agent-type router --formats ipynb html zip --output output/verification381b/stub` | Exit 0; actual IPYNB/HTML/ZIP files; v1, static/execution not_run, usability unknown |
 | Independent final artifact checker | Exit 0; byte/candidate/receipt/inventory checks, source metadata preservation, behavior observations and notebook/HTML/ZIP QA prose agree |
+| `python output/verification381b/verify_review_artifacts.py` | Exit 0 at `11ef72a`; independently repeats the complete artifact/behavior/compatibility checks for `evaluated-review`; summary `review-artifact-check.json` |
 | Focused Ruff / Black | Exit 0; eight outcome/evaluation/test owners pass Ruff; nine owners including runner pass Black |
 | Isolated mypy (`--follow-imports=skip`) | Exit 0; outcome models, derivation, qualification and bundle modules |
 | Fatal Flake8 (`E9,F63,F7,F82`) over tracked Python files | Exit 0; zero fatal errors |
 | `node --check src/langgraph_system_generator/api/static/app.js`; `git diff --check` | Exit 0 |
+| Review-fix Ruff / Black / isolated mypy / fatal Flake8 | Exit 0; six changed owners pass formatting/lint (existing runner E402 bootstrap accounted for); four evaluation modules pass mypy; zero fatal errors over all tracked Python |
 
-The final full suite includes the later reader correction and its added regression;
-the earlier standalone unit run is not relabeled as final-source qualification.
+The `185b073` full suite includes the reader correction and its added regression.
+It and the earlier standalone unit run are not relabeled as final-source results.
+The two subsequent review fixes received focused regression checks and a fresh
+complete canonical fixture/negative-control execution; the full suite was not
+repeated locally for these narrow fixes.
 The seven full-suite skips are four local Firestore-emulator opt-ins and three
 isolated packaging-install opt-ins. These optional local lanes were not executed.
 
-Broad static analysis intentionally retains inherited debt. Same tool environment,
+Broad static analysis at `185b073` intentionally retains inherited debt. Same tool environment,
 archived exact base, duplicate-preserving identities normalized for line/path drift:
 Ruff **14 -> 14**, mypy **104 -> 104**, Black **69 -> 69** files, with **zero added
 identities/files**. Each broad command exits 1; these are not clean-tool claims.
@@ -59,14 +69,17 @@ accounts for that existing bootstrap rule. No unrelated static cleanup is includ
 Evaluator: `trusted-fixture-qualification-v1`; receipt schema 1, case versions 1.
 Approved normalized dataset SHA-256:
 `600eaf4fed1f76128e4db8feaecbcad7340b6b8c5a56c256763590d5523e2805`.
-Evaluator/generator source-file map digest:
-`7a4cefceaf47f390a8b600680dd19aff63318edb908dc54402fb30a569536d6a`.
+Final evaluator/generator source-file map digest:
+`7a07ed0cc902827ee7fd4fb1d955ae8cd29df4b28cd0a0881119030716d33c42`.
+The following executed byte hashes belong to `evaluated-review` at `11ef72a`.
+Earlier byte hashes remain in the preserved `evaluated-final` and
+`final-artifact-check.json` receipts; they are not overwritten or reattributed.
 
 | Case | notebook-cells-v1 candidate | Exact executed source notebook SHA-256 | Assertions |
 | --- | --- | --- | --- |
-| support-router | `f64c5c532458f23a6381a3f2c06dbab32bcee837b01411833024cbd83320ffe2` | `abdcdf72c21d489619e5543ebe6505b60c5e7f1faed72974984cd2a21993cdc4` | 34/34 passed |
-| supervisor | `8686008c970c1309ed0ffc863f6226052aab205690ba19c37aba18cdbb56b139` | `be279905c9cf6fcd32eff3c6c4c5db69876b6b54a93ac129aa9f2eef14718ce2` | 25/25 passed |
-| chatbot-tool | `8f5a3f796df0222e8eb03c2b6b7d1d6ddd595e28d7c4aa20fa9dbd96ab36f848` | `da07cf2ea41a91cc4936d6881d0edd0992bddbf724fbe8cf451da8314a5eb9af` | 51/51 passed |
+| support-router | `f64c5c532458f23a6381a3f2c06dbab32bcee837b01411833024cbd83320ffe2` | `8b0ee75a4827a234b5d8e398b54cadffe7a843d6be2ad04d23ca01e532391dae` | 34/34 passed |
+| supervisor | `8686008c970c1309ed0ffc863f6226052aab205690ba19c37aba18cdbb56b139` | `e012cae5f66f5a090a9db65f7b0f97264ab7d813c96aa0a7895c22e92118d56d` | 25/25 passed |
+| chatbot-tool | `8f5a3f796df0222e8eb03c2b6b7d1d6ddd595e28d7c4aa20fa9dbd96ab36f848` | `c5e89fa2644cc9239714663b37fa478e35abbea75ae211da2c70ddfd69ca64ef` | 51/51 passed |
 
 Observed router destinations: billing, technical and fallback. Supervisor evidence
 includes real Send fan-out, reducer aggregation, synthesis, and the declared worker
@@ -123,8 +136,25 @@ All concrete findings were corrected and regression-tested:
   GCS publication fenced; expose assertions/environment/mocks/limits/receipt in
   browser text; verify separate evaluation exits and ordinary request rejection.
 
-Final review at `185b073` found no remaining blocker. Reviewers inspected source;
-they did not claim independent notebook execution or rerun the complete suite.
+The three-specialist checkpoint review at `185b073` found no remaining blocker.
+Subsequent external PR review found two concrete edge cases, both fixed in
+`11ef72a`:
+
+- [Capture-budget exhaustion](https://github.com/dhar174/langgraph_system_generator/pull/399#discussion_r4356695679): evaluator-owned probe/output capture now raises
+  `EvidenceCaptureLimitError`; partial evidence takes precedence over graph-defect
+  attribution. Regressions exercise both capture channels after persisted graph
+  start and require `incomplete/partial_execution`, unknown usability, completed
+  pipeline.
+- [Unignored output](https://github.com/dhar174/langgraph_system_generator/pull/399#discussion_r4356695687): only the selected output subtree is excluded from the
+  final Git status check. Initial clean status, full source-content map and
+  committed diff remain enforced. A temporary real Git repository reproduces the
+  unignored-output case and proves unrelated untracked/tracked changes still
+  invalidate provenance.
+
+The provenance/false-positive specialist inspected the final fixes and found no
+remaining concrete blocker. Reviewers made no edits and did not claim independent
+notebook execution or rerun the complete suite. Focused tests and the actual final
+fixture/artifact checks above were performed by the production writer.
 
 ## Limits and stop state
 

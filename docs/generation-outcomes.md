@@ -46,7 +46,7 @@ ordinary ephemeral/durable API generation results remain v1/`not_run`.
 | Complete required case assertions pass | `passed` | Only declared controlled behaviors passed; static QA remains independent |
 | Observed graph invocation has a code/assertion defect | `failed` | Completed generation can have blocked usability; no whole-job retry |
 | Kernel/dependency/isolation setup unavailable | `unavailable` | Unknown execution qualification, not a code defect |
-| Pre-graph error, stale identity, partial cells, missing assertions, unsupported evidence or ambiguous timeout | `incomplete` | Unknown execution qualification, never a pass |
+| Pre-graph error, stale identity, partial cells, missing assertions, exhausted evidence/output capture budget, unsupported evidence or ambiguous timeout | `incomplete` | Unknown execution qualification, never a pass |
 | Evaluation disabled | v1 `not_run` | Existing generation and exit behavior |
 
 Static blockers remain blocking with passing execution. A case pass cannot

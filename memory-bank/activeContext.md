@@ -6,6 +6,9 @@
   required assertions, parent supervision and clean provenance gate qualification.
   PR #399 is open for review. At code head 185b073, full tests passed 1,558/7 skips,
   SDK passed 243/243, and three cases passed 110 assertions with four controls.
+  Final source 11ef72a fixes external review findings in capture classification
+  and output provenance; 102 focused tests and fresh 110-assertion/four-control
+  evaluation plus artifact verification passed. Earlier receipts keep their SHA.
   See TASK009 and the maintained verification receipt for exact source evidence.
 
 - Issue #382 / merged PR #397 (`codex/382-truthful-generation-outcomes`) implements

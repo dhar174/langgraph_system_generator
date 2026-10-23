@@ -16,6 +16,10 @@ installed, choose a fresh empty output directory:
 python scripts/run_generated_notebook_eval.py --qualify-outcomes --output output/qualified-notebook-eval
 ```
 
+The selected output directory may be unignored. Only that subtree is excluded
+from the final Git status check; the initial clean-tree check, source hashes and
+committed diff still protect provenance.
+
 This executes the three canonical fixture-generated artifacts and all four
 negative controls. Custom prompts, notebooks and datasets cannot obtain approved
 qualification. The command exits nonzero for a required behavioral failure,
@@ -45,8 +49,9 @@ sandbox. Filesystem access and native networking limitations below still apply.
 Passing means only the recorded graph behaviors passed under these mocks and
 conditions. Live provider/tool integrations, broader prompts and requirements,
 production execution and other architectures remain unverified. Dependency/kernel
-or isolation failures are unavailable; pre-graph or ambiguous partial execution is
-incomplete; observed generated behavior defects block evaluated usability.
+or isolation failures are unavailable; pre-graph or ambiguous partial execution,
+including exhausted evidence/output capture budgets, is incomplete. Observed
+generated behavior defects block evaluated usability.
 
 Ordinary API and durable generation still return v1/`not_run`. API types/browser
 rendering support scoped v2 presentation, but no API accepts receipt uploads or
