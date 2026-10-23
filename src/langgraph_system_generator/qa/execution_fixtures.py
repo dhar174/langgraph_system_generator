@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Awaitable, Callable
 from contextlib import ExitStack
 from pathlib import Path
 from typing import Any, ClassVar
@@ -19,6 +20,17 @@ def calculator(a: int, b: int) -> int:
     """Add two integers deterministically without external services."""
     return a + b
 '''
+
+
+def _async_fixture_node(
+    collaborator: AsyncMock,
+) -> Callable[[Any], Awaitable[dict[str, Any]]]:
+    """Expose a real coroutine signature to LangGraph on Python 3.10 too."""
+
+    async def node(state: Any) -> dict[str, Any]:
+        return await collaborator(state)
+
+    return node
 
 
 def graph_response(case: ExecutionCase) -> dict[str, Any]:
@@ -176,13 +188,13 @@ async def generate_fixture(case: ExecutionCase, output: Path) -> dict[str, Any]:
         stack.enter_context(
             patch(
                 "langgraph_system_generator.generator.nodes.rag_retrieval_node",
-                AsyncMock(return_value={"docs_context": []}),
+                _async_fixture_node(AsyncMock(return_value={"docs_context": []})),
             )
         )
         stack.enter_context(
             patch(
                 "langgraph_system_generator.generator.nodes.runtime_qa_node",
-                AsyncMock(return_value={}),
+                _async_fixture_node(AsyncMock(return_value={})),
             )
         )
         stack.enter_context(

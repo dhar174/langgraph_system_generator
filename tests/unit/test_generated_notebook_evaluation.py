@@ -18,6 +18,25 @@ from langgraph_system_generator.qa.outcomes import notebook_candidate_id
 ROOT = Path(__file__).resolve().parents[2]
 
 
+@pytest.mark.asyncio
+async def test_async_generation_fixture_is_a_real_graph_node():
+    from unittest.mock import AsyncMock
+
+    from langgraph.graph import END, START, StateGraph
+
+    from langgraph_system_generator.qa.execution_fixtures import _async_fixture_node
+
+    collaborator = AsyncMock(return_value={"docs_context": ["offline"]})
+    builder = StateGraph(dict)
+    builder.add_node("retrieval", _async_fixture_node(collaborator))
+    builder.add_edge(START, "retrieval")
+    builder.add_edge("retrieval", END)
+    assert await builder.compile().ainvoke({"prompt": "support"}) == {
+        "docs_context": ["offline"]
+    }
+    collaborator.assert_awaited_once_with({"prompt": "support"})
+
+
 def test_dataset_requires_coverage_and_normal_composition():
     payload = json.loads(
         (ROOT / "tests/evaluation/generated_notebook_cases.json").read_text()
