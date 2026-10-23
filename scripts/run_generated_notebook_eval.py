@@ -340,6 +340,15 @@ def run_case(
             "passed" if all(item.passed for item in result.assertions) else "failed"
         )
     result = ExecutionResult.model_validate(result.model_dump())
+    from langgraph_system_generator.qa.execution_qualification import _mark_supervised
+
+    # Parent-owned source/case facts must survive the child IPC unchanged.
+    if any(getattr(result, key) != value for key, value in provenance.items()):
+        result.status = "failed"
+        result.errors.append(
+            {"phase": "evidence_integrity", "type": "ParentProvenanceMismatch"}
+        )
+    _mark_supervised(result, provenance)
     receipt.write_text(result.model_dump_json(indent=2), encoding="utf-8")
     (directory / f"{label}-process.log").write_text(
         _sanitize_text_credentials(captured.decode("utf-8", errors="replace")),
@@ -348,7 +357,8 @@ def run_case(
     return result
 
 
-def run(dataset: ExecutionDataset, root: Path, *, mutations: bool = True) -> dict:
+def source_provenance() -> dict:
+    """Snapshot committed source before generation and again before admission."""
     diff = git_output("diff", "HEAD")
     source_files = {
         str(path.relative_to(REPO_ROOT))
@@ -362,7 +372,7 @@ def run(dataset: ExecutionDataset, root: Path, *, mutations: bool = True) -> dic
         for path in sorted(source.rglob("*"))
         if path.is_file() and path.suffix in {".py", ".json"}
     }
-    provenance = {
+    return {
         "generator_revision": git_output("rev-parse", "HEAD"),
         "source_dirty": bool(git_output("status", "--porcelain")),
         "source_diff_sha256": hashlib.sha256(diff.encode()).hexdigest(),
@@ -371,6 +381,26 @@ def run(dataset: ExecutionDataset, root: Path, *, mutations: bool = True) -> dic
         ).hexdigest(),
         "source_files_sha256": source_files,
     }
+
+
+def run(
+    dataset: ExecutionDataset,
+    root: Path,
+    *,
+    mutations: bool = True,
+    qualify_outcomes: bool = False,
+) -> dict:
+    provenance = source_provenance()
+    dataset_sha256 = hashlib.sha256(dataset.model_dump_json().encode()).hexdigest()
+    if qualify_outcomes:
+        from langgraph_system_generator.qa.execution_qualification import DATASET_SHA256
+
+        if dataset_sha256 != DATASET_SHA256:
+            raise ValueError("Qualification requires the approved canonical dataset")
+        if provenance["source_dirty"]:
+            raise ValueError("Qualification requires clean committed source")
+        if not mutations:
+            raise ValueError("Qualification requires negative controls")
     clean = [run_case(case, root, provenance) for case in dataset.cases]
     controls = []
     if mutations:
@@ -390,6 +420,31 @@ def run(dataset: ExecutionDataset, root: Path, *, mutations: bool = True) -> dic
         and all(item["detected"] for item in controls)
         and mutations
     )
+    qualifications = []
+    if qualify_outcomes:
+        from langgraph_system_generator.qa.evaluated_bundle import (
+            build_evaluated_bundle,
+        )
+
+        current_provenance = source_provenance()
+        controls_verified = len(controls) == len(MUTATIONS) and all(
+            item["detected"] for item in controls
+        )
+        for case, result in zip(dataset.cases, clean):
+            qualifications.append(
+                build_evaluated_bundle(
+                    case,
+                    result,
+                    root / case.id,
+                    provenance=current_provenance,
+                    dataset_sha256=dataset_sha256,
+                    controls_verified=controls_verified,
+                )
+            )
+        passed = passed and all(
+            item.outcome.generated_execution.result == "passed"
+            for item in qualifications
+        )
     report = {
         "schema_version": 1,
         "created_at": datetime.now(timezone.utc).isoformat(),
@@ -403,6 +458,8 @@ def run(dataset: ExecutionDataset, root: Path, *, mutations: bool = True) -> dic
         "skipped": [] if mutations else ["negative controls"],
         "upload": "disabled",
     }
+    if qualify_outcomes:
+        report["qualified_outcomes"] = [item.as_report() for item in qualifications]
     (root / "report.json").write_text(json.dumps(report, indent=2), encoding="utf-8")
     lines = [
         "# Generated notebook execution evaluation",
@@ -444,9 +501,18 @@ def run(dataset: ExecutionDataset, root: Path, *, mutations: bool = True) -> dic
     lines.extend(
         [
             "",
-            "These receipts are separate from generation_outcome v1; generated_execution remains not_run.",
+            (
+                "Original generation outcomes remain unchanged; evaluated bundles contain subsequent v2 outcomes."
+                if qualify_outcomes
+                else "These receipts are separate from generation_outcome v1; generated_execution remains not_run."
+            ),
         ]
     )
+    for item in qualifications:
+        from langgraph_system_generator.qa.outcomes import execution_description
+
+        lines.append("- " + execution_description(item.outcome))
+        lines.append(f"  - Evaluated manifest: {item.manifest}")
     (root / "summary.md").write_text("\n".join(lines), encoding="utf-8")
     return report
 
@@ -455,13 +521,20 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--dataset", type=Path, default=DEFAULT_DATASET)
     parser.add_argument(
+        "--qualify-outcomes",
+        action="store_true",
+        help="Qualify approved fixture cases and create separate evaluated local bundles",
+    )
+    parser.add_argument(
         "--output", type=Path, default=REPO_ROOT / "output/generated-notebook-eval"
     )
     args = parser.parse_args(argv)
     dataset = ExecutionDataset.model_validate_json(
         args.dataset.read_text(encoding="utf-8")
     )
-    report = run(dataset, output_root(args.output))
+    report = run(
+        dataset, output_root(args.output), qualify_outcomes=args.qualify_outcomes
+    )
     print(
         json.dumps(
             {"passed": report["passed"], "report": str(args.output / "report.json")}

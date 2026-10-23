@@ -157,6 +157,8 @@ def execute(
     spec = manifest["graph_exports"]["schema"]
     result.assertions.append(AssertionResult(name="artifact_identity", passed=True))
     result.environment = {
+        "source_manifest_sha256": sha256(manifest_path),
+        "source_cells_sha256": sha256(Path(manifest["cells_path"])),
         "case_specification": case.model_dump(mode="json"),
         "generation_outcome": manifest["generation_outcome"],
         "tool_contract_summary": manifest.get("tool_contract_summary", {}),
@@ -282,6 +284,14 @@ def execute(
     persist(result, receipt)
     try:
         client.execute()
+    except Exception:
+        # Preserve observed graph-start evidence on a real invocation timeout;
+        # absence of this evidence must never become a behavioral failure claim.
+        if observed.is_file():
+            partial = json.loads(observed.read_text(encoding="utf-8"))
+            result.observations = partial.get("observations", [])
+            result.executed = partial.get("executed", [])
+        raise
     finally:
         executed_path = directory / f"{result.mutation or 'clean'}-executed.ipynb"
         nbformat.write(derived, executed_path)

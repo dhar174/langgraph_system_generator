@@ -1,5 +1,11 @@
 ## Current Work Focus
 
+- #381-B integrates explicit trusted fixture execution into v2 outcomes in new
+  local evaluated bundles. Ordinary generation retains v1/not_run; API/worker
+  execution and cloud evaluation storage remain disabled. Source byte identity,
+  required assertions, parent supervision and clean provenance gate qualification.
+  See TASK009 and the maintained verification receipt for current evidence.
+
 - Issue #382 / PR #397 (`codex/382-truthful-generation-outcomes`) implements
   versioned candidate-bound generation outcomes across package/CLI, APIs and
   browser. Static blockers can produce diagnostic results without quality-induced

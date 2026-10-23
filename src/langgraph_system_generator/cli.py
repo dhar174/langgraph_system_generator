@@ -46,6 +46,7 @@ from langgraph_system_generator.qa.summary import (
 from langgraph_system_generator.qa.outcomes import (
     candidate_id,
     derive_generation_outcome,
+    execution_description,
     read_generation_outcome,
     with_outcome_summary,
 )
@@ -2116,7 +2117,7 @@ def _run_generate(args: argparse.Namespace) -> int:
         f"  Static QA: {outcome.static_qa}; environment smoke: {outcome.environment_smoke.result}"
     )
     print(
-        "  Generated notebook execution: not_run; functional behavior remains unverified."
+        "  Generated notebook execution: " + execution_description(outcome)
     )
     print(f"  Manifest: {artifacts['manifest_path']}")
     if artifacts["manifest"].get("plan_path"):

@@ -133,6 +133,24 @@ def test_verified_objects_then_one_fenced_completion(store, tmp_path):
     assert backend.inspect_attempt(job.job_id).result == ref
 
 
+def test_local_execution_claim_cannot_enter_durable_publication(store, tmp_path):
+    backend, _ = store
+    job = running(backend)
+    files = outputs(tmp_path / "attempt")
+    manifest = json.loads(files[1].read_text())
+    manifest["generation_outcome"] = {
+        "schema_version": 2, "generated_execution": {"result": "passed"},
+    }
+    files[1].write_text(json.dumps(manifest), encoding="utf-8")
+    client = Storage()
+    with pytest.raises(JobError, match="execution_qualification_not_supported"):
+        GCSArtifactStore("private-offline-bucket", tmp_path, client=client).publish_manifest(
+            job, files, job.fencing_token
+        )
+    assert not client.objects
+    assert backend.inspect_attempt(job.job_id).state == JobState.RUNNING
+
+
 @pytest.mark.parametrize(
     "fault",
     [

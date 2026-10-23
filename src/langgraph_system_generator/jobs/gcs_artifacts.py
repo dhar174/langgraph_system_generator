@@ -171,6 +171,13 @@ class GCSArtifactStore:
             ):
                 raise JobError("artifact_notebook_mismatch", 422)
             if "generation_outcome" in manifest:
+                # Local subsequent-evaluation bundles are not a cloud execution
+                # admission channel. Keep publication tied to generation-time QA.
+                if (
+                    isinstance(manifest["generation_outcome"], dict)
+                    and manifest["generation_outcome"].get("schema_version") == 2
+                ):
+                    raise JobError("execution_qualification_not_supported", 422)
                 from langgraph_system_generator.qa.outcomes import (
                     GenerationOutcome,
                     derive_generation_outcome,

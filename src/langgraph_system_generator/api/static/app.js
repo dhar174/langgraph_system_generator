@@ -512,7 +512,7 @@ function showResult(data) {
     const warnings = Array.isArray(manifest.warnings) ? manifest.warnings : [];
     const qaSummary = manifest.qa_summary || {};
     const suppliedOutcome = data.generation_outcome || manifest.generation_outcome;
-    const outcome = suppliedOutcome && suppliedOutcome.schema_version === 1
+    const outcome = suppliedOutcome && [1, 2].includes(suppliedOutcome.schema_version)
         ? suppliedOutcome
         : {status: 'unverified', usability: 'unknown', static_qa: 'not_run', checks: []};
 
@@ -547,8 +547,31 @@ function showResult(data) {
     appendLabeledValue(resultWrapper, 'Static QA', outcome.static_qa || 'not_run');
     appendLabeledValue(resultWrapper, 'Environment smoke (trusted notebook)',
         outcome.environment_smoke ? outcome.environment_smoke.result : 'not_run');
+    const execution = outcome.schema_version === 2 ? outcome.generated_execution || {} : {result: 'not_run'};
+    const executionLabels = {
+        not_run: 'not_run — Not evaluated; functional and prompt-specific behavior remain unverified.',
+        passed: 'Evaluation passed under declared conditions',
+        failed: 'Evaluation failed',
+        unavailable: 'Evaluation unavailable',
+        incomplete: 'Evaluation incomplete',
+    };
     appendLabeledValue(resultWrapper, 'Generated notebook execution',
-        'not_run — functional and prompt-specific behavior remain unverified.');
+        executionLabels[execution.result] || executionLabels.incomplete);
+    if (outcome.schema_version === 2) {
+        appendLabeledValue(resultWrapper, 'Evaluation case', `${execution.case_id || 'unknown'} v${execution.case_version || '?'}`);
+        appendLabeledValue(resultWrapper, 'Evaluation assertions', `${execution.assertions_passed || 0}/${execution.assertions_required || 0} assertions passed`);
+        appendLabeledValue(resultWrapper, 'Failed assertions', (execution.failed_assertions || []).join(', ') || 'none recorded');
+        appendLabeledValue(resultWrapper, 'Executed paths', (execution.executed || []).join(', ') || 'none recorded');
+        appendLabeledValue(resultWrapper, 'Evaluator environment', Object.entries(execution.environment || {}).map(([key, value]) => `${key}: ${value}`).join('; ') || 'unknown');
+        appendLabeledValue(resultWrapper, 'Dependency versions', Object.entries(execution.dependencies || {}).map(([key, value]) => `${key}: ${value}`).join('; ') || 'unknown');
+        appendLabeledValue(resultWrapper, 'Isolation', (execution.isolation || []).join('; ') || 'unknown');
+        appendLabeledValue(resultWrapper, 'Evidence receipt', `${execution.receipt_reference || 'not available'}; SHA-256: ${execution.receipt_sha256 || 'unknown'}`);
+        appendLabeledValue(resultWrapper, 'Mocked dependencies', (execution.mocked || []).join(', ') || 'none declared');
+        appendLabeledValue(resultWrapper, 'Untested scope', (execution.untested || []).join('; ') || 'unknown');
+        appendLabeledValue(resultWrapper, 'Evidence limitations', (execution.limitations || []).join('; '));
+    }
+    appendLabeledValue(resultWrapper, 'Requirements coverage',
+        'Requirements beyond declared controlled assertions remain unverified.');
     appendLabeledValue(resultWrapper, 'Checks evidenced',
         Array.isArray(outcome.checks) && outcome.checks.length ? outcome.checks.join(', ') : 'none');
     appendLabeledValue(resultWrapper, 'Qualification limit',

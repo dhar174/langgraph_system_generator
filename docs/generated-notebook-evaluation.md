@@ -1,10 +1,56 @@
 # Generated notebook evaluation (381-A)
 
-This repository-only harness evaluates trusted deterministic fixtures. It does
-not change generation outcome version 1, manifests, jobs, or browser labels.
+This repository-only harness evaluates trusted deterministic fixtures. Default
+runs preserve generation outcome version 1. Explicit qualification adds subsequent
+version-2 outcomes in separate local bundles.
 Environment smoke proves kernel health; these separate receipts prove only the
-generated graph behaviors actually observed. Phase 381-B must validate receipt
-provenance before integrating any execution qualification.
+generated graph behaviors actually observed. Qualification validates receipt
+provenance before integrating execution evidence.
+
+## Execution qualification (381-B)
+
+From a clean committed repository, with the notebook evaluation dependencies
+installed, choose a fresh empty output directory:
+
+```powershell
+python scripts/run_generated_notebook_eval.py --qualify-outcomes --output output/qualified-notebook-eval
+```
+
+This executes the three canonical fixture-generated artifacts and all four
+negative controls. Custom prompts, notebooks and datasets cannot obtain approved
+qualification. The command exits nonzero for a required behavioral failure,
+unavailable/incomplete qualification, unsupported configuration or export failure.
+Ordinary `lnf generate` exits and defaults do not change.
+
+Each case has an `evaluated/` directory containing a sanitized immutable
+`evaluation-receipt.json`, the exact `executed-source.ipynb`, a new notebook with
+updated QA prose, HTML, ZIP, and a final manifest with byte hashes and sizes.
+`report.json` and `summary.md` expose compact case outcomes. The original generated
+files and v1 outcome remain unchanged. The new manifest explicitly distinguishes
+generation-time quality from subsequent evaluation and the exact executed source
+from presentation derivatives sharing the same code candidate.
+
+The sanitized receipt contains assertion names/results and provenance, never
+prompts, invocation inputs, state, provider transcripts, secret values or raw logs.
+Raw #381-A diagnostics remain local to the trusted fixture run. Do not upload them
+as telemetry. A digest proves byte identity, not evaluator authenticity: raw JSON
+cannot import runner authority. Serialized v2 metadata alone is limited by the
+ordinary reader; there is no offline reattestation or cloud evaluation service.
+
+The operator and fixed evaluator code are trusted. Child JSON is supervised local
+IPC, not a protected channel against a hostile same-user process. Python private
+capabilities prevent accidental/request deserialization; they are not a security
+sandbox. Filesystem access and native networking limitations below still apply.
+
+Passing means only the recorded graph behaviors passed under these mocks and
+conditions. Live provider/tool integrations, broader prompts and requirements,
+production execution and other architectures remain unverified. Dependency/kernel
+or isolation failures are unavailable; pre-graph or ambiguous partial execution is
+incomplete; observed generated behavior defects block evaluated usability.
+
+Ordinary API and durable generation still return v1/`not_run`. API types/browser
+rendering support scoped v2 presentation, but no API accepts receipt uploads or
+caller-provided execution results. Durable publication rejects local v2 claims.
 
 ## Investigation and implementation plan
 
