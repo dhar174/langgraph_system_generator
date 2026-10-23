@@ -7,6 +7,10 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, model_validator
 
 
+class EvidenceCaptureLimitError(RuntimeError):
+    """The evaluator exhausted its evidence budget, not a graph assertion."""
+
+
 class StrictModel(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

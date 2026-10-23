@@ -357,8 +357,12 @@ def run_case(
     return result
 
 
-def source_provenance() -> dict:
-    """Snapshot committed source before generation and again before admission."""
+def source_provenance(*, output: Path | None = None) -> dict:
+    """Snapshot source, excluding only our output from the final status check.
+
+    The initial clean-tree check includes every path. Output never bypasses the
+    committed diff or source-content hashes used to compare the two snapshots.
+    """
     diff = git_output("diff", "HEAD")
     source_files = {
         str(path.relative_to(REPO_ROOT))
@@ -372,9 +376,13 @@ def source_provenance() -> dict:
         for path in sorted(source.rglob("*"))
         if path.is_file() and path.suffix in {".py", ".json"}
     }
+    status_args = ["status", "--porcelain", "--", "."]
+    if output is not None and output.resolve().is_relative_to(REPO_ROOT):
+        relative_output = output.resolve().relative_to(REPO_ROOT).as_posix()
+        status_args.append(f":(exclude,literal){relative_output}")
     return {
         "generator_revision": git_output("rev-parse", "HEAD"),
-        "source_dirty": bool(git_output("status", "--porcelain")),
+        "source_dirty": bool(git_output(*status_args)),
         "source_diff_sha256": hashlib.sha256(diff.encode()).hexdigest(),
         "source_tree_sha256": hashlib.sha256(
             json.dumps(source_files, sort_keys=True).encode()
@@ -426,7 +434,7 @@ def run(
             build_evaluated_bundle,
         )
 
-        current_provenance = source_provenance()
+        current_provenance = source_provenance(output=root)
         controls_verified = len(controls) == len(MUTATIONS) and all(
             item["detected"] for item in controls
         )

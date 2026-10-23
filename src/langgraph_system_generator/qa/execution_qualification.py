@@ -99,6 +99,12 @@ def _failure(
 ) -> tuple[ExecutionStatus, ExecutionFailureClassification]:
     """Attribute only observed defects; setup/partial evidence is not a defect."""
     if any(
+        "EvidenceCaptureLimitError"
+        in {error.get("type"), error.get("kernel_error_type")}
+        for error in result.errors
+    ):
+        return "incomplete", "partial_execution"
+    if any(
         error.get("phase") in {"generation_or_setup", "isolation_setup_or_cleanup"}
         or error.get("kernel_error_type", error.get("type"))
         in {"ModuleNotFoundError", "ImportError", "NoSuchKernel"}

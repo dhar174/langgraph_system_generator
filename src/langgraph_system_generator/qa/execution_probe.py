@@ -12,7 +12,10 @@ from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.graph.state import CompiledStateGraph
 
 from langgraph_system_generator.qa.execution_fixtures import RuntimeModel
-from langgraph_system_generator.qa.execution_models import ExecutionCase
+from langgraph_system_generator.qa.execution_models import (
+    EvidenceCaptureLimitError,
+    ExecutionCase,
+)
 
 
 def plain(value: Any) -> Any:
@@ -277,7 +280,9 @@ def write_probe(namespace: dict[str, Any], case: dict[str, Any], path: str) -> N
     def persist(result: dict[str, Any]) -> None:
         encoded = json.dumps(result, ensure_ascii=False)
         if len(encoded.encode("utf-8")) > case["capture_bytes"]:
-            raise RuntimeError("Execution evidence capture budget exceeded")
+            raise EvidenceCaptureLimitError(
+                "Execution evidence capture budget exceeded"
+            )
         temporary = Path(path).with_suffix(".tmp")
         temporary.write_text(encoded, encoding="utf-8")
         temporary.replace(path)

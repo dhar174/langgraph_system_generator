@@ -448,6 +448,97 @@ def test_pregraph_kernel_failure_remains_incomplete(evidence, kind):
     assert outcome(evidence).generated_execution.result == "incomplete"
 
 
+@pytest.mark.parametrize("channel", ["probe", "kernel_output"])
+def test_capture_exhaustion_after_graph_start_is_incomplete(
+    evidence, tmp_path, monkeypatch, channel
+):
+    from langgraph_system_generator.qa import execution_probe
+    from langgraph_system_generator.qa.execution_evaluation import BoundedClient
+    from langgraph_system_generator.qa.execution_models import EvidenceCaptureLimitError
+
+    observed = tmp_path / "observations.json"
+    partial = {"observations": [{"phase": "graph_invocation_started"}]}
+
+    def bounded_probe(namespace, case, *, progress):
+        progress(partial)
+        return {**partial, "detail": "x" * 1000}
+
+    monkeypatch.setattr(execution_probe, "probe", bounded_probe)
+    with pytest.raises(EvidenceCaptureLimitError) as caught:
+        if channel == "probe":
+            execution_probe.write_probe({}, {"capture_bytes": 128}, str(observed))
+        else:
+            client = BoundedClient(nbformat.v4.new_notebook())
+            client.capture_limit = 1
+            client.process_message({"content": {"text": "too large"}}, {}, 0)
+    if channel == "probe":
+        assert json.loads(observed.read_text()) == partial
+    result = evidence["result"]
+    result.status = "failed"
+    result.observations = partial["observations"]
+    result.errors = [
+        {
+            "phase": "notebook_execution",
+            "type": (
+                "CellExecutionError"
+                if channel == "probe"
+                else type(caught.value).__name__
+            ),
+            "kernel_error_type": (
+                type(caught.value).__name__ if channel == "probe" else None
+            ),
+        }
+    ]
+    actual = outcome(evidence)
+    assert actual.generated_execution.result == "incomplete"
+    assert actual.generated_execution.failure_classification == "partial_execution"
+    assert actual.usability == "unknown" and actual.pipeline == "completed"
+
+
+def test_provenance_excludes_only_selected_output_from_git_status(
+    tmp_path, monkeypatch
+):
+    import importlib.util
+    import subprocess
+
+    monkeypatch.syspath_prepend(str(ROOT / "scripts"))
+    spec = importlib.util.spec_from_file_location(
+        "qualification_provenance", ROOT / "scripts/run_generated_notebook_eval.py"
+    )
+    runner = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(runner)
+    monkeypatch.setattr(runner, "REPO_ROOT", tmp_path)
+
+    def git(*args):
+        subprocess.run(["git", *args], cwd=tmp_path, check=True, capture_output=True)
+
+    git("init")
+    git("config", "user.name", "Offline Test")
+    git("config", "user.email", "offline@example.invalid")
+    source = tmp_path / "src"
+    source.mkdir()
+    (source / "fixture.py").write_text("value = 1\n")
+    git("add", ".")
+    git("-c", "core.hooksPath=", "commit", "-m", "offline fixture")
+    before = runner.source_provenance()
+    assert not before["source_dirty"]
+    output = tmp_path / "unignored [evaluation]"
+    output.mkdir()
+    (output / "report.json").write_text("{}")
+    assert runner.source_provenance()["source_dirty"]
+    assert runner.source_provenance(output=output) == before
+    # Other untracked files and edits to tracked source are still disqualifying.
+    (tmp_path / "unrelated.txt").write_text("new")
+    assert runner.source_provenance(output=output)["source_dirty"]
+    (tmp_path / "unrelated.txt").unlink()
+    (source / "fixture.py").write_text("value = 2\n")
+    after = runner.source_provenance(output=output)
+    assert (
+        after["source_dirty"]
+        and after["source_tree_sha256"] != before["source_tree_sha256"]
+    )
+
+
 def test_first_generated_node_exception_is_observed_before_any_update(evidence):
     from langgraph.checkpoint.memory import InMemorySaver
     from langgraph.graph import END, START, StateGraph

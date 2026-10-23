@@ -17,6 +17,7 @@ from nbclient import NotebookClient
 
 from langgraph_system_generator.qa.execution_models import (
     AssertionResult,
+    EvidenceCaptureLimitError,
     ExecutionCase,
     ExecutionResult,
 )
@@ -98,7 +99,7 @@ class BoundedClient(NotebookClient):
             json.dumps(msg.get("content", {}), default=str).encode("utf-8")
         )
         if self.captured_bytes > self.capture_limit:
-            raise RuntimeError("Kernel output capture budget exceeded")
+            raise EvidenceCaptureLimitError("Kernel output capture budget exceeded")
         return super().process_message(msg, cell, cell_index)
 
 
