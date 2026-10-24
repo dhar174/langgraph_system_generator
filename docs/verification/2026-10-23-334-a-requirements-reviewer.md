@@ -1,6 +1,9 @@
 # #334-A offline verification
 
 Base: `96baddc5768df5d5bbb06b47568f94ffccca4857` (fetched main; #397-#400 merged).
+Tested implementation: `058571c014a063b3ff2f9a58904030d0c935e62a`; subsequent
+handoff writeback changes documentation only. [Draft PR #401](https://github.com/dhar174/langgraph_system_generator/pull/401)
+is open and attached; hosted checks were queued/running at handoff, not yet verified.
 Scope: one operator-opt-in advisory runtime reviewer. Part of #334; related to
 #378. #383, semantic blocking/repair/panel, #129 broad empirical benchmarks and
 #380 staging gates remain deferred. No merge, deployment or hosted enablement.

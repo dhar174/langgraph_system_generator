@@ -1,6 +1,9 @@
 # Checkpoint
 
-Validation finished; publication handoff is next. Completed driver command:
+Validation and publication handoff completed. One draft PR is open:
+https://github.com/dhar174/langgraph_system_generator/pull/401.
+Implementation commit: 058571c014a063b3ff2f9a58904030d0c935e62a; final handoff
+writeback changes documentation only. Completed driver command:
 `output/verification334/venv/Scripts/python.exe output/verification334/followup_gates.py`.
 Final stage: output/verification334/followup-gates.json is done with both exits 0.
 The original final_gates.py driver exited 1 and must not be restarted. Each stage retains
@@ -34,11 +37,11 @@ Broad exact-base diagnostics: Ruff 1244, mypy 107 in 16 files, Black 77 files,
 all exit 1 on both base/head with no added/removed normalized error identities.
 Focused new-module Ruff/Black/mypy and fatal Flake8 passed. No unrelated formatting.
 
-Next: commit and push the approved staged change; open and attach one draft PR
-with Part of #334 and Related to #378. Report actual local failures/rechecks and
-hosted CI separately. No merge or hosted enablement. Do not rerun completed gates.
-Heartbeat created in this chat: `finish-334-a-validation-and-pr`, active every
-ten minutes. Delete it after final publication handoff; it must not restart a gate.
+Published/attached draft PR #401 uses Part of #334 and Related to #378. #334 is
+still open. Hosted checks were queued/running at handoff; local failures/rechecks
+are separately recorded. No merge, deployment or hosted enablement occurred.
+No required local work remains. Do not restart completed gates. Temporary
+heartbeat `finish-334-a-validation-and-pr` is retired at final handoff.
 Evidence: docs/aegis/work/2026-10-23-334-a/90-evidence.md.
 Drift: no scope expansion. Independent read-only reviews verified fixes for ambient
 callback isolation, redacted-source fingerprints and bounded source provenance;
