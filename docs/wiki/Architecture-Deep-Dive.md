@@ -1,5 +1,14 @@
 # Architecture Deep Dive
 
+The optional #334-A final-candidate Requirements/Domain Fidelity Reviewer runs
+after deterministic repair/QA and before packaging. `LNF_SPECIALIST_QA_MODE=off`
+is the default; `advisory` enables at most one bounded async model invocation.
+It uses a separate registry specialist seam and cannot enter repair or change
+generated code. Candidate-bound warning findings and truthful abstention status
+appear in `qa_summary.semantic_review`; requirements remain unverified. See
+[ADR 0003](../adr/0003-advisory-requirements-reviewer.md) for input/output/time
+bounds, provided-docs scope, privacy and deferred blocking/repair acceptance.
+
 This guide explains the internal architecture of LangGraph System Generator and how the generation pipeline transforms prompts into complete multi-agent systems.
 
 See also:
