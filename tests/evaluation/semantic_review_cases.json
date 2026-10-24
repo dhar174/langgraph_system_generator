@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "purpose": "Labelled prompt/contract fixtures; canned responses do not measure live reviewer accuracy.",
+  "cases": [
+    {"case_id":"clean-weather","label":"clean_match","prompt":"Return a weather summary.","cells":[{"cell_type":"code","content":"weather_summary = 'Cloudy, 18 C'"}],"docs":[],"expected_category":null,"assessment":"complete"},
+    {"case_id":"wrong-domain","label":"wrong_domain","prompt":"Return a weather summary.","cells":[{"cell_type":"code","content":"stock_summary = 'Equities rose'"}],"docs":[],"expected_category":"domain_mismatch","assessment":"complete"},
+    {"case_id":"missing-history","label":"missing_required_behavior","prompt":"Return weather and retain each request in history.","cells":[{"cell_type":"code","content":"def answer(request):\n    return 'Cloudy'"}],"docs":[],"expected_category":"requirements_gap","assessment":"complete"},
+    {"case_id":"prose-email","label":"prose_only_tool_claim","prompt":"Send the weather report by email.","cells":[{"cell_type":"markdown","content":"The workflow sends email reports."},{"cell_type":"code","content":"def report():\n    return 'Cloudy'"}],"docs":[],"expected_category":"unsupported_capability_claim","assessment":"complete"},
+    {"case_id":"docs-conflict","label":"supplied_docs_conflict","prompt":"Use the provided API documentation for a weather workflow.","cells":[{"cell_type":"code","content":"workflow.add_node('weather', 'not a callable')"}],"docs":[{"content":"For this supplied fixture API, add_node expects a callable action.","source":"fixture:graph-api","version":"fixture-v1"}],"expected_category":"provided_docs_conflict","assessment":"complete"},
+    {"case_id":"insufficient","label":"insufficient_context","prompt":"Make it work.","cells":[{"cell_type":"code","content":"value = 1"}],"docs":[],"expected_category":null,"assessment":"insufficient_context"}
+  ]
+}

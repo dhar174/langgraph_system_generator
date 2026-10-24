@@ -50,6 +50,8 @@ def has_blocking_failures(reports: Iterable[QAReport | dict[str, Any]]) -> bool:
 def build_qa_summary(
     reports: Iterable[QAReport | dict[str, Any]],
     outcome: SupportedGenerationOutcome | None = None,
+    *,
+    semantic_review: Any = None,
 ) -> dict[str, Any]:
     """Build a compact manifest/API summary for the current QA snapshot."""
 
@@ -133,7 +135,7 @@ def build_qa_summary(
     else:
         status = "passed"
 
-    return {
+    summary = {
         "status": status,
         "artifacts_usable": (
             None if outcome.usability == "unknown" else outcome.usability != "blocked"
@@ -142,6 +144,12 @@ def build_qa_summary(
         "findings": findings,
         "validation_scope": _build_validation_scope(serialized_reports, outcome),
     }
+    from langgraph_system_generator.qa.specialist_presentation import feedback_payload
+
+    payload = feedback_payload(semantic_review)
+    if payload is not None:
+        summary["semantic_review"] = payload
+    return summary
 
 
 def build_tool_contract_summary(

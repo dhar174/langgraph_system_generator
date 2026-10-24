@@ -6,10 +6,14 @@ import json
 from typing import Annotated, Any, Dict, List, Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
-from typing_extensions import TypedDict
+from typing_extensions import NotRequired, TypedDict
 
 from langgraph_system_generator.generator.outcome_models import (
     SupportedGenerationOutcome,
+)
+from langgraph_system_generator.qa.specialist_models import (
+    SemanticReviewFeedback,
+    SemanticReviewPolicy,
 )
 from langgraph_system_generator.utils.config import GenerationConfig
 
@@ -918,6 +922,8 @@ class GeneratorState(TypedDict):
     repair_attempts: int
     qa_repair_feedback: QARepairFeedback
     qa_summary: Dict[str, Any]
+    semantic_review_policy: NotRequired[SemanticReviewPolicy]
+    semantic_review_feedback: NotRequired[SemanticReviewFeedback | None]
     generation_outcome: SupportedGenerationOutcome
 
     # Output

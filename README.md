@@ -111,6 +111,30 @@ remaining work.
    python -m pytest --asyncio-mode=auto
    ```
 
+## Optional Requirements/Domain Fidelity Review
+
+Operators can set `LNF_SPECIALIST_QA_MODE=advisory` for one semantic review of the
+final candidate after deterministic QA/repair. The default is `off`; stub mode
+never constructs a reviewer or client. There is no request field or UI toggle.
+Configure a separate durable worker independently of the API process.
+
+The reviewer compares the original request, requirements, candidate cells and
+supplied context/docs. Accepted concerns are evidence-referenced warning reports
+with `stage=semantic` and `repairable=false`. They cannot trigger repair, block
+packaging or cause a durable retry. `qa_summary.semantic_review` distinguishes
+reviewed, skipped, unavailable, invalid response and incomplete review. No findings
+means the model reported no concerns; requirements remain unverified. Absent docs
+mean docs alignment was not assessed. Ordinary execution remains `not_run`.
+
+One call, zero retries, a 30-second review deadline, <=48,000 input characters
+including instructions/schema, <=2048 output tokens (or a lower request cap), and
+at most eight findings bound this review. Oversized candidates abstain without
+dropping executable cells. These are review-call controls, not generation-wide
+spending enforcement. Durable re-execution can make a fresh review call.
+See [ADR 0003](docs/adr/0003-advisory-requirements-reviewer.md) for evidence limits,
+redaction and later blocking/repair gates. The offline labelled corpus tests
+contracts and plumbing; no live reviewer accuracy improvement is claimed.
+
 ## Usage And Cost Management
 
 LNF does not enforce a per-generation monetary or aggregate token budget.

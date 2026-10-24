@@ -276,10 +276,62 @@ does not execute the generated artifact. Three controlled fixture families do
 not establish arbitrary-prompt or general requirements fidelity. See
 [generation outcomes](generation-outcomes.md) for the independent quality axes.
 
-The next #334 slice is one opt-in Requirements/Domain Fidelity Reviewer with
-advisory-only findings. The full specialist panel, blocking semantic review and
-automatic semantic repair remain later acceptance work; see the
-[current plan](../plans/current-plan.md).
+## Optional async specialist review (#334-A)
+
+`LNF_SPECIALIST_QA_MODE=advisory` enables one final-candidate Requirements/Domain
+Fidelity Reviewer; `off` is the default. It runs after deterministic QA/repair
+settles and before packaging. Stub mode, no cells, remaining blockers and fatal
+runtime-support failure skip it without a model call. Existing failure packaging
+and final-repair validation remain authoritative. Workers use their own operator
+configuration; frozen durable requests do not carry this setting.
+
+`QARepairRegistry` separately registers async specialists with ID/version, inputs,
+advisory policy and lazy factory. Existing synchronous validator/repair APIs and
+`register_qa_repair_plugins(registry)` remain unchanged. Only the built-in
+`requirements_domain_fidelity` reviewer is dispatched; this is not a panel.
+
+The typed interface is `async review(context) -> SemanticReviewResult`. The host
+builds a complete redacted composed-cell context with original request/dialog,
+constraints, conflicts, plans, graph exports and supplied docs. Host candidate ID,
+source fingerprints, attempt and context digest bind every accepted finding.
+References must resolve to supplied requirement/candidate-cell evidence and,
+for docs conflicts, provided docs with their available provenance/version.
+Missing docs mean docs alignment not assessed. Invalid references reject the
+whole response; a candidate/context change invalidates admission. Matching
+evidence establishes provenance, not that the judgment is correct.
+
+One direct model invocation uses the authorized request provider/model, a copied
+<=2048-token output cap respecting stricter requests, zero retries, and a 30-second
+deadline subordinate to enclosing cancellation/deadlines. Complete serialized
+messages/schema must fit 48,000 characters; no executable-cell trimming. Raw
+response <=16,384 characters; <=8 findings; messages <=400 chars; <=2 suggestions
+of <=240 chars; <=6 refs (<=2 per family), quotes <=160, ranges <=2000 chars.
+Persisted provenance locations are <=512 chars and versions <=128; oversized
+reference metadata invalidates admission rather than being clipped.
+Oversize/truncated or insufficient review is incomplete, never a fake pass.
+CancelledError propagates and scoped transports close; no detached work.
+
+`semantic_review_feedback` and optional `qa_summary.semantic_review` distinguish
+disabled (internally; omitted externally), skipped, reviewed, unavailable,
+invalid_response and incomplete with stable reasons. Only accepted findings add
+semantic warning reports, always `repairable=false`. Review failure/status does
+not invent static success, execution evidence, requirements verification or a
+quality exit. Reviewed/no-findings means only model-reported no concerns.
+Current reports preserve static/runtime QA; bounded history cannot qualify a
+replacement. No semantic edge enters repair, and no executable cell or plan is
+modified. Summaries use existing derived Markdown with escaped model text; browser
+text is inert. Metadata is finalized before immutable export/publication.
+
+The prompt, raw response and evidence quotes are transient. Persist only sanitized
+bounded summaries and IDs/ranges/fingerprints. No tools, external docs retrieval,
+secret access, code execution or model repairs are available. Delimited untrusted
+data reduces exposure without proving universal prompt-injection resistance.
+
+These limits bound the review call, not whole-generation usage/cost. Provider
+controls remain operational; #383 accounting/budgets are deferred. A fresh durable
+attempt can repeat the call. The labelled corpus/fakes test contracts, not live
+reviewer accuracy. The panel, blocking semantic review and automatic semantic
+repair remain later #334/#129 acceptance; see [ADR 0003](adr/0003-advisory-requirements-reviewer.md).
 
 ## Future Enhancements
 
