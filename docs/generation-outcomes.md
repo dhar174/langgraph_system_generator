@@ -9,6 +9,11 @@ Ordinary generation continues writing version 1. Explicit repository fixture
 evaluation can produce a subsequent version-2 outcome in a new local evaluated
 bundle. The historical contract below remains unchanged.
 
+Current status (2026-10-23): #382 / PR #397 and #381 / PRs #398-#399 are
+merged. See the [v1.1 acceptance matrix](../plans/current-plan.md) for remaining
+reviewer, benchmark and cloud-acceptance work. Receipt dates and tested SHAs below
+and in linked evidence retain their original meaning.
+
 ## Version 2: controlled execution evidence
 
 The explicit evaluator's `--qualify-outcomes` option supports only the approved
@@ -90,7 +95,8 @@ or ambiguous qualification), `advisories`, then `completed`.
 - `environment_smoke`: scope `trusted_smoke_test`; result `passed`, `failed`,
   `unavailable`, or `not_run`.
 - `generated_execution`: scope `generated_notebook`, result `not_run`. This
-  feature does not execute generated code or implement #381.
+  ordinary generation path does not execute generated code. The separate #381
+  evaluator can write v2 as described above.
 - `usability`: `blocked`, `no_known_blockers`, or `unknown`.
 - Counts, checks, candidate identity, missing/stale evidence counts, repair
   budget and rollback metadata explain the classification.
@@ -183,4 +189,6 @@ independent review evidence are recorded in
 Use one production writer and read-only specialists. Preserve frozen durable
 schemas, owner access, publication fencing, endpoint isolation, lazy dependencies
 and bounded generator state/history. Do not merge, deploy, provision resources,
-change IAM or activate durable submissions. Do not close #380 or claim #381.
+change IAM or activate durable submissions. #380 remains open for operational
+acceptance; #381 is closed for the controlled evaluator delivered separately,
+not arbitrary-prompt or general requirements verification.

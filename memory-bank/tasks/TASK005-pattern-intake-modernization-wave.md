@@ -1,8 +1,8 @@
 # TASK005 - Pattern/Intake Modernization Wave
 
-**Status:** In Progress
+**Status:** Completed (PR #361 merged at `5c239e5`)
 **Added:** 2026-05-22
-**Updated:** 2026-05-22
+**Updated:** 2026-10-23
 
 ## Original Request
 
@@ -37,7 +37,7 @@ reopening generated-output epic #342. The focused scope is #60, #63, #64, and
 
 ## Progress Tracking
 
-**Overall Status:** In Progress
+**Overall Status:** Completed; merge verified 2026-10-23
 
 ### Subtasks
 
@@ -48,9 +48,15 @@ reopening generated-output epic #342. The focused scope is #60, #63, #64, and
 | 5.3 | Implement critique-loop HITL interrupt for #63 | Complete | 2026-05-22 | `generate_graph_code(require_human_approval=True)` emits `interrupt_before=["revise"]`. |
 | 5.4 | Implement Send fan-out subagents for #64 | Complete | 2026-05-22 | Supervisor decisions carry `next_agents`; graph routers return `Send(...)` fan-out. |
 | 5.5 | Implement iterative requirements refinement for #202 | Complete | 2026-05-22 | API `messages` and state `requirements_messages` feed `RequirementsAnalyst.analyze_dialog(...)`. |
-| 5.6 | Run verification and open ready PR | In Progress | 2026-05-22 | Focused slices, broad unit gate, integration slice, and full local CI-style pytest are passing; PR #361 is open. |
+| 5.6 | Run verification and open ready PR | Complete | 2026-10-23 | PR #361 merged at `5c239e5`; original receipts below retain their counts. |
 
 ## Progress Log
+
+### 2026-10-23 current-status annotation
+
+- Verified PR #361 merged at `5c239e59dcaf1aca2b32ea762a4cf110d188ba45`.
+  Historical verification below was not rerun or relabeled.
+  Current work is in [the v1.1 plan](../../plans/current-plan.md).
 
 ### 2026-05-22
 

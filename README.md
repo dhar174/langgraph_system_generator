@@ -22,7 +22,8 @@ exports, and structured QA feedback.
   Colab.
 - **Private durable worker adapters**: Optional Cloud Tasks, Firestore and GCS
   execution/recovery foundation; [B2 runbook](docs/durable-worker.md). Public
-  durable admission remains disabled pending B3 integration and qualification.
+  durable API integration is implemented; activation remains gated on real-cloud
+  qualification and owner acceptance. See the [rollout gates](docs/durable-api-rollout.md).
 - **Multi-format export**: Write IPYNB, HTML, Markdown, DOCX, ZIP, and optional
   PDF outputs.
 
@@ -31,8 +32,8 @@ exports, and structured QA feedback.
 Generation results include a versioned `generation_outcome` describing pipeline
 completion, produced artifacts, static QA, trusted environment smoke, generated
 execution and usability independently. `completed` / `no_known_blockers` do not
-mean functional verification. Generated-notebook execution is `not_run`; the
-offline stub shortcut also leaves static QA `not_run` and usability `unknown`.
+mean functional verification. Ordinary generation writes v1 with generated-notebook
+execution `not_run`; the offline stub shortcut also leaves static QA `not_run` and usability `unknown`.
 
 CLI exit codes are **0** for completed, advisory or unverified artifact results,
 **2** for blocked diagnostic results, and **1** for failures without a returned
@@ -50,7 +51,12 @@ remain separate from ordinary generation. Add `--qualify-outcomes` to the
 repository evaluation command to produce candidate-bound version-2 outcomes in
 new local evaluated bundles. Original exports remain unchanged; normal CLI/API
 generation does not execute notebooks. See the linked guide for exact scope and
-isolation limitations.
+isolation limitations. These three controlled fixture families do not verify
+arbitrary prompts, live providers or general requirements fidelity. Local v2
+evidence is not an automatically accepted cloud attestation. Durable adapters and
+Firestore emulator qualification do not establish live GCP deployment acceptance.
+The [current v1.1 plan and acceptance matrix](plans/current-plan.md) track the
+remaining work.
 
 1. Create a Python `3.10+` virtual environment and install the package:
 
@@ -104,6 +110,42 @@ isolation limitations.
    ```bash
    python -m pytest --asyncio-mode=auto
    ```
+
+## Usage And Cost Management
+
+LNF does not enforce a per-generation monetary or aggregate token budget.
+`DEFAULT_BUDGET_TOKENS` / `settings.default_budget_tokens` is reserved and
+unenforced in the generation path. Issue [#383](https://github.com/dhar174/langgraph_system_generator/issues/383)
+remains open and deferred by Charles's 2026-10-23 decision; it is not a v1.1
+release blocker or a prerequisite for the advisory reviewer in #334 or the
+controlled quality comparisons in #129. No usage collector, pricing engine or
+general token ledger is supplied by this reconciliation.
+
+Use the provider account's supported spending controls, quotas and alerts as an
+interim operating measure. Check which controls that provider actually enforces:
+
+- **Spend alerts** notify an operator; they do not stop requests.
+- **Enforced spending limits**, where supported and enabled, apply to the
+  provider's account/project scope and period. Enforcement may lag; do not assume
+  zero overrun or universal availability.
+- **Request/token rate limits** restrict throughput over time, rather than the
+  total cost of one generation.
+- **Per-call output limits** constrain one response, rather than input usage,
+  multiple stages, retries or the full generation's cost.
+
+For example, OpenAI currently documents optional organization/project monthly
+hard spend limits separately from alerts, with non-instantaneous enforcement and
+possible excess usage. See [OpenAI spend controls](https://developers.openai.com/api/docs/guides/spend-limits)
+and [rate limits](https://developers.openai.com/api/docs/guides/rate-limits)
+(retrieved 2026-10-23). Verify the active account's settings; an account-wide
+monthly limit is not an LNF per-generation cap.
+
+Hosted users normally consume the operator's configured provider account.
+Personal provider-account limits do not protect that account: the hosted API has
+no supported user BYOK flow. Generated notebooks use their runner's credentials
+separately. Existing repair/iteration, timeout, concurrency, worker-attempt and
+cancellation limits remain required; deferring accounting does not authorize
+unbounded calls. This documentation changes no provider settings.
 
 ## How It Works
 
