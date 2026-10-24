@@ -269,16 +269,23 @@ Errors are captured in QAReport objects with actionable suggestions.
 3. **Safe Repairs**: Only fixes low-risk issues automatically
 4. **Bounded Attempts**: May not fix all issues in max attempts
 
-For execution validation, consider:
-- Using nbclient to execute notebooks
-- Implementing runtime smoke tests
-- Adding integration tests
+For the implemented opt-in trusted-fixture execution path, see
+[generated notebook evaluation](generated-notebook-evaluation.md). Ordinary
+generation remains v1 with execution `not_run`; its trusted environment smoke
+does not execute the generated artifact. Three controlled fixture families do
+not establish arbitrary-prompt or general requirements fidelity. See
+[generation outcomes](generation-outcomes.md) for the independent quality axes.
+
+The next #334 slice is one opt-in Requirements/Domain Fidelity Reviewer with
+advisory-only findings. The full specialist panel, blocking semantic review and
+automatic semantic repair remain later acceptance work; see the
+[current plan](../plans/current-plan.md).
 
 ## Future Enhancements
 
 Potential additions to the QA & Repair system:
 
-1. **Execution Validation**: Run notebooks in sandbox
+1. **Broader Execution Validation**: Extend beyond the implemented trusted fixtures; hostile-code containment remains unverified
 2. **LLM-based Repairs**: Use LLM to suggest complex fixes
 3. **Diff Reports**: Show before/after changes
 4. **Repair Confidence Scores**: Indicate repair reliability

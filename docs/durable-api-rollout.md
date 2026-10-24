@@ -8,6 +8,14 @@ implementation and qualification recipe. It does not authorize resource creation
 IAM/IAP changes, secret creation, activation, deployment, or a production migration.
 Keep #380 open for the owner's acceptance decision.
 
+Current status (2026-10-23): PRs #392-#395 are merged; B3 integration and
+credential-free SDK/Firestore-emulator qualification are implemented. Real GCS,
+Cloud Tasks, IAP/OIDC/IAM staging and production acceptance remain unverified.
+See the [current acceptance matrix](../plans/current-plan.md); the dated
+[qualification receipt](verification/2026-10-21-durable-postmerge-qualification.md)
+retains its tested revisions and counts. #383 cost accounting is deferred and
+is not a v1.1 blocker; existing operational limits remain mandatory.
+
 ## Accepted starting point
 
 The inspected starting point is `101f14fcf2ab009360a2562181521c6aeb531ea0`,
@@ -31,7 +39,8 @@ failures retain their established retry/authorization policy. SSE stays compact:
 fetch `result_url` for quality, and retry retrieval without resubmitting generation.
 Older manifests project limited/unknown qualification without modifying objects.
 See [generation outcomes](generation-outcomes.md); generated execution remains
-`not_run` and this feature does not deliver #381 or authorize activation.
+`not_run` on ordinary durable generation. The separate #381 evaluator produces
+local v2 bundles; those are not accepted as cloud attestations or rollout authority.
 
 | Configuration | Submission | Readback / ownership | Storage |
 | --- | --- | --- | --- |

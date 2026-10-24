@@ -1,10 +1,20 @@
 ## Current Work Focus
 
+Current status reconciled 2026-10-23 against fetched main `4f17c2d`.
+The [current v1.1 plan](../plans/current-plan.md) owns the acceptance matrix.
+Charles deferred #383 (open, non-blocking); no usage ledger/pricing engine or
+per-generation spending cap is delivered. #334 is next: one opt-in
+Requirements/Domain Fidelity Reviewer, advisory-only first slice; retain later
+blocking/repair criteria. #129 stays open for controlled quality comparisons
+without a #383 prerequisite. #335 remains later. #380 remains open for real-cloud
+staging and owner acceptance; SDK/Firestore-emulator evidence is separate.
+
 - #381-B integrates explicit trusted fixture execution into v2 outcomes in new
   local evaluated bundles. Ordinary generation retains v1/not_run; API/worker
   execution and cloud evaluation storage remain disabled. Source byte identity,
   required assertions, parent supervision and clean provenance gate qualification.
-  PR #399 is open for review. At code head 185b073, full tests passed 1,558/7 skips,
+  PR #399 merged at `4f17c2d`; #381 is closed for controlled fixtures.
+  At code head 185b073, full tests passed 1,558/7 skips,
   SDK passed 243/243, and three cases passed 110 assertions with four controls.
   Final source 11ef72a fixes external review findings in capture classification
   and output provenance; 102 focused tests and fresh 110-assertion/four-control
@@ -31,8 +41,9 @@
 
 - Issue #379: explicit LLM destination/credential binding and hosted default-deny
   registration are implemented. Local qualification passed (1,016 tests, 3 skips;
-  fatal-error lint exit 0). Publication, exact-head CI and owner review remain
-  separate gates; see `docs/llm-endpoint-security.md`.
+  fatal-error lint exit 0). PR #384 merged at `11551ab`; #379 is closed.
+  Final correction-head hosted evidence and retained local failures are in
+  `docs/llm-endpoint-security.md`. Earlier counts retain their tested revision.
 
 
 - The repository currently centers on prompt-to-notebook generation with shared
@@ -142,8 +153,8 @@
   have non-blocking chat helpers, same-thread demo turns, canonical
   verifier/reviser fields, memory writers, tool contract summaries, and
   prompt-faithfulness/domain QA.
-- Wave 5 is active on `codex/pattern-intake-modernization-wave5` for #60, #63,
-  #64, and #202. The branch modernizes residual LangGraph pattern/intake
+- Wave 5 is complete: PR #361 merged at `5c239e5` for #60, #63,
+  #64, and #202. The merged branch modernized residual LangGraph pattern/intake
   behavior: router fallback/general routes, critique-loop static interrupts,
   Send-based subagent fan-out, and multi-turn requirements refinement through
   the API/intake state contract.
@@ -200,10 +211,10 @@
 
 ## Immediate Next Steps
 
-- Complete and open the ready Wave 5 PR from
-  `codex/pattern-intake-modernization-wave5` for #60, #63, #64, and #202.
-- Keep #334/#335 active as downstream runtime outer-agent architecture work
-  after generated-output epic #342.
+- Begin #334 with the bounded advisory-only first slice in the current plan;
+  preserve the umbrella's later blocking and repair acceptance criteria.
+- Keep #129 open for controlled comparisons and #335 as later work. #383 is
+  deferred, not a prerequisite. Keep #380 real-cloud acceptance separate.
 - Keep public docs, examples, and onboarding copy aligned with the current
   CLI/API contract.
 - Keep contributor-facing LangGraph/LangChain skills and LNF custom agents

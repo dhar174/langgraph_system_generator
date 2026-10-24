@@ -213,6 +213,12 @@ deterministic node templates.
 
 ## Phase 381-B handoff
 
+Current status (2026-10-23): PR #399 merged at `4f17c2d`; the explicit
+qualification path above delivers this handoff. #381 is closed for the accepted
+controlled-fixture scope. The following paragraph records the original #381-A
+boundary, not unfinished implementation instructions. See the
+[v1.1 acceptance matrix](../plans/current-plan.md).
+
 B must validate a receipt's source/case/fixture/environment provenance and
 associate its candidate SHA with the selected artifact before deriving a new
 public execution result. Version-1 `GeneratedExecutionOutcome` still accepts

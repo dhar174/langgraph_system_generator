@@ -1,5 +1,21 @@
 ## What Works
 
+Current status reconciled 2026-10-23 against fetched main `4f17c2d`.
+The [current v1.1 plan](../plans/current-plan.md) owns the acceptance matrix.
+Charles deferred #383 (open, non-blocking); no usage ledger/pricing engine or
+per-generation spending cap is delivered. #334 is next: one opt-in
+Requirements/Domain Fidelity Reviewer, advisory-only first slice; retain later
+blocking/repair criteria. #129 stays open for controlled quality comparisons
+without a #383 prerequisite. #335 remains later. #380 remains open for real-cloud
+staging and owner acceptance; SDK/Firestore-emulator evidence is separate.
+
+Merged PRs #384-#385 and #392-#399 deliver endpoint isolation, bounded ephemeral
+lifecycle, durable adapters/API, SDK/emulator qualification, truthful outcomes
+and explicit controlled-fixture evaluation. #379/#381/#382 are closed for their
+accepted scope. Ordinary generation remains v1/execution `not_run`; explicit
+local v2 is not cloud attestation or general requirements verification.
+Dated counts below remain historical receipts.
+
 - PR #396 independent review & verification: CodeQL security alerts 277 & 278
   (Polynomial ReDoS in credential redaction) verified resolved via linear
   `_redact_named_credentials` scanner and `[invalid URL omitted]` fallback.
@@ -13,7 +29,8 @@
   fresh supported environment. CI fatal-error lint also exited 0. Broad Ruff,
   Black and mypy retain verified baseline failures with no additional findings.
   Hosted custom providers require exact registration and dedicated credentials.
-  Remote publication, exact-head CI and owner review are separate gates.
+  PR #384 is now merged; final correction-head hosted evidence and retained
+  local timing failures are recorded in the security receipt/current plan.
 
 
 - Actual runtime docs-source precedence for generation context (Issue #375 / PR #377):
@@ -63,7 +80,7 @@
   executable-tool wiring, verifier/reviser fallbacks, memory checks,
   non-blocking top-to-bottom chat execution, prompt-faithfulness/domain QA, and
   centralized generated LLM configuration patterns.
-- Wave 5 pattern/intake modernization is active on
+- Wave 5 pattern/intake modernization merged in PR #361 (`5c239e5`), from
   `codex/pattern-intake-modernization-wave5`: router snippets now emit a
   fallback/general route, subagent snippets emit Send-based parallel fan-out
   contracts, critique-loop snippets can compile with `interrupt_before` on the
@@ -160,7 +177,7 @@
   the private service, mounts `OPENAI_API_KEY` from Secret Manager, and checks
   `/health` after deployment.
 - As of the post-PR #360 refresh, generated-output epic #342 and children
-  #343-#350 are complete. Wave 5 is active for residual pattern/intake
+  #343-#350 are complete. Wave 5 merged via PR #361 for residual pattern/intake
   modernization issues #60, #63, #64, and #202.
 
 ## Known Issues and Limitations
@@ -169,8 +186,9 @@
   configured.
 - RAG retrieval degrades gracefully to empty context when the vector store is
   unavailable, which keeps generation running but may reduce quality.
-- The SSE/job model uses in-memory queues and is not yet designed for
-  distributed multi-server coordination.
+- Ephemeral SSE/jobs remain process-local. The optional durable backend now
+  implements cross-instance contracts/API, with offline and emulator evidence;
+  real-cloud staging and production acceptance remain outstanding under #380.
 - Full-extra packaging smoke tests are intentionally opt-in because they install
   the broad notebook/RAG/export dependency set into a fresh virtual
   environment.

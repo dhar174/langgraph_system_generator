@@ -1,6 +1,6 @@
 # TASK009 - Execution outcome integration (#381-B)
 
-**Status:** In Review (PR #399 open; implementation and local qualification complete)
+**Status:** Completed (PR #399 merged at `4f17c2d`; #381 closed for controlled-fixture scope)
 
 **Added:** 2026-10-23
 
@@ -36,4 +36,11 @@ artifact checker passed again. Read-only review found no blocker in those fixes.
 Final hosted status is recorded separately in PR #399; do not relabel receipts.
 Maintained evidence: docs/verification/2026-10-23-381-b-execution-outcomes.md.
 
-Stop: one open PR; no merge, deployment, cloud configuration or issue changes.
+Current-status annotation (2026-10-23): PR #399 merged at
+`4f17c2d06c9156674da394eae7715b656723400a`. #381 remains closed for the
+accepted controlled-fixture evaluator. Local v2 is not cloud attestation or
+general requirements verification. Counts above retain their tested SHAs.
+See [the current plan](../../plans/current-plan.md).
+
+Historical delivery boundary: one open PR; no merge, deployment, cloud
+configuration or issue changes were performed by that implementation task.

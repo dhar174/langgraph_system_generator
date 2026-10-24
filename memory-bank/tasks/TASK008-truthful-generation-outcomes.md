@@ -1,10 +1,10 @@
 # TASK008 - Truthful generation outcomes (#382)
 
-**Status:** In Review (implementation complete; PR #397 open)
+**Status:** Completed (PR #397 merged at `9cb1aad`; #382 closed)
 
 **Added:** 2026-10-22
 
-**Updated:** 2026-10-22
+**Updated:** 2026-10-23
 
 ## Original Request
 
@@ -22,7 +22,7 @@ and readable. Generated execution and stub static QA remain not run.
 
 ## Progress Tracking
 
-**Overall Status:** Implementation complete; qualification evidence and owner review tracked in PR #397
+**Overall Status:** Completed; merge and accepted scope verified 2026-10-23
 
 | Subtask | Status | Evidence |
 | --- | --- | --- |
@@ -31,9 +31,18 @@ and readable. Generated execution and stub static QA remain not run.
 | Diagnostic publication regressions | Complete | Real stub/export/store/worker, fake transports, bytes/receipts and one publication |
 | Required qualification | See PR #397 | Unit 1,353 passed/1 skipped; patterns 82 passed; final SDK/full receipts and exact-head checks maintained in PR |
 | Independent final review | Complete | Read-only review confirmed through code head 0d3a3b9; no substantive findings |
-| PR handoff | Owner review | #397 remains open; readiness and final counts are recorded there after receipt inspection |
+| PR handoff | Complete | #397 merged at `9cb1aad`; original counts remain below/in PR |
 
 ## Progress Log
+
+### 2026-10-23 current-status annotation
+
+- Verified #397 merged at `9cb1aadba2c9aab25f988591bed32504fe206483`;
+  #382 is closed. #381 is now separately delivered by #398/#399 for controlled
+  fixtures, while ordinary generation remains v1/`not_run`.
+- The implementation log below is historical, including its then-current #381
+  boundary. See [the current plan](../../plans/current-plan.md); no historical
+  receipt is reattributed to the merge commit.
 
 ### 2026-10-22
 
