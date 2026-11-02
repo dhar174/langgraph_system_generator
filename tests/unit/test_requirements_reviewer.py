@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import logging
 from unittest.mock import AsyncMock
 
 import httpx
@@ -15,11 +16,12 @@ from langgraph_system_generator.qa.specialist_review import build_review_context
 from langgraph_system_generator.utils.config import ModelConfig
 
 
-def context(text="weather = 1"):
+def context(text="weather = 1", **extra):
     return build_review_context(
         {
             "user_prompt": "Build a weather assistant",
             "generated_cells": [CellSpec(cell_type="code", content=text)],
+            **extra,
         },
         instructions=agent.REVIEW_INSTRUCTIONS,
     )
@@ -155,14 +157,19 @@ async def test_timeout_and_cancellation_close_scoped_transports(monkeypatch, can
     assert invoke.await_count == 1
 
 
-@pytest.mark.parametrize("code", [200, 400, 429, 500])
-async def test_actual_sdk_http_request_count_and_native_schema(monkeypatch, code):
+@pytest.mark.parametrize("code", [200, 400, 429, 500, "length", "constraints"])
+async def test_actual_sdk_http_request_count_and_native_schema(
+    monkeypatch, code, caplog
+):
     from langchain_core.callbacks.base import BaseCallbackHandler
     from langchain_core.callbacks.manager import AsyncCallbackManager
     from langchain_core.tracers.context import (
         run_collector_var,
         tracing_v2_callback_var,
     )
+
+    if code in ("constraints", "length"):
+        caplog.set_level(logging.DEBUG)
 
     class Sentinel(BaseCallbackHandler):
         starts = 0
@@ -178,7 +185,7 @@ async def test_actual_sdk_http_request_count_and_native_schema(monkeypatch, code
 
     def handle(request):
         requests.append(request)
-        if code != 200:
+        if isinstance(code, int) and code != 200:
             return httpx.Response(
                 code,
                 json={
@@ -198,10 +205,14 @@ async def test_actual_sdk_http_request_count_and_native_schema(monkeypatch, code
                 "choices": [
                     {
                         "index": 0,
-                        "finish_reason": "stop",
+                        "finish_reason": "length" if code == "length" else "stop",
                         "message": {
                             "role": "assistant",
-                            "content": '{"assessment":"complete","findings":[]}',
+                            "content": (
+                                '{"assessment":"FIXTURE_CANARY_TRUNCATED"'
+                                if code == "length"
+                                else '{"assessment":"complete","findings":[]}'
+                            ),
                         },
                     }
                 ],
@@ -222,10 +233,30 @@ async def test_actual_sdk_http_request_count_and_native_schema(monkeypatch, code
 
     monkeypatch.setattr(_llm, "Client", make_sync)
     monkeypatch.setattr(_llm, "AsyncClient", make_async)
+    review_context = (
+        context(
+            constraints=[
+                {"description": 'Require weather data; api_key="FIXTURE_CANARY_ALPHA"'},
+                {"nested": [{"description": "token='FIXTURE_CANARY_BETA'"}]},
+                {"description": 'Already redacted: api_key="[REDACTED]"'},
+                {"api_key": {"value": "FIXTURE_CANARY_SUBTREE"}},
+            ],
+            tools_plan={"description": 'api_key="FIXTURE_CANARY_PLAN"'},
+            docs_context=[
+                {"content": "Weather", "source": 'token="FIXTURE_CANARY_DOC"'}
+            ],
+            user_prompt=(
+                'Weather config {"api_key":{"value":"FIXTURE_CANARY_INLINE"}} '
+                "password: FIXTURE_CANARY_COLON and sk-proj-FIXTURE_CANARY_BARE_0001"
+            ),
+        )
+        if code == "constraints"
+        else context()
+    )
     try:
         result = await agent.RequirementsDomainReviewer(
             ModelConfig(model="fixture-model", max_tokens=91)
-        ).review(context())
+        ).review(review_context)
         assert sentinel.starts == 0
         assert (
             sentinel
@@ -242,7 +273,26 @@ async def test_actual_sdk_http_request_count_and_native_schema(monkeypatch, code
     assert payload.get("max_completion_tokens", payload.get("max_tokens")) == 91
     assert not payload.get("tools") and payload["store"] is False
     assert all(c.is_closed for c in clients)
-    assert result.status == ("reviewed" if code == 200 else "unavailable")
+    if code == "length":
+        assert (result.status, result.reason_code) == ("incomplete", "output_limit")
+        assert result.response is None
+        assert "FIXTURE_CANARY_TRUNCATED" not in caplog.text + result.model_dump_json()
+    elif code == "constraints":
+        assert result.status == "reviewed"
+        assert "FIXTURE_CANARY_" not in requests[0].content.decode()
+        assert "FIXTURE_CANARY_" not in caplog.text + result.model_dump_json()
+        sources = json.loads(payload["messages"][-1]["content"].split("\n", 1)[1])[
+            "sources"
+        ]
+        requirements = [
+            json.loads(s["text"])
+            for s in sources
+            if s["source_id"].startswith("requirement:")
+        ]
+        assert requirements[0]["description"].startswith("Require weather data;")
+        assert "[REDACTED]" in requirements[1]["nested"][0]["description"]
+    else:
+        assert result.status == ("reviewed" if code == 200 else "unavailable")
 
 
 async def test_missing_credentials_constructs_no_client(monkeypatch):

@@ -9,6 +9,7 @@ from contextvars import Context
 from langchain_core.callbacks.manager import AsyncCallbackManager
 from langchain_openai import ChatOpenAI
 from langsmith import tracing_context
+from openai import LengthFinishReasonError
 from pydantic import ValidationError
 
 from langgraph_system_generator.generator.agents._llm import (
@@ -121,6 +122,8 @@ class RequirementsDomainReviewer:
             raise
         except asyncio.TimeoutError:
             return result("unavailable", "timeout")
+        except LengthFinishReasonError:
+            return result("incomplete", "output_limit")
         except (NotImplementedError, TypeError):
             return result("unavailable", "unsupported_response")
         except Exception:  # noqa: BLE001 - sanitized optional-provider boundary

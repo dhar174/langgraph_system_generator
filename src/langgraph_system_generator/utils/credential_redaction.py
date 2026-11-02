@@ -7,17 +7,54 @@ import re
 from typing import Any
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
-
 _SECRET_FRAGMENT = re.compile(
     r"key|token|secret|password|auth|cred|signature", re.IGNORECASE
 )
 _NAME_TOKEN = re.compile(r"[\w-]+")
+_COLON_CREDENTIAL = re.compile(
+    r"api[_-]?key|access[_-]?token|password|secret", re.IGNORECASE
+)
+_OPENAI_KEY = re.compile(r"\bsk-(?:proj-|svcacct-)?[A-Za-z0-9_-]{16,}\b")
+_CREDENTIAL_CONTAINER_KEYS = {
+    "api_key",
+    "apikey",
+    "access_token",
+    "authorization",
+    "credential",
+    "credentials",
+    "password",
+    "secret",
+    "token",
+}
 
 
 def _skip_whitespace(text: str, position: int) -> int:
     while position < len(text) and text[position].isspace():
         position += 1
     return position
+
+
+def _credential_container_end(text: str, position: int) -> int:
+    """Consume one credential object or list, including quoted delimiters."""
+    depth = 0
+    quote = None
+    while position < len(text):
+        char = text[position]
+        position += 1
+        if quote:
+            if char == "\\":
+                position += 1
+            elif char == quote:
+                quote = None
+        elif char in "\"'":
+            quote = char
+        elif char in "{[":
+            depth += 1
+        elif char in "}]":
+            depth -= 1
+            if depth == 0:
+                break
+    return min(position, len(text))
 
 
 def _redact_named_credentials(text: str) -> str:
@@ -47,7 +84,12 @@ def _redact_named_credentials(text: str) -> str:
                 continue
         else:
             position = _skip_whitespace(text, position)
-            if position == len(text) or text[position] != "=":
+            if position == len(text) or not (
+                text[position] == "="
+                or (
+                    text[position] == ":" and _COLON_CREDENTIAL.fullmatch(match.group())
+                )
+            ):
                 continue
         position = _skip_whitespace(text, position + 1)
         if position == len(text):
@@ -59,6 +101,9 @@ def _redact_named_credentials(text: str) -> str:
             while value_end < len(text) and text[value_end] != quote:
                 value_end += 2 if text[value_end] == "\\" else 1
             value_end = min(value_end, len(text))
+        elif text[position] in "{[":
+            value_start = position
+            value_end = _credential_container_end(text, position)
         else:
             value_start = position
             value_end = position
@@ -127,10 +172,22 @@ def sanitize_generation_payload(value: Any) -> Any:
         return {
             key: (
                 "[REDACTED]"
-                if isinstance(item, str)
-                and any(
-                    part in str(key).lower()
-                    for part in ("key", "secret", "password", "authorization", "token")
+                if (
+                    isinstance(item, str)
+                    and any(
+                        part in str(key).lower()
+                        for part in (
+                            "key",
+                            "secret",
+                            "password",
+                            "authorization",
+                            "token",
+                        )
+                    )
+                )
+                or (
+                    isinstance(item, (dict, list))
+                    and str(key).lower().replace("-", "_") in _CREDENTIAL_CONTAINER_KEYS
                 )
                 else sanitize_generation_payload(item)
             )
@@ -237,6 +294,7 @@ def _sanitize_text_credentials(text: Any, endpoint: str | None = None) -> str:
     )
 
     result = _redact_named_credentials(result)
+    result = _OPENAI_KEY.sub("[REDACTED]", result)
 
     # 6. Redact basic-auth credentials in any remaining URL/netloc patterns
     result = re.sub(

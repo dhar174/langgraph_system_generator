@@ -25,8 +25,8 @@ def feedback_payload(value: Any) -> dict[str, Any] | None:
 
 def inert_markdown(text: str) -> str:
     """Model text is prose, never HTML, Markdown links, images or code fences."""
-    escaped = html.escape(text, quote=True)
-    return re.sub(r"([\\`*_{}\[\]()#!|>])", r"\\\1", escaped).replace("\n", " ")
+    escaped = re.sub(r"([\\`*_{}\[\]()#!|~])", r"\\\1", text)
+    return html.escape(escaped, quote=False).replace("\n", " ")
 
 
 def semantic_markdown(value: Any) -> str:

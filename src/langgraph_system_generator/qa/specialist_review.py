@@ -7,7 +7,7 @@ import json
 import re
 from collections import Counter
 from collections.abc import Mapping
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal
 
 from langgraph_system_generator.qa.specialist_models import (
     REVIEWER_ID,
@@ -78,8 +78,16 @@ def build_review_context(
         *,
         version: Any = None,
         cell_index: int | None = None,
+        cell_type: Literal["code", "markdown", "raw"] | None = None,
+        structured: bool = False,
     ) -> None:
-        text = _sanitize_text_credentials(str(text))
+        # Sanitize leaves before encoding. Applying prose regexes to escaped
+        # JSON can miss quoted credentials and corrupt the encoded source.
+        text = (
+            canonical_json(sanitize_generation_payload(_payload(text)))
+            if structured or not isinstance(text, str)
+            else _sanitize_text_credentials(text)
+        )
         sources.append(
             ReviewSource(
                 family=family,
@@ -93,6 +101,7 @@ def build_review_context(
                     else None
                 ),
                 cell_index=cell_index,
+                cell_type=cell_type,
             )
         )
 
@@ -108,8 +117,9 @@ def build_review_context(
         add(
             "requirement",
             f"requirement:{i}",
-            canonical_json(_payload(constraint)),
+            constraint,
             f"constraints/{i}",
+            structured=True,
         )
     index = 0
     for cell in notebook.cells:
@@ -121,13 +131,33 @@ def build_review_context(
             cell.source,
             f"candidate/cells/{index}",
             cell_index=index,
+            cell_type=cell.cell_type,
         )
         index += 1
     docs = [_payload(s) for s in state.get("docs_context") or []]
     pack = _payload(state.get("generation_context_pack") or {})
-    docs.extend(pack.get("docs_snippets") or [])
+    snippets = pack.pop("docs_snippets", None) or []
+    for snippet in snippets:
+        excerpt = snippet.get("excerpt", "")
+        if (
+            isinstance(excerpt, str)
+            and excerpt
+            and any(
+                doc.get("source") == snippet.get("source")
+                and doc.get("version") == snippet.get("version")
+                and str(doc.get("content", "")).startswith(excerpt)
+                for doc in docs
+            )
+        ):
+            continue
+        docs.append(snippet)
+    seen_docs = set()
     for i, doc in enumerate(docs):
         content = doc.get("content", doc.get("excerpt", ""))
+        identity = canonical_json([doc.get("source"), doc.get("version"), content])
+        if identity in seen_docs:
+            continue
+        seen_docs.add(identity)
         if str(content).strip():
             add(
                 "docs",
@@ -146,9 +176,9 @@ def build_review_context(
             "notebook_plan",
             "architecture_type",
             "selected_patterns",
-            "generation_context_pack",
         )
     }
+    facts["generation_context_pack"] = pack
     facts["candidate_cell_metadata"] = [
         dict(cell.metadata)
         for cell in notebook.cells

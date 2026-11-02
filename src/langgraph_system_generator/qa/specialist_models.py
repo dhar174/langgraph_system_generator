@@ -63,6 +63,7 @@ class ReviewSource(ReviewRecord):
     location: str
     version: str | None = None
     cell_index: int | None = None
+    cell_type: Literal["code", "markdown", "raw"] | None = None
 
 
 class SemanticReviewContext(ReviewRecord):

@@ -70,6 +70,69 @@ def test_original_request_full_composed_cells_and_host_identity():
     assert "quote" not in accepted[0].model_dump_json()
 
 
+def test_structured_requirement_offsets_use_the_final_encoded_source():
+    value = state()
+    value["constraints"] = [
+        {"description": 'Require café data; token="FIXTURE_CANARY"'}
+    ]
+    ctx = context(value)
+    source = next(s for s in ctx.sources if s.source_id == "requirement:0")
+    assert "FIXTURE_CANARY" not in ctx.request_json
+    assert json.loads(source.text)["description"].startswith("Require café data;")
+    assert source.fingerprint == hashlib.sha256(source.text.encode()).hexdigest()
+    assert context(value).context_digest == ctx.context_digest
+    data = response(ctx).model_dump()
+    start = source.text.index("café")
+    data["findings"][0]["references"] = (
+        {
+            "source_id": source.source_id,
+            "start": start,
+            "end": start + 4,
+            "quote": "café",
+        },
+        data["findings"][0]["references"][1],
+    )
+    assert (
+        admit_findings(ctx, ModelReviewResponse.model_validate(data))[0]
+        .references[0]
+        .start
+        == start
+    )
+
+
+def test_cell_types_and_pack_excerpt_do_not_duplicate_review_input():
+    value = state()
+    value["generated_cells"].append(
+        CellSpec(cell_type="markdown", content="Claims stock behavior")
+    )
+    content = "DOC_BUDGET_MARKER " + "x" * 23000
+    doc = {"source": "manual", "content": content}
+    value["docs_context"] = [doc, doc.copy()]
+    value["generation_context_pack"] = {
+        "docs_snippets": [{"source": "manual", "excerpt": content[:600]}]
+    }
+    ctx = context(value)
+    assert len(ctx.request_json) < 48000
+    assert ctx.request_json.count("DOC_BUDGET_MARKER") == 1
+    assert {s.cell_type for s in ctx.sources if s.family == "cell"} >= {
+        "code",
+        "markdown",
+    }
+    assert value["generation_context_pack"]["docs_snippets"]
+
+
+def test_advisory_markdown_renders_punctuation_and_inert_markup():
+    import mistune
+
+    from langgraph_system_generator.qa.specialist_presentation import inert_markdown
+
+    text = "The user's request isn't satisfied. <script>x</script> [link](javascript:x) ![image](x) `code`"
+    rendered = mistune.create_markdown(escape=False)(inert_markdown(text))
+    assert "The user's request isn't satisfied." in rendered
+    assert "&lt;script&gt;x&lt;/script&gt;" in rendered
+    assert all(tag not in rendered for tag in ("<script", "<a ", "<img", "<code"))
+
+
 @pytest.mark.parametrize("defect", ["source_id", "quote", "start", "end"])
 def test_rejects_fabricated_or_invalid_references(defect):
     ctx = context()
