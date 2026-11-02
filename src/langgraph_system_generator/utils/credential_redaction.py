@@ -12,20 +12,11 @@ _SECRET_FRAGMENT = re.compile(
 )
 _NAME_TOKEN = re.compile(r"[\w-]+")
 _COLON_CREDENTIAL = re.compile(
-    r"api[_-]?key|access[_-]?token|password|secret", re.IGNORECASE
+    r"(?:[\w-]+[_-])?(?:api[_-]?key|(?:access[_-]?)?token|password|"
+    r"secret(?:[_-]key)?|client[_-]?secret|authorization|credentials?|signature)",
+    re.IGNORECASE,
 )
 _OPENAI_KEY = re.compile(r"\bsk-(?:proj-|svcacct-)?[A-Za-z0-9_-]{16,}\b")
-_CREDENTIAL_CONTAINER_KEYS = {
-    "api_key",
-    "apikey",
-    "access_token",
-    "authorization",
-    "credential",
-    "credentials",
-    "password",
-    "secret",
-    "token",
-}
 
 
 def _skip_whitespace(text: str, position: int) -> int:
@@ -113,6 +104,15 @@ def _redact_named_credentials(text: str) -> str:
                 and text[value_end] not in "&,'\"<>"
             ):
                 value_end += 1
+            if (
+                match.group().lower() == "authorization"
+                and text[value_start:value_end].lower() == "basic"
+            ):
+                value_end = _skip_whitespace(text, value_end)
+                while value_end < len(text) and (
+                    text[value_end].isalnum() or text[value_end] in "+/="
+                ):
+                    value_end += 1
         if value_end == value_start:
             continue
         pieces.extend((text[copied_until:value_start], "[REDACTED]"))
@@ -187,7 +187,7 @@ def sanitize_generation_payload(value: Any) -> Any:
                 )
                 or (
                     isinstance(item, (dict, list))
-                    and str(key).lower().replace("-", "_") in _CREDENTIAL_CONTAINER_KEYS
+                    and _COLON_CREDENTIAL.fullmatch(str(key))
                 )
                 else sanitize_generation_payload(item)
             )

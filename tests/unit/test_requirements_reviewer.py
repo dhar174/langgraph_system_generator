@@ -247,7 +247,15 @@ async def test_actual_sdk_http_request_count_and_native_schema(
             ],
             user_prompt=(
                 'Weather config {"api_key":{"value":"FIXTURE_CANARY_INLINE"}} '
-                "password: FIXTURE_CANARY_COLON and sk-proj-FIXTURE_CANARY_BARE_0001"
+                "password: FIXTURE_CANARY_COLON and sk-proj-FIXTURE_CANARY_BARE_0001\n"
+                "token: FIXTURE_CANARY_TOKEN\n"
+                "client_secret: FIXTURE_CANARY_CLIENT\n"
+                "clientSecret: FIXTURE_CANARY_CAMEL\n"
+                "openai_api_key: FIXTURE_CANARY_PREFIX\n"
+                "secret_key: FIXTURE_CANARY_KEY\n"
+                "credential: FIXTURE_CANARY_CREDENTIAL\n"
+                "signature: FIXTURE_CANARY_SIGNATURE\n"
+                "authorization: Basic RklYVFVSRV9DQU5BUlk=\n"
             ),
         )
         if code == "constraints"
@@ -280,6 +288,7 @@ async def test_actual_sdk_http_request_count_and_native_schema(
     elif code == "constraints":
         assert result.status == "reviewed"
         assert "FIXTURE_CANARY_" not in requests[0].content.decode()
+        assert "RklYVFVSRV9DQU5BUlk=" not in requests[0].content.decode()
         assert "FIXTURE_CANARY_" not in caplog.text + result.model_dump_json()
         sources = json.loads(payload["messages"][-1]["content"].split("\n", 1)[1])[
             "sources"
