@@ -135,3 +135,75 @@ panel, usage ledger, routing layer or generic agent framework was introduced.
 Confidence: B for bounded offline behavior; live reviewer accuracy and cloud
 staging are unassessed, and the full-suite bootstrap timeout remains a recorded
 host reproducibility limitation despite the passing isolated recheck.
+
+## November 2 Copilot review follow-up
+
+Copilot reviewed `5ac6bc6e24ff71fd0425e9189cb949eac98bc07c` against
+`96baddc5768df5d5bbb06b47568f94ffccca4857`. The corrected production head is
+`5cb3fb942eacd508a328a88395b2859ef01ff2e2`. The earlier checks and bootstrap
+failure above are historical.
+
+The pre-fix SDK wire and QA re-entry selection reported five failures and five
+passes, exit 1. The wire capture contained a synthetic quoted-constraint
+credential. A structured completion with a length finish reason was classified
+as unavailable. Changing the prompt, docs, or candidate left an obsolete
+finding in current QA.
+
+- `63c18c0` sanitizes structured leaves before serialization and catches
+  OpenAI SDK parse-time truncation. It also includes explicit cell types,
+  docs and pack-excerpt deduplication, and safe punctuation rendering.
+- `8a2393a` reconciles current reports by reviewer identity and preserves bounded,
+  finding-keyed history. Re-entry uses cached feedback and does not call the
+  provider again.
+- `f7387f3` projects candidate-matched advisory status into evaluated bundles,
+  preserves original artifacts, documents reasoning-token pressure, and fixes
+  the verification heading placement.
+- `5cb3fb9` covers credential label and authorization forms found during
+  independent review. Provider support, arbitrary credential representations
+  and empirical citation acceptance remain outside offline verification.
+
+Focused follow-up checkpoints passed 279 and 223 tests. The final committed
+head passed both selected actual SDK MockTransport wire regressions on OpenAI
+SDK 3.35.1 and langchain-openai 1.7.2. Each used one request and closed its
+transports. The canary fixture checks the full request and captured debug
+diagnostics. The shared export fixture checks review status, candidate identity,
+stale-finding removal, notebook validity, HTML, ZIP equivalence and absence of
+its synthetic credential. The API regression checks stale response projection
+and registered downloads. No live provider was used.
+
+The final credential-stripped gates ran on `5cb3fb9`. All 209 source
+fingerprints matched across unit, pattern, full, SDK, and wire receipts.
+Separate local receipts are stored under ignored `output/verification334`
+with the `copilot-` prefix.
+
+| Command (task-local Python) | Result |
+| --- | --- |
+| `python -m pytest tests/unit/ --asyncio-mode=auto -q` | 1,524 passed, exit 0 |
+| `python -m pytest tests/patterns/ -v` | 82 passed, exit 0 |
+| `python -m pytest --asyncio-mode=auto -ra` | 1,643 passed, 7 skipped, exit 0 |
+| `python scripts/qualify_durable_backend.py --level sdk --test-timeout 900 --receipts output/verification334/copilot-sdk` | 243 passed, zero skips, exit 0 |
+| `python -m flake8 src tests scripts --count --select=E9,F63,F7,F82 --show-source --statistics` | Zero findings, exit 0 |
+| `node --check src/langgraph_system_generator/api/static/app.js` and `git diff --check` | Exit 0 |
+
+The full run passed generated notebook execution and evaluation. Its seven
+skips were four opt-in Firestore emulator cases and three opt-in packaging
+cases. The earlier bootstrap failure remains recorded above.
+
+Broad static checkpoints returned exit 1. Ruff reported 1,242 diagnostics
+versus 1,244 previously, with two removed and no additions. Black flagged
+the same 77 files by count. Mypy reported 104 errors versus 107 previously.
+The history-key correction removed two index errors. The remaining diagnostic
+differences came from Google Cloud imports in unchanged files under the
+qualification environment. The final credential-label delta passed targeted
+Ruff and Black. An additional root-wide Flake8 attempt scanned the ignored
+virtual environment and returned 101 findings. The tracked-source command
+above returned zero findings on the corrected head.
+
+GitHub reported all eight hosted checks successful on `5cb3fb9`, including
+build, docs, CodeQL, core without GCP, and SDK/emulator qualification. This
+receipt is a documentation-only follow-up to that tested production head.
+
+GitHub confirmed both replies and their resolution states after readback.
+[Credential reply](https://github.com/dhar174/langgraph_system_generator/pull/401#discussion_r4448638299) ·
+[Stale report reply](https://github.com/dhar174/langgraph_system_generator/pull/401#discussion_r4448639044) ·
+[Summary follow-up](https://github.com/dhar174/langgraph_system_generator/pull/401#issuecomment-6590294575)
