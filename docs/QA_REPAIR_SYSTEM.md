@@ -309,6 +309,9 @@ of <=240 chars; <=6 refs (<=2 per family), quotes <=160, ranges <=2000 chars.
 Persisted provenance locations are <=512 chars and versions <=128; oversized
 reference metadata invalidates admission rather than being clipped.
 Oversize/truncated or insufficient review is incomplete, never a fake pass.
+Models that count reasoning tokens against the completion cap may have less
+room for visible JSON. The cap also applies when the SDK reports truncation
+before returning a message.
 CancelledError propagates and scoped transports close; no detached work.
 
 `semantic_review_feedback` and optional `qa_summary.semantic_review` distinguish

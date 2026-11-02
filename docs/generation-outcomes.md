@@ -176,9 +176,7 @@ object rewrite is introduced. A valid diagnostic result commits the existing
 durable COMPLETED state and does not trigger quality-induced retries. Provider
 authorization and infrastructure failures retain their established policy.
 
-## Verification references
-
-### Advisory semantic review (#334-A)
+## Advisory semantic review (#334-A)
 
 An enabled final-candidate review projects bounded status/findings through
 `qa_summary.semantic_review`. Accepted semantic findings are warning QAReports;
@@ -188,7 +186,10 @@ Reviewed/no-findings is an LLM reporting no concerns, not requirements proof.
 Execution, requirements verification, v1/v2 schemas and evaluator admission remain
 unchanged. Default off omits this optional summary. The existing derived outcome
 Markdown carries escaped semantic status/findings before export; hash exclusions
-and executable cells are unchanged. See [ADR 0003](adr/0003-advisory-requirements-reviewer.md).
+and executable cells are unchanged. Evaluated bundles carry candidate-matched
+advisory status into their derived summaries. See [ADR 0003](adr/0003-advisory-requirements-reviewer.md).
+
+## Verification references
 
 `tests/unit/test_generation_outcomes.py` exercises deterministic derivation,
 candidate provenance, compiled graph routing and repair counts, export claims,
