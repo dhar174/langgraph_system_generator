@@ -203,6 +203,16 @@ GitHub reported all eight hosted checks successful on `5cb3fb9`, including
 build, docs, CodeQL, core without GCP, and SDK/emulator qualification. This
 receipt is a documentation-only follow-up to that tested production head.
 
+CodeQL subsequently reported a polynomial regex on credential labels in
+the pull request scan of `2126292`. The matcher now compares a fixed set
+of normalized labels and suffixes and checks any remaining prefix with a
+single character-class scan. Synthetic probes with 100,000 separators
+preserved an unrelated key and redacted a prefixed credential object.
+The credential-redaction, requirements-reviewer and semantic-contract unit
+selection passed 122 tests, exit 0. The broader test totals above apply to
+`5cb3fb9`. The PR description tracks hosted validation of the later correction.
+[CodeQL finding](https://github.com/dhar174/langgraph_system_generator/pull/401#discussion_r4448644253)
+
 GitHub confirmed both replies and their resolution states after readback.
 [Credential reply](https://github.com/dhar174/langgraph_system_generator/pull/401#discussion_r4448638299) ·
 [Stale report reply](https://github.com/dhar174/langgraph_system_generator/pull/401#discussion_r4448639044) ·

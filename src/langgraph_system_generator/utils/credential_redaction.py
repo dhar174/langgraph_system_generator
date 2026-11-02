@@ -11,12 +11,37 @@ _SECRET_FRAGMENT = re.compile(
     r"key|token|secret|password|auth|cred|signature", re.IGNORECASE
 )
 _NAME_TOKEN = re.compile(r"[\w-]+")
-_COLON_CREDENTIAL = re.compile(
-    r"(?:[\w-]+[_-])?(?:api[_-]?key|(?:access[_-]?)?token|password|"
-    r"secret(?:[_-]key)?|client[_-]?secret|authorization|credentials?|signature)",
-    re.IGNORECASE,
+_CREDENTIAL_LABELS = (
+    "api_key",
+    "apikey",
+    "access_token",
+    "accesstoken",
+    "token",
+    "password",
+    "secret",
+    "secret_key",
+    "client_secret",
+    "clientsecret",
+    "authorization",
+    "credential",
+    "credentials",
+    "signature",
 )
 _OPENAI_KEY = re.compile(r"\bsk-(?:proj-|svcacct-)?[A-Za-z0-9_-]{16,}\b")
+
+
+def _is_credential_label(name: str) -> bool:
+    """Match a fixed set of labels and optional underscore-delimited prefixes."""
+    normalized = name.lower().replace("-", "_")
+    if normalized in _CREDENTIAL_LABELS:
+        return True
+    for label in _CREDENTIAL_LABELS:
+        suffix = "_" + label
+        if normalized.endswith(suffix) and _NAME_TOKEN.fullmatch(
+            normalized[: -len(suffix)]
+        ):
+            return True
+    return False
 
 
 def _skip_whitespace(text: str, position: int) -> int:
@@ -77,9 +102,7 @@ def _redact_named_credentials(text: str) -> str:
             position = _skip_whitespace(text, position)
             if position == len(text) or not (
                 text[position] == "="
-                or (
-                    text[position] == ":" and _COLON_CREDENTIAL.fullmatch(match.group())
-                )
+                or (text[position] == ":" and _is_credential_label(match.group()))
             ):
                 continue
         position = _skip_whitespace(text, position + 1)
@@ -185,10 +208,7 @@ def sanitize_generation_payload(value: Any) -> Any:
                         )
                     )
                 )
-                or (
-                    isinstance(item, (dict, list))
-                    and _COLON_CREDENTIAL.fullmatch(str(key))
-                )
+                or (isinstance(item, (dict, list)) and _is_credential_label(str(key)))
                 else sanitize_generation_payload(item)
             )
             for key, item in value.items()
