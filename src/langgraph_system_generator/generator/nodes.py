@@ -151,6 +151,7 @@ def _qa_history_from_state(state: GeneratorState) -> List[QAReport]:
 def _qa_history_key(report: QAReport) -> tuple[Any, ...]:
     """Return a stable key for QA history de-duplication."""
 
+    finding_id = report.evidence.get("finding_id") if report.stage == "semantic" else None
     return (
         report.rule_id,
         report.check_name,
@@ -159,6 +160,7 @@ def _qa_history_key(report: QAReport) -> tuple[Any, ...]:
         report.severity,
         report.passed,
         report.message,
+        finding_id if isinstance(finding_id, str) else None,
     )
 
 
@@ -174,7 +176,7 @@ def bounded_qa_history(
     if limit <= 0 or not combined:
         return []
 
-    latest_by_key: Dict[str, tuple[int, QAReport]] = {}
+    latest_by_key: dict[tuple[Any, ...], tuple[int, QAReport]] = {}
     for index, report in enumerate(combined):
         latest_by_key[_qa_history_key(report)] = (index, report)
 
@@ -1466,20 +1468,22 @@ async def review_policy_node(state: GeneratorState) -> dict[str, Any]:
 
 async def semantic_review_node(state: GeneratorState) -> dict[str, Any]:
     """Advisory-only post-repair review; never writes generation/repair owners."""
+    from langgraph_system_generator.qa.specialist_models import REVIEWER_ID
+
     feedback = await review_candidate(state)
     if feedback is None:
         return {}
     reports = semantic_reports(feedback)
-    existing_ids = {
-        report.evidence.get("finding_id") for report in state.get("qa_reports") or []
-    }
-    reports = [
+    current = state.get("qa_reports") or []
+    owned = [
         report
-        for report in reports
-        if report.evidence.get("finding_id") not in existing_ids
+        for report in current
+        if report.stage == "semantic" and report.evidence.get("reviewer_id") == REVIEWER_ID
     ]
+    history = _qa_history_from_state(state)
+    new_evidence = [report for report in [*owned, *reports] if report not in history]
     return {
         "semantic_review_feedback": feedback,
-        "qa_reports": [*(state.get("qa_reports") or []), *reports],
-        "qa_history": bounded_qa_history(_qa_history_from_state(state), reports),
+        "qa_reports": [*(report for report in current if report not in owned), *reports],
+        "qa_history": bounded_qa_history(history, new_evidence),
     }

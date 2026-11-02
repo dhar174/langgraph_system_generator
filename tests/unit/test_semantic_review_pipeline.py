@@ -107,6 +107,11 @@ def install_reviewer(monkeypatch, *, finding=True, mutate=None, unavailable=Fals
             REVIEWER_ID, "1", ("generated_cells", "user_prompt"), Reviewer
         )
     )
+    factory.register_specialist_reviewer(
+        registry.SpecialistReviewerRegistration(
+            "other", "1", ("generated_cells",), Reviewer
+        )
+    )
     monkeypatch.setattr(
         registry, "get_qa_repair_registry", lambda *a, **kw: factory.clone()
     )
@@ -160,6 +165,49 @@ async def test_stale_context_cannot_admit_findings(monkeypatch, field):
     result = await review_candidate(value)
     assert result.status == "incomplete" and result.reason_code == "stale_context"
     assert result.findings == () and len(calls) == 1
+
+
+@pytest.mark.parametrize(
+    "change", ["user_prompt", "docs_context", "generated_cells", "same", "unavailable"]
+)
+async def test_semantic_reentry_reconciles_current_reports(monkeypatch, change):
+    calls, _ = install_reviewer(monkeypatch)
+    static = QAReport(check_name="static", passed=True, message="passed")
+    other = QAReport(
+        check_name="other specialist",
+        stage="semantic",
+        passed=True,
+        message="passed",
+        evidence={"reviewer_id": "other"},
+    )
+    state = starting_state(qa_reports=[static, other])
+    state.update(await nodes.semantic_review_node(state))
+    old = state["qa_reports"][-1]
+    replacements = {
+        "user_prompt": "Different request",
+        "docs_context": [{"content": "Different docs", "source": "supplied"}],
+        "generated_cells": [CellSpec(cell_type="code", content="replacement = 1")],
+    }
+    if change == "unavailable":
+
+        def missing_registry(*args, **kwargs):
+            raise LookupError("fixture reviewer unavailable")
+
+        monkeypatch.setattr(registry, "get_qa_repair_registry", missing_registry)
+    elif change != "same":
+        state[change] = replacements[change]
+    state.update(await nodes.semantic_review_node(state))
+    assert len(calls) == 1
+    assert state["qa_history"].count(old) == 1
+    if change == "same":
+        assert state["qa_reports"] == [static, other, old]
+    else:
+        assert state["semantic_review_feedback"].reason_code == (
+            "reviewer_unavailable" if change == "unavailable" else "stale_context"
+        )
+        assert state["qa_reports"] == [static, other]
+        packaged = await nodes.package_outputs_node(state)
+        assert old.message not in json.dumps(packaged["artifacts_manifest"])
 
 
 async def test_concurrent_invocations_are_isolated(monkeypatch):
@@ -286,10 +334,16 @@ async def test_compiled_graph_reviews_final_candidate_once_after_two_repairs(
 
 
 @pytest.mark.parametrize(
-    "unavailable,finding", [(False, True), (False, False), (True, False)]
+    "unavailable,finding,stale",
+    [
+        (False, True, False),
+        (False, False, False),
+        (True, False, False),
+        (False, True, True),
+    ],
 )
 async def test_real_shared_export_review_status_and_candidate_truth(
-    monkeypatch, tmp_path, unavailable, finding
+    monkeypatch, tmp_path, unavailable, finding, stale
 ):
     calls, _ = install_reviewer(monkeypatch, finding=finding, unavailable=unavailable)
     monkeypatch.setenv("BASE_OUTPUT_DIR", str(tmp_path))
@@ -298,6 +352,9 @@ async def test_real_shared_export_review_status_and_candidate_truth(
     value["user_prompt"] = "Build a weather assistant"
     value["generation_mode"] = "live"
     value["semantic_review_policy"] = SemanticReviewPolicy(mode="advisory")
+    value["constraints"] = [
+        {"description": 'Require weather data; token="EXPORT_FIXTURE_CANARY"'}
+    ]
     identity = candidate_id(value["generated_cells"])
     value["qa_reports"] = [
         QAReport(
@@ -313,6 +370,9 @@ async def test_real_shared_export_review_status_and_candidate_truth(
     class SharedGraph:
         async def ainvoke(self, *a, **kw):
             value.update(await nodes.semantic_review_node(value))
+            if stale:
+                value["user_prompt"] = "Revised weather request"
+                value.update(await nodes.semantic_review_node(value))
             value.update(await nodes.package_outputs_node(value))
             return value
 
@@ -325,7 +385,9 @@ async def test_real_shared_export_review_status_and_candidate_truth(
     )
     manifest = json.loads(Path(result["manifest_path"]).read_text())
     feedback = manifest["qa_summary"]["semantic_review"]
-    assert feedback["status"] == ("unavailable" if unavailable else "reviewed")
+    assert feedback["status"] == (
+        "incomplete" if stale else "unavailable" if unavailable else "reviewed"
+    )
     assert len(calls) == 1
     assert manifest["generation_outcome"]["generated_execution"]["result"] == "not_run"
     assert "semantic_review_policy" not in result["result"]
@@ -335,6 +397,19 @@ async def test_real_shared_export_review_status_and_candidate_truth(
     prose = "\n".join(c.source for c in notebook.cells)
     assert "requirements remain unverified" in prose
     assert "<script>alert(1)</script>" not in prose
+    assert "EXPORT_FIXTURE_CANARY" not in calls[0].request_json
+    for path in (
+        result["manifest_path"],
+        manifest["notebook_path"],
+        manifest["html_path"],
+    ):
+        exported = Path(path).read_text(encoding="utf-8")
+        assert "EXPORT_FIXTURE_CANARY" not in exported
+        if stale:
+            assert "Weather request has stock output" not in exported
+    if stale:
+        assert feedback["reason_code"] == "stale_context"
+        assert sum(r.stage == "semantic" for r in value["qa_history"]) == 1
     if not unavailable and not finding:
         assert "does not prove requirements are satisfied" in prose
     with zipfile.ZipFile(manifest["zip_path"]) as archive:
@@ -366,8 +441,9 @@ async def test_stub_shortcut_enabled_status_and_default_off_contract(
     assert calls == constructions == []
 
 
+@pytest.mark.parametrize("stale", [False, True])
 async def test_ephemeral_api_exposes_review_and_registered_downloads(
-    monkeypatch, tmp_path
+    monkeypatch, tmp_path, stale
 ):
     import httpx
 
@@ -401,6 +477,9 @@ async def test_ephemeral_api_exposes_review_and_registered_downloads(
     class Graph:
         async def ainvoke(self, *args, **kwargs):
             value.update(await nodes.semantic_review_node(value))
+            if stale:
+                value["user_prompt"] = "Revised weather request"
+                value.update(await nodes.semantic_review_node(value))
             value.update(await nodes.package_outputs_node(value))
             return value
 
@@ -419,7 +498,11 @@ async def test_ephemeral_api_exposes_review_and_registered_downloads(
         )
         assert result.status_code == 200, result.text
         manifest = result.json()["manifest"]
-        assert manifest["qa_summary"]["semantic_review"]["status"] == "reviewed"
+        assert manifest["qa_summary"]["semantic_review"]["status"] == (
+            "incomplete" if stale else "reviewed"
+        )
+        if stale:
+            assert "Weather request has stock output" not in result.text
         assert len(calls) == 1
         entries = [
             entry
