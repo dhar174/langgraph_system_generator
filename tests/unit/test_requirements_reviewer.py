@@ -240,6 +240,12 @@ async def test_actual_sdk_http_request_count_and_native_schema(
                 {"nested": [{"description": "token='FIXTURE_CANARY_BETA'"}]},
                 {"description": 'Already redacted: api_key="[REDACTED]"'},
                 {"api_key": {"value": "FIXTURE_CANARY_SUBTREE"}},
+                {"openaiApiKey": {"value": "FIXTURE_CANARY_CAMEL_OBJECT"}},
+                {
+                    "credential": "FIXTURE_CANARY_SCALAR",
+                    "signature": "FIXTURE_CANARY_SIGNATURE_SCALAR",
+                    "password": 987651234,
+                },
             ],
             tools_plan={"description": 'api_key="FIXTURE_CANARY_PLAN"'},
             docs_context=[
@@ -252,10 +258,13 @@ async def test_actual_sdk_http_request_count_and_native_schema(
                 "client_secret: FIXTURE_CANARY_CLIENT\n"
                 "clientSecret: FIXTURE_CANARY_CAMEL\n"
                 "openai_api_key: FIXTURE_CANARY_PREFIX\n"
+                "openaiApiKey: FIXTURE_CANARY_CAMEL_PREFIX\n"
                 "secret_key: FIXTURE_CANARY_KEY\n"
                 "credential: FIXTURE_CANARY_CREDENTIAL\n"
                 "signature: FIXTURE_CANARY_SIGNATURE\n"
                 "authorization: Basic RklYVFVSRV9DQU5BUlk=\n"
+                "Proxy-Authorization: Basic dXNlcjpwYXNz\n"
+                "credentials: [don't log them] and build a weather assistant"
             ),
         )
         if code == "constraints"
@@ -289,6 +298,9 @@ async def test_actual_sdk_http_request_count_and_native_schema(
         assert result.status == "reviewed"
         assert "FIXTURE_CANARY_" not in requests[0].content.decode()
         assert "RklYVFVSRV9DQU5BUlk=" not in requests[0].content.decode()
+        assert "dXNlcjpwYXNz" not in requests[0].content.decode()
+        assert "987651234" not in requests[0].content.decode()
+        assert "and build a weather assistant" in requests[0].content.decode()
         assert "FIXTURE_CANARY_" not in caplog.text + result.model_dump_json()
         sources = json.loads(payload["messages"][-1]["content"].split("\n", 1)[1])[
             "sources"

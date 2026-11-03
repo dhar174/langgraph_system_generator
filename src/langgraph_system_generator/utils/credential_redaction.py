@@ -11,6 +11,7 @@ _SECRET_FRAGMENT = re.compile(
     r"key|token|secret|password|auth|cred|signature", re.IGNORECASE
 )
 _NAME_TOKEN = re.compile(r"[\w-]+")
+_CAMEL_BOUNDARY = re.compile(r"(?<=[a-z0-9])(?=[A-Z])")
 _CREDENTIAL_LABELS = (
     "api_key",
     "apikey",
@@ -30,9 +31,7 @@ _CREDENTIAL_LABELS = (
 _OPENAI_KEY = re.compile(r"\bsk-(?:proj-|svcacct-)?[A-Za-z0-9_-]{16,}\b")
 
 
-def _is_credential_label(name: str) -> bool:
-    """Match a fixed set of labels and optional underscore-delimited prefixes."""
-    normalized = name.lower().replace("-", "_")
+def _matches_credential_label(normalized: str) -> bool:
     if normalized in _CREDENTIAL_LABELS:
         return True
     for label in _CREDENTIAL_LABELS:
@@ -42,6 +41,15 @@ def _is_credential_label(name: str) -> bool:
         ):
             return True
     return False
+
+
+def _is_credential_label(name: str) -> bool:
+    """Match fixed labels after separator and camel-case normalization."""
+    return _matches_credential_label(name.lower().replace("-", "_")) or (
+        _matches_credential_label(
+            _CAMEL_BOUNDARY.sub("_", name).lower().replace("-", "_")
+        )
+    )
 
 
 def _skip_whitespace(text: str, position: int) -> int:
@@ -62,6 +70,14 @@ def _credential_container_end(text: str, position: int) -> int:
                 position += 1
             elif char == quote:
                 quote = None
+        elif (
+            char == "'"
+            and position < len(text)
+            and text[position - 2].isalnum()
+            and text[position].isalnum()
+        ):
+            # An apostrophe inside a word is not a quoted value delimiter.
+            continue
         elif char in "\"'":
             quote = char
         elif char in "{[":
@@ -128,7 +144,11 @@ def _redact_named_credentials(text: str) -> str:
             ):
                 value_end += 1
             if (
-                match.group().lower() == "authorization"
+                _CAMEL_BOUNDARY.sub("_", match.group())
+                .lower()
+                .replace("-", "_")
+                .rsplit("_", 1)[-1]
+                == "authorization"
                 and text[value_start:value_end].lower() == "basic"
             ):
                 value_end = _skip_whitespace(text, value_end)
@@ -195,7 +215,8 @@ def sanitize_generation_payload(value: Any) -> Any:
         return {
             key: (
                 "[REDACTED]"
-                if (
+                if _is_credential_label(str(key))
+                or (
                     isinstance(item, str)
                     and any(
                         part in str(key).lower()
@@ -208,7 +229,6 @@ def sanitize_generation_payload(value: Any) -> Any:
                         )
                     )
                 )
-                or (isinstance(item, (dict, list)) and _is_credential_label(str(key)))
                 else sanitize_generation_payload(item)
             )
             for key, item in value.items()

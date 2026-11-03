@@ -14,7 +14,6 @@ from langgraph_system_generator.utils.error_handling import GenerationError
 from tests.unit.test_durable_job_contracts import OWNER, running, store  # noqa: F401
 from tests.unit.test_firestore_job_store import firestore_transport  # noqa: F401
 
-
 SECRET = "FAKE_REDACTION_SECRET"
 PROBE = Path(__file__).resolve().parents[1] / "fixtures/credential_redaction_probe.py"
 
@@ -70,6 +69,15 @@ def test_secret_at_every_position(credential, padding):
         (f'key="{SECRET}', 'key="[REDACTED]'),
         (f'"key": "{SECRET} apostrophe\' suffix"', '"key": "[REDACTED]"'),
         (f"key={SECRET}&token={SECRET}", "key=[REDACTED]&token=[REDACTED]"),
+        (
+            "credentials: [don't log them] and build a weather assistant",
+            "credentials: [REDACTED] and build a weather assistant",
+        ),
+        (f"credentials: ['{SECRET}] trailing", "credentials: [REDACTED]"),
+        (
+            f"credentials: ['bracket] {SECRET}'] trailing",
+            "credentials: [REDACTED] trailing",
+        ),
     ],
 )
 def test_delimiters_progress_and_safe_controls(text, expected):

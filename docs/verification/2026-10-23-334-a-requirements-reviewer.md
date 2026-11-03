@@ -217,3 +217,19 @@ GitHub confirmed both replies and their resolution states after readback.
 [Credential reply](https://github.com/dhar174/langgraph_system_generator/pull/401#discussion_r4448638299) ·
 [Stale report reply](https://github.com/dhar174/langgraph_system_generator/pull/401#discussion_r4448639044) ·
 [Summary follow-up](https://github.com/dhar174/langgraph_system_generator/pull/401#issuecomment-6590294575)
+
+## Merge-readiness credential follow-up
+
+The merge-readiness review reproduced four remaining defects at `5089ed3`.
+The scanner now recognizes camel-case credential labels, masks values of
+every type under recognized structured keys, consumes prefixed Basic
+authorization credentials, and preserves the requirement after a bracketed
+contraction. Unterminated quoted credential containers still redact through
+the end of the input.
+
+The expanded SDK MockTransport test failed before the correction (one
+failure, exit 1). The final redaction, reviewer, semantic contract,
+endpoint security, and semantic pipeline selection passed 261 tests
+(exit 0). It checks the captured request for synthetic credentials, a
+numeric password, and the retained requirement. Focused Ruff, fatal
+Flake8, whitespace checks, and 100,000-separator probes passed.
