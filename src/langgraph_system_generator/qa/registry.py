@@ -9,6 +9,12 @@ from typing import Callable, Iterable, List, Protocol, Sequence
 from nbformat import NotebookNode
 
 from langgraph_system_generator.generator.state import QAReport
+from langgraph_system_generator.qa.specialist_models import (
+    REVIEWER_ID,
+    REVIEWER_VERSION,
+    SemanticReviewContext,
+    SemanticReviewResult,
+)
 from langgraph_system_generator.qa.validators import (
     CanonicalGraphContractRule,
     CanonicalSectionOrderRule,
@@ -28,7 +34,75 @@ from langgraph_system_generator.qa.validators import (
     UndefinedNameRule,
     ValidatorRegistry,
 )
-from langgraph_system_generator.utils.config import settings
+from langgraph_system_generator.utils.config import ModelConfig, settings
+
+
+class AsyncSpecialistReviewer(Protocol):
+    """Async-only extension; deterministic validators never call this interface."""
+
+    instructions: str
+
+    async def review(self, context: SemanticReviewContext) -> SemanticReviewResult: ...
+
+
+@dataclass(frozen=True)
+class SpecialistReviewerRegistration:
+    reviewer_id: str
+    version: str
+    consumed_inputs: tuple[str, ...]
+    factory: Callable[[ModelConfig], AsyncSpecialistReviewer]
+    policy: str = "advisory"
+
+    def normalized(self) -> SpecialistReviewerRegistration:
+        if not self.reviewer_id.strip() or not self.version.strip():
+            raise ValueError("Specialist id/version must be non-empty")
+        if (
+            self.policy != "advisory"
+            or not callable(self.factory)
+            or not self.consumed_inputs
+        ):
+            raise ValueError(
+                "Specialist must declare inputs, advisory policy and factory"
+            )
+        return SpecialistReviewerRegistration(
+            self.reviewer_id.strip(),
+            self.version.strip(),
+            tuple(dict.fromkeys(self.consumed_inputs)),
+            self.factory,
+        )
+
+
+def _requirements_reviewer_factory(config: ModelConfig) -> AsyncSpecialistReviewer:
+    from langgraph_system_generator.generator.agents.requirements_reviewer import (
+        RequirementsDomainReviewer,
+    )
+
+    return RequirementsDomainReviewer(config)
+
+
+def default_specialist_reviewers() -> tuple[SpecialistReviewerRegistration, ...]:
+    return (
+        SpecialistReviewerRegistration(
+            REVIEWER_ID,
+            REVIEWER_VERSION,
+            (
+                "user_prompt",
+                "requirements_messages",
+                "constraints",
+                "requirements_feedback",
+                "generated_cells",
+                "architecture_type",
+                "selected_patterns",
+                "workflow_design",
+                "tools_plan",
+                "graph_exports",
+                "notebook_plan",
+                "generation_context_pack",
+                "docs_context",
+            ),
+            _requirements_reviewer_factory,
+        ),
+    )
 
 
 class SupportsRepairRoutineHandler(Protocol):
@@ -122,6 +196,7 @@ class QARepairRegistry:
         *,
         validator_registry: ValidatorRegistry | None = None,
         repair_routines: Iterable[RepairRoutineRegistration] | None = None,
+        specialist_reviewers: Iterable[SpecialistReviewerRegistration] | None = None,
     ):
         self._validator_registry = (
             validator_registry.clone()
@@ -136,6 +211,13 @@ class QARepairRegistry:
         )
         for routine in routines:
             self.register_repair_routine(routine)
+        self._specialist_reviewers: dict[str, SpecialistReviewerRegistration] = {}
+        for reviewer in (
+            default_specialist_reviewers()
+            if specialist_reviewers is None
+            else specialist_reviewers
+        ):
+            self.register_specialist_reviewer(reviewer)
 
     def clone(self) -> "QARepairRegistry":
         """Return a shallow clone that preserves rule/routine state."""
@@ -143,7 +225,24 @@ class QARepairRegistry:
         return QARepairRegistry(
             validator_registry=self._validator_registry,
             repair_routines=list(self._repair_routines.values()),
+            specialist_reviewers=list(self._specialist_reviewers.values()),
         )
+
+    def register_specialist_reviewer(
+        self, registration: SpecialistReviewerRegistration
+    ) -> SpecialistReviewerRegistration:
+        normalized = registration.normalized()
+        self._specialist_reviewers[normalized.reviewer_id] = normalized
+        return normalized
+
+    def specialist_reviewer(self, reviewer_id: str) -> SpecialistReviewerRegistration:
+        return self._specialist_reviewers[reviewer_id]
+
+    def registered_specialist_reviewer_ids(self) -> list[str]:
+        return list(self._specialist_reviewers)
+
+    def disable_specialist_reviewer(self, reviewer_id: str) -> bool:
+        return self._specialist_reviewers.pop(reviewer_id, None) is not None
 
     def validator_registry(self) -> ValidatorRegistry:
         """Return a clone of the validator-rule registry."""

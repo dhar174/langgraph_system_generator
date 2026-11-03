@@ -102,6 +102,7 @@ These node functions are the clearest map of the runtime lifecycle:
 | Static QA | `static_qa_node` | validators under `src/langgraph_system_generator/qa/` | `qa_reports`, `qa_history` |
 | Runtime QA | `runtime_qa_node` | notebook runtime helpers | `qa_reports`, `qa_history` |
 | Repair | `repair_node` | `NotebookRepairAgent` from `langgraph_system_generator.qa.repair` and notebook repair helpers | `generated_cells`, `repair_attempts`, `qa_reports`, `qa_history` |
+| Optional semantic review | `semantic_review_node` | Lazy registry-backed Requirements/Domain Fidelity Reviewer | `semantic_review_feedback`, advisory `qa_reports`, bounded `qa_history` |
 | Packaging | `package_outputs_node` | notebook/export helpers | `artifacts_manifest`, `generation_complete` |
 
 ### Shared state contract
@@ -129,6 +130,11 @@ Important patterns:
   receive QA even at the repair cap. Packaging/job completion does not imply
   usability or generated-code execution. See `docs/generation-outcomes.md`.
 - `repair_attempts` bounds retry behavior.
+- `semantic_review_policy` is an operator snapshot per invocation, never a public
+  request field. `semantic_review_feedback` is optional advisory status/evidence.
+  The async reviewer runs once after final deterministic QA/repair and cannot
+  change cells/plans, enter repair or qualify execution/requirements. Disabled
+  mode is the default; stub mode constructs no reviewer/client. See ADR 0003.
 - `artifacts_manifest` and `generation_complete` are the final packaging
   outputs expected by the CLI and API.
 - `workflow_design` remains the backward-compatible downstream graph payload,

@@ -55,6 +55,12 @@ from langgraph_system_generator.qa.summary import (
     build_tool_contract_summary,
     serialize_qa_report,
 )
+from langgraph_system_generator.qa.specialist_review import (
+    review_candidate,
+    semantic_reports,
+    skipped_review_feedback,
+    snapshot_review_policy,
+)
 from langgraph_system_generator.rag.embeddings import VectorStoreManager
 from langgraph_system_generator.rag.mcp_transport import _sanitize_text_credentials
 from langgraph_system_generator.rag.orchestrator import (
@@ -145,6 +151,7 @@ def _qa_history_from_state(state: GeneratorState) -> List[QAReport]:
 def _qa_history_key(report: QAReport) -> tuple[Any, ...]:
     """Return a stable key for QA history de-duplication."""
 
+    finding_id = report.evidence.get("finding_id") if report.stage == "semantic" else None
     return (
         report.rule_id,
         report.check_name,
@@ -153,6 +160,7 @@ def _qa_history_key(report: QAReport) -> tuple[Any, ...]:
         report.severity,
         report.passed,
         report.message,
+        finding_id if isinstance(finding_id, str) else None,
     )
 
 
@@ -168,7 +176,7 @@ def bounded_qa_history(
     if limit <= 0 or not combined:
         return []
 
-    latest_by_key: Dict[str, tuple[int, QAReport]] = {}
+    latest_by_key: dict[tuple[Any, ...], tuple[int, QAReport]] = {}
     for index, report in enumerate(combined):
         latest_by_key[_qa_history_key(report)] = (index, report)
 
@@ -1352,7 +1360,12 @@ async def package_outputs_node(state: GeneratorState) -> Dict[str, Any]:
         max_repair_attempts=max(0, settings.max_repair_attempts),
         rollback_used=bool(feedback_payload.get("rollback_used")),
     )
-    qa_summary = build_qa_summary(qa_reports, generation_outcome)
+    semantic_feedback = state.get(
+        "semantic_review_feedback"
+    ) or skipped_review_feedback(state)
+    qa_summary = build_qa_summary(
+        qa_reports, generation_outcome, semantic_review=semantic_feedback
+    )
     if not cells:
         return {
             "generation_outcome": generation_outcome,
@@ -1442,4 +1455,35 @@ async def package_outputs_node(state: GeneratorState) -> Dict[str, Any]:
         "generation_outcome": generation_outcome,
         "generation_complete": True,
         "error_message": None,
+    }
+
+
+async def review_policy_node(state: GeneratorState) -> dict[str, Any]:
+    """Snapshot host policy at invocation entry, including direct graph callers."""
+    return {
+        "semantic_review_policy": snapshot_review_policy(settings),
+        "semantic_review_feedback": None,
+    }
+
+
+async def semantic_review_node(state: GeneratorState) -> dict[str, Any]:
+    """Advisory-only post-repair review; never writes generation/repair owners."""
+    from langgraph_system_generator.qa.specialist_models import REVIEWER_ID
+
+    feedback = await review_candidate(state)
+    if feedback is None:
+        return {}
+    reports = semantic_reports(feedback)
+    current = state.get("qa_reports") or []
+    owned = [
+        report
+        for report in current
+        if report.stage == "semantic" and report.evidence.get("reviewer_id") == REVIEWER_ID
+    ]
+    history = _qa_history_from_state(state)
+    new_evidence = [report for report in [*owned, *reports] if report not in history]
+    return {
+        "semantic_review_feedback": feedback,
+        "qa_reports": [*(report for report in current if report not in owned), *reports],
+        "qa_history": bounded_qa_history(history, new_evidence),
     }

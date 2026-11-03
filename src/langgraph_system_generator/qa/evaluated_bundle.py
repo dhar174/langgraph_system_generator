@@ -50,6 +50,7 @@ def build_evaluated_bundle(
 ) -> EvaluatedBundle:
     """Consume only the current supervised runner's typed case result."""
     import nbformat
+    from pydantic import ValidationError
 
     from langgraph_system_generator.notebook.exporters import NotebookExporter
     from langgraph_system_generator.qa.outcomes import (
@@ -59,6 +60,7 @@ def build_evaluated_bundle(
         notebook_candidate_id,
         outcome_markdown,
     )
+    from langgraph_system_generator.qa.specialist_presentation import feedback_payload
     from langgraph_system_generator.qa.summary import build_qa_summary
 
     target = directory / "evaluated"
@@ -120,6 +122,19 @@ def build_evaluated_bundle(
         rollback_used=repair.get("rollback_used", False),
         execution_evaluation=evaluation,
     )
+    semantic_review = None
+    source_summary = source_manifest.get("qa_summary")
+    if isinstance(source_summary, dict):
+        feedback = source_summary.get("semantic_review")
+        if (
+            isinstance(feedback, dict)
+            and outcome.candidate.sha256 is not None
+            and feedback.get("candidate_id") == outcome.candidate.sha256
+        ):
+            try:
+                semantic_review = feedback_payload(feedback)
+            except ValidationError:
+                pass  # Optional presentation metadata cannot qualify execution.
     files = [receipt_path]
     if notebook is not None:
         # Copy exact source bytes before changing only derived Markdown.
@@ -146,7 +161,7 @@ def build_evaluated_bundle(
         ]
         notebook.cells.append(
             nbformat.v4.new_markdown_cell(
-                outcome_markdown(outcome, reports),
+                outcome_markdown(outcome, reports, semantic_review=semantic_review),
                 metadata={
                     "section": "generation_outcome",
                     "kind": "generation_outcome",
@@ -184,7 +199,9 @@ def build_evaluated_bundle(
             "publication_facts": source_manifest.get("artifact_contract", {}),
         },
         "qa_reports": reports,
-        "qa_summary": build_qa_summary(reports, outcome),
+        "qa_summary": build_qa_summary(
+            reports, outcome, semantic_review=semantic_review
+        ),
         "artifact_inventory": inventory,
         "presentation_note": "Source notebook is included; executed cells are recorded in the receipt. Derived QA prose changed afterward.",
     }

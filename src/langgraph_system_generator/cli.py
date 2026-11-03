@@ -50,6 +50,10 @@ from langgraph_system_generator.qa.outcomes import (
     read_generation_outcome,
     with_outcome_summary,
 )
+from langgraph_system_generator.qa.specialist_review import (
+    snapshot_review_policy,
+    skipped_review_feedback,
+)
 from langgraph_system_generator.generator.graph_design_registry import (
     build_graph_exports,
     graph_design_issue_messages,
@@ -1533,6 +1537,7 @@ async def generate_artifacts(
         progress_callback: Optional callback function(node, percentage, message) for progress tracking
     """
 
+    review_policy = snapshot_review_policy(settings)
     binding = authorize_endpoint(custom_endpoint, endpoint_policy)
     if custom_endpoint and not model:
         raise GenerationError(
@@ -1626,10 +1631,11 @@ async def generate_artifacts(
                         generation_config,
                         generation_mode="live",
                         requirements_messages=requirements_messages,
-                    ),
+                    )
+                    | {"semantic_review_policy": review_policy},
                     config={
                         "recursion_limit": max(
-                            25, 12 + 3 * max(0, settings.max_repair_attempts)
+                            25, 14 + 3 * max(0, settings.max_repair_attempts)
                         )
                     },
                 )
@@ -1668,6 +1674,14 @@ async def generate_artifacts(
 
     tracker.start("serialize", "Serializing generation results...", percentage=62)
     serialized = _serialize(result)
+    serialized.pop("semantic_review_policy", None)
+    if serialized.get("semantic_review_feedback") is None:
+        serialized.pop("semantic_review_feedback", None)
+    if mode == "stub" and review_policy.mode == "advisory":
+        feedback = skipped_review_feedback(
+            dict(result, generation_mode="stub", semantic_review_policy=review_policy)
+        )
+        serialized["semantic_review_feedback"] = _serialize(feedback)
     if (
         not serialized.get("generated_cells")
         or serialized.get("generation_complete") is not True
@@ -1724,12 +1738,20 @@ async def generate_artifacts(
     generation_outcome = derive_generation_outcome(
         serialized_qa_reports, **outcome_arguments
     )
+    semantic_feedback = serialized.get("semantic_review_feedback") or (
+        serialized.get("qa_summary") or {}
+    ).get("semantic_review")
     serialized["generated_cells"] = _serialize(
         with_outcome_summary(
-            serialized["generated_cells"], generation_outcome, serialized_qa_reports
+            serialized["generated_cells"],
+            generation_outcome,
+            serialized_qa_reports,
+            semantic_review=semantic_feedback,
         )
     )
-    qa_summary = build_qa_summary(serialized_qa_reports, generation_outcome)
+    qa_summary = build_qa_summary(
+        serialized_qa_reports, generation_outcome, semantic_review=semantic_feedback
+    )
     tool_contract_summary = build_tool_contract_summary(
         serialized.get("tools_plan") or [],
         graph_exports,
@@ -2117,6 +2139,13 @@ def _run_generate(args: argparse.Namespace) -> int:
         f"  Static QA: {outcome.static_qa}; environment smoke: {outcome.environment_smoke.result}"
     )
     print("  Generated notebook execution: " + execution_description(outcome))
+    semantic = (artifacts["manifest"].get("qa_summary") or {}).get("semantic_review")
+    if semantic:
+        print(
+            f"  Semantic review (advisory only): {semantic['status']} / {semantic['reason_code']}; requirements remain unverified"
+        )
+        for finding in semantic.get("findings") or []:
+            print("    " + finding["message"])
     print(f"  Manifest: {artifacts['manifest_path']}")
     if artifacts["manifest"].get("plan_path"):
         print(f"  Plan: {artifacts['manifest']['plan_path']}")

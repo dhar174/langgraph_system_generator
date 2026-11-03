@@ -693,12 +693,34 @@ def test_qualification_refuses_dirty_or_custom_inputs_before_launch(
         runner.run(DATASET, tmp_path, mutations=False, qualify_outcomes=True)
 
 
+@pytest.mark.parametrize("semantic", [False, True])
 def test_new_bundle_preserves_original_and_has_no_hash_cycles(
-    evidence, tmp_path, monkeypatch
+    evidence, tmp_path, monkeypatch, semantic
 ):
     monkeypatch.setenv("BASE_OUTPUT_DIR", str(tmp_path))
     original = (tmp_path / "generated/notebook.ipynb").read_bytes()
-    source_manifest = (tmp_path / "fixture-manifest.json").read_bytes()
+    source_manifest_path = tmp_path / "fixture-manifest.json"
+    if semantic:
+        from langgraph_system_generator.qa.specialist_models import (
+            SemanticReviewFeedback,
+        )
+
+        source_payload = json.loads(source_manifest_path.read_bytes())
+        source_payload.setdefault("qa_summary", {})["semantic_review"] = (
+            SemanticReviewFeedback(
+                effective_mode="advisory",
+                status="reviewed",
+                reason_code="complete",
+                candidate_id=evidence["result"].candidate_sha256,
+                context_digest="a" * 64,
+                model_invocations=1,
+            ).model_dump(mode="json")
+        )
+        source_manifest_path.write_text(json.dumps(source_payload), encoding="utf-8")
+        evidence["result"].environment["source_manifest_sha256"] = digest(
+            source_manifest_path.read_bytes()
+        )
+    source_manifest = source_manifest_path.read_bytes()
     result = build_evaluated_bundle(
         evidence["case"],
         evidence["result"],
@@ -725,6 +747,16 @@ def test_new_bundle_preserves_original_and_has_no_hash_cycles(
     notebook = nbformat.read(evaluated / "notebook.ipynb", 4)
     assert notebook_candidate_id(notebook) == evidence["result"].candidate_sha256
     assert "execution: passed" in notebook.cells[-1].source
+    if semantic:
+        assert (
+            manifest["qa_summary"]["semantic_review"]
+            == source_payload["qa_summary"]["semantic_review"]
+        )
+        assert (
+            "Semantic review (advisory only): reviewed / complete."
+            in notebook.cells[-1].source
+        )
+        assert "requirements remain unverified" in notebook.cells[-1].source
     assert "execution: not_run" not in " ".join(cell.source for cell in notebook.cells)
     with zipfile.ZipFile(evaluated / "notebook_bundle.zip") as archive:
         assert "manifest.json" not in archive.namelist()

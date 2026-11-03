@@ -60,6 +60,16 @@ for (const [status, expected] of [
   assert(elements.some(e => e.tag === 'a' && e.href.includes('notebook.ipynb')));
 }
 console.log('outcome banners, evidence limits and diagnostic downloads verified');
+for (const status of ['skipped','reviewed','unavailable','invalid_response','incomplete']) {
+  const host = new Element('div');
+  context.appendQaSummary(host, {findings: [{stage:'semantic', message:'<img src=x onerror=steal()>', suggestions:['[unsafe](javascript:steal())']}],
+    semantic_review: {status, reason_code: status === 'skipped' ? 'stub' : 'complete', reviewer_id:'requirements_domain_fidelity', reviewer_version:'1', docs_alignment:'not_assessed', findings:[]}});
+  const elements = flatten(host), text = elements.map(e => e.textContent).join('\n');
+  assert(text.includes(status) && text.includes('Requirements remain unverified'), text);
+  assert(text.includes('<img src=x onerror=steal()>'), text);
+  assert(!elements.some(e => ['img','script','iframe','a'].includes(e.tag)));
+  if (status === 'reviewed') assert(text.includes('does not prove requirements are satisfied'), text);
+}
 for (const [result, expected] of [
   ['passed', 'Evaluation passed under declared conditions'],
   ['failed', 'Evaluation failed'], ['unavailable', 'Evaluation unavailable'],

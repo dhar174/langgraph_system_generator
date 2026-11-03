@@ -328,7 +328,10 @@ def execution_description(outcome: SupportedGenerationOutcome) -> str:
 
 
 def outcome_markdown(
-    outcome: SupportedGenerationOutcome, reports: Iterable[Any] = ()
+    outcome: SupportedGenerationOutcome,
+    reports: Iterable[Any] = (),
+    *,
+    semantic_review: Any = None,
 ) -> str:
     """Candidate-quality prose only; never predict export/publication receipts."""
     prose = "\n".join(
@@ -362,15 +365,29 @@ def outcome_markdown(
         ):
             continue
         if classify_report(report):
+            from langgraph_system_generator.qa.specialist_presentation import (
+                inert_markdown,
+            )
+
+            semantic = report.get("stage") == "semantic"
+            message = (
+                inert_markdown(report.get("message", ""))
+                if semantic
+                else report.get("message", "")
+            )
             findings.append(
-                f"- {report.get('severity', 'info')} / {report.get('check_name', 'QA Check')}: {report.get('message', '')}"
+                f"- {report.get('severity', 'info')} / {report.get('check_name', 'QA Check')}: {message}"
             )
             findings.extend(
-                f"  - Next step: {suggestion}"
+                f"  - Next step: {inert_markdown(suggestion) if semantic else suggestion}"
                 for suggestion in report.get("suggestions") or []
             )
-    return prose + (
-        "\n\nCurrent QA findings:\n" + "\n".join(findings) if findings else ""
+    from langgraph_system_generator.qa.specialist_presentation import semantic_markdown
+
+    return (
+        prose
+        + semantic_markdown(semantic_review)
+        + ("\n\nCurrent QA findings:\n" + "\n".join(findings) if findings else "")
     )
 
 
@@ -378,6 +395,8 @@ def with_outcome_summary(
     cells: Iterable[Any],
     outcome: SupportedGenerationOutcome,
     reports: Iterable[Any] = (),
+    *,
+    semantic_review: Any = None,
 ) -> list[Any]:
     """Replace derived prose so rejected/stale repair claims cannot survive."""
     from langgraph_system_generator.generator.state import CellSpec
@@ -390,7 +409,7 @@ def with_outcome_summary(
     retained.append(
         CellSpec(
             cell_type="markdown",
-            content=outcome_markdown(outcome, reports),
+            content=outcome_markdown(outcome, reports, semantic_review=semantic_review),
             section="generation_outcome",
             metadata={"section": "generation_outcome", "kind": "generation_outcome"},
         )

@@ -142,6 +142,10 @@ class Settings(BaseSettings):
         default=3,
         description="Maximum number of automated repair attempts during QA.",
     )
+    lnf_specialist_qa_mode: Literal["off", "advisory"] = Field(
+        default="off",
+        description="Optional final-candidate semantic advisories; never blocking.",
+    )
     default_budget_tokens: int = Field(
         default=100000,
         description="Default token budget allocated for a generation run.",
@@ -567,6 +571,7 @@ _TEST_SETTINGS_ENV_KEYS = (
     "VECTOR_STORE_PATH",
     "DEFAULT_MODEL",
     "MAX_REPAIR_ATTEMPTS",
+    "LNF_SPECIALIST_QA_MODE",
     "DEFAULT_BUDGET_TOKENS",
     "REQUIREMENTS_CONSTRAINT_TYPES",
     "ARCHITECTURE_PATTERN_DOC_QUERIES",

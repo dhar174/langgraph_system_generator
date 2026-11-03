@@ -7,17 +7,86 @@ import re
 from typing import Any
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
-
 _SECRET_FRAGMENT = re.compile(
     r"key|token|secret|password|auth|cred|signature", re.IGNORECASE
 )
 _NAME_TOKEN = re.compile(r"[\w-]+")
+_CAMEL_BOUNDARY = re.compile(r"(?<=[a-z0-9])(?=[A-Z])")
+_CREDENTIAL_LABELS = (
+    "api_key",
+    "apikey",
+    "access_token",
+    "accesstoken",
+    "token",
+    "password",
+    "secret",
+    "secret_key",
+    "client_secret",
+    "clientsecret",
+    "authorization",
+    "credential",
+    "credentials",
+    "signature",
+)
+_OPENAI_KEY = re.compile(r"\bsk-(?:proj-|svcacct-)?[A-Za-z0-9_-]{16,}\b")
+
+
+def _matches_credential_label(normalized: str) -> bool:
+    if normalized in _CREDENTIAL_LABELS:
+        return True
+    for label in _CREDENTIAL_LABELS:
+        suffix = "_" + label
+        if normalized.endswith(suffix) and _NAME_TOKEN.fullmatch(
+            normalized[: -len(suffix)]
+        ):
+            return True
+    return False
+
+
+def _is_credential_label(name: str) -> bool:
+    """Match fixed labels after separator and camel-case normalization."""
+    return _matches_credential_label(name.lower().replace("-", "_")) or (
+        _matches_credential_label(
+            _CAMEL_BOUNDARY.sub("_", name).lower().replace("-", "_")
+        )
+    )
 
 
 def _skip_whitespace(text: str, position: int) -> int:
     while position < len(text) and text[position].isspace():
         position += 1
     return position
+
+
+def _credential_container_end(text: str, position: int) -> int:
+    """Consume one credential object or list, including quoted delimiters."""
+    depth = 0
+    quote = None
+    while position < len(text):
+        char = text[position]
+        position += 1
+        if quote:
+            if char == "\\":
+                position += 1
+            elif char == quote:
+                quote = None
+        elif (
+            char == "'"
+            and position < len(text)
+            and text[position - 2].isalnum()
+            and text[position].isalnum()
+        ):
+            # An apostrophe inside a word is not a quoted value delimiter.
+            continue
+        elif char in "\"'":
+            quote = char
+        elif char in "{[":
+            depth += 1
+        elif char in "}]":
+            depth -= 1
+            if depth == 0:
+                break
+    return min(position, len(text))
 
 
 def _redact_named_credentials(text: str) -> str:
@@ -47,7 +116,10 @@ def _redact_named_credentials(text: str) -> str:
                 continue
         else:
             position = _skip_whitespace(text, position)
-            if position == len(text) or text[position] != "=":
+            if position == len(text) or not (
+                text[position] == "="
+                or (text[position] == ":" and _is_credential_label(match.group()))
+            ):
                 continue
         position = _skip_whitespace(text, position + 1)
         if position == len(text):
@@ -59,6 +131,9 @@ def _redact_named_credentials(text: str) -> str:
             while value_end < len(text) and text[value_end] != quote:
                 value_end += 2 if text[value_end] == "\\" else 1
             value_end = min(value_end, len(text))
+        elif text[position] in "{[":
+            value_start = position
+            value_end = _credential_container_end(text, position)
         else:
             value_start = position
             value_end = position
@@ -68,6 +143,19 @@ def _redact_named_credentials(text: str) -> str:
                 and text[value_end] not in "&,'\"<>"
             ):
                 value_end += 1
+            if (
+                _CAMEL_BOUNDARY.sub("_", match.group())
+                .lower()
+                .replace("-", "_")
+                .rsplit("_", 1)[-1]
+                == "authorization"
+                and text[value_start:value_end].lower() == "basic"
+            ):
+                value_end = _skip_whitespace(text, value_end)
+                while value_end < len(text) and (
+                    text[value_end].isalnum() or text[value_end] in "+/="
+                ):
+                    value_end += 1
         if value_end == value_start:
             continue
         pieces.extend((text[copied_until:value_start], "[REDACTED]"))
@@ -127,10 +215,19 @@ def sanitize_generation_payload(value: Any) -> Any:
         return {
             key: (
                 "[REDACTED]"
-                if isinstance(item, str)
-                and any(
-                    part in str(key).lower()
-                    for part in ("key", "secret", "password", "authorization", "token")
+                if _is_credential_label(str(key))
+                or (
+                    isinstance(item, str)
+                    and any(
+                        part in str(key).lower()
+                        for part in (
+                            "key",
+                            "secret",
+                            "password",
+                            "authorization",
+                            "token",
+                        )
+                    )
                 )
                 else sanitize_generation_payload(item)
             )
@@ -237,6 +334,7 @@ def _sanitize_text_credentials(text: Any, endpoint: str | None = None) -> str:
     )
 
     result = _redact_named_credentials(result)
+    result = _OPENAI_KEY.sub("[REDACTED]", result)
 
     # 6. Redact basic-auth credentials in any remaining URL/netloc patterns
     result = re.sub(

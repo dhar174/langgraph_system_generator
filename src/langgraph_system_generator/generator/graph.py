@@ -15,7 +15,9 @@ from langgraph_system_generator.generator.nodes import (
     package_outputs_node,
     rag_retrieval_node,
     repair_node,
+    review_policy_node,
     runtime_qa_node,
+    semantic_review_node,
     static_qa_node,
     tooling_plan_node,
 )
@@ -93,6 +95,8 @@ def create_generator_graph(*, generation_config=None) -> StateGraph:
     workflow = StateGraph(GeneratorState)
 
     # Add all nodes
+    workflow.add_node("review_policy", review_policy_node)
+    workflow.add_node("semantic_review", semantic_review_node)
     workflow.add_node("intake", intake_node)
     workflow.add_node("rag_retrieval", rag_retrieval_node)
     workflow.add_node("context_pack", context_pack_node)
@@ -106,7 +110,8 @@ def create_generator_graph(*, generation_config=None) -> StateGraph:
     workflow.add_node("package_outputs", package_outputs_node)
 
     # Define the linear workflow with conditional repair loop
-    workflow.add_edge(START, "intake")
+    workflow.add_edge(START, "review_policy")
+    workflow.add_edge("review_policy", "intake")
     workflow.add_edge("intake", "rag_retrieval")
     workflow.add_edge("rag_retrieval", "architecture_selection")
     workflow.add_edge("architecture_selection", "context_pack")
@@ -122,7 +127,7 @@ def create_generator_graph(*, generation_config=None) -> StateGraph:
         should_repair,
         {
             "repair": "repair",
-            "package": "package_outputs",
+            "package": "semantic_review",
             "fail": "package_outputs",
         },
     )
@@ -137,6 +142,7 @@ def create_generator_graph(*, generation_config=None) -> StateGraph:
         },
     )
 
+    workflow.add_edge("semantic_review", "package_outputs")
     workflow.add_edge("package_outputs", END)
 
     return workflow.compile()

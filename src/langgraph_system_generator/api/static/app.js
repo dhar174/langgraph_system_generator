@@ -219,6 +219,20 @@ function appendLabeledValue(parent, label, value, options = {}) {
 }
 
 function appendQaSummary(parent, qaSummary, outcome = null) {
+    if (qaSummary && qaSummary.semantic_review) {
+        const review = qaSummary.semantic_review;
+        const item = document.createElement('div');
+        item.className = 'result-item';
+        const status = document.createElement('p');
+        status.textContent = `Semantic review (advisory only): ${review.status} / ${review.reason_code}. Reviewer ${review.reviewer_id} version ${review.reviewer_version}. Docs alignment: ${review.docs_alignment}. Requirements remain unverified.`;
+        item.appendChild(status);
+        if (review.status === 'reviewed' && Array.isArray(review.findings) && review.findings.length === 0) {
+            const note = document.createElement('p');
+            note.textContent = 'The model reported no concerns; this does not prove requirements are satisfied.';
+            item.appendChild(note);
+        }
+        parent.appendChild(item);
+    }
     if (!qaSummary || !Array.isArray(qaSummary.findings) || qaSummary.findings.length === 0) {
         return;
     }
