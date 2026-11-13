@@ -127,7 +127,7 @@ The CLI respects these environment variables:
 | `LANGSMITH_PROJECT` | LangSmith project name | `langgraph-notebook-foundry` |
 | `VECTOR_STORE_TYPE` | Vector store backend | `faiss` |
 | `VECTOR_STORE_PATH` | Vector store location | `./data/vector_store` |
-| `DEFAULT_MODEL` | Default LLM model | `gpt-5-mini` |
+| `DEFAULT_MODEL` | Default LLM model | `gpt-6-luna` |
 | `MAX_REPAIR_ATTEMPTS` | QA repair attempts | `3` |
 | `DEFAULT_BUDGET_TOKENS` | Token budget | `100000` |
 | `LNF_OUTPUT_BASE` | Base output directory | `.` |
@@ -326,7 +326,7 @@ single-operator admission, request-bound fallback and SSE retention semantics.
       "fallback_used": false,
       "warnings": [],
       "fallback_events": [],
-      "resolved_model": "gpt-5-mini",
+      "resolved_model": "gpt-6-luna",
       "resolved_api_base": null,
       "resolved_max_iterations": 10,
       "sections_built": [
@@ -425,7 +425,7 @@ curl -X POST http://localhost:8000/generate \
     "mode": "live",
     "output_dir": "./output/research",
     "formats": ["ipynb", "html", "docx"],
-    "model": "gpt-5-mini",
+    "model": "gpt-6-luna",
     "temperature": 0.8,
     "max_tokens": 8192,
     "agent_type": "subagents"
@@ -517,7 +517,8 @@ All requests are validated using Pydantic models:
 **Validation Rules:**
 - `prompt`: Required, max 5000 characters
 - `mode`: Must be "stub" or "live"
-- `temperature`: Must be 0.0-2.0
+- `temperature`: Must be 0.0-2.0. For `gpt-6-luna` on the official OpenAI endpoint,
+  low reasoning requires omitting sampling temperature from the provider request.
 - `max_tokens`: Must be 1-32768
 - `formats`: Must be valid format names
 - `agent_type`: Must be one of `router`, `subagents`, `hybrid`, `autoagent`, `deepagents`
@@ -741,7 +742,7 @@ summaries, and non-fatal warnings:
     "fallback_used": false,
     "warnings": [],
     "fallback_events": [],
-    "resolved_model": "gpt-5-mini",
+    "resolved_model": "gpt-6-luna",
     "resolved_api_base": null,
     "resolved_max_iterations": 10,
     "sections_built": [

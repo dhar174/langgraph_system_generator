@@ -46,7 +46,7 @@
 
 - Environment-backed settings are defined in
   `src/langgraph_system_generator/utils/config.py`.
-- Default model settings currently center on `gpt-5-mini`.
+- The OpenAI default is `gpt-6-luna` on Responses with low reasoning.
 - Live generation relies on environment-provided API credentials, while stub
   mode avoids external LLM calls.
 - Output-path behavior is constrained by the base-output helpers in

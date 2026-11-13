@@ -6,6 +6,10 @@ import json
 import re
 from typing import Dict, Optional
 
+from langgraph_system_generator.utils.model_compatibility import (
+    chat_openai_compatibility_kwargs,
+)
+
 
 def build_llm_init(
     model: str,
@@ -24,12 +28,26 @@ def build_llm_init(
     helper.
     """
     if use_notebook_helper:
-        params = [f"temperature={temperature}"]
+        compatibility_kwargs = chat_openai_compatibility_kwargs(
+            model, api_base=api_base
+        )
+        params = []
+        if not compatibility_kwargs:
+            params.append(f"temperature={temperature}")
         if max_tokens is not None:
             params.append(f"max_tokens={max_tokens}")
         return f"make_llm({', '.join(params)})"
 
-    params = [f"model={model!r}", f"temperature={temperature}"]
+    params = [f"model={model!r}"]
+    compatibility_kwargs = chat_openai_compatibility_kwargs(
+        model, api_base=api_base
+    )
+    if compatibility_kwargs:
+        params.extend(
+            f"{name}={value!r}" for name, value in compatibility_kwargs.items()
+        )
+    else:
+        params.append(f"temperature={temperature}")
     if max_tokens is not None:
         params.append(f"max_tokens={max_tokens}")
     if api_base:

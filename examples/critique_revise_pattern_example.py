@@ -18,19 +18,21 @@ if __package__ in (None, ""):
             sys.path.insert(0, str(path))
 
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
-from langchain_openai import ChatOpenAI
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.message import add_messages
 from langgraph.types import Command
 
 from langgraph_system_generator.examples_support import (
+    DEFAULT_LIVE_MODEL,
+    build_example_llm,
     build_example_parser,
     build_metrics,
     ensure_live_credentials,
     make_thread_config,
     trace_step,
 )
+from langgraph_system_generator.generator.utils import get_message_text
 
 DEFAULT_TASK = "Draft a release announcement for the new critique-revise workflow."
 MIN_QUALITY_SCORE = 0.8
@@ -116,7 +118,7 @@ def build_graph(
     min_quality_score: float = MIN_QUALITY_SCORE,
 ):
     """Build the runnable critique-revise graph for the selected mode."""
-    llm = ChatOpenAI(model=model, temperature=0) if mode == "live" else None
+    llm = build_example_llm(model) if mode == "live" else None
 
     def generate_node(state: CritiqueState) -> Dict[str, object]:
         task = state["messages"][0].content if state.get("messages") else ""
@@ -140,7 +142,7 @@ def build_graph(
                     ),
                 ]
             )
-            draft = response.content
+            draft = get_message_text(response)
         else:
             draft = _stub_generate(task, revision_count, critique_feedback)
         return {
@@ -241,7 +243,7 @@ def run_demo(
     task: str,
     *,
     mode: str = "stub",
-    model: str = "gpt-4.1-mini",
+    model: str = DEFAULT_LIVE_MODEL,
     max_steps: int = 3,
 ) -> Dict[str, object]:
     """Execute the critique example and print a trace."""

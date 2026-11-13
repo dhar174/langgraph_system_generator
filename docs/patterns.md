@@ -317,7 +317,7 @@ class RouterPattern:
     @staticmethod
     def generate_router_node_code(
         routes: List[str],
-        llm_model: str = "gpt-5-mini",
+        llm_model: str = "gpt-6-luna",
         use_structured_output: bool = True,
         include_fallback: bool = True,
         fallback_route: str = "fallback",
@@ -327,7 +327,7 @@ class RouterPattern:
     def generate_route_node_code(
         route_name: str,
         route_purpose: str,
-        llm_model: str = "gpt-5-mini",
+        llm_model: str = "gpt-6-luna",
     ) -> str
     
     @staticmethod
@@ -361,7 +361,7 @@ class SubagentsPattern:
     def generate_supervisor_code(
         subagents: List[str],
         subagent_descriptions: Optional[Dict[str, str]] = None,
-        llm_model: str = "gpt-5-mini",
+        llm_model: str = "gpt-6-luna",
         use_structured_output: bool = True,
     ) -> str
     
@@ -369,7 +369,7 @@ class SubagentsPattern:
     def generate_subagent_code(
         agent_name: str,
         agent_description: str,
-        llm_model: str = "gpt-5-mini",
+        llm_model: str = "gpt-6-luna",
         include_tools: bool = False,
     ) -> str
     
@@ -400,14 +400,14 @@ class CritiqueLoopPattern:
     @staticmethod
     def generate_generation_node_code(
         task_description: str = "Generate initial output",
-        llm_model: str = "gpt-5-mini",
+        llm_model: str = "gpt-6-luna",
         model_config: Optional[Union[ModelConfig, dict]] = None,
     ) -> str
 
     @staticmethod
     def generate_critique_node_code(
         criteria: Optional[List[str]] = None,
-        llm_model: str = "gpt-5-mini",
+        llm_model: str = "gpt-6-luna",
         use_structured_output: bool = True,
         feedback_source: str = "automated",
         model_config: Optional[Union[ModelConfig, dict]] = None,
@@ -415,7 +415,7 @@ class CritiqueLoopPattern:
 
     @staticmethod
     def generate_revise_node_code(
-        llm_model: str = "gpt-5-mini",
+        llm_model: str = "gpt-6-luna",
         model_config: Optional[Union[ModelConfig, dict]] = None,
     ) -> str
 

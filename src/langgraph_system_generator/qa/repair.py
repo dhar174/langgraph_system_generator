@@ -20,6 +20,7 @@ from langgraph_system_generator.qa.registry import (
     get_qa_repair_registry,
 )
 from langgraph_system_generator.qa.validators import NotebookValidator
+from langgraph_system_generator.utils.model_compatibility import DEFAULT_MODEL
 
 _GRAPH_SCAFFOLD_MARKER = "# Recovered deterministic graph scaffold"
 _GRAPH_SCAFFOLD_TEMPLATE = f"""{_GRAPH_SCAFFOLD_MARKER}
@@ -391,7 +392,7 @@ class NotebookRepairAgent:
                 )
             elif section == "config":
                 code_source = (
-                    'MODEL = "gpt-5-mini"\n'
+                    f"MODEL = {DEFAULT_MODEL!r}\n"
                     "MAX_ITERATIONS = 10\n"
                     'config = {"configurable": {"thread_id": "lnf-demo-thread"}, "recursion_limit": 25}'
                 )

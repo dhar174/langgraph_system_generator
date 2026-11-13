@@ -74,10 +74,10 @@ def normalize_provider_env_var(value: Any) -> str:
 
 def package_import_probe(package_name: str) -> str:
     """Return the import probe used to detect whether a package is installed."""
-
+    normalized_package = re.split(r"[<>=!~]", package_name, maxsplit=1)[0].strip()
     return _PACKAGE_IMPORT_PROBES.get(
-        package_name,
-        package_name.replace("-", "_").replace(".", "_"),
+        normalized_package,
+        normalized_package.replace("-", "_").replace(".", "_"),
     )
 
 

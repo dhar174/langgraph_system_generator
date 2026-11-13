@@ -17,19 +17,21 @@ if __package__ in (None, ""):
             sys.path.insert(0, str(path))
 
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
-from langchain_openai import ChatOpenAI
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.message import add_messages
 from langgraph.types import Send
 
 from langgraph_system_generator.examples_support import (
+    DEFAULT_LIVE_MODEL,
+    build_example_llm,
     build_example_parser,
     build_metrics,
     ensure_live_credentials,
     make_thread_config,
     trace_step,
 )
+from langgraph_system_generator.generator.utils import get_message_text
 
 
 def merge_dicts(left: Dict[str, str], right: Dict[str, str]) -> Dict[str, str]:
@@ -91,7 +93,7 @@ def _stub_task_result(task_id: str) -> str:
 
 def build_graph(mode: str, model: str, *, max_parallel: int = 2):
     """Build the dependency-graph execution example."""
-    llm = ChatOpenAI(model=model, temperature=0) if mode == "live" else None
+    llm = build_example_llm(model) if mode == "live" else None
 
     def planner_node(state: CompilerState):
         if llm:
@@ -171,7 +173,7 @@ def build_graph(mode: str, model: str, *, max_parallel: int = 2):
                     HumanMessage(content=state["current_task_objective"]),
                 ]
             )
-            content = response.content
+            content = get_message_text(response)
         else:
             content = _stub_task_result(task_id)
         return {
@@ -205,7 +207,7 @@ def build_graph(mode: str, model: str, *, max_parallel: int = 2):
     return workflow.compile(checkpointer=InMemorySaver())
 
 
-def run_demo(task: str, *, mode: str = "stub", model: str = "gpt-4.1-mini", max_parallel: int = 2):
+def run_demo(task: str, *, mode: str = "stub", model: str = DEFAULT_LIVE_MODEL, max_parallel: int = 2):
     """Execute the compiler-style example and print a trace."""
     ensure_live_credentials(mode)
     graph = build_graph(mode, model, max_parallel=max_parallel)

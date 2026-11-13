@@ -13,13 +13,15 @@ from typing import Annotated, Any, Literal, Optional, Union
 from pydantic import BaseModel, Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
+from langgraph_system_generator.utils.model_compatibility import DEFAULT_MODEL
+
 
 class ModelConfig(BaseModel):
     """Configuration for LLM model parameters used in code generation."""
 
     model: str = Field(
-        default="gpt-5-mini",
-        description="LLM model identifier (e.g., gpt-5-mini, gpt-4, claude-3-opus)",
+        default=DEFAULT_MODEL,
+        description="LLM model identifier (e.g., gpt-6-luna, gpt-5-mini, gpt-4)",
     )
     temperature: float = Field(
         default=0.7,
@@ -42,8 +44,8 @@ class ModelConfig(BaseModel):
         default=None,
         description=(
             "Optional model identifier for lightweight summarization steps. "
-            "When omitted, uses 'gpt-4o-mini' with the default API base, or "
-            "the primary model when a custom api_base is configured."
+            "When omitted, uses the primary model for the default Luna model "
+            "and custom api_base configurations; otherwise uses 'gpt-4o-mini'."
         ),
     )
 
@@ -135,7 +137,7 @@ class Settings(BaseSettings):
     )
 
     default_model: str = Field(
-        default="gpt-5-mini",
+        default=DEFAULT_MODEL,
         description="Primary model identifier used for generation.",
     )
     max_repair_attempts: int = Field(

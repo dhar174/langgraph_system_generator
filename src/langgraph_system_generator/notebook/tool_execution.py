@@ -48,7 +48,7 @@ def chatbot_tool_node_code(
     return {{
         "messages": [response],
         "route": {tool_routes[0]!r} if calls else {end_routes[0]!r},
-        "final_response": "" if calls else str(response.content),
+        "final_response": "" if calls else response.text,
         "turn_count": int(state.get("turn_count", 0)) + (0 if calls else 1),
     }}
 '''

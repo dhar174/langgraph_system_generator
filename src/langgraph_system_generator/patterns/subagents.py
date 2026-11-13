@@ -11,6 +11,10 @@ from langgraph_system_generator.patterns.utils import (
     sanitize_identifier,
 )
 from langgraph_system_generator.utils.config import ModelConfig
+from langgraph_system_generator.utils.model_compatibility import (
+    DEFAULT_MODEL,
+    chat_openai_compatibility_kwargs,
+)
 
 
 def _agent_specs(subagents: List[str]) -> List[tuple[str, str]]:
@@ -93,13 +97,22 @@ class WorkflowState(TypedDict, total=False):
             use_notebook_helper=use_notebook_helper,
         )
         summary_model = config.summary_model or (
-            "gpt-4o-mini" if config.api_base is None else config.model
+            (
+                DEFAULT_MODEL
+                if config.model == DEFAULT_MODEL
+                else "gpt-4o-mini"
+            )
+            if config.api_base is None
+            else config.model
         )
         if use_notebook_helper:
             params = []
             if summary_model != config.model or config.summary_model is not None:
                 params.append(f"model={summary_model!r}")
-            params.append("temperature=0")
+            if not chat_openai_compatibility_kwargs(
+                summary_model, api_base=config.api_base
+            ):
+                params.append("temperature=0")
             if config.max_tokens is not None:
                 params.append(f"max_tokens={config.max_tokens}")
             summary_llm_init = f"make_llm({', '.join(params)})"
@@ -476,7 +489,7 @@ def supervisor_node(state: WorkflowState) -> dict:
         ),
     ])
 
-    raw = response.content.strip()
+    raw = response.text.strip()
     agent_names, _, instructions = raw.partition("|")
     requested_agents = [
         name.strip()

@@ -68,8 +68,13 @@ def build_live_agent(model: str, tools: List[Callable[..., str]]):
 
     from deepagents import create_deep_agent
 
+    selected_model: Any = model
+    if model in {"gpt-6-luna", "openai:gpt-6-luna"}:
+        from langgraph_system_generator.examples_support import build_example_llm
+
+        selected_model = build_example_llm("gpt-6-luna")
     return create_deep_agent(
-        model=model,
+        model=selected_model,
         tools=tools,
         system_prompt=(
             "You are an experimental Deep Agent. Plan before acting, delegate to "
@@ -101,7 +106,9 @@ def run_live(task: str, model: str) -> Dict[str, Any]:
             }
         raise
     result = agent.invoke({"messages": [{"role": "user", "content": task}]})
-    return {"mode": "live", "final_output": str(result)}
+    messages = result.get("messages", [])
+    final_output = messages[-1].text if messages else ""
+    return {"mode": "live", "final_output": final_output}
 
 
 def main() -> None:
@@ -119,7 +126,7 @@ def main() -> None:
     )
     parser.add_argument(
         "--model",
-        default="openai:gpt-5-mini",
+        default="openai:gpt-6-luna",
         help="Deep Agents model identifier for live mode.",
     )
     args = parser.parse_args()

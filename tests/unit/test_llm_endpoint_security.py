@@ -233,8 +233,9 @@ def test_authorization_performs_no_dns_or_credential_lookup(monkeypatch):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("asynchronous", [False, True])
+@pytest.mark.parametrize("model_id", ["test-model", "gpt-6-luna"])
 async def test_actual_custom_requests_have_only_provider_credentials(
-    monkeypatch, outbound, asynchronous
+    monkeypatch, outbound, asynchronous, model_id
 ):
     register(monkeypatch)
     monkeypatch.setenv("OPENAI_ORG_ID", SERVER_KEY)
@@ -258,7 +259,7 @@ async def test_actual_custom_requests_have_only_provider_credentials(
     async with _llm.llm_transport_scope():
         model = build_chat_llm(
             model_config=ModelConfig(
-                model="test-model",
+                model=model_id,
                 api_base=CUSTOM_BASE,
                 endpoint_policy="hosted",
                 temperature=0.3,
@@ -279,7 +280,8 @@ async def test_actual_custom_requests_have_only_provider_credentials(
         not in str(request.headers) + str(request.url) + request.content.decode()
     )
     payload = json.loads(request.content)
-    assert payload["model"] == "test-model" and payload["temperature"] == 0.3
+    assert payload["model"] == model_id and payload["temperature"] == 0.3
+    assert "reasoning" not in payload and "output_version" not in payload
     assert payload.get("max_tokens", payload.get("max_completion_tokens")) == 42
 
 

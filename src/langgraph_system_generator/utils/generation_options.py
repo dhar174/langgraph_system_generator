@@ -9,7 +9,7 @@ from langgraph_system_generator.generator.architecture_registry import (
 )
 
 SUPPORTED_OPENAI_MODELS = frozenset(
-    {"gpt-5.2", "gpt-5-mini", "gpt-5-nano", "gpt-5.1"}
+    {"gpt-6-luna", "gpt-5.2", "gpt-5-mini", "gpt-5-nano", "gpt-5.1"}
 )
 
 SUPPORTED_AGENT_TYPES = frozenset(

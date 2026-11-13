@@ -13,7 +13,8 @@ pip install -r requirements.txt
 pip install -e .
 ```
 
-Live mode requires `OPENAI_API_KEY`:
+Live mode uses `gpt-6-luna` with Responses and low reasoning on the
+official OpenAI endpoint. Set `OPENAI_API_KEY` before invoking it.
 
 ```bash
 export OPENAI_API_KEY="sk-..."  # Linux/macOS (bash/zsh)

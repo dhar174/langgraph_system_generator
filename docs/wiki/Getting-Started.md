@@ -68,7 +68,7 @@ LANGSMITH_API_KEY=your-langsmith-key-here
 LANGSMITH_PROJECT=langgraph-notebook-foundry
 VECTOR_STORE_TYPE=faiss
 VECTOR_STORE_PATH=./data/vector_store
-DEFAULT_MODEL=gpt-5-mini
+DEFAULT_MODEL=gpt-6-luna
 MAX_REPAIR_ATTEMPTS=3
 DEFAULT_BUDGET_TOKENS=100000
 ```

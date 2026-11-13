@@ -774,7 +774,7 @@ class Settings(BaseSettings):
     vector_store_path: str = "./data/vector_store"
     
     # Generation
-    default_model: str = "gpt-5-mini"
+    default_model: str = "gpt-6-luna"
     max_repair_attempts: int = 3
     default_budget_tokens: int = 100000
     graph_designer_plugin_modules: list[str] = []
@@ -790,7 +790,7 @@ Access via:
 ```python
 from langgraph_system_generator.utils.config import settings
 
-print(settings.default_model)  # "gpt-5-mini"
+print(settings.default_model)  # "gpt-6-luna"
 ```
 
 ## Extension Points

@@ -16,19 +16,21 @@ if __package__ in (None, ""):
             sys.path.insert(0, str(path))
 
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
-from langchain_openai import ChatOpenAI
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.message import add_messages
 from langgraph.types import Command
 
 from langgraph_system_generator.examples_support import (
+    DEFAULT_LIVE_MODEL,
+    build_example_llm,
     build_example_parser,
     build_metrics,
     ensure_live_credentials,
     make_thread_config,
     trace_step,
 )
+from langgraph_system_generator.generator.utils import get_message_text
 
 
 def merge_dicts(left: Dict[str, str], right: Dict[str, str]) -> Dict[str, str]:
@@ -56,7 +58,7 @@ class TeamState(TypedDict, total=False):
 
 
 def _build_research_team(mode: str, model: str):
-    llm = ChatOpenAI(model=model, temperature=0) if mode == "live" else None
+    llm = build_example_llm(model) if mode == "live" else None
 
     def lead_node(state: TeamState) -> Command[Literal["researcher"]]:
         return Command(
@@ -68,7 +70,7 @@ def _build_research_team(mode: str, model: str):
         task = state["messages"][0].content if state.get("messages") else ""
         if llm:
             response = llm.invoke([HumanMessage(content=f"Collect concise research notes for: {task}")])
-            summary = response.content
+            summary = get_message_text(response)
         else:
             summary = (
                 "Research team summary:\n"
@@ -91,7 +93,7 @@ def _build_research_team(mode: str, model: str):
 
 
 def _build_writing_team(mode: str, model: str):
-    llm = ChatOpenAI(model=model, temperature=0) if mode == "live" else None
+    llm = build_example_llm(model) if mode == "live" else None
 
     def lead_node(state: TeamState) -> Command[Literal["writer"]]:
         return Command(
@@ -103,7 +105,7 @@ def _build_writing_team(mode: str, model: str):
         research_context = state["messages"][0].content if state.get("messages") else ""
         if llm:
             response = llm.invoke([HumanMessage(content=f"Write a concise synthesis from: {research_context}")])
-            summary = response.content
+            summary = get_message_text(response)
         else:
             summary = (
                 "Writing team summary:\n"
@@ -186,7 +188,7 @@ def build_graph(mode: str, model: str):
     return workflow.compile(checkpointer=InMemorySaver())
 
 
-def run_demo(task: str, *, mode: str = "stub", model: str = "gpt-4.1-mini"):
+def run_demo(task: str, *, mode: str = "stub", model: str = DEFAULT_LIVE_MODEL):
     """Execute the hierarchical teams example and print a trace."""
     ensure_live_credentials(mode)
     graph = build_graph(mode, model)

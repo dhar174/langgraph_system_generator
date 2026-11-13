@@ -67,7 +67,9 @@ def test_advanced_options_html_structure():
         option.get("value"): option.get_text(" ", strip=True)
         for option in model_select.find_all("option")
     }
+    assert model_options[""] == "Default (gpt-6-luna)"
     expected_openai_models = {
+        "gpt-6-luna": "GPT-6 Luna (Default, low reasoning)",
         "gpt-5.5": "GPT-5.5 (Latest flagship)",
         "gpt-5.4": "GPT-5.4 (Current balanced)",
         "gpt-5.4-mini": "GPT-5.4 Mini (Current cost-effective)",

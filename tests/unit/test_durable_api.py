@@ -11,7 +11,7 @@ import httpx
 import pytest
 
 from langgraph_system_generator.api import progress_streaming, server
-from langgraph_system_generator.api.durable import DurableRuntime
+from langgraph_system_generator.api.durable import DurableRuntime, envelope
 from langgraph_system_generator.jobs.firestore_store import FirestoreJobStore
 from langgraph_system_generator.jobs.gcs_artifacts import GCSArtifactStore
 from langgraph_system_generator.jobs.models import (
@@ -33,6 +33,12 @@ from tests.unit.test_private_artifacts import Storage, outputs
 store = _store
 identity = _identity
 BODY = {"prompt": "Build a private support router", "mode": "stub"}
+
+
+def test_new_durable_request_snapshots_luna_and_legacy_default_remains():
+    request = server.GenerationRequest(prompt="Build a private support router")
+    assert envelope(request, request.prompt).model == "gpt-6-luna"
+    assert GenerationRequestEnvelope(prompt=request.prompt).model == "gpt-4o-mini"
 
 
 @pytest.fixture

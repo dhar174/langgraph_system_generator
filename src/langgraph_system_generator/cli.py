@@ -1150,7 +1150,7 @@ def _build_stub_result(prompt: str, agent_type: str | None = None) -> Dict[str, 
         ),
         CellSpec(
             cell_type="code",
-            content="!pip install -q langgraph langchain-openai",
+            content='!pip install -q langgraph "langchain-openai>=1.7.2,<2.0.0"',
             section="setup",
         ),
     ]
@@ -1445,8 +1445,10 @@ def _build_stub_result(prompt: str, agent_type: str | None = None) -> Dict[str, 
             sections_built=["intro", "install", "state", "nodes", "graph"],
         ),
         "notebook_dependency_plan": NotebookDependencyPlan(
-            packages=["langgraph", "langchain-openai"],
-            install_commands=["python -m pip install -q langgraph langchain-openai"],
+            packages=["langgraph", "langchain-openai>=1.7.2,<2.0.0"],
+            install_commands=[
+                'python -m pip install -q langgraph "langchain-openai>=1.7.2,<2.0.0"'
+            ],
             runtime_notes=[
                 "Stub mode emits a deterministic dependency plan for the generated notebook.",
                 *(

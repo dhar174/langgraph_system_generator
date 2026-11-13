@@ -201,7 +201,7 @@ Route:""")
     
     # Get classification
     response = llm.invoke([system_prompt, user_prompt])
-    selected_route = response.content.strip().lower()
+    selected_route = response.text.strip().lower()
     
     # Validate route
     valid_routes = [r.lower() for r in {repr([label for label, _ in specs])}]
@@ -260,8 +260,8 @@ Responsibility:
     ])
 
     return {{
-        "results": {{"{route_name}": response.content}},
-        "final_output": response.content,
+        "results": {{"{route_name}": response.text}},
+        "final_output": response.text,
         "messages": [AIMessage(content=f"{route_name} specialist completed the task.")],
     }}'''
 

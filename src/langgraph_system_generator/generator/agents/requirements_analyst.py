@@ -18,7 +18,10 @@ from langgraph_system_generator.generator.state import (
     RequirementsAnalysis,
     RequirementsFeedback,
 )
-from langgraph_system_generator.generator.utils import extract_json_from_llm_response
+from langgraph_system_generator.generator.utils import (
+    extract_json_from_llm_response,
+    get_message_text,
+)
 from langgraph_system_generator.utils.error_handling import safe_exception_summary
 from langgraph_system_generator.utils.config import ModelConfig, settings
 
@@ -335,7 +338,7 @@ class RequirementsAnalyst:
         clarification_questions: List[str] = []
 
         try:
-            constraints_data = extract_json_from_llm_response(response.content)
+            constraints_data = extract_json_from_llm_response(get_message_text(response))
             clarification_questions = self._extract_clarification_questions(
                 constraints_data
             )
@@ -395,7 +398,7 @@ class RequirementsAnalyst:
         clarification_questions: List[str] = []
 
         try:
-            constraints_data = extract_json_from_llm_response(response.content)
+            constraints_data = extract_json_from_llm_response(get_message_text(response))
             clarification_questions = self._extract_clarification_questions(
                 constraints_data
             )

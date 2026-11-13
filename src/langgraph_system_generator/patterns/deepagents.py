@@ -12,6 +12,11 @@ from typing import Dict, List, Optional, Union
 
 from langgraph_system_generator.patterns.utils import render_additional_fields
 from langgraph_system_generator.utils.config import ModelConfig
+from langgraph_system_generator.utils.model_compatibility import (
+    DEFAULT_MODEL,
+    LUNA_MODEL,
+    OPENAI_BASE_URL,
+)
 
 
 class DeepAgentsPattern:
@@ -65,8 +70,11 @@ class WorkflowState(TypedDict, total=False):
         else:
             config = model_config
 
-        model_name = config.model or "gpt-5-mini"
+        model_name = config.model or DEFAULT_MODEL
         default_model = model_name if ":" in model_name else f"openai:{model_name}"
+        default_model_literal = json.dumps(default_model)
+        luna_model_literal = json.dumps(LUNA_MODEL)
+        luna_prefixed_model_literal = json.dumps(f"openai:{LUNA_MODEL}")
         if use_notebook_helper:
             model_setup = """    try:
         model = make_llm()
@@ -77,10 +85,28 @@ class WorkflowState(TypedDict, total=False):
             model_setup = f"""    if not os.environ.get("OPENAI_API_KEY"):
         return None
 
-    model = os.environ.get(
+    configured_model = os.environ.get(
         "DEEP_AGENTS_MODEL",
-        "{default_model}",
-    )"""
+        {default_model_literal},
+    )
+    if configured_model in {{{luna_model_literal}, {luna_prefixed_model_literal}}}:
+        from langchain_openai import ChatOpenAI
+
+        model_kwargs = {{"model": {luna_model_literal}}}
+        api_base = os.environ.get("OPENAI_API_BASE") or os.environ.get("OPENAI_BASE_URL")
+        if api_base:
+            model_kwargs["base_url"] = api_base
+        if api_base in (None, "", {OPENAI_BASE_URL!r}, {OPENAI_BASE_URL + '/'!r}):
+            model_kwargs.update(
+                use_responses_api=True,
+                reasoning={{"effort": "low"}},
+                output_version="responses/v1",
+            )
+        else:
+            model_kwargs["temperature"] = 0
+        model = ChatOpenAI(**model_kwargs)
+    else:
+        model = configured_model"""
         tool_names = []
         for tool_name in tools or []:
             normalized_name = str(tool_name or "").strip()
@@ -112,7 +138,7 @@ def _latest_user_text(messages: List[Any]) -> str:
     if not messages:
         return "Run the Deep Agents workflow."
     last_message = messages[-1]
-    return str(getattr(last_message, "content", last_message))
+    return str(getattr(last_message, "text", getattr(last_message, "content", last_message)))
 
 
 def _deterministic_deepagents_fallback(goal: str) -> Dict[str, Any]:
@@ -174,7 +200,9 @@ def deep_agent_node(state: WorkflowState) -> WorkflowState:
     result_messages = result.get("messages", []) if isinstance(result, dict) else []
     if result_messages:
         last_message = result_messages[-1]
-        final_message = str(getattr(last_message, "content", last_message))
+        final_message = str(
+            getattr(last_message, "text", getattr(last_message, "content", last_message))
+        )
     else:
         final_message = str(result)
     return {{

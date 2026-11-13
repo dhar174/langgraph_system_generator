@@ -75,7 +75,7 @@ class TestRouterPattern:
         assert "def search_node(state: WorkflowState)" in code
         assert "Perform web searches for information" in code
         assert "ChatOpenAI" in code
-        assert '"search": response.content' in code
+        assert '"search": response.text' in code
 
     def test_generate_graph_code_conditional(self):
         """Test graph construction with conditional edges."""
@@ -903,6 +903,19 @@ class TestDeepAgentsPattern:
         assert "openai:anthropic:claude-sonnet-4-5" not in code
         compile(code, "<deepagents-node-prefixed>", "exec")
 
+    def test_deepagents_runtime_luna_override_keeps_custom_endpoint_mode(self):
+        code = DeepAgentsPattern.generate_agent_node_code(
+            ["researcher"], model_config={"model": "gpt-5-mini"}
+        )
+
+        assert 'configured_model in {"gpt-6-luna", "openai:gpt-6-luna"}' in code
+        assert 'os.environ.get("OPENAI_API_BASE")' in code
+        assert 'os.environ.get("OPENAI_BASE_URL")' in code
+        assert "model_kwargs.update(" in code
+        assert 'output_version="responses/v1"' in code
+        assert 'model_kwargs["temperature"] = 0' in code
+        compile(code, "<deepagents-luna-runtime-override>", "exec")
+
     def test_generate_graph_code_has_terminal_path(self):
         code = DeepAgentsPattern.generate_graph_code()
 
@@ -1435,7 +1448,9 @@ class TestPatternModelConfig:
 
         assert "def router_node(state: WorkflowState, window_size: int = 5)" in code
         assert "ChatOpenAI(" in code
-        assert "temperature=" in code
+        assert "use_responses_api=True" in code
+        assert "reasoning={'effort': 'low'}" in code
+        assert "temperature=" not in code
 
     def test_subagents_pattern_accepts_model_config(self):
         """Test SubagentsPattern accepts model config."""
@@ -1522,8 +1537,8 @@ class TestPatternModelConfig:
         assert "ChatOpenAI(" in code
         assert "temperature=0.7" in code
 
-    def test_all_patterns_preserve_gpt_5_mini_default(self):
-        """Test all patterns preserve gpt-5-mini as default model."""
+    def test_all_patterns_use_luna_api_defaults(self):
+        """Test standalone patterns configure Luna without sampling options."""
         # Router pattern
         router_code = RouterPattern.generate_router_node_code(["search"])
         assert "ChatOpenAI(" in router_code
@@ -1546,6 +1561,19 @@ class TestPatternModelConfig:
 
         revise_code = CritiqueLoopPattern.generate_revise_node_code()
         assert "ChatOpenAI(" in revise_code
+
+        for code in (
+            router_code,
+            supervisor_code,
+            subagent_code,
+            generate_code,
+            critique_code,
+            revise_code,
+        ):
+            assert "model='gpt-6-luna'" in code
+            assert "use_responses_api=True" in code
+            assert "output_version='responses/v1'" in code
+            assert "temperature=" not in code
 
     def test_complete_examples_accept_model_config(self):
         """Test complete example generators accept model config."""
@@ -1657,7 +1685,8 @@ def test_router_pattern_emits_typed_state_and_command_routing():
     assert "from langgraph.types import Command" not in router_code
     assert "RouteDecision" in router_code
     assert "with_structured_output" in router_code
-    assert "temperature=0" in router_code
+    assert "use_responses_api=True" in router_code
+    assert "temperature=" not in router_code
 
     assert "Perform grounded retrieval." in route_code
     assert "ChatOpenAI(" in route_code

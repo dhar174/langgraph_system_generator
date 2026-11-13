@@ -16,6 +16,7 @@ from langgraph_system_generator.generator.agents._llm import (
     build_chat_llm,
     llm_transport_scope,
 )
+from langgraph_system_generator.generator.utils import get_message_text
 from langgraph_system_generator.qa.specialist_models import (
     MAX_INPUT_CHARS,
     MAX_OUTPUT_TOKENS,
@@ -28,6 +29,9 @@ from langgraph_system_generator.qa.specialist_models import (
     SemanticReviewResult,
 )
 from langgraph_system_generator.utils.config import ModelConfig
+from langgraph_system_generator.utils.model_compatibility import (
+    chat_openai_compatibility_kwargs,
+)
 
 REVIEW_INSTRUCTIONS = """You are the Requirements/Domain Fidelity Reviewer.
 Review the COMPLETE supplied candidate against the ORIGINAL request and supplied
@@ -129,14 +133,41 @@ class RequirementsDomainReviewer:
         except Exception:  # noqa: BLE001 - sanitized optional-provider boundary
             # Never log provider payloads, validation excerpts or exception text.
             return result("unavailable", "provider_unavailable")
-        if raw.additional_kwargs.get("refusal"):
+        content_blocks = getattr(raw, "content", None)
+        refusal_block = isinstance(content_blocks, list) and any(
+            isinstance(block, dict) and block.get("type") == "refusal"
+            for block in content_blocks
+        )
+        if raw.additional_kwargs.get("refusal") or refusal_block:
             return result("invalid_response", "refused")
-        if raw.tool_calls:
+        if raw.tool_calls or raw.invalid_tool_calls:
             return result("invalid_response", "invalid_response")
-        if raw.response_metadata.get("finish_reason") == "length":
+        metadata = raw.response_metadata
+        expects_responses = bool(
+            chat_openai_compatibility_kwargs(
+                self._config.model, api_base=self._config.api_base
+            )
+        )
+        incomplete_details = metadata.get("incomplete_details")
+        incomplete_reason = (
+            incomplete_details.get("reason")
+            if isinstance(incomplete_details, dict)
+            else None
+        )
+        if incomplete_reason == "content_filter":
+            return result("invalid_response", "refused")
+        if metadata.get("finish_reason") == "length" or (
+            metadata.get("status") == "incomplete"
+            and incomplete_reason in {"max_output_tokens", "max_tokens"}
+        ):
             return result("incomplete", "output_limit")
-        text = raw.content
-        if not isinstance(text, str) or not text.strip():
+        status = metadata.get("status")
+        if status == "failed":
+            return result("unavailable", "provider_unavailable")
+        if status not in (None, "completed") or (expects_responses and status != "completed"):
+            return result("invalid_response", "invalid_response")
+        text = get_message_text(raw)
+        if not text.strip():
             return result("invalid_response", "empty_response")
         if len(text) > MAX_RESPONSE_CHARS:
             return result("incomplete", "output_limit")
