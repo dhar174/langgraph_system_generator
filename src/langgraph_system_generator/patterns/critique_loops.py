@@ -155,9 +155,9 @@ Return a polished draft that can be reviewed and revised."""
 
     response = llm.invoke(prompt_messages)
     return {{
-        "current_draft": response.content,
+        "current_draft": response.text,
         "revision_count": revision_count,
-        "revision_history": [response.content],
+        "revision_history": [response.text],
         "messages": [AIMessage(content="Initial draft generated.")],
     }}
 '''
@@ -364,11 +364,11 @@ def critique_node(state: WorkflowState) -> dict:
             HumanMessage(content=f"Review:\\n{{current_draft}}"),
         ]
     )
-    parts = response.content.split("|", 2)
+    parts = response.text.split("|", 2)
 
     score = float(parts[0]) if len(parts) > 0 else 0.5
     approved = parts[1].strip().upper() == "APPROVED" if len(parts) > 1 else False
-    feedback = parts[2] if len(parts) > 2 else response.content
+    feedback = parts[2] if len(parts) > 2 else response.text
 
     return {{
         "critique_feedback": feedback,
@@ -431,9 +431,9 @@ Address the critique directly while preserving good parts of the draft."""
             if current_draft
             else []
         ),
-        "current_draft": response.content,
+        "current_draft": response.text,
         "revision_count": revision_count + 1,
-        "revision_history": [response.content],
+        "revision_history": [response.text],
         "messages": [AIMessage(content=f"Revision {{revision_count + 1}} complete.")],
     }}
 '''

@@ -972,7 +972,11 @@ async def test_compose_notebook_sections_and_packages(
         "execution",
     ]
     assert "langgraph" in composition.dependency_plan.packages
-    assert "langchain-openai" in composition.dependency_plan.packages
+    assert "langchain-openai>=1.7.2,<2.0.0" in composition.dependency_plan.packages
+    assert (
+        '"langchain-openai>=1.7.2,<2.0.0"'
+        in composition.dependency_plan.install_commands[0]
+    )
     assert "deepagents" not in composition.dependency_plan.packages
     assert "OPENAI_API_KEY" in composition.dependency_plan.provider_env_vars
 
@@ -2622,6 +2626,19 @@ async def test_pattern_nodes_use_request_scoped_model_config(
     )
     assert any("MAX_TOKENS = 2048" in cell.content for cell in config_code_cells)
     assert any("def make_llm(" in cell.content for cell in config_code_cells)
+    assert any("use_responses_api=True" in cell.content for cell in config_code_cells)
+    assert any("API_BASE in (" in cell.content for cell in config_code_cells)
+    install_code_cells = [
+        cell for cell in cells if cell.section == "setup" and cell.cell_type == "code"
+    ]
+    assert any(
+        '"langchain-openai>=1.7.2,<2.0.0"' in cell.content
+        for cell in install_code_cells
+    )
+    assert any(
+        'Version(installed_version) < Version("1.7.2")' in cell.content
+        for cell in install_code_cells
+    )
     assert composition.feedback.resolved_model == "gpt-5.2"
     assert composition.feedback.resolved_api_base is None
     assert "https://example.test/v1" not in "\n".join(cell.content for cell in cells)

@@ -27,7 +27,10 @@ from langgraph_system_generator.generator.state import (
     DocSnippet,
     DocsRetrievalFeedback,
 )
-from langgraph_system_generator.generator.utils import extract_json_from_llm_response
+from langgraph_system_generator.generator.utils import (
+    extract_json_from_llm_response,
+    get_message_text,
+)
 from langgraph_system_generator.rag.mcp_transport import _sanitize_text_credentials
 from langgraph_system_generator.rag.retriever import DocsRetriever
 from langgraph_system_generator.utils.error_handling import safe_exception_summary
@@ -175,7 +178,7 @@ Recommend the best architecture."""
         response = await self.llm.ainvoke(messages)
 
         try:
-            result = extract_json_from_llm_response(response.content)
+            result = extract_json_from_llm_response(get_message_text(response))
             return self._normalize_selection_result(
                 result, docs_considered=docs_considered
             )
@@ -260,7 +263,7 @@ Recommend the best architecture."""
             return result
         content = getattr(result, "content", None)
         if isinstance(content, str):
-            return extract_json_from_llm_response(content)
+            return extract_json_from_llm_response(get_message_text(content))
         raise TypeError("Architecture selection response was not a structured payload.")
 
     def _normalize_doc(self, doc: Any) -> Dict[str, Any]:

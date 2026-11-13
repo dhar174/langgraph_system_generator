@@ -17,19 +17,21 @@ if __package__ in (None, ""):
             sys.path.insert(0, str(path))
 
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
-from langchain_openai import ChatOpenAI
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.message import add_messages
 from langgraph.types import Command
 
 from langgraph_system_generator.examples_support import (
+    DEFAULT_LIVE_MODEL,
+    build_example_llm,
     build_example_parser,
     build_metrics,
     ensure_live_credentials,
     make_thread_config,
     trace_step,
 )
+from langgraph_system_generator.generator.utils import get_message_text
 
 AGENTS = ("researcher", "analyst", "writer")
 
@@ -115,7 +117,7 @@ def _stub_agent_output(agent: str, task: str, state: TeamState) -> str:
 
 def build_graph(mode: str, model: str, *, max_iterations: int = 4):
     """Build the runnable supervisor/subagents graph."""
-    llm = ChatOpenAI(model=model, temperature=0) if mode == "live" else None
+    llm = build_example_llm(model) if mode == "live" else None
 
     def supervisor_node(
         state: TeamState,
@@ -193,7 +195,7 @@ def build_graph(mode: str, model: str, *, max_iterations: int = 4):
                         *state.get("messages", []),
                     ]
                 )
-                content = response.content
+                content = get_message_text(response)
             else:
                 content = _stub_agent_output(agent, task, state)
             return {
@@ -240,7 +242,7 @@ def run_demo(
     task: str,
     *,
     mode: str = "stub",
-    model: str = "gpt-4.1-mini",
+    model: str = DEFAULT_LIVE_MODEL,
 ) -> Dict[str, object]:
     """Execute the supervisor example and print a trace."""
     ensure_live_credentials(mode)

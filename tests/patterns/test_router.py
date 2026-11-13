@@ -94,7 +94,7 @@ class TestRouterPatternCodeGeneration:
         assert "def search_node(state: WorkflowState)" in code
         assert "Perform web searches for information" in code
         assert "ChatOpenAI" in code
-        assert '"search": response.content' in code
+        assert '"search": response.text' in code
         assert "SystemMessage" in code
 
     def test_generate_route_node_code_with_special_characters(self):

@@ -58,7 +58,7 @@ class TestCritiqueLoopPatternCodeGeneration:
         )
 
         assert "with_structured_output" not in code
-        assert "response.content.split" in code
+        assert "response.text.split" in code
         assert "previous_quality_score" in code
         compile(code, "<automated_simple_critique>", "exec")
 

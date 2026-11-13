@@ -10,6 +10,7 @@ from langgraph_system_generator.utils.config import (
     reset_settings_cache,
     settings,
 )
+from langgraph_system_generator.utils.model_compatibility import DEFAULT_MODEL
 
 
 def test_settings_loads_from_env_file(tmp_path, monkeypatch):
@@ -79,7 +80,7 @@ def test_settings_defaults(monkeypatch):
     assert loaded.langsmith_project == "langgraph-notebook-foundry"
     assert loaded.vector_store_type == "faiss"
     assert loaded.vector_store_path == "./data/vector_store"
-    assert loaded.default_model == "gpt-5-mini"
+    assert loaded.default_model == DEFAULT_MODEL
     assert loaded.max_repair_attempts == 3
     assert loaded.default_budget_tokens == 100000
     assert loaded.architecture_prompt_doc_limit == 16
@@ -97,7 +98,7 @@ def test_settings_defaults_ignore_project_env_under_pytest(tmp_path, monkeypatch
     loaded = get_settings()
 
     assert loaded.openai_api_key is None
-    assert loaded.default_model == "gpt-5-mini"
+    assert loaded.default_model == DEFAULT_MODEL
 
 
 def test_settings_cached_instance_is_reused(monkeypatch):
@@ -134,7 +135,7 @@ def test_settings_default_load_ignores_lnf_env_file_under_pytest(tmp_path, monke
     loaded = get_settings()
 
     assert loaded.openai_api_key is None
-    assert loaded.default_model == "gpt-5-mini"
+    assert loaded.default_model == DEFAULT_MODEL
 
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     explicit = reset_settings_cache(env_file=env_path)
@@ -344,7 +345,7 @@ def test_model_config_defaults():
     """Test ModelConfig uses correct defaults."""
     config = ModelConfig()
 
-    assert config.model == "gpt-5-mini"
+    assert config.model == DEFAULT_MODEL
     assert config.temperature == 0.7
     assert config.api_base is None
     assert config.max_tokens is None
@@ -400,10 +401,10 @@ def test_model_config_temperature_validation():
         ModelConfig(temperature=2.1)
 
 
-def test_model_config_preserves_gpt_5_mini():
-    """Test ModelConfig preserves gpt-5-mini as default."""
+def test_model_config_preserves_legacy_gpt_5_mini():
+    """Test ModelConfig defaults to Luna and preserves explicit legacy ids."""
     config = ModelConfig()
-    assert config.model == "gpt-5-mini"
+    assert config.model == DEFAULT_MODEL
 
     # Should also work when explicitly set
     config2 = ModelConfig(model="gpt-5-mini")

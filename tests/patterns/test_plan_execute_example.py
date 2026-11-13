@@ -56,7 +56,7 @@ def test_build_graph_uses_separate_live_models(monkeypatch):
         def __init__(self, model: str, temperature: int = 0):
             created_models.append((model, temperature))
 
-    monkeypatch.setattr(module, "ChatOpenAI", FakeChatOpenAI)
+    monkeypatch.setattr("langchain_openai.ChatOpenAI", FakeChatOpenAI)
 
     module.build_graph(
         "live",

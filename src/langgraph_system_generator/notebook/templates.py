@@ -6,12 +6,17 @@ from textwrap import dedent
 from typing import Iterable, List, Sequence
 
 from langgraph_system_generator.generator.state import CellSpec
+from langgraph_system_generator.utils.model_compatibility import (
+    DEFAULT_MODEL,
+    LUNA_MODEL,
+    OPENAI_BASE_URL,
+)
 
 _DEFAULT_PACKAGES = (
     "langgraph",
     "langchain-core",
     "langchain-community",
-    "langchain-openai",
+    "langchain-openai>=1.7.2,<2.0.0",
 )
 
 
@@ -21,17 +26,35 @@ def installation_and_imports(
     """Return Installation & Imports cells."""
     pkgs = list(packages) if packages else list(_DEFAULT_PACKAGES)
     install_code = dedent(f"""
-        # Install runtime requirements only if missing to avoid unnecessary network calls.
+        # Install missing runtime requirements and upgrade outdated model clients.
         import importlib
         import subprocess
         import sys
+        from importlib.metadata import PackageNotFoundError, version
+        from packaging.version import Version
 
         def _ensure(package: str) -> None:
-            module_name = package.replace("-", "_")
+            module_name = package.split(">", 1)[0].replace("-", "_")
             try:
                 importlib.import_module(module_name)
             except ImportError:
-                subprocess.check_call([sys.executable, "-m", "pip", "install", "-q", package])
+                installed = False
+            else:
+                installed = True
+
+            requirement = package
+            if module_name == "langchain_openai":
+                requirement = "langchain-openai>=1.7.2,<2.0.0"
+                try:
+                    installed_version = version("langchain-openai")
+                except PackageNotFoundError:
+                    installed = False
+                else:
+                    if Version(installed_version) < Version("1.7.2"):
+                        installed = False
+
+            if not installed:
+                subprocess.check_call([sys.executable, "-m", "pip", "install", "-q", requirement])
 
         for _pkg in {pkgs!r}:
             _ensure(_pkg)
@@ -54,7 +77,7 @@ def installation_and_imports(
     ]
 
 
-def configuration_cell(model: str = "gpt-5-mini") -> List[CellSpec]:
+def configuration_cell(model: str = DEFAULT_MODEL) -> List[CellSpec]:
     """Return configuration cells with API key handling."""
     config_code = dedent(f"""
         import os
@@ -68,6 +91,22 @@ def configuration_cell(model: str = "gpt-5-mini") -> List[CellSpec]:
         WORKDIR = Path(os.getenv("WORKDIR", ".")).resolve()
         WORKDIR.mkdir(parents=True, exist_ok=True)
         MODEL = os.getenv("MODEL", {repr(model)})
+        API_BASE = os.getenv("OPENAI_API_BASE") or os.getenv("OPENAI_BASE_URL")
+
+        def make_llm(*, model: str = MODEL, temperature: float = 0.0):
+            '''Create a ChatOpenAI client with model-specific API settings.'''
+            kwargs = {{"model": model}}
+            if API_BASE:
+                kwargs["base_url"] = API_BASE
+            if model == {LUNA_MODEL!r} and API_BASE in (None, "", {OPENAI_BASE_URL!r}, {OPENAI_BASE_URL + '/'!r}):
+                kwargs.update(
+                    use_responses_api=True,
+                    reasoning={{"effort": "low"}},
+                    output_version="responses/v1",
+                )
+            else:
+                kwargs["temperature"] = temperature
+            return ChatOpenAI(**kwargs)
         
         if not os.environ.get("OPENAI_API_KEY"):
           if userdata.get('OPENAI_API_KEY'):
@@ -113,7 +152,7 @@ def build_graph_cells() -> List[CellSpec]:
 
         # Configure a simple prebuilt agent loop
         router = create_agent(
-            model=MODEL,
+            model=make_llm(),
             tools=[],
             system_prompt="You are a router that decides whether to hand off or answer directly.",
         )

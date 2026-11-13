@@ -12,7 +12,24 @@ from typing import Any, Dict, Iterable, Mapping, Optional
 
 from langchain_core.messages import BaseMessage
 
-DEFAULT_LIVE_MODEL = "gpt-4.1-mini"
+from langgraph_system_generator.utils.model_compatibility import (
+    DEFAULT_MODEL,
+    chat_openai_compatibility_kwargs,
+)
+
+DEFAULT_LIVE_MODEL = DEFAULT_MODEL
+
+
+def build_example_llm(model: str) -> Any:
+    """Build a live example model with the shared compatibility options."""
+    from langchain_openai import ChatOpenAI
+
+    api_base = os.getenv("OPENAI_API_BASE") or os.getenv("OPENAI_BASE_URL")
+    options = chat_openai_compatibility_kwargs(model, api_base=api_base)
+    if not options:
+        options["temperature"] = 0
+    return ChatOpenAI(model=model, **options)
+
 
 # Simple, documented pricing assumptions for examples and benchmark reporting.
 PRICE_PER_1K_TOKENS_USD: Dict[str, Dict[str, float]] = {

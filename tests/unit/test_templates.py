@@ -3,6 +3,10 @@
 from __future__ import annotations
 
 from langgraph_system_generator.notebook import templates
+from langgraph_system_generator.utils.model_compatibility import (
+    DEFAULT_MODEL,
+    OPENAI_BASE_URL,
+)
 
 
 def test_installation_and_imports_returns_cells_with_imports():
@@ -14,6 +18,8 @@ def test_installation_and_imports_returns_cells_with_imports():
     code = cells[1].content
     assert "from langgraph.graph import END, START, MessagesState, StateGraph" in code
     assert "from langchain_openai import ChatOpenAI" in code
+    assert '"langchain-openai>=1.7.2,<2.0.0"' in code
+    assert "Version(installed_version) < Version(\"1.7.2\")" in code
 
 
 def test_installation_and_imports_respects_custom_packages():
@@ -36,6 +42,22 @@ def test_configuration_cell_includes_keys_and_model():
     assert "ANTHROPIC_API_KEY" in code
     assert "getpass" in code
     assert f'MODEL = os.getenv("MODEL", {repr("gpt-test")})' in code
+
+
+def test_default_configuration_cell_uses_responses_for_luna():
+    code = templates.configuration_cell()[1].content
+    assert f'MODEL = os.getenv("MODEL", {DEFAULT_MODEL!r})' in code
+    assert f"if model == {DEFAULT_MODEL!r}" in code
+    assert 'API_BASE = os.getenv("OPENAI_API_BASE") or os.getenv("OPENAI_BASE_URL")' in code
+    assert (
+        f"API_BASE in (None, \"\", {OPENAI_BASE_URL!r}, {OPENAI_BASE_URL + '/'!r})"
+        in code
+    )
+    assert "use_responses_api=True" in code
+    assert 'reasoning={"effort": "low"}' in code
+    assert 'output_version="responses/v1"' in code
+    assert 'kwargs["temperature"] = temperature' in code
+    compile(code, "default-configuration-cell", "exec")
 
 
 def test_build_graph_cells_uses_create_agent_system_prompt():

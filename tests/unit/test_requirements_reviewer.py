@@ -14,6 +14,7 @@ from langgraph_system_generator.generator.agents import requirements_reviewer as
 from langgraph_system_generator.generator.state import CellSpec
 from langgraph_system_generator.qa.specialist_review import build_review_context
 from langgraph_system_generator.utils.config import ModelConfig
+from langgraph_system_generator.utils.model_compatibility import DEFAULT_MODEL
 
 
 def context(text="weather = 1", **extra):
@@ -27,11 +28,17 @@ def context(text="weather = 1", **extra):
     )
 
 
+def response_message(content, **kwargs):
+    metadata = dict(kwargs.pop("response_metadata", {}))
+    metadata.setdefault("status", "completed")
+    return AIMessage(content=content, response_metadata=metadata, **kwargs)
+
+
 def install_fake(monkeypatch, message=None, error=None):
     calls = []
     invoke = AsyncMock(
         return_value=message
-        or AIMessage(content='{"assessment":"complete","findings":[]}'),
+        or response_message(content='{"assessment":"complete","findings":[]}'),
         side_effect=error,
     )
 
@@ -60,26 +67,65 @@ async def test_one_call_copied_output_cap_and_zero_retries(monkeypatch, cap, exp
 @pytest.mark.parametrize(
     "message,status,reason",
     [
-        (AIMessage(content=""), "invalid_response", "empty_response"),
+        (response_message(content=""), "invalid_response", "empty_response"),
         (
-            AIMessage(content="not JSON api_key=secret"),
+            response_message(content="not JSON api_key=secret"),
             "invalid_response",
             "invalid_response",
         ),
-        (AIMessage(content="{}"), "invalid_response", "invalid_response"),
+        (response_message(content="{}"), "invalid_response", "invalid_response"),
         (
-            AIMessage(content="{}", additional_kwargs={"refusal": "secret"}),
+            response_message(content="{}", additional_kwargs={"refusal": "secret"}),
             "invalid_response",
             "refused",
         ),
-        (AIMessage(content="x" * 16385), "incomplete", "output_limit"),
         (
-            AIMessage(content="{}", response_metadata={"finish_reason": "length"}),
+            response_message(
+                content='{"assessment":"complete","findings":[]}',
+                response_metadata={
+                    "status": "incomplete",
+                    "incomplete_details": {"reason": "content_filter"},
+                },
+            ),
+            "invalid_response",
+            "refused",
+        ),
+        (
+            response_message(
+                content='{"assessment":"complete","findings":[]}',
+                response_metadata={
+                    "status": "incomplete",
+                    "incomplete_details": {"reason": "unknown"},
+                },
+            ),
+            "invalid_response",
+            "invalid_response",
+        ),
+        (
+            response_message(
+                content='{"assessment":"complete","findings":[]}',
+                response_metadata={"status": "failed"},
+            ),
+            "unavailable",
+            "provider_unavailable",
+        ),
+        (
+            AIMessage(content='{"assessment":"complete","findings":[]}'),
+            "invalid_response",
+            "invalid_response",
+        ),
+        (response_message(content="x" * 16385), "incomplete", "output_limit"),
+        (
+            response_message(
+                content="{}", response_metadata={"finish_reason": "length"}
+            ),
             "incomplete",
             "output_limit",
         ),
         (
-            AIMessage(content='{"assessment":"insufficient_context","findings":[]}'),
+            response_message(
+                content='{"assessment":"insufficient_context","findings":[]}'
+            ),
             "incomplete",
             "insufficient_context",
         ),
@@ -93,6 +139,39 @@ async def test_response_abstention_is_not_a_fake_pass(
     assert (result.status, result.reason_code) == (status, reason)
     assert result.model_invocations == invoke.await_count == 1
     assert "secret" not in result.model_dump_json()
+
+
+async def test_luna_rejects_invalid_tool_calls(monkeypatch):
+    message = response_message(
+        content='{"assessment":"complete","findings":[]}',
+        invalid_tool_calls=[
+            {"name": "unexpected", "args": "{", "id": "call1", "error": "bad json"}
+        ],
+    )
+    _, invoke = install_fake(monkeypatch, message=message)
+    result = await agent.RequirementsDomainReviewer(
+        ModelConfig(model=DEFAULT_MODEL)
+    ).review(context())
+    assert (result.status, result.reason_code) == (
+        "invalid_response",
+        "invalid_response",
+    )
+    assert invoke.await_count == 1
+
+
+async def test_luna_on_canonicalized_endpoint_requires_completed_status(monkeypatch):
+    message = AIMessage(content='{"assessment":"complete","findings":[]}')
+    calls, invoke = install_fake(monkeypatch, message=message)
+    config = ModelConfig(model=DEFAULT_MODEL, api_base="https://API.OPENAI.COM:443/v1/")
+
+    result = await agent.RequirementsDomainReviewer(config).review(context())
+
+    assert (result.status, result.reason_code) == (
+        "invalid_response",
+        "invalid_response",
+    )
+    assert invoke.await_count == 1
+    assert calls[0]["use_responses_api"] is True
 
 
 @pytest.mark.parametrize(
@@ -314,6 +393,112 @@ async def test_actual_sdk_http_request_count_and_native_schema(
         assert "[REDACTED]" in requirements[1]["nested"][0]["description"]
     else:
         assert result.status == ("reviewed" if code == 200 else "unavailable")
+
+
+@pytest.mark.parametrize("api_base", [None, "https://API.OPENAI.COM:443/v1/"])
+async def test_luna_uses_responses_wire_shape_and_redacts_input(monkeypatch, api_base):
+    monkeypatch.setenv("OPENAI_API_KEY", "synthetic-test-key")
+    monkeypatch.setenv("LANGSMITH_API_KEY", "synthetic-tracing-key")
+    requests = []
+    clients = []
+    output_json = '{"assessment":"complete","findings":[]}'
+
+    def handle(request):
+        requests.append(request)
+        return httpx.Response(
+            200,
+            json={
+                "id": "resp_fixture",
+                "object": "response",
+                "created_at": 0,
+                "model": DEFAULT_MODEL,
+                "status": "completed",
+                "output": [
+                    {
+                        "id": "msg_fixture",
+                        "type": "message",
+                        "status": "completed",
+                        "role": "assistant",
+                        "content": [
+                            {
+                                "type": "output_text",
+                                "text": output_json,
+                                "annotations": [],
+                            }
+                        ],
+                    }
+                ],
+            },
+        )
+
+    sync, asynchronous = httpx.Client, httpx.AsyncClient
+
+    def make_sync(**kwargs):
+        value = sync(**kwargs, transport=httpx.MockTransport(handle))
+        clients.append(value)
+        return value
+
+    def make_async(**kwargs):
+        value = asynchronous(**kwargs, transport=httpx.MockTransport(handle))
+        clients.append(value)
+        return value
+
+    monkeypatch.setattr(_llm, "Client", make_sync)
+    monkeypatch.setattr(_llm, "AsyncClient", make_async)
+    request_context = context(
+        constraints=[
+            {"description": 'Require weather data; api_key="FIXTURE_CANARY_ALPHA"'},
+            {"nested": [{"description": "token='FIXTURE_CANARY_BETA'"}]},
+            {"description": 'Already redacted: api_key="[REDACTED]"'},
+            {"api_key": {"value": "FIXTURE_CANARY_SUBTREE"}},
+            {"openaiApiKey": {"value": "FIXTURE_CANARY_CAMEL_OBJECT"}},
+            {
+                "credential": "FIXTURE_CANARY_CREDENTIAL",
+                "signature": "FIXTURE_CANARY_SIGNATURE_SCALAR",
+                "password": 987651234,
+            },
+        ],
+        tools_plan={"description": 'api_key="FIXTURE_CANARY_PLAN"'},
+        docs_context=[{"content": "Weather", "source": 'token="FIXTURE_CANARY_DOC"'}],
+        user_prompt=(
+            'Weather config {"api_key":{"value":"FIXTURE_CANARY_INLINE"}} '
+            "password: FIXTURE_CANARY_COLON and sk-proj-FIXTURE_CANARY_BARE_0001\n"
+            "token: FIXTURE_CANARY_TOKEN\n"
+            "client_secret: FIXTURE_CANARY_CLIENT\n"
+            "clientSecret: FIXTURE_CANARY_CAMEL\n"
+            "openai_api_key: FIXTURE_CANARY_PREFIX\n"
+            "openaiApiKey: FIXTURE_CANARY_CAMEL_PREFIX\n"
+            "secret_key: FIXTURE_CANARY_KEY\n"
+            "credential: FIXTURE_CANARY_CREDENTIAL\n"
+            "signature: FIXTURE_CANARY_SIGNATURE\n"
+            "authorization: Basic RklYVFVSRV9DQU5BUlk=\n"
+            "Proxy-Authorization: Basic dXNlcjpwYXNz\n"
+            "Weather assistant. Keep the legitimate trailing requirement: "
+            "preserve sunrise forecasts."
+        ),
+    )
+    result = await agent.RequirementsDomainReviewer(
+        ModelConfig(model=DEFAULT_MODEL, max_tokens=91, api_base=api_base)
+    ).review(request_context)
+
+    assert result.status == "reviewed" and result.model_invocations == 1
+    assert len(requests) == 1
+    request = requests[0]
+    assert str(request.url) == "https://api.openai.com/v1/responses"
+    payload = json.loads(request.content)
+    assert payload["model"] == DEFAULT_MODEL
+    assert payload["reasoning"] == {"effort": "low"}
+    assert payload["max_output_tokens"] == 91
+    assert payload["text"]["format"]["type"] == "json_schema"
+    assert payload["store"] is False
+    assert "temperature" not in payload and "tools" not in payload
+    serialized = request.content.decode()
+    assert "FIXTURE_CANARY_" not in serialized
+    assert "RklYVFVSRV9DQU5BUlk=" not in serialized
+    assert "dXNlcjpwYXNz" not in serialized
+    assert "987651234" not in serialized
+    assert "preserve sunrise forecasts" in serialized
+    assert all(client.is_closed for client in clients)
 
 
 async def test_missing_credentials_constructs_no_client(monkeypatch):

@@ -114,7 +114,7 @@ state_code = RouterPattern.generate_state_code(additional_fields)
 # Custom LLM model
 router_code = RouterPattern.generate_router_node_code(
     routes=routes,
-    llm_model="gpt-5-mini",
+    llm_model="gpt-6-luna",
     use_structured_output=True
 )
 
@@ -229,7 +229,7 @@ state_code = SubagentsPattern.generate_state_code(additional_fields)
 supervisor_code = SubagentsPattern.generate_supervisor_code(
     subagents=subagents,
     subagent_descriptions=descriptions,
-    llm_model="gpt-5-mini",
+    llm_model="gpt-6-luna",
     use_structured_output=True
 )
 
@@ -237,7 +237,7 @@ supervisor_code = SubagentsPattern.generate_supervisor_code(
 agent_code = SubagentsPattern.generate_subagent_code(
     agent_name="researcher",
     agent_description="Research specialist",
-    llm_model="gpt-5-mini",
+    llm_model="gpt-6-luna",
     include_tools=True  # Adds tool binding placeholder
 )
 
@@ -362,13 +362,13 @@ state_code = CritiqueLoopPattern.generate_state_code(additional_fields)
 # Custom generation node
 generate_code = CritiqueLoopPattern.generate_generation_node_code(
     task_description="Generate API documentation",
-    llm_model="gpt-5-mini"
+    llm_model="gpt-6-luna"
 )
 
 # Critique with structured output
 critique_code = CritiqueLoopPattern.generate_critique_node_code(
     criteria=criteria,
-    llm_model="gpt-5-mini",
+    llm_model="gpt-6-luna",
     use_structured_output=True
 )
 
@@ -450,7 +450,7 @@ class RouterPattern:
     @staticmethod
     def generate_router_node_code(
         routes: List[str],
-        llm_model: str = "gpt-5-mini",
+        llm_model: str = "gpt-6-luna",
         use_structured_output: bool = True
     ) -> str:
         """Generate router classification node."""
@@ -459,7 +459,7 @@ class RouterPattern:
     def generate_route_node_code(
         route_name: str,
         route_purpose: str,
-        llm_model: str = "gpt-5-mini"
+        llm_model: str = "gpt-6-luna"
     ) -> str:
         """Generate individual route handler."""
     
@@ -493,7 +493,7 @@ class SubagentsPattern:
     def generate_supervisor_code(
         subagents: List[str],
         subagent_descriptions: Optional[Dict[str, str]] = None,
-        llm_model: str = "gpt-5-mini",
+        llm_model: str = "gpt-6-luna",
         use_structured_output: bool = True
     ) -> str:
         """Generate supervisor coordination node."""
@@ -502,7 +502,7 @@ class SubagentsPattern:
     def generate_subagent_code(
         agent_name: str,
         agent_description: str,
-        llm_model: str = "gpt-5-mini",
+        llm_model: str = "gpt-6-luna",
         include_tools: bool = False
     ) -> str:
         """Generate individual subagent node."""
@@ -535,21 +535,21 @@ class CritiqueLoopPattern:
     @staticmethod
     def generate_generation_node_code(
         task_description: str = "Generate initial output",
-        llm_model: str = "gpt-5-mini"
+        llm_model: str = "gpt-6-luna"
     ) -> str:
         """Generate initial content creation node."""
     
     @staticmethod
     def generate_critique_node_code(
         criteria: Optional[List[str]] = None,
-        llm_model: str = "gpt-5-mini",
+        llm_model: str = "gpt-6-luna",
         use_structured_output: bool = True
     ) -> str:
         """Generate quality assessment node."""
     
     @staticmethod
     def generate_revise_node_code(
-        llm_model: str = "gpt-5-mini"
+        llm_model: str = "gpt-6-luna"
     ) -> str:
         """Generate revision node."""
     

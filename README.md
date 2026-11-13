@@ -396,6 +396,7 @@ classDiagram
 
 Current web UI model presets under **Advanced Options → Model** are:
 
+- `gpt-6-luna` (default)
 - `gpt-5.5`
 - `gpt-5.4`
 - `gpt-5.4-mini`
@@ -685,7 +686,9 @@ Common environment variables:
   use Anthropic-backed tools.
 - `LANGSMITH_API_KEY` and `LANGSMITH_PROJECT`: Optional tracing.
 - `VECTOR_STORE_TYPE` and `VECTOR_STORE_PATH`: Retrieval index configuration.
-- `DEFAULT_MODEL`: Default live model, currently `gpt-5-mini`.
+- `DEFAULT_MODEL` selects the live model. On the official OpenAI endpoint,
+  the default `gpt-6-luna` uses Responses with low reasoning and omits sampling
+  temperature. Other model selections keep their existing configuration.
 - `MAX_REPAIR_ATTEMPTS`: Bounded QA repair loop count.
 - `LNF_OUTPUT_BASE`: Constrains production-facing output paths.
 - `LNF_MAX_CONCURRENT_GENERATIONS`: Shared sync/async API generation concurrency.

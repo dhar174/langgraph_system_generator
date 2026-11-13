@@ -3,9 +3,9 @@
 Current status reconciled 2026-10-23 against fetched main `4f17c2d`.
 The [current v1.1 plan](../plans/current-plan.md) owns the acceptance matrix.
 Charles deferred #383 (open, non-blocking); no usage ledger/pricing engine or
-per-generation spending cap is delivered. #334 is next: one opt-in
-Requirements/Domain Fidelity Reviewer, advisory-only first slice; retain later
-blocking/repair criteria. #129 stays open for controlled quality comparisons
+per-generation spending cap is delivered. PR #401 delivered the opt-in advisory
+Requirements/Domain Fidelity Reviewer. #334-B prepares the local quality study
+and retains later blocking and repair criteria. #129 stays open for controlled comparisons
 without a #383 prerequisite. #335 remains later. #380 remains open for real-cloud
 staging and owner acceptance; SDK/Firestore-emulator evidence is separate.
 

@@ -1,0 +1,4 @@
+# Preserve the exact bytes referenced by the fixture manifest.
+*.json -text
+*.ipynb -text whitespace=cr-at-eol
+*.py text eol=lf

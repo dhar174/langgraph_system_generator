@@ -278,6 +278,9 @@ not establish arbitrary-prompt or general requirements fidelity. See
 
 ## Optional async specialist review (#334-A)
 
+The [#334-B quality study](semantic-review-quality.md) documents the local
+reference corpus, independent adjudication, and proposed live pilot.
+
 `LNF_SPECIALIST_QA_MODE=advisory` enables one final-candidate Requirements/Domain
 Fidelity Reviewer; `off` is the default. It runs after deterministic QA/repair
 settles and before packaging. Stub mode, no cells, remaining blockers and fatal

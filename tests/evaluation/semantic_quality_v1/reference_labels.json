@@ -1,0 +1,921 @@
+{
+  "annotation_schema_version": 1,
+  "cases": [
+    {
+      "annotations": [],
+      "baseline": {
+        "baseline_detected": null,
+        "blocking": false,
+        "eligibility": "eligible",
+        "failed_rule_ids": [
+          "state_reducer_semantics",
+          "tool_reachability",
+          "chatbot_notebook_contract",
+          "domain_architecture_alignment"
+        ],
+        "report_count": 16,
+        "runtime_execution": "not_run",
+        "validator": "NotebookValidator.validate_notebook"
+      },
+      "baseline_notes": [
+        {
+          "disposition": "confirmed_nonblocking_baseline_concern",
+          "rationale": "The graph-code comment mentions Command routes, but the graph implements conditional edges only.",
+          "rule_id": "domain_architecture_alignment",
+          "source_locations": [
+            {
+              "location_hint": "candidate/cells/18",
+              "source_family": "cell",
+              "source_id": "cell:18"
+            }
+          ]
+        },
+        {
+          "disposition": "outside_target_scope",
+          "rationale": "The static warning reports a calculator passed to an unregistered ToolNode; the request does not require calculator behavior.",
+          "rule_id": "tool_reachability",
+          "source_locations": [
+            {
+              "location_hint": "candidate/cells/11",
+              "source_family": "cell",
+              "source_id": "cell:11"
+            },
+            {
+              "location_hint": "candidate/cells/12",
+              "source_family": "cell",
+              "source_id": "cell:12"
+            }
+          ]
+        }
+      ],
+      "case_id": "c-2m7v",
+      "clean_reference": {
+        "ambiguity_policy": "Count only concerns that contradict or omit this paired requirement. Preserve unrelated static warnings separately; do not add outside expectations.",
+        "expected_categories": [],
+        "rationale": "This reference is limited to the paired target requirement. Nonblocking deterministic QA warnings remain recorded separately and are not erased by this clean label.",
+        "requirement": "Annual membership-charge questions must route to billing; account-access questions must route to technical help.",
+        "scope": "paired_target_requirement_only",
+        "source_locations": [
+          {
+            "location_hint": "user_prompt",
+            "source_family": "requirement",
+            "source_id": "request:prompt"
+          },
+          {
+            "location_hint": "candidate/cells/2",
+            "source_family": "cell",
+            "source_id": "cell:2"
+          }
+        ]
+      },
+      "defects": [],
+      "docs_available": false,
+      "eligibility": "eligible",
+      "expectation": {
+        "expected_findings": "no_supported_concern_for_target_requirement",
+        "kind": "clean",
+        "scope": "paired_target_requirement"
+      },
+      "missing_docs_expectation": "docs_alignment_not_assessed",
+      "pair_id": "p-3k8m",
+      "split": "development"
+    },
+    {
+      "annotations": [],
+      "baseline": {
+        "baseline_detected": false,
+        "blocking": false,
+        "eligibility": "eligible",
+        "failed_rule_ids": [
+          "state_reducer_semantics",
+          "tool_reachability",
+          "chatbot_notebook_contract",
+          "domain_architecture_alignment"
+        ],
+        "report_count": 16,
+        "runtime_execution": "not_run",
+        "validator": "NotebookValidator.validate_notebook"
+      },
+      "case_id": "c-8r4q",
+      "defects": [
+        {
+          "ambiguity_policy": "Treat the named department destinations as exact requirements. Do not infer that billing and technical help are interchangeable.",
+          "baseline_detected": false,
+          "defect_id": "d-1c7p",
+          "expected_categories": [
+            "contradiction"
+          ],
+          "rationale": "The candidate's executable branch sends a billing classification to technical help despite the named destination requirement.",
+          "requirement": "Annual membership-charge questions must route to billing; account-access questions must route to technical help.",
+          "source_locations": [
+            {
+              "location_hint": "user_prompt",
+              "source_family": "requirement",
+              "source_id": "request:prompt"
+            },
+            {
+              "location_hint": "candidate/cells/18",
+              "source_family": "cell",
+              "source_id": "cell:18"
+            }
+          ]
+        }
+      ],
+      "docs_available": false,
+      "eligibility": "eligible",
+      "expectation": {
+        "expected_findings": "one_to_one_defect_match",
+        "kind": "defect"
+      },
+      "missing_docs_expectation": "docs_alignment_not_assessed",
+      "pair_id": "p-3k8m",
+      "split": "development"
+    },
+    {
+      "annotations": [],
+      "baseline": {
+        "baseline_detected": null,
+        "blocking": false,
+        "eligibility": "eligible",
+        "failed_rule_ids": [],
+        "report_count": 14,
+        "runtime_execution": "not_run",
+        "validator": "NotebookValidator.validate_notebook"
+      },
+      "case_id": "c-5w2j",
+      "clean_reference": {
+        "ambiguity_policy": "Count only concerns that contradict or omit this paired requirement. Preserve unrelated static warnings separately; do not add outside expectations.",
+        "expected_categories": [],
+        "rationale": "This reference is limited to the paired target requirement. Nonblocking deterministic QA warnings remain recorded separately and are not erased by this clean label.",
+        "requirement": "A temperature-sensitive parcel without a scan for six hours must open a manual trace before dispatch and flag the handoff for human review.",
+        "scope": "paired_target_requirement_only",
+        "source_locations": [
+          {
+            "location_hint": "user_prompt",
+            "source_family": "requirement",
+            "source_id": "request:prompt"
+          },
+          {
+            "location_hint": "candidate/cells/4",
+            "source_family": "cell",
+            "source_id": "cell:4"
+          }
+        ]
+      },
+      "defects": [],
+      "docs_available": false,
+      "eligibility": "eligible",
+      "expectation": {
+        "expected_findings": "no_supported_concern_for_target_requirement",
+        "kind": "clean",
+        "scope": "paired_target_requirement"
+      },
+      "missing_docs_expectation": "docs_alignment_not_assessed",
+      "pair_id": "p-6f2b",
+      "split": "development"
+    },
+    {
+      "annotations": [],
+      "baseline": {
+        "baseline_detected": false,
+        "blocking": false,
+        "eligibility": "eligible",
+        "failed_rule_ids": [],
+        "report_count": 14,
+        "runtime_execution": "not_run",
+        "validator": "NotebookValidator.validate_notebook"
+      },
+      "case_id": "c-0x8d",
+      "defects": [
+        {
+          "ambiguity_policy": "The temperature condition and six-hour threshold are explicit. A tracking record alone does not count as opening a manual trace.",
+          "baseline_detected": false,
+          "defect_id": "d-5n4h",
+          "expected_categories": [
+            "requirements_gap"
+          ],
+          "rationale": "The defective operation returns shipment details but omits the required trace and review actions.",
+          "requirement": "A temperature-sensitive parcel without a scan for six hours must open a manual trace before dispatch and flag the handoff for human review.",
+          "source_locations": [
+            {
+              "location_hint": "user_prompt",
+              "source_family": "requirement",
+              "source_id": "request:prompt"
+            },
+            {
+              "location_hint": "candidate/cells/4",
+              "source_family": "cell",
+              "source_id": "cell:4"
+            }
+          ]
+        }
+      ],
+      "docs_available": false,
+      "eligibility": "eligible",
+      "expectation": {
+        "expected_findings": "one_to_one_defect_match",
+        "kind": "defect"
+      },
+      "missing_docs_expectation": "docs_alignment_not_assessed",
+      "pair_id": "p-6f2b",
+      "split": "development"
+    },
+    {
+      "annotations": [],
+      "baseline": {
+        "baseline_detected": null,
+        "blocking": false,
+        "eligibility": "eligible",
+        "failed_rule_ids": [
+          "state_reducer_semantics",
+          "chatbot_notebook_contract",
+          "domain_architecture_alignment"
+        ],
+        "report_count": 16,
+        "runtime_execution": "not_run",
+        "validator": "NotebookValidator.validate_notebook"
+      },
+      "baseline_notes": [
+        {
+          "disposition": "confirmed_nonblocking_baseline_concern",
+          "rationale": "The graph-code comment mentions Command routes, but the graph implements conditional edges only.",
+          "rule_id": "domain_architecture_alignment",
+          "source_locations": [
+            {
+              "location_hint": "candidate/cells/15",
+              "source_family": "cell",
+              "source_id": "cell:15"
+            }
+          ]
+        }
+      ],
+      "case_id": "c-7b9k",
+      "clean_reference": {
+        "ambiguity_policy": "Count only concerns that contradict or omit this paired requirement. Preserve unrelated static warnings separately; do not add outside expectations.",
+        "expected_categories": [],
+        "rationale": "This reference is limited to the paired target requirement. Nonblocking deterministic QA warnings remain recorded separately and are not erased by this clean label.",
+        "requirement": "Credit is awarded only when every required rubric criterion is present; otherwise missing criteria must be returned for instructor review.",
+        "scope": "paired_target_requirement_only",
+        "source_locations": [
+          {
+            "location_hint": "user_prompt",
+            "source_family": "requirement",
+            "source_id": "request:prompt"
+          },
+          {
+            "location_hint": "candidate/cells/2",
+            "source_family": "cell",
+            "source_id": "cell:2"
+          }
+        ]
+      },
+      "defects": [],
+      "docs_available": false,
+      "eligibility": "eligible",
+      "expectation": {
+        "expected_findings": "no_supported_concern_for_target_requirement",
+        "kind": "clean",
+        "scope": "paired_target_requirement"
+      },
+      "missing_docs_expectation": "docs_alignment_not_assessed",
+      "pair_id": "p-4t2n",
+      "split": "development"
+    },
+    {
+      "annotations": [],
+      "baseline": {
+        "baseline_detected": false,
+        "blocking": false,
+        "eligibility": "eligible",
+        "failed_rule_ids": [
+          "state_reducer_semantics",
+          "chatbot_notebook_contract",
+          "domain_architecture_alignment"
+        ],
+        "report_count": 16,
+        "runtime_execution": "not_run",
+        "validator": "NotebookValidator.validate_notebook"
+      },
+      "case_id": "c-3q6z",
+      "defects": [
+        {
+          "ambiguity_policy": "Treat the all-criteria threshold as all-or-nothing. The route for missing criteria must reach instructor review, not award credit.",
+          "baseline_detected": false,
+          "defect_id": "d-9s2m",
+          "expected_categories": [
+            "contradiction"
+          ],
+          "rationale": "The defective graph sends the route for missing rubric criteria to the award-credit node, contrary to the all-criteria threshold and instructor-review requirement.",
+          "requirement": "Credit is awarded only when every required rubric criterion is present; otherwise missing criteria must be returned for instructor review.",
+          "source_locations": [
+            {
+              "location_hint": "user_prompt",
+              "source_family": "requirement",
+              "source_id": "request:prompt"
+            },
+            {
+              "location_hint": "candidate/cells/15",
+              "source_family": "cell",
+              "source_id": "cell:15"
+            }
+          ]
+        }
+      ],
+      "docs_available": false,
+      "eligibility": "eligible",
+      "expectation": {
+        "expected_findings": "one_to_one_defect_match",
+        "kind": "defect"
+      },
+      "missing_docs_expectation": "docs_alignment_not_assessed",
+      "pair_id": "p-4t2n",
+      "split": "development"
+    },
+    {
+      "annotations": [],
+      "baseline": {
+        "baseline_detected": null,
+        "blocking": false,
+        "eligibility": "eligible",
+        "failed_rule_ids": [],
+        "report_count": 14,
+        "runtime_execution": "not_run",
+        "validator": "NotebookValidator.validate_notebook"
+      },
+      "case_id": "c-1h5x",
+      "clean_reference": {
+        "ambiguity_policy": "Count only concerns that contradict or omit this paired requirement. Preserve unrelated static warnings separately; do not add outside expectations.",
+        "expected_categories": [],
+        "rationale": "This reference is limited to the paired target requirement. Nonblocking deterministic QA warnings remain recorded separately and are not erased by this clean label.",
+        "requirement": "The final brief must include the field-note specialist's contribution as well as the archive-review specialist's contribution.",
+        "scope": "paired_target_requirement_only",
+        "source_locations": [
+          {
+            "location_hint": "user_prompt",
+            "source_family": "requirement",
+            "source_id": "request:prompt"
+          },
+          {
+            "location_hint": "candidate/cells/4",
+            "source_family": "cell",
+            "source_id": "cell:4"
+          }
+        ]
+      },
+      "defects": [],
+      "docs_available": false,
+      "eligibility": "eligible",
+      "expectation": {
+        "expected_findings": "no_supported_concern_for_target_requirement",
+        "kind": "clean",
+        "scope": "paired_target_requirement"
+      },
+      "missing_docs_expectation": "docs_alignment_not_assessed",
+      "pair_id": "p-9m5d",
+      "split": "development"
+    },
+    {
+      "annotations": [],
+      "baseline": {
+        "baseline_detected": false,
+        "blocking": false,
+        "eligibility": "eligible",
+        "failed_rule_ids": [],
+        "report_count": 14,
+        "runtime_execution": "not_run",
+        "validator": "NotebookValidator.validate_notebook"
+      },
+      "case_id": "c-4z7f",
+      "defects": [
+        {
+          "ambiguity_policy": "Treat both named workers as required contributors. A valid fan-out graph does not satisfy the requirement if the final synthesis drops one result.",
+          "baseline_detected": false,
+          "defect_id": "d-2j8w",
+          "expected_categories": [
+            "requirements_gap"
+          ],
+          "rationale": "The graph retains structurally valid worker state, but the copied final synthesis includes only the archive-review contribution.",
+          "requirement": "The final brief must include the field-note specialist's contribution as well as the archive-review specialist's contribution.",
+          "source_locations": [
+            {
+              "location_hint": "user_prompt",
+              "source_family": "requirement",
+              "source_id": "request:prompt"
+            },
+            {
+              "location_hint": "candidate/cells/4",
+              "source_family": "cell",
+              "source_id": "cell:4"
+            }
+          ]
+        }
+      ],
+      "docs_available": false,
+      "eligibility": "eligible",
+      "expectation": {
+        "expected_findings": "one_to_one_defect_match",
+        "kind": "defect"
+      },
+      "missing_docs_expectation": "docs_alignment_not_assessed",
+      "pair_id": "p-9m5d",
+      "split": "development"
+    },
+    {
+      "annotations": [],
+      "baseline": {
+        "baseline_detected": null,
+        "blocking": false,
+        "eligibility": "eligible",
+        "failed_rule_ids": [],
+        "report_count": 14,
+        "runtime_execution": "not_run",
+        "validator": "NotebookValidator.validate_notebook"
+      },
+      "case_id": "c-9p3l",
+      "clean_reference": {
+        "ambiguity_policy": "Count only concerns that contradict or omit this paired requirement. Preserve unrelated static warnings separately; do not add outside expectations.",
+        "expected_categories": [],
+        "rationale": "This reference is limited to the paired target requirement. Nonblocking deterministic QA warnings remain recorded separately and are not erased by this clean label.",
+        "requirement": "The notebook may draft a reminder but must not claim it sends a notification or contacts a coordinator.",
+        "scope": "paired_target_requirement_only",
+        "source_locations": [
+          {
+            "location_hint": "user_prompt",
+            "source_family": "requirement",
+            "source_id": "request:prompt"
+          },
+          {
+            "location_hint": "candidate/cells/4",
+            "source_family": "cell",
+            "source_id": "cell:4"
+          }
+        ]
+      },
+      "defects": [],
+      "docs_available": false,
+      "eligibility": "eligible",
+      "expectation": {
+        "expected_findings": "no_supported_concern_for_target_requirement",
+        "kind": "clean",
+        "scope": "paired_target_requirement"
+      },
+      "missing_docs_expectation": "docs_alignment_not_assessed",
+      "pair_id": "p-8c1v",
+      "split": "holdout"
+    },
+    {
+      "annotations": [],
+      "baseline": {
+        "baseline_detected": false,
+        "blocking": false,
+        "eligibility": "eligible",
+        "failed_rule_ids": [],
+        "report_count": 14,
+        "runtime_execution": "not_run",
+        "validator": "NotebookValidator.validate_notebook"
+      },
+      "case_id": "c-6a4n",
+      "defects": [
+        {
+          "ambiguity_policy": "A prose promise to send a notification is a capability claim. A displayed draft is distinct from a sent message.",
+          "baseline_detected": false,
+          "defect_id": "d-7e3c",
+          "expected_categories": [
+            "unsupported_capability_claim"
+          ],
+          "rationale": "The defective candidate claims an outbound notification capability although it contains only a local draft operation and no sending path.",
+          "requirement": "The notebook may draft a reminder but must not claim it sends a notification or contacts a coordinator.",
+          "source_locations": [
+            {
+              "location_hint": "user_prompt",
+              "source_family": "requirement",
+              "source_id": "request:prompt"
+            },
+            {
+              "location_hint": "candidate/cells/0",
+              "source_family": "cell",
+              "source_id": "cell:0"
+            }
+          ]
+        }
+      ],
+      "docs_available": false,
+      "eligibility": "eligible",
+      "expectation": {
+        "expected_findings": "one_to_one_defect_match",
+        "kind": "defect"
+      },
+      "missing_docs_expectation": "docs_alignment_not_assessed",
+      "pair_id": "p-8c1v",
+      "split": "holdout"
+    },
+    {
+      "annotations": [],
+      "baseline": {
+        "baseline_detected": null,
+        "blocking": false,
+        "eligibility": "eligible",
+        "failed_rule_ids": [],
+        "report_count": 14,
+        "runtime_execution": "not_run",
+        "validator": "NotebookValidator.validate_notebook"
+      },
+      "case_id": "c-4m8s",
+      "clean_reference": {
+        "ambiguity_policy": "Count only concerns that contradict or omit this paired requirement. Preserve unrelated static warnings separately; do not add outside expectations.",
+        "expected_categories": [],
+        "rationale": "This reference is limited to the paired target requirement. Nonblocking deterministic QA warnings remain recorded separately and are not erased by this clean label.",
+        "requirement": "The supplied DeliveryWindow v1 documentation says local_window is already local wall-clock time and must not receive a second offset conversion.",
+        "scope": "paired_target_requirement_only",
+        "source_locations": [
+          {
+            "location_hint": "user_prompt",
+            "source_family": "requirement",
+            "source_id": "request:prompt"
+          },
+          {
+            "location_hint": "candidate/cells/4",
+            "source_family": "cell",
+            "source_id": "cell:4"
+          },
+          {
+            "location_hint": "fixture://dispatch-api/delivery-window",
+            "source_family": "docs",
+            "source_id": "docs:0"
+          }
+        ]
+      },
+      "defects": [],
+      "docs_available": true,
+      "eligibility": "eligible",
+      "expectation": {
+        "expected_findings": "no_supported_concern_for_target_requirement",
+        "kind": "clean",
+        "scope": "paired_target_requirement"
+      },
+      "missing_docs_expectation": null,
+      "pair_id": "p-0f6q",
+      "split": "holdout"
+    },
+    {
+      "annotations": [],
+      "baseline": {
+        "baseline_detected": false,
+        "blocking": false,
+        "eligibility": "eligible",
+        "failed_rule_ids": [],
+        "report_count": 14,
+        "runtime_execution": "not_run",
+        "validator": "NotebookValidator.validate_notebook"
+      },
+      "case_id": "c-2d9w",
+      "defects": [
+        {
+          "ambiguity_policy": "Use only the supplied fixture documentation for this claim. The offset field is informational and does not authorize conversion.",
+          "baseline_detected": false,
+          "defect_id": "d-4b9t",
+          "expected_categories": [
+            "provided_docs_conflict"
+          ],
+          "rationale": "The defective operation shifts a value that the supplied fixture API guide says is already local.",
+          "requirement": "The supplied DeliveryWindow v1 documentation says local_window is already local wall-clock time and must not receive a second offset conversion.",
+          "source_locations": [
+            {
+              "location_hint": "user_prompt",
+              "source_family": "requirement",
+              "source_id": "request:prompt"
+            },
+            {
+              "location_hint": "candidate/cells/4",
+              "source_family": "cell",
+              "source_id": "cell:4"
+            },
+            {
+              "location_hint": "fixture://dispatch-api/delivery-window",
+              "source_family": "docs",
+              "source_id": "docs:0"
+            }
+          ]
+        }
+      ],
+      "docs_available": true,
+      "eligibility": "eligible",
+      "expectation": {
+        "expected_findings": "one_to_one_defect_match",
+        "kind": "defect"
+      },
+      "missing_docs_expectation": null,
+      "pair_id": "p-0f6q",
+      "split": "holdout"
+    },
+    {
+      "annotations": [],
+      "baseline": {
+        "baseline_detected": null,
+        "blocking": false,
+        "eligibility": "eligible",
+        "failed_rule_ids": [],
+        "report_count": 14,
+        "runtime_execution": "not_run",
+        "validator": "NotebookValidator.validate_notebook"
+      },
+      "case_id": "c-8t6j",
+      "clean_reference": {
+        "ambiguity_policy": "Count only concerns that contradict or omit this paired requirement. Preserve unrelated static warnings separately; do not add outside expectations.",
+        "expected_categories": [],
+        "rationale": "This reference is limited to the paired target requirement. Nonblocking deterministic QA warnings remain recorded separately and are not erased by this clean label.",
+        "requirement": "Every feedback note and the previous revision summary must remain in session history for the following turn.",
+        "scope": "paired_target_requirement_only",
+        "source_locations": [
+          {
+            "location_hint": "user_prompt",
+            "source_family": "requirement",
+            "source_id": "request:prompt"
+          },
+          {
+            "location_hint": "candidate/cells/4",
+            "source_family": "cell",
+            "source_id": "cell:4"
+          }
+        ]
+      },
+      "defects": [],
+      "docs_available": false,
+      "eligibility": "eligible",
+      "expectation": {
+        "expected_findings": "no_supported_concern_for_target_requirement",
+        "kind": "clean",
+        "scope": "paired_target_requirement"
+      },
+      "missing_docs_expectation": "docs_alignment_not_assessed",
+      "pair_id": "p-5v0h",
+      "split": "holdout"
+    },
+    {
+      "annotations": [],
+      "baseline": {
+        "baseline_detected": false,
+        "blocking": false,
+        "eligibility": "eligible",
+        "failed_rule_ids": [],
+        "report_count": 14,
+        "runtime_execution": "not_run",
+        "validator": "NotebookValidator.validate_notebook"
+      },
+      "case_id": "c-3e9p",
+      "defects": [
+        {
+          "ambiguity_policy": "Treat 'each feedback note' and 'prior revision summary' as retention requirements. A current-turn result alone is insufficient.",
+          "baseline_detected": false,
+          "defect_id": "d-0p6r",
+          "expected_categories": [
+            "requirements_gap"
+          ],
+          "rationale": "The defective operation returns only the latest feedback and drops the prior history and revision summary.",
+          "requirement": "Every feedback note and the previous revision summary must remain in session history for the following turn.",
+          "source_locations": [
+            {
+              "location_hint": "user_prompt",
+              "source_family": "requirement",
+              "source_id": "request:prompt"
+            },
+            {
+              "location_hint": "candidate/cells/4",
+              "source_family": "cell",
+              "source_id": "cell:4"
+            }
+          ]
+        }
+      ],
+      "docs_available": false,
+      "eligibility": "eligible",
+      "expectation": {
+        "expected_findings": "one_to_one_defect_match",
+        "kind": "defect"
+      },
+      "missing_docs_expectation": "docs_alignment_not_assessed",
+      "pair_id": "p-5v0h",
+      "split": "holdout"
+    },
+    {
+      "annotations": [],
+      "baseline": {
+        "baseline_detected": null,
+        "blocking": false,
+        "eligibility": "eligible",
+        "failed_rule_ids": [],
+        "report_count": 14,
+        "runtime_execution": "not_run",
+        "validator": "NotebookValidator.validate_notebook"
+      },
+      "case_id": "c-6g2r",
+      "clean_reference": {
+        "ambiguity_policy": "Count only concerns that contradict or omit this paired requirement. Preserve unrelated static warnings separately; do not add outside expectations.",
+        "expected_categories": [],
+        "rationale": "This reference is limited to the paired target requirement. Nonblocking deterministic QA warnings remain recorded separately and are not erased by this clean label.",
+        "requirement": "Direct field observations must be primary evidence; secondary summaries are follow-up leads only.",
+        "scope": "paired_target_requirement_only",
+        "source_locations": [
+          {
+            "location_hint": "user_prompt",
+            "source_family": "requirement",
+            "source_id": "request:prompt"
+          },
+          {
+            "location_hint": "candidate/cells/4",
+            "source_family": "cell",
+            "source_id": "cell:4"
+          }
+        ]
+      },
+      "defects": [],
+      "docs_available": false,
+      "eligibility": "eligible",
+      "expectation": {
+        "expected_findings": "no_supported_concern_for_target_requirement",
+        "kind": "clean",
+        "scope": "paired_target_requirement"
+      },
+      "missing_docs_expectation": "docs_alignment_not_assessed",
+      "pair_id": "p-1y7a",
+      "split": "holdout"
+    },
+    {
+      "annotations": [],
+      "baseline": {
+        "baseline_detected": false,
+        "blocking": false,
+        "eligibility": "eligible",
+        "failed_rule_ids": [],
+        "report_count": 14,
+        "runtime_execution": "not_run",
+        "validator": "NotebookValidator.validate_notebook"
+      },
+      "case_id": "c-5n8v",
+      "defects": [
+        {
+          "ambiguity_policy": "Use the explicit source priority in the request. Do not apply outside assumptions about source reliability.",
+          "baseline_detected": false,
+          "defect_id": "d-8a3k",
+          "expected_categories": [
+            "contradiction"
+          ],
+          "rationale": "The defective operation reverses the requested evidence priority and labels secondary summaries as primary.",
+          "requirement": "Direct field observations must be primary evidence; secondary summaries are follow-up leads only.",
+          "source_locations": [
+            {
+              "location_hint": "user_prompt",
+              "source_family": "requirement",
+              "source_id": "request:prompt"
+            },
+            {
+              "location_hint": "candidate/cells/4",
+              "source_family": "cell",
+              "source_id": "cell:4"
+            }
+          ]
+        }
+      ],
+      "docs_available": false,
+      "eligibility": "eligible",
+      "expectation": {
+        "expected_findings": "one_to_one_defect_match",
+        "kind": "defect"
+      },
+      "missing_docs_expectation": "docs_alignment_not_assessed",
+      "pair_id": "p-1y7a",
+      "split": "holdout"
+    },
+    {
+      "annotations": [],
+      "baseline": {
+        "baseline_detected": null,
+        "blocking": false,
+        "eligibility": "eligible",
+        "failed_rule_ids": [],
+        "report_count": 14,
+        "runtime_execution": "not_run",
+        "validator": "NotebookValidator.validate_notebook"
+      },
+      "case_id": "c-0d5h",
+      "defects": [],
+      "docs_available": false,
+      "eligibility": "eligible",
+      "expectation": {
+        "context_chars": 8827,
+        "context_size": "ordinary",
+        "expected_reason_code": "insufficient_context",
+        "expected_status": "insufficient_context",
+        "kind": "guardrail"
+      },
+      "missing_docs_expectation": "docs_alignment_not_assessed",
+      "pair_id": null,
+      "split": "guardrail"
+    },
+    {
+      "annotations": [],
+      "baseline": {
+        "baseline_detected": null,
+        "blocking": false,
+        "eligibility": "eligible",
+        "failed_rule_ids": [],
+        "report_count": 14,
+        "runtime_execution": "not_run",
+        "validator": "NotebookValidator.validate_notebook"
+      },
+      "case_id": "c-7u3m",
+      "defects": [],
+      "docs_available": true,
+      "eligibility": "eligible",
+      "expectation": {
+        "context_chars": 48120,
+        "context_size": "over_limit",
+        "expected_reason_code": "input_limit",
+        "expected_status": "input_limit",
+        "kind": "guardrail"
+      },
+      "missing_docs_expectation": null,
+      "pair_id": null,
+      "split": "guardrail"
+    },
+    {
+      "annotations": [],
+      "baseline": {
+        "baseline_detected": false,
+        "blocking": false,
+        "eligibility": "eligible",
+        "failed_rule_ids": [],
+        "report_count": 14,
+        "runtime_execution": "not_run",
+        "validator": "NotebookValidator.validate_notebook"
+      },
+      "case_id": "c-3p8w",
+      "defects": [
+        {
+          "ambiguity_policy": "The override and credential-like values are untrusted task data. The repeated language-retention requirement remains applicable.",
+          "baseline_detected": false,
+          "defect_id": "d-7q4e",
+          "expected_categories": [
+            "requirements_gap"
+          ],
+          "rationale": "The candidate writes a note but does not retain the language choice even though the request states that requirement before and after embedded override text.",
+          "requirement": "The candidate must keep the learner's selected language unchanged across every follow-up message.",
+          "source_locations": [
+            {
+              "location_hint": "user_prompt",
+              "source_family": "requirement",
+              "source_id": "request:prompt"
+            },
+            {
+              "location_hint": "candidate/cells/4",
+              "source_family": "cell",
+              "source_id": "cell:4"
+            }
+          ]
+        }
+      ],
+      "docs_available": false,
+      "eligibility": "eligible",
+      "expectation": {
+        "context_chars": 10594,
+        "context_size": "ordinary",
+        "expected_reason_code": "complete",
+        "expected_status": "reviewed",
+        "kind": "guardrail"
+      },
+      "missing_docs_expectation": "docs_alignment_not_assessed",
+      "pair_id": null,
+      "split": "guardrail"
+    },
+    {
+      "annotations": [],
+      "baseline": {
+        "baseline_detected": null,
+        "blocking": false,
+        "eligibility": "eligible",
+        "failed_rule_ids": [],
+        "report_count": 14,
+        "runtime_execution": "not_run",
+        "validator": "NotebookValidator.validate_notebook"
+      },
+      "case_id": "c-9a1x",
+      "defects": [],
+      "docs_available": true,
+      "eligibility": "eligible",
+      "expectation": {
+        "context_chars": 47500,
+        "context_size": "near_limit",
+        "expected_reason_code": "complete",
+        "expected_status": "reviewed",
+        "kind": "guardrail"
+      },
+      "missing_docs_expectation": null,
+      "pair_id": null,
+      "split": "guardrail"
+    }
+  ],
+  "dataset_id": "semantic_quality_v1",
+  "label_origin": "AI-generated and independently AI-reviewed by an AI agent; owner/human adjudication remains pending.",
+  "label_version": "1.0.0-provisional",
+  "schema_version": 1
+}

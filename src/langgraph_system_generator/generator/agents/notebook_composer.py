@@ -41,6 +41,7 @@ from langgraph_system_generator.generator.state import (
     NotebookPlan,
     ToolPlanningFeedback,
 )
+from langgraph_system_generator.generator.utils import get_message_text
 from langgraph_system_generator.patterns import (
     AutoAgentPattern,
     CritiqueLoopPattern,
@@ -52,6 +53,10 @@ from langgraph_system_generator.patterns import (
 from langgraph_system_generator.patterns.utils import render_additional_fields
 from langgraph_system_generator.utils.error_handling import safe_exception_summary
 from langgraph_system_generator.utils.config import ModelConfig, settings
+from langgraph_system_generator.utils.model_compatibility import (
+    LUNA_MODEL,
+    OPENAI_BASE_URL,
+)
 
 
 _T = TypeVar("_T")
@@ -452,7 +457,11 @@ class NotebookComposer:
         )
         accumulator = DependencyAccumulator(runtime_notes=list(plan.runtime_notes))
 
-        for package_name in ["langgraph", "langchain-core", "langchain-openai"]:
+        for package_name in [
+            "langgraph",
+            "langchain-core",
+            "langchain-openai>=1.7.2,<2.0.0",
+        ]:
             accumulator.packages.append(package_name)
 
         architecture_type = self._normalize_inline_text(
@@ -493,13 +502,29 @@ class NotebookComposer:
         if model_key_env not in accumulator.provider_env_vars:
             accumulator.provider_env_vars.append(model_key_env)
 
+        normalized_packages = []
+        openai_package_added = False
+        for package in accumulator.packages:
+            if package.split(">", 1)[0].split("<", 1)[0] == "langchain-openai":
+                if not openai_package_added:
+                    normalized_packages.append("langchain-openai>=1.7.2,<2.0.0")
+                    openai_package_added = True
+                continue
+            if package not in normalized_packages:
+                normalized_packages.append(package)
+        accumulator.packages = normalized_packages
+
         plan.packages = accumulator.packages
         plan.runtime_notes = accumulator.runtime_notes
         plan.conflicts_resolved = accumulator.conflicts_resolved
         plan.provider_env_vars = accumulator.provider_env_vars
         if accumulator.packages:
+            install_packages = " ".join(
+                f'"{package}"' if any(mark in package for mark in "<>=!~") else package
+                for package in accumulator.packages
+            )
             plan.install_commands = [
-                "python -m pip install -q " + " ".join(accumulator.packages)
+                "python -m pip install -q " + install_packages
             ]
         return plan
 
@@ -819,17 +844,27 @@ This notebook implements a LangGraph workflow using the **{plan.architecture_typ
         }
         install_content = f"""# Install missing notebook dependencies
 from importlib.util import find_spec
+from importlib.metadata import PackageNotFoundError, version
+from packaging.version import Version
 import subprocess
 import sys
 
 PACKAGE_IMPORTS = {json.dumps(package_imports, indent=4)}
 REQUIRED_PACKAGES = {json.dumps(dependency_plan.packages, indent=4)}
 
-missing_packages = [
-    package
-    for package in REQUIRED_PACKAGES
-    if find_spec(PACKAGE_IMPORTS[package]) is None
-]
+missing_packages = []
+for package in REQUIRED_PACKAGES:
+    if find_spec(PACKAGE_IMPORTS[package]) is None:
+        missing_packages.append(package)
+        continue
+    if package.split(">", 1)[0] == "langchain-openai":
+        try:
+            installed_version = version("langchain-openai")
+        except PackageNotFoundError:
+            missing_packages.append(package)
+        else:
+            if Version(installed_version) < Version("1.7.2"):
+                missing_packages.append(package)
 
 if missing_packages:
     print("Installing missing packages:", ", ".join(missing_packages))
@@ -974,8 +1009,15 @@ else:
                 '    """Construct a ChatOpenAI client from notebook-level settings."""',
                 "    kwargs: dict[str, object] = {",
                 '        "model": model,',
-                '        "temperature": temperature,',
                 "    }",
+                f"    if model == {LUNA_MODEL!r} and not CUSTOM_LLM_PROVIDER and API_BASE in ({OPENAI_BASE_URL!r}, {OPENAI_BASE_URL + '/'!r}):",
+                "        kwargs.update(",
+                "            use_responses_api=True,",
+                '            reasoning={"effort": "low"},',
+                '            output_version="responses/v1",',
+                "        )",
+                "    else:",
+                '        kwargs["temperature"] = temperature',
                 "    if not API_BASE:",
                 '        raise ValueError("Set LNF_NOTEBOOK_API_BASE for this provider.")',
                 "    parsed = urlsplit(API_BASE)",
@@ -1371,7 +1413,7 @@ Generate the complete Python function implementation."""
 
             # Use the async LLM path so multiple tool implementations can run concurrently.
             response = await self._invoke_llm([system_prompt, user_prompt])
-            generated_code = self._strip_code_fences(response.content)
+            generated_code = self._strip_code_fences(get_message_text(response))
             if not self._is_meaningful_tool_code(generated_code):
                 return self._generate_tool_fallback(
                     tool,
@@ -1689,7 +1731,7 @@ Generate the complete Python function implementation."""
 
             # Use the async LLM path so custom nodes can run concurrently.
             response = await self._invoke_llm([system_prompt, user_prompt])
-            generated_code = self._strip_code_fences(response.content)
+            generated_code = self._strip_code_fences(get_message_text(response))
             if not self._is_meaningful_node_code(generated_code):
                 return self._generate_node_fallback(
                     node,
@@ -1796,7 +1838,10 @@ Generate the complete Python function implementation."""
         update_lines = [
             "    updates: dict[str, object] = {}",
             '    messages = list(state.get("messages", []))',
-            '    last_content = messages[-1].content if messages else ""',
+            '    last_message = messages[-1] if messages else ""',
+            '    last_content = str(last_message.text) if isinstance(getattr(last_message, "text", None), str) else getattr(last_message, "content", last_message)',
+            '    if not isinstance(last_content, str):',
+            '        last_content = ""',
             f'    node_summary = {node_name_literal} + " completed: " + (last_content or {node_purpose_literal})',
             '    updates["messages"] = messages + [HumanMessage(content=node_summary)]',
         ]
@@ -3220,9 +3265,10 @@ def _find_nested_key(value, target_key: str, default=_MISSING):
 
 def _message_content(value) -> str:
     if isinstance(value, BaseMessage):
-        return str(value.content)
+        return str(value.text)
     if isinstance(value, dict) and "content" in value:
-        return str(value["content"])
+        content = value["content"]
+        return content if isinstance(content, str) else ""
     return str(value)
 
 

@@ -29,7 +29,10 @@ from langgraph_system_generator.generator.state import (
     GraphDesignFeedback,
     GraphDesignResult,
 )
-from langgraph_system_generator.generator.utils import extract_json_from_llm_response
+from langgraph_system_generator.generator.utils import (
+    extract_json_from_llm_response,
+    get_message_text,
+)
 from langgraph_system_generator.utils.config import ModelConfig, settings
 from langgraph_system_generator.utils.error_handling import (
     GenerationError,
@@ -168,7 +171,7 @@ class GraphDesigner:
 
         try:
             response = await self.llm.ainvoke([design_prompt, user_message])
-            payload = extract_json_from_llm_response(response.content)
+            payload = extract_json_from_llm_response(get_message_text(response))
             live_result = normalize_sentinel_edges(
                 normalize_graph_design(payload, architecture_type, registration)
             )

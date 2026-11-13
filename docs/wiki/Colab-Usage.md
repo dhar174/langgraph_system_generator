@@ -58,7 +58,7 @@ common LangGraph stack is:
 
 ```python
 # Install LangGraph dependencies
-!pip install -qU langgraph langchain langchain-openai langchain-community
+!pip install -qU langgraph langchain "langchain-openai>=1.7.2,<2.0.0" langchain-community
 
 # Verify installation
 import langgraph
@@ -123,7 +123,12 @@ os.environ["OPENAI_API_KEY"] = userdata.get('OPENAI_API_KEY')
 
 # Use in your code
 from langchain_openai import ChatOpenAI
-llm = ChatOpenAI(model="gpt-5-mini")
+llm = ChatOpenAI(
+    model="gpt-6-luna",
+    use_responses_api=True,
+    reasoning={"effort": "low"},
+    output_version="responses/v1",
+)
 ```
 
 **Benefits:**
@@ -196,7 +201,7 @@ files.download('output.txt')
 
 ```python
 # ====== SETUP ======
-!pip install -q langgraph langchain langchain-openai
+!pip install -q langgraph langchain "langchain-openai>=1.7.2,<2.0.0"
 
 import os
 from google.colab import userdata
@@ -214,7 +219,12 @@ class AgentState(TypedDict):
     next_route: str
 
 # ====== NODES ======
-llm = ChatOpenAI(model="gpt-5-mini")
+llm = ChatOpenAI(
+    model="gpt-6-luna",
+    use_responses_api=True,
+    reasoning={"effort": "low"},
+    output_version="responses/v1",
+)
 
 def router_node(state: AgentState):
     """Classify input and route to appropriate handler."""
@@ -304,7 +314,7 @@ for query in queries:
 
 ```python
 # ====== SETUP ======
-!pip install -q langgraph langchain langchain-openai
+!pip install -q langgraph langchain "langchain-openai>=1.7.2,<2.0.0"
 
 import os
 from google.colab import userdata
@@ -323,7 +333,12 @@ class TeamState(TypedDict):
     iterations: int
 
 # ====== NODES ======
-llm = ChatOpenAI(model="gpt-5-mini")
+llm = ChatOpenAI(
+    model="gpt-6-luna",
+    use_responses_api=True,
+    reasoning={"effort": "low"},
+    output_version="responses/v1",
+)
 
 def supervisor_node(state: TeamState):
     """Coordinate team members."""
@@ -493,7 +508,7 @@ for i, query in enumerate(queries):
 **Solution**: Verify secret name matches exactly: `OPENAI_API_KEY`
 
 **Issue**: Out of memory  
-**Solution**: Use a smaller configured model such as `gpt-5-mini`, reduce batch sizes, or enable a high-RAM runtime
+**Solution**: Reduce batch sizes or enable a high-RAM runtime
 
 **Issue**: Slow execution  
 **Solution**: Colab free tier has usage limits; consider Colab Pro for better performance

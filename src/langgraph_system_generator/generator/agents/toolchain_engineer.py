@@ -28,7 +28,10 @@ from langgraph_system_generator.generator.tool_registry import (
     get_tool_registry,
     normalize_tool_token,
 )
-from langgraph_system_generator.generator.utils import extract_json_from_llm_response
+from langgraph_system_generator.generator.utils import (
+    extract_json_from_llm_response,
+    get_message_text,
+)
 from langgraph_system_generator.utils.error_handling import safe_exception_summary
 from langgraph_system_generator.utils.config import ModelConfig
 
@@ -670,7 +673,7 @@ Identify needed tools."""
         response = await self.llm.ainvoke([tools_prompt, user_message])
 
         try:
-            payload = extract_json_from_llm_response(response.content)
+            payload = extract_json_from_llm_response(get_message_text(response))
         except (ValueError, KeyError, TypeError) as exc:
             feedback.fallback_used = True
             feedback.fallback_reason = f"Tool planning fell back to heuristic inference after payload parsing failed: {safe_exception_summary(exc)}"

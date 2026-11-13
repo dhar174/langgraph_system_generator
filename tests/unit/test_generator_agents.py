@@ -2235,6 +2235,12 @@ def test_package_import_probe_maps_non_module_distribution_names():
 
     assert tool_dependency_utils.package_import_probe("pdfminer.six") == "pdfminer"
     assert tool_dependency_utils.package_import_probe("pymupdf") == "fitz"
+    assert (
+        tool_dependency_utils.package_import_probe(
+            "langchain-openai>=1.7.2,<2.0.0"
+        )
+        == "langchain_openai"
+    )
 
 
 def _assert_endpoint_security_kwargs(captured):

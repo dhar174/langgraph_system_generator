@@ -17,19 +17,21 @@ if __package__ in (None, ""):
             sys.path.insert(0, str(path))
 
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
-from langchain_openai import ChatOpenAI
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.message import add_messages
 from langgraph.types import Send
 
 from langgraph_system_generator.examples_support import (
+    DEFAULT_LIVE_MODEL,
+    build_example_llm,
     build_example_parser,
     build_metrics,
     ensure_live_credentials,
     make_thread_config,
     trace_step,
 )
+from langgraph_system_generator.generator.utils import get_message_text
 
 
 def merge_dicts(left: Dict[str, str], right: Dict[str, str]) -> Dict[str, str]:
@@ -97,7 +99,7 @@ def _stub_tool(call_id: str, query: str) -> str:
 
 def build_graph(mode: str, model: str):
     """Build the speculative reasoning graph."""
-    llm = ChatOpenAI(model=model, temperature=0) if mode == "live" else None
+    llm = build_example_llm(model) if mode == "live" else None
 
     def planner_node(state: RewooState):
         task = state["messages"][0].content if state.get("messages") else ""
@@ -148,7 +150,7 @@ def build_graph(mode: str, model: str):
                     HumanMessage(content=query),
                 ]
             )
-            observed = response.content
+            observed = get_message_text(response)
         else:
             observed = _stub_tool(call_id, query)
         return {
@@ -194,7 +196,7 @@ def build_graph(mode: str, model: str):
     return workflow.compile(checkpointer=InMemorySaver())
 
 
-def run_demo(task: str, *, mode: str = "stub", model: str = "gpt-4.1-mini"):
+def run_demo(task: str, *, mode: str = "stub", model: str = DEFAULT_LIVE_MODEL):
     """Execute the REWOO example and print a trace."""
     ensure_live_credentials(mode)
     graph = build_graph(mode, model)

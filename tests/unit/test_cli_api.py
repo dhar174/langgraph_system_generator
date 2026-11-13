@@ -836,9 +836,13 @@ async def test_generate_artifacts_surfaces_notebook_composition_feedback_as_warn
             ],
         }
         result["notebook_dependency_plan"] = {
-            "packages": ["langgraph", "langchain-openai", "requests"],
+            "packages": [
+                "langgraph",
+                "langchain-openai>=1.7.2,<2.0.0",
+                "requests",
+            ],
             "install_commands": [
-                "python -m pip install -q langgraph langchain-openai requests"
+                'python -m pip install -q langgraph "langchain-openai>=1.7.2,<2.0.0" requests'
             ],
             "runtime_notes": [
                 "The install cell checks for missing packages before invoking pip."

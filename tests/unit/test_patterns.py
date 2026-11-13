@@ -8,6 +8,7 @@ from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
+from langchain_core.messages import AIMessage
 
 from langgraph_system_generator.patterns import (
     AutoAgentPattern,
@@ -75,7 +76,7 @@ class TestRouterPattern:
         assert "def search_node(state: WorkflowState)" in code
         assert "Perform web searches for information" in code
         assert "ChatOpenAI" in code
-        assert '"search": response.content' in code
+        assert '"search": response.text' in code
 
     def test_generate_graph_code_conditional(self):
         """Test graph construction with conditional edges."""
@@ -179,9 +180,40 @@ class TestSubagentsPattern:
         assert "def researcher_node(state: WorkflowState)" in code
         assert "Research and gather information" in code
         assert "ChatOpenAI" in code
-        assert '"researcher": getattr(response, "content", str(response))' in code
+        assert '"researcher": response.text' in code
         assert '"task_result_versions": {"researcher": current_version}' in code
         assert "current_version = max(" in code
+
+    @pytest.mark.parametrize(
+        "generate_worker",
+        [
+            SubagentsPattern.generate_subagent_code,
+            HybridPattern.generate_worker_code,
+            AutoAgentPattern.generate_worker_code,
+        ],
+    )
+    def test_worker_preserves_only_response_text(self, monkeypatch, generate_worker):
+        response = AIMessage(
+            content=[
+                {"type": "reasoning", "summary": [{"text": "Reasoning metadata"}]},
+                {"type": "text", "text": "Specialist answer"},
+                {"type": "text", "text": " with details."},
+            ]
+        )
+        llm = MagicMock()
+        llm.invoke.return_value = response
+        monkeypatch.setattr("langchain_openai.ChatOpenAI", lambda **kwargs: llm)
+        namespace = {}
+        # Run repository-generated code against the fake model.
+        exec(SubagentsPattern.generate_state_code(), namespace)  # noqa: S102
+        worker_code = generate_worker("researcher", "Research specialist")
+        exec(worker_code, namespace)  # noqa: S102
+
+        update = namespace["researcher_node"]({})
+
+        assert update["task_results"] == {
+            "researcher": "Specialist answer with details."
+        }
 
     def test_generate_subagent_code_with_tools(self):
         """Test subagent node generation with tool binding."""
@@ -369,8 +401,12 @@ class TestSubagentsPattern:
     ):
         """Verify that unchanged older results are summarized once and reused via fingerprint."""
         mock_llm_instance = MagicMock()
-        mock_response = MagicMock()
-        mock_response.content = "Concise summary of older specialist results"
+        mock_response = AIMessage(
+            content=[
+                {"type": "reasoning", "summary": [{"text": "Reasoning metadata"}]},
+                {"type": "text", "text": "Concise summary of older specialist results"},
+            ]
+        )
         mock_llm_instance.invoke.return_value = mock_response
         MockChatOpenAI = MagicMock(return_value=mock_llm_instance)
         monkeypatch.setattr("langchain_openai.ChatOpenAI", MockChatOpenAI)
@@ -458,9 +494,7 @@ class TestSubagentsPattern:
         def fake_invoke(messages):
             prompt_str = " ".join(str(m.content) for m in messages)
             invoked_prompts.append(prompt_str)
-            mock_resp = MagicMock()
-            mock_resp.content = "Summary of older specialists"
-            return mock_resp
+            return AIMessage(content="Summary of older specialists")
 
         mock_llm_instance = MagicMock()
         mock_llm_instance.invoke.side_effect = fake_invoke
@@ -534,9 +568,7 @@ class TestSubagentsPattern:
 
         def capture_invoke(messages):
             prompts.append(messages[-1].content)
-            response = MagicMock()
-            response.content = "Bounded summary"
-            return response
+            return AIMessage(content="Bounded summary")
 
         mock_llm.invoke.side_effect = capture_invoke
         monkeypatch.setattr(
@@ -571,9 +603,9 @@ class TestSubagentsPattern:
         def capture_invoke(messages):
             prompt_content = messages[-1].content
             invoked_prompts.append(prompt_content)
-            mock_resp = MagicMock()
-            mock_resp.content = f"Summary chunk representing: {prompt_content[:60]}"
-            return mock_resp
+            return AIMessage(
+                content=f"Summary chunk representing: {prompt_content[:60]}"
+            )
 
         mock_llm = MagicMock()
         mock_llm.invoke.side_effect = capture_invoke
@@ -671,9 +703,7 @@ class TestSubagentsPattern:
                 body = "Summary preserving UNIQUE_TAIL_SPECIALIST_MARKER_XYZ: " + ("x" * 2900)
             else:
                 body = "Summary of intermediate chunk: " + ("y" * 2920)
-            mock_resp = MagicMock()
-            mock_resp.content = body
-            return mock_resp
+            return AIMessage(content=body)
 
         mock_llm = MagicMock()
         mock_llm.invoke.side_effect = capture_invoke
@@ -902,6 +932,19 @@ class TestDeepAgentsPattern:
         assert '"anthropic:claude-sonnet-4-5"' in code
         assert "openai:anthropic:claude-sonnet-4-5" not in code
         compile(code, "<deepagents-node-prefixed>", "exec")
+
+    def test_deepagents_runtime_luna_override_keeps_custom_endpoint_mode(self):
+        code = DeepAgentsPattern.generate_agent_node_code(
+            ["researcher"], model_config={"model": "gpt-5-mini"}
+        )
+
+        assert 'configured_model in {"gpt-6-luna", "openai:gpt-6-luna"}' in code
+        assert 'os.environ.get("OPENAI_API_BASE")' in code
+        assert 'os.environ.get("OPENAI_BASE_URL")' in code
+        assert "model_kwargs.update(" in code
+        assert 'output_version="responses/v1"' in code
+        assert 'model_kwargs["temperature"] = 0' in code
+        compile(code, "<deepagents-luna-runtime-override>", "exec")
 
     def test_generate_graph_code_has_terminal_path(self):
         code = DeepAgentsPattern.generate_graph_code()
@@ -1435,7 +1478,9 @@ class TestPatternModelConfig:
 
         assert "def router_node(state: WorkflowState, window_size: int = 5)" in code
         assert "ChatOpenAI(" in code
-        assert "temperature=" in code
+        assert "use_responses_api=True" in code
+        assert "reasoning={'effort': 'low'}" in code
+        assert "temperature=" not in code
 
     def test_subagents_pattern_accepts_model_config(self):
         """Test SubagentsPattern accepts model config."""
@@ -1522,8 +1567,8 @@ class TestPatternModelConfig:
         assert "ChatOpenAI(" in code
         assert "temperature=0.7" in code
 
-    def test_all_patterns_preserve_gpt_5_mini_default(self):
-        """Test all patterns preserve gpt-5-mini as default model."""
+    def test_all_patterns_use_luna_api_defaults(self):
+        """Test standalone patterns configure Luna without sampling options."""
         # Router pattern
         router_code = RouterPattern.generate_router_node_code(["search"])
         assert "ChatOpenAI(" in router_code
@@ -1546,6 +1591,19 @@ class TestPatternModelConfig:
 
         revise_code = CritiqueLoopPattern.generate_revise_node_code()
         assert "ChatOpenAI(" in revise_code
+
+        for code in (
+            router_code,
+            supervisor_code,
+            subagent_code,
+            generate_code,
+            critique_code,
+            revise_code,
+        ):
+            assert "model='gpt-6-luna'" in code
+            assert "use_responses_api=True" in code
+            assert "output_version='responses/v1'" in code
+            assert "temperature=" not in code
 
     def test_complete_examples_accept_model_config(self):
         """Test complete example generators accept model config."""
@@ -1657,7 +1715,8 @@ def test_router_pattern_emits_typed_state_and_command_routing():
     assert "from langgraph.types import Command" not in router_code
     assert "RouteDecision" in router_code
     assert "with_structured_output" in router_code
-    assert "temperature=0" in router_code
+    assert "use_responses_api=True" in router_code
+    assert "temperature=" not in router_code
 
     assert "Perform grounded retrieval." in route_code
     assert "ChatOpenAI(" in route_code

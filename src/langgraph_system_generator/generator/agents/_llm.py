@@ -18,6 +18,9 @@ from langgraph_system_generator.utils.credential_redaction import (
 )
 from langgraph_system_generator.utils.error_handling import GenerationError
 from langgraph_system_generator.utils.llm_endpoint_security import authorize_endpoint
+from langgraph_system_generator.utils.model_compatibility import (
+    chat_openai_compatibility_kwargs,
+)
 
 _owned_transports: ContextVar[list[tuple[httpx.Client, httpx.AsyncClient]] | None] = (
     ContextVar("llm_transports", default=None)
@@ -129,7 +132,6 @@ def build_chat_llm(
         owner.append((sync, asynchronous))
     llm_kwargs: dict[str, Any] = {
         "model": config.model,
-        "temperature": config.temperature,
         "base_url": binding.base_url,
         "api_key": key,
         "http_client": sync,
@@ -139,6 +141,13 @@ def build_chat_llm(
         "max_retries": 0,
         "timeout": DEFAULT_TIMEOUT,
     }
+    compatibility_kwargs = chat_openai_compatibility_kwargs(
+        config.model, api_base=binding.base_url
+    )
+    if compatibility_kwargs:
+        llm_kwargs.update(compatibility_kwargs)
+    else:
+        llm_kwargs["temperature"] = config.temperature
     if config.max_tokens is not None:
         llm_kwargs["max_tokens"] = config.max_tokens
     try:
