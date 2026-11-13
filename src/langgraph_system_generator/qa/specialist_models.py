@@ -36,6 +36,23 @@ ReviewReason = Literal[
     "stale_context",
     "reviewer_unavailable",
 ]
+RejectionDetail = Literal[
+    "unexpected_tool_calls",
+    "missing_responses_status",
+    "unexpected_responses_status",
+    "invalid_json",
+    "invalid_local_schema",
+    "incomplete_host_assessment",
+    "unknown_source_id",
+    "reference_out_of_range",
+    "quote_mismatch",
+    "missing_requirement_evidence",
+    "excess_family_references",
+    "missing_documentation_evidence",
+    "missing_cell_evidence",
+    "empty_sanitized_text",
+    "preflight_invalid_reference",
+]
 FindingCategory = Literal[
     "requirements_gap",
     "contradiction",
@@ -128,6 +145,7 @@ class SemanticReviewResult(ReviewRecord):
 
     status: ReviewStatus
     reason_code: ReviewReason
+    rejection_detail: RejectionDetail | None = Field(default=None, exclude=True)
     candidate_id: str
     context_digest: str
     model_invocations: int = Field(default=0, ge=0, le=1)
@@ -142,6 +160,7 @@ class SemanticReviewFeedback(ReviewRecord):
     )
     status: ReviewStatus
     reason_code: ReviewReason
+    rejection_detail: RejectionDetail | None = Field(default=None, exclude=True)
     candidate_id: str | None = Field(default=None, pattern=r"^[a-f0-9]{64}$")
     context_digest: str | None = Field(default=None, pattern=r"^[a-f0-9]{64}$")
     attempt: int = Field(default=0, ge=0)

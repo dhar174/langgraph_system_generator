@@ -1,9 +1,9 @@
 {
-  "annotations_sha256": "c24c72ac0ed2b9d058cbaa7239e98cc0f17879a572892b3689bd5a5bacd6c2f5",
+  "annotations_sha256": "765694f4aa75eda483f7533702970fe50236c9a72ba84f8d943242d2d145f87f",
   "dataset_id": "semantic_quality_v1",
-  "dataset_sha256": "f461006e14af06a0a91fa17aa621932750fb3ae98ba4439a7c05fcd89899412d",
+  "dataset_sha256": "b850e5baa6be2a681bf2daa9d99befc5618db347767f62b0a1042ba13250a893",
   "fixture_recipe": "tests/evaluation/semantic_quality_v1/build_fixtures.py",
-  "fixture_recipe_sha256": "acd7ac16bc61659364f55e1b28a3e1d635d01d3312890e4ba3bbf02ce397ee0a",
+  "fixture_recipe_sha256": "1753ce17e67afc5fb98efc1ddb96211487015365ad3ffb4584954d64b03f604f",
   "generation": {
     "ambient_credentials": "removed; dotenv disabled; synthetic unsent preflight sentinel only",
     "generation_model_dependencies": "deterministic fake constructors at established ChatOpenAI seams",
@@ -31,7 +31,7 @@
     "src/langgraph_system_generator/qa/specialist_review.py": "bcc96f1ccafbc85dd6a92a7526b8a7aba919229df797d78a4c320b2dfd80b869",
     "src/langgraph_system_generator/qa/validators.py": "6be43e67cb22964ebb5ba754aad9a122965ab8629a42c6beaa3619d5d83a71b9"
   },
-  "labels_sha256": "26e06ee9a1a5e8ec994b03b06c922c3518ba0b54d92fcd639c6660c5630323b8",
+  "labels_sha256": "1f554b557aaf1edcd9f14980669429f769ad0a28c0f8292f8368ea8b5e69bf1f",
   "limitations": [
     "Fake generation dependencies establish fixture provenance and static contract evidence only.",
     "No notebook cell was executed while building the dataset.",
@@ -48,8 +48,8 @@
       "path": "snapshots/n-4a1p.ipynb"
     },
     {
-      "byte_length": 31185,
-      "bytes_sha256": "7f1a7c4eb867b23190d7231b727c7df563a75e9320506ca0be2b71715fd2aaa6",
+      "byte_length": 31187,
+      "bytes_sha256": "79655a6726479587ae1cafa9f56df1d774a90af5cb047e491a09dc2aa61f8d46",
       "path": "snapshots/n-9d6x.ipynb"
     },
     {
@@ -68,8 +68,8 @@
       "path": "snapshots/n-2v8e.ipynb"
     },
     {
-      "byte_length": 31068,
-      "bytes_sha256": "56348b8b8b50845166542a6bfc3dab67c6749a3f7b4ce451e39abba2640eed36",
+      "byte_length": 31063,
+      "bytes_sha256": "ce214ba482131d9b7c7b960aa14dd53e6bf1b2e674a3511bdbc903699f5e417b",
       "path": "snapshots/n-6c1a.ipynb"
     },
     {

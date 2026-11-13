@@ -1335,6 +1335,19 @@ def _case_and_label(
     return case, label
 
 
+def _replace_workflow_schema_route(content: str, label: str, destination: str) -> str:
+    """Keep the rendered schema aligned with the executable route mutation."""
+    prefix, fence, remainder = content.partition("### Workflow Schema\n\n```json\n")
+    if not fence:
+        return content
+    schema, closing, suffix = remainder.partition("\n```")
+    old = f'"{label}": "{label}"'
+    if not closing or schema.count(old) != 1:
+        raise ValueError("Expected exactly one route in the fenced workflow schema.")
+    new = f'"{label}": "{destination}"'
+    return prefix + fence + schema.replace(old, new) + closing + suffix
+
+
 def _mutate_support_route(state: dict[str, Any]) -> str:
     """Route a billing classification to technical help in all executable copies."""
     replacements = 0
@@ -1354,6 +1367,7 @@ def _mutate_support_route(state: dict[str, Any]) -> str:
             new = 'router -- "billing" --> technical'
             if old in content:
                 content = content.replace(old, new)
+            content = _replace_workflow_schema_route(content, "billing", "technical")
         cell["content"] = content
         metadata = cell.get("metadata", {})
         _mutate_branches(metadata)
@@ -1397,6 +1411,9 @@ def _mutate_rubric_route(state: dict[str, Any]) -> str:
                     replacements += count
         elif cell.get("cell_type") == "markdown":
             content = content.replace(old_mermaid, new_mermaid)
+            content = _replace_workflow_schema_route(
+                content, "instructor_review", "award_credit"
+            )
         cell["content"] = content
         metadata = cell.get("metadata", {})
         _mutate_rubric_branches(metadata)
@@ -1686,7 +1703,7 @@ def _reference_docs(
     sections = _base_reference_sections()
     docs: list[dict[str, Any]] = [
         {
-            "content": f"Community Library Desk Guide — {heading}\n\n{body}\nFixture section: LIB-{index + 1:02d}.",
+            "content": f"Community Library Desk Guide â€” {heading}\n\n{body}\nFixture section: LIB-{index + 1:02d}.",
             "source": f"fixture://library-guide/section-{index + 1:02d}",
             "source_kind": "repository_controlled_synthetic_documentation",
             "relevance_score": 1.0,
@@ -1764,7 +1781,7 @@ def _reference_docs(
         )
     if kind == "near_limit" and not (46_000 <= actual_size < 48_000):
         raise ValueError(
-            "Near-limit context is outside the 46,000–47,999 character band."
+            "Near-limit context is outside the 46,000â€“47,999 character band."
         )
     return selected
 
@@ -1932,7 +1949,7 @@ def build(output_dir: Path | None = None) -> dict[str, str]:
     case_doc = {
         "schema_version": 1,
         "dataset_id": DATASET_ID,
-        "dataset_version": "1.0.0",
+        "dataset_version": "1.0.1",
         "purpose": "Public synthetic, repository-controlled candidate fixtures for descriptive reviewer measurement.",
         "model_state_fields": list(MODEL_STATE_FIELDS),
         "cases": cases,
@@ -1940,7 +1957,7 @@ def build(output_dir: Path | None = None) -> dict[str, str]:
     label_doc = {
         "schema_version": 1,
         "dataset_id": DATASET_ID,
-        "label_version": "1.0.0-provisional",
+        "label_version": "1.0.1-provisional",
         "label_origin": (
             "AI-generated and independently AI-reviewed by an AI agent; "
             "owner/human adjudication remains pending."

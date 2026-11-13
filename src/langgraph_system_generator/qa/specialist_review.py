@@ -13,6 +13,7 @@ from langgraph_system_generator.qa.specialist_models import (
     REVIEWER_ID,
     EvidenceLocation,
     ModelReviewResponse,
+    RejectionDetail,
     ReviewReason,
     ReviewSource,
     SemanticFinding,
@@ -213,6 +214,12 @@ def build_review_context(
     )
 
 
+class EvidenceAdmissionError(ValueError):
+    def __init__(self, detail: RejectionDetail) -> None:
+        super().__init__(detail)
+        self.detail = detail
+
+
 def admit_findings(
     context: SemanticReviewContext, response: ModelReviewResponse
 ) -> tuple[SemanticFinding, ...]:
@@ -224,11 +231,13 @@ def admit_findings(
         families: Counter[str] = Counter()
         for ref in finding.references:
             source = sources.get(ref.source_id)
-            if source is None or ref.end > len(source.text):
-                raise ValueError("Invalid semantic evidence")
+            if source is None:
+                raise EvidenceAdmissionError("unknown_source_id")
+            if ref.end > len(source.text):
+                raise EvidenceAdmissionError("reference_out_of_range")
             fragment = source.text[ref.start : ref.end]
             if ref.quote != fragment:
-                raise ValueError("Semantic quote does not match source range")
+                raise EvidenceAdmissionError("quote_mismatch")
             families[source.family] += 1
             refs.append(
                 EvidenceLocation(
@@ -242,16 +251,18 @@ def admit_findings(
                     location=source.location,
                 )
             )
-        if not families["requirement"] or max(families.values()) > 2:
-            raise ValueError("Missing requirement or excessive references")
+        if not families["requirement"]:
+            raise EvidenceAdmissionError("missing_requirement_evidence")
+        if max(families.values()) > 2:
+            raise EvidenceAdmissionError("excess_family_references")
         if finding.category == "provided_docs_conflict" and not families["docs"]:
-            raise ValueError("Docs alignment requires supplied docs evidence")
+            raise EvidenceAdmissionError("missing_documentation_evidence")
         if not families["cell"]:
-            raise ValueError("Finding requires candidate-cell evidence")
+            raise EvidenceAdmissionError("missing_cell_evidence")
         message = _summary_text(finding.message)
         suggestions = tuple(_summary_text(s) for s in finding.suggestions)
         if not message or any(not s for s in suggestions):
-            raise ValueError("Empty semantic text")
+            raise EvidenceAdmissionError("empty_sanitized_text")
         identity = canonical_json(
             [
                 context.candidate_id,
@@ -388,6 +399,7 @@ async def review_candidate(state: Mapping[str, Any]) -> SemanticReviewFeedback |
             update={
                 "status": result.status,
                 "reason_code": result.reason_code,
+                "rejection_detail": result.rejection_detail,
                 "model_invocations": result.model_invocations,
             }
         )
@@ -398,7 +410,11 @@ async def review_candidate(state: Mapping[str, Any]) -> SemanticReviewFeedback |
             or context.context_digest != current.context_digest
         ):
             return feedback.model_copy(
-                update={"status": "incomplete", "reason_code": "stale_context"}
+                update={
+                    "status": "incomplete",
+                    "reason_code": "stale_context",
+                    "rejection_detail": None,
+                }
             )
         if result.status == "reviewed":
             if result.response is None or result.response.assessment != "complete":
@@ -406,15 +422,21 @@ async def review_candidate(state: Mapping[str, Any]) -> SemanticReviewFeedback |
                     update={
                         "status": "invalid_response",
                         "reason_code": "invalid_response",
+                        "rejection_detail": "incomplete_host_assessment",
                     }
                 )
             try:
                 findings = admit_findings(context, result.response)
-            except ValueError:
+            except ValueError as exc:
                 return feedback.model_copy(
                     update={
                         "status": "invalid_response",
                         "reason_code": "invalid_reference",
+                        "rejection_detail": (
+                            exc.detail
+                            if isinstance(exc, EvidenceAdmissionError)
+                            else None
+                        ),
                     }
                 )
             return feedback.model_copy(

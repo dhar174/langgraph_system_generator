@@ -105,3 +105,32 @@ def test_quality_corpus_preserves_pair_and_context_integrity():
         ]
     assert sum(size > MAX_INPUT_CHARS for size in context_sizes) == 1
     assert sum(46_000 <= size <= MAX_INPUT_CHARS for size in context_sizes) == 1
+
+
+def test_corrected_snapshot_routes_match_workflow_schema_and_executable_graph():
+    cases = {case["case_id"]: case for case in _load("cases.json")["cases"]}
+    for case_id, label, destination in (
+        ("c-8r4q", "billing", "technical"),
+        ("c-3q6z", "instructor_review", "award_credit"),
+    ):
+        candidate = cases[case_id]["candidate"]
+        state = candidate["model_state"]
+        content = state["generated_cells"][2]["content"]
+        schema = json.loads(
+            content.split("### Workflow Schema\n\n```json\n", 1)[1].split("\n```", 1)[0]
+        )
+        rendered = schema["conditional_edges"]
+        canonical = state["graph_exports"]["schema"]["conditional_edges"]
+        assert rendered == canonical
+        assert any(edge["branches"].get(label) == destination for edge in rendered)
+        notebook = _load(candidate["candidate_ref"])
+        assert content in [
+            "".join(cell["source"])
+            for cell in notebook["cells"]
+            if cell["cell_type"] == "markdown"
+        ]
+        assert any(
+            f'"{label}": "{destination}"' in cell["content"]
+            for cell in state["generated_cells"]
+            if cell["cell_type"] == "code"
+        )

@@ -31,6 +31,7 @@ from pydantic import BaseModel, ValidationError
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT / "src"))
+sys.path.insert(0, str(REPO_ROOT))
 
 from langgraph_system_generator.generator.state import (
     ArchitectureFeedback,
@@ -71,10 +72,14 @@ from langgraph_system_generator.qa.specialist_review import (
 )
 from langgraph_system_generator.utils.config import GenerationConfig, settings
 from langgraph_system_generator.utils.error_handling import GenerationError
-from langgraph_system_generator.utils.llm_endpoint_security import authorize_endpoint
+from langgraph_system_generator.utils.llm_endpoint_security import (
+    EndpointPolicy,
+    authorize_endpoint,
+)
 from langgraph_system_generator.utils.model_compatibility import (
     chat_openai_compatibility_kwargs,
 )
+from scripts.semantic_review_scoring import SYNTHETIC_MODEL_ID, score_files
 
 DEFAULT_DATASET = REPO_ROOT / "tests/evaluation/semantic_quality_v1/cases.json"
 DEFAULT_LABELS = (
@@ -87,7 +92,6 @@ MAX_CASES = 20
 MAX_REPETITIONS = 2
 MAX_ATTEMPTS = 40
 DEFAULT_REPETITIONS = 2
-SYNTHETIC_MODEL_ID = "semantic-review-synthetic-contract"
 
 # Only fields consumed by the real reviewer/context builder may cross this
 # boundary. Case IDs, splits, categories, rationales, and candidate references
@@ -553,7 +557,9 @@ def build_typed_state(
     return state  # type: ignore[return-value]
 
 
-def _endpoint_binding(config: GenerationConfig, effective_policy: str | None = None):
+def _endpoint_binding(
+    config: GenerationConfig, effective_policy: EndpointPolicy | None = None
+):
     policy = effective_policy or config.endpoint_policy
     try:
         return authorize_endpoint(config.api_base, policy)  # no credential lookup
@@ -611,7 +617,7 @@ def _config_payload(config: GenerationConfig) -> dict[str, Any]:
 
 def _new_generation_config(
     model: str | None,
-    endpoint_policy: str | None,
+    endpoint_policy: EndpointPolicy | None,
     api_base: str | None,
     output_cap: int | None,
 ) -> GenerationConfig:
@@ -1198,6 +1204,7 @@ def _record_base(
         "evidence_kind": evidence_kind,
         "case_status": "skipped",
         "reason_code": "not_attempted",
+        "rejection_detail": None,
         "attempt_reserved": False,
         "provider_dispatch_uncertain": False,
         "model_invocations": 0,
@@ -1242,6 +1249,7 @@ def _feedback_record(
         {
             "case_status": status,
             "reason_code": reason,
+            "rejection_detail": feedback.rejection_detail if feedback else None,
             "attempt_reserved": attempted,
             "model_invocations": feedback.model_invocations if feedback else 0,
             "http_request_count": http_request_count,
@@ -1398,6 +1406,8 @@ async def _execute_trials(
                             "reason_code": planned["preflight_reason_code"],
                         }
                     )
+                    if record["case_status"] == "invalid_reference":
+                        record["rejection_detail"] = "preflight_invalid_reference"
                     records.append(record)
                     journal.append({"event": "final", **record})
                     continue
@@ -1624,11 +1634,6 @@ def run_plan(
 
 
 def _score_command(args: argparse.Namespace) -> int:
-    if __package__:
-        from .semantic_review_scoring import score_files
-    else:
-        from semantic_review_scoring import score_files
-
     report = score_files(
         args.receipt,
         args.dataset,

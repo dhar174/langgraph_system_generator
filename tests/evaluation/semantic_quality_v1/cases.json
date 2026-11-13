@@ -2567,7 +2567,7 @@
             },
             {
               "cell_type": "markdown",
-              "content": "## Graph Overview\n\n```mermaid\nflowchart TD\n    START([START]) --> router\n    router[\"router: Handle router requests\"]\n    billing[\"billing: Handle billing requests\"]\n    technical[\"technical: Handle technical requests\"]\n    fallback[\"fallback: Handle fallback requests\"]\n    router -- \"billing\" --> technical\n    router -- \"technical\" --> technical\n    router -- \"fallback\" --> fallback\n    END([END])\n```\n\n### Workflow Schema\n\n```json\n{\n  \"architecture_type\": \"router\",\n  \"composition_strategy\": \"router_direct\",\n  \"labels\": {\n    \"title\": \"Router Workflow\"\n  },\n  \"state_schema\": {\n    \"messages\": \"Conversation messages\"\n  },\n  \"nodes\": [\n    {\n      \"name\": \"router\",\n      \"purpose\": \"Handle router requests\",\n      \"role\": null,\n      \"domain_terms\": [],\n      \"required_tools\": []\n    },\n    {\n      \"name\": \"billing\",\n      \"purpose\": \"Handle billing requests\",\n      \"role\": null,\n      \"domain_terms\": [],\n      \"required_tools\": []\n    },\n    {\n      \"name\": \"technical\",\n      \"purpose\": \"Handle technical requests\",\n      \"role\": null,\n      \"domain_terms\": [],\n      \"required_tools\": []\n    },\n    {\n      \"name\": \"fallback\",\n      \"purpose\": \"Handle fallback requests\",\n      \"role\": null,\n      \"domain_terms\": [],\n      \"required_tools\": []\n    }\n  ],\n  \"edges\": [],\n  \"conditional_edges\": [\n    {\n      \"from\": \"router\",\n      \"condition\": \"Select support destination\",\n      \"branches\": {\n        \"billing\": \"billing\",\n        \"technical\": \"technical\",\n        \"fallback\": \"fallback\"\n      },\n      \"routing_mechanism\": \"conditional_edge\",\n      \"guarded_cycle\": false\n    }\n  ],\n  \"command_routes\": [],\n  \"tool_reachability\": [],\n  \"domain_terms\": [\n    \"support\"\n  ],\n  \"compiled_graph_variable\": \"graph\",\n  \"entry_point\": \"router\",\n  \"checkpointing\": true,\n  \"terminal_nodes\": [\n    \"billing\",\n    \"technical\",\n    \"fallback\"\n  ],\n  \"validation_summary\": {\n    \"errors\": [],\n    \"warnings\": []\n  }\n}\n```",
+              "content": "## Graph Overview\n\n```mermaid\nflowchart TD\n    START([START]) --> router\n    router[\"router: Handle router requests\"]\n    billing[\"billing: Handle billing requests\"]\n    technical[\"technical: Handle technical requests\"]\n    fallback[\"fallback: Handle fallback requests\"]\n    router -- \"billing\" --> technical\n    router -- \"technical\" --> technical\n    router -- \"fallback\" --> fallback\n    END([END])\n```\n\n### Workflow Schema\n\n```json\n{\n  \"architecture_type\": \"router\",\n  \"composition_strategy\": \"router_direct\",\n  \"labels\": {\n    \"title\": \"Router Workflow\"\n  },\n  \"state_schema\": {\n    \"messages\": \"Conversation messages\"\n  },\n  \"nodes\": [\n    {\n      \"name\": \"router\",\n      \"purpose\": \"Handle router requests\",\n      \"role\": null,\n      \"domain_terms\": [],\n      \"required_tools\": []\n    },\n    {\n      \"name\": \"billing\",\n      \"purpose\": \"Handle billing requests\",\n      \"role\": null,\n      \"domain_terms\": [],\n      \"required_tools\": []\n    },\n    {\n      \"name\": \"technical\",\n      \"purpose\": \"Handle technical requests\",\n      \"role\": null,\n      \"domain_terms\": [],\n      \"required_tools\": []\n    },\n    {\n      \"name\": \"fallback\",\n      \"purpose\": \"Handle fallback requests\",\n      \"role\": null,\n      \"domain_terms\": [],\n      \"required_tools\": []\n    }\n  ],\n  \"edges\": [],\n  \"conditional_edges\": [\n    {\n      \"from\": \"router\",\n      \"condition\": \"Select support destination\",\n      \"branches\": {\n        \"billing\": \"technical\",\n        \"technical\": \"technical\",\n        \"fallback\": \"fallback\"\n      },\n      \"routing_mechanism\": \"conditional_edge\",\n      \"guarded_cycle\": false\n    }\n  ],\n  \"command_routes\": [],\n  \"tool_reachability\": [],\n  \"domain_terms\": [\n    \"support\"\n  ],\n  \"compiled_graph_variable\": \"graph\",\n  \"entry_point\": \"router\",\n  \"checkpointing\": true,\n  \"terminal_nodes\": [\n    \"billing\",\n    \"technical\",\n    \"fallback\"\n  ],\n  \"validation_summary\": {\n    \"errors\": [],\n    \"warnings\": []\n  }\n}\n```",
               "metadata": {},
               "section": "intro"
             },
@@ -3009,7 +3009,7 @@
               "category": "serialization",
               "check_name": "JSON Validity",
               "evidence": {
-                "path": "semantic_quality_v1/18d4f90d559149a8e6a7f1770386548cf1e64428f273dc7c0c238d4848cad427"
+                "path": "semantic_quality_v1/8ff4ffbc41eee6aaa827d46662e40714fa7d626e7ff64b4bb490fe53e0cdaa29"
               },
               "message": "Notebook JSON is valid and properly structured.",
               "passed": true,
@@ -3918,7 +3918,7 @@
               "category": "serialization",
               "check_name": "JSON Validity",
               "evidence": {
-                "path": "semantic_quality_v1/18d4f90d559149a8e6a7f1770386548cf1e64428f273dc7c0c238d4848cad427"
+                "path": "semantic_quality_v1/8ff4ffbc41eee6aaa827d46662e40714fa7d626e7ff64b4bb490fe53e0cdaa29"
               },
               "message": "Notebook JSON is valid and properly structured.",
               "passed": true,
@@ -5011,13 +5011,13 @@
           }
         },
         "provenance": {
-          "altered_bytes_sha256": "7f1a7c4eb867b23190d7231b727c7df563a75e9320506ca0be2b71715fd2aaa6",
-          "candidate_bytes_sha256": "7f1a7c4eb867b23190d7231b727c7df563a75e9320506ca0be2b71715fd2aaa6",
-          "candidate_identity": "18d4f90d559149a8e6a7f1770386548cf1e64428f273dc7c0c238d4848cad427",
+          "altered_bytes_sha256": "79655a6726479587ae1cafa9f56df1d774a90af5cb047e491a09dc2aa61f8d46",
+          "candidate_bytes_sha256": "79655a6726479587ae1cafa9f56df1d774a90af5cb047e491a09dc2aa61f8d46",
+          "candidate_identity": "8ff4ffbc41eee6aaa827d46662e40714fa7d626e7ff64b4bb490fe53e0cdaa29",
           "candidate_origin": "explicit_fixture_copy",
-          "candidate_sha256": "18d4f90d559149a8e6a7f1770386548cf1e64428f273dc7c0c238d4848cad427",
-          "context_chars": 40481,
-          "context_digest": "a5034de21554f3747536cec0f933e247357b99ce424ba7e399d97aba80a9b278",
+          "candidate_sha256": "8ff4ffbc41eee6aaa827d46662e40714fa7d626e7ff64b4bb490fe53e0cdaa29",
+          "context_chars": 40483,
+          "context_digest": "ec86f6d533f785b8d8f6cb0e62a28fe014fdf8c52a44dd9a322c4d3fc3706480",
           "docs_available": false,
           "fixture_origin": "explicit_generated_copy",
           "fixture_recipe": "tests/evaluation/semantic_quality_v1/build_fixtures.py",
@@ -9716,7 +9716,7 @@
             },
             {
               "cell_type": "markdown",
-              "content": "## Graph Overview\n\n```mermaid\nflowchart TD\n    START([START]) --> router\n    router[\"router: Choose the appropriate result from the stated rubric criteria.\"]\n    award_credit[\"award_credit: Award credit only when every required rubric criterion is present.\"]\n    instructor_review[\"instructor_review: Return each specific missing criterion for instructor review.\"]\n    fallback[\"fallback: Ask for the missing rubric or submission details.\"]\n    router -- \"award_credit\" --> award_credit\n    router -- \"instructor_review\" --> award_credit\n    router -- \"fallback\" --> fallback\n    END([END])\n```\n\n### Workflow Schema\n\n```json\n{\n  \"architecture_type\": \"router\",\n  \"composition_strategy\": \"router_direct\",\n  \"labels\": {\n    \"title\": \"Router Workflow\"\n  },\n  \"state_schema\": {\n    \"messages\": \"Conversation messages\"\n  },\n  \"nodes\": [\n    {\n      \"name\": \"router\",\n      \"purpose\": \"Choose the appropriate result from the stated rubric criteria.\",\n      \"role\": \"rubric_router\",\n      \"domain_terms\": [],\n      \"required_tools\": []\n    },\n    {\n      \"name\": \"award_credit\",\n      \"purpose\": \"Award credit only when every required rubric criterion is present.\",\n      \"role\": \"grader\",\n      \"domain_terms\": [\n        \"all criteria\"\n      ],\n      \"required_tools\": []\n    },\n    {\n      \"name\": \"instructor_review\",\n      \"purpose\": \"Return each specific missing criterion for instructor review.\",\n      \"role\": \"reviewer\",\n      \"domain_terms\": [\n        \"missing criteria\"\n      ],\n      \"required_tools\": []\n    },\n    {\n      \"name\": \"fallback\",\n      \"purpose\": \"Ask for the missing rubric or submission details.\",\n      \"role\": \"fallback\",\n      \"domain_terms\": [],\n      \"required_tools\": []\n    }\n  ],\n  \"edges\": [],\n  \"conditional_edges\": [\n    {\n      \"from\": \"router\",\n      \"condition\": \"All required criteria are present or one or more are missing.\",\n      \"branches\": {\n        \"award_credit\": \"award_credit\",\n        \"instructor_review\": \"instructor_review\",\n        \"fallback\": \"fallback\"\n      },\n      \"routing_mechanism\": \"conditional_edge\",\n      \"guarded_cycle\": false\n    }\n  ],\n  \"command_routes\": [],\n  \"tool_reachability\": [],\n  \"domain_terms\": [\n    \"writing rubric\",\n    \"required criteria\"\n  ],\n  \"compiled_graph_variable\": \"graph\",\n  \"entry_point\": \"router\",\n  \"checkpointing\": true,\n  \"terminal_nodes\": [\n    \"award_credit\",\n    \"instructor_review\",\n    \"fallback\"\n  ],\n  \"validation_summary\": {\n    \"errors\": [],\n    \"warnings\": []\n  }\n}\n```",
+              "content": "## Graph Overview\n\n```mermaid\nflowchart TD\n    START([START]) --> router\n    router[\"router: Choose the appropriate result from the stated rubric criteria.\"]\n    award_credit[\"award_credit: Award credit only when every required rubric criterion is present.\"]\n    instructor_review[\"instructor_review: Return each specific missing criterion for instructor review.\"]\n    fallback[\"fallback: Ask for the missing rubric or submission details.\"]\n    router -- \"award_credit\" --> award_credit\n    router -- \"instructor_review\" --> award_credit\n    router -- \"fallback\" --> fallback\n    END([END])\n```\n\n### Workflow Schema\n\n```json\n{\n  \"architecture_type\": \"router\",\n  \"composition_strategy\": \"router_direct\",\n  \"labels\": {\n    \"title\": \"Router Workflow\"\n  },\n  \"state_schema\": {\n    \"messages\": \"Conversation messages\"\n  },\n  \"nodes\": [\n    {\n      \"name\": \"router\",\n      \"purpose\": \"Choose the appropriate result from the stated rubric criteria.\",\n      \"role\": \"rubric_router\",\n      \"domain_terms\": [],\n      \"required_tools\": []\n    },\n    {\n      \"name\": \"award_credit\",\n      \"purpose\": \"Award credit only when every required rubric criterion is present.\",\n      \"role\": \"grader\",\n      \"domain_terms\": [\n        \"all criteria\"\n      ],\n      \"required_tools\": []\n    },\n    {\n      \"name\": \"instructor_review\",\n      \"purpose\": \"Return each specific missing criterion for instructor review.\",\n      \"role\": \"reviewer\",\n      \"domain_terms\": [\n        \"missing criteria\"\n      ],\n      \"required_tools\": []\n    },\n    {\n      \"name\": \"fallback\",\n      \"purpose\": \"Ask for the missing rubric or submission details.\",\n      \"role\": \"fallback\",\n      \"domain_terms\": [],\n      \"required_tools\": []\n    }\n  ],\n  \"edges\": [],\n  \"conditional_edges\": [\n    {\n      \"from\": \"router\",\n      \"condition\": \"All required criteria are present or one or more are missing.\",\n      \"branches\": {\n        \"award_credit\": \"award_credit\",\n        \"instructor_review\": \"award_credit\",\n        \"fallback\": \"fallback\"\n      },\n      \"routing_mechanism\": \"conditional_edge\",\n      \"guarded_cycle\": false\n    }\n  ],\n  \"command_routes\": [],\n  \"tool_reachability\": [],\n  \"domain_terms\": [\n    \"writing rubric\",\n    \"required criteria\"\n  ],\n  \"compiled_graph_variable\": \"graph\",\n  \"entry_point\": \"router\",\n  \"checkpointing\": true,\n  \"terminal_nodes\": [\n    \"award_credit\",\n    \"instructor_review\",\n    \"fallback\"\n  ],\n  \"validation_summary\": {\n    \"errors\": [],\n    \"warnings\": []\n  }\n}\n```",
               "metadata": {},
               "section": "intro"
             },
@@ -10149,7 +10149,7 @@
               "category": "serialization",
               "check_name": "JSON Validity",
               "evidence": {
-                "path": "semantic_quality_v1/217b4b8c286e52e310bcbb5b4dfdd2c031ed5477b7ed4f2dc2c4c38a628f337a"
+                "path": "semantic_quality_v1/50e58d7fee12f0c1fba7ca69bf1e6e01f7d92a0b83c5f24a10329e0def3bd731"
               },
               "message": "Notebook JSON is valid and properly structured.",
               "passed": true,
@@ -11009,7 +11009,7 @@
               "category": "serialization",
               "check_name": "JSON Validity",
               "evidence": {
-                "path": "semantic_quality_v1/217b4b8c286e52e310bcbb5b4dfdd2c031ed5477b7ed4f2dc2c4c38a628f337a"
+                "path": "semantic_quality_v1/50e58d7fee12f0c1fba7ca69bf1e6e01f7d92a0b83c5f24a10329e0def3bd731"
               },
               "message": "Notebook JSON is valid and properly structured.",
               "passed": true,
@@ -12051,13 +12051,13 @@
           }
         },
         "provenance": {
-          "altered_bytes_sha256": "56348b8b8b50845166542a6bfc3dab67c6749a3f7b4ce451e39abba2640eed36",
-          "candidate_bytes_sha256": "56348b8b8b50845166542a6bfc3dab67c6749a3f7b4ce451e39abba2640eed36",
-          "candidate_identity": "217b4b8c286e52e310bcbb5b4dfdd2c031ed5477b7ed4f2dc2c4c38a628f337a",
+          "altered_bytes_sha256": "ce214ba482131d9b7c7b960aa14dd53e6bf1b2e674a3511bdbc903699f5e417b",
+          "candidate_bytes_sha256": "ce214ba482131d9b7c7b960aa14dd53e6bf1b2e674a3511bdbc903699f5e417b",
+          "candidate_identity": "50e58d7fee12f0c1fba7ca69bf1e6e01f7d92a0b83c5f24a10329e0def3bd731",
           "candidate_origin": "explicit_fixture_copy",
-          "candidate_sha256": "217b4b8c286e52e310bcbb5b4dfdd2c031ed5477b7ed4f2dc2c4c38a628f337a",
-          "context_chars": 41630,
-          "context_digest": "e63d6bde7be23fa95ec62caf4e1e2525ecef5b51ed4ccbf431041c39aafc8494",
+          "candidate_sha256": "50e58d7fee12f0c1fba7ca69bf1e6e01f7d92a0b83c5f24a10329e0def3bd731",
+          "context_chars": 41625,
+          "context_digest": "18b6a401f2584e5580188bb5c127be5b648658a25c789c02191b6a84d6dae673",
           "docs_available": false,
           "fixture_origin": "explicit_generated_copy",
           "fixture_recipe": "tests/evaluation/semantic_quality_v1/build_fixtures.py",
@@ -28508,7 +28508,7 @@
     }
   ],
   "dataset_id": "semantic_quality_v1",
-  "dataset_version": "1.0.0",
+  "dataset_version": "1.0.1",
   "model_state_fields": [
     "user_prompt",
     "requirements_messages",

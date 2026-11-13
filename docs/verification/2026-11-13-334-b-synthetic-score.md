@@ -1,5 +1,7 @@
 # Semantic reviewer score report
 
+Historical synthetic score generated at `7dbb3ec67728c30a4a58606c475513ed35c08b16` on corpus `1.0.0`.
+
 - Evidence kind: `synthetic-contract`
 - Claim scope: `synthetic_contract_evidence_only_live_quality_not_measured`
 - Accuracy claim allowed: `false`

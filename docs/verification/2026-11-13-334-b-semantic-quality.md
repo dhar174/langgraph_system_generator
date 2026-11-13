@@ -1,5 +1,7 @@
 # #334-B offline verification
 
+Historical offline verification for the exact revisions listed below. See the follow-up receipt for the source-aware type check and the merged pilot.
+
 Part of #334; related to #129. The study and the Luna request migration
 were exercised offline. Live semantic reviewer quality remains unmeasured.
 
