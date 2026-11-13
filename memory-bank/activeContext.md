@@ -1,12 +1,16 @@
 ## Current Work Focus
 
-Current status reconciled 2026-10-23 against fetched main `4f17c2d`.
+The broader v1.1 reconciliation used main `4f17c2d` on 2026-10-23.
+The #334-B status below was refreshed against main `6027db8` on 2026-11-13.
 The [current v1.1 plan](../plans/current-plan.md) owns the acceptance matrix.
 Charles deferred #383 (open, non-blocking); no usage ledger/pricing engine or
 per-generation spending cap is delivered. PR #401 delivered the opt-in advisory
-Requirements/Domain Fidelity Reviewer. #334-B prepares the local quality study
-and retains later blocking and repair criteria. #129 stays open for controlled comparisons
-without a #383 prerequisite. #335 remains later. #380 remains open for real-cloud
+Requirements/Domain Fidelity Reviewer. #334-B delivered the
+[quality study](../docs/semantic-review-quality.md) in #402, completed one
+owner-adjudicated pilot on corpus `1.0.0`, and shipped rejection diagnostics and
+corpus `1.0.1` corrections in #403 (merged `6027db8`). The corrected corpus has
+offline contract evidence. #334 remains open for later acceptance criteria.
+#129 stays open for controlled comparisons without a #383 prerequisite. #335 remains later. #380 remains open for real-cloud
 staging and owner acceptance; SDK/Firestore-emulator evidence is separate.
 
 - #381-B integrates explicit trusted fixture execution into v2 outcomes in new
@@ -211,8 +215,9 @@ staging and owner acceptance; SDK/Firestore-emulator evidence is separate.
 
 ## Immediate Next Steps
 
-- Qualify the advisory reviewer using the [#334-B local quality study](../docs/semantic-review-quality.md).
-  Live quality awaits a separately approved pilot.
+- Use the [#334-B pilot and follow-up receipt](../docs/verification/334-b-follow-up.md)
+  to assess the advisory reviewer. Any new live measurement on corpus `1.0.1`
+  requires a fresh plan and separate owner approval.
 - Keep #129 open for controlled comparisons and #335 as later work. #383 is
   deferred, not a prerequisite. Keep #380 real-cloud acceptance separate.
 - Keep public docs, examples, and onboarding copy aligned with the current
