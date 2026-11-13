@@ -18,14 +18,11 @@ token ledger is implemented by this documentation assignment.
 1. Retain completed #379 endpoint isolation, #382 truthful outcomes and #381's
    explicit controlled-fixture evaluator. Do not reimplement them because broader
    execution or semantic verification is absent.
-2. **Next: #334**, one opt-in Requirements/Domain Fidelity Reviewer. First specify
-   typed inputs and findings (constraint/candidate/check IDs, evidence, suggestions,
-   source/context references, attempt and reviewer version), gate it off by default,
-   and bound calls, input/output, concurrency and time. Disabled/stub paths remain
-   offline. First-slice findings are advisory-only: no repair, packaging block or
-   automatic semantic rewrite. Compare known fidelity failures and false positives
-   using deterministic fixtures before expanding the panel. The umbrella's later
-   blocking/repair and docs-alignment acceptance criteria remain required.
+2. **#334-A delivered in PR #401.** The opt-in Requirements/Domain Fidelity
+   Reviewer issues advisory findings after final candidate selection. #334-B
+   prepares the [reference-labelled quality study][semantic-study]. Live
+   reviewer quality has yet to be measured. The umbrella still tracks later
+   blocking, repair, and docs-alignment acceptance criteria.
 3. Keep #129 open for controlled critique/revise versus judge quality comparisons:
    fixed tasks, prompts, rubric, model/version/date, latency and limitations.
    Existing structural examples are not empirical quality results. Provider-reported
@@ -89,7 +86,7 @@ All dispositions refer to merged source, not this unmerged documentation branch.
 | [#382][i382]: independent outcomes, final-candidate QA, diagnostic exports and surface parity | `generator/{outcome_models,graph,nodes}.py`, `qa/outcomes.py`; `tests/unit/test_generation_outcomes.py` | #397 | PR receipt: final full 1,472 passed/8 skipped; SDK 241/241; all-five-architecture stub exports; current candidate and final-repair tests. | Already closed; v1 delivered |
 | [#381][i381]: generated behavior, cases, scope, offline controls, coherence | `qa/execution_{evaluation,probe,qualification}.py`, `qa/evaluated_bundle.py` | #398-#399 | [Receipt][execution]: `11ef72a` 102 focused, 3 cases/110 assertions, 4 controls. Full 1,558/7 skips is `185b073`; final hosted checks are separate. | Already closed; controlled-fixture scope |
 | [#383][i383]: usage/price/budget infrastructure | Only reserved `utils/config.py::Settings.default_budget_tokens`; no aggregate enforcement | None | Source search finds declaration only; no collector/pricing/ledger or per-generation cap delivered. | Open, deferred, non-blocking |
-| [#334][i334]: first semantic reviewer, later panel and repair routing | Existing `qa/registry.py` is an extension seam, not a delivered reviewer | None | Typed, gated advisory-only first slice is next; later blocking/repair and docs-alignment criteria remain. | Open, Ready |
+| [#334][i334]: first semantic reviewer, later panel and repair routing | Default-off advisory review after final candidate selection | [#401](https://github.com/dhar174/langgraph_system_generator/pull/401) | #334-B prepares the local study. Live quality awaits a separately approved pilot. Later blocking, repair, and docs-alignment criteria remain. | Open |
 | [#129][i129]: repeatable empirical quality/usage comparison | Existing benchmark examples are structural only | None for complete comparison | Preserve rubric, repeatability, quality, latency and usage provenance; provider usage may supplement later. | Open; no #383 prerequisite |
 | [#335][i335]: multi-tier outer-agent memory | Existing RAG/contributor memory does not meet issue | None | Design/backend/retrieval/retention/privacy and runtime integration remain future work. | Open, later |
 | Wave 5 #60/#63/#64/#202 | `patterns/{router,critique_loops,subagents,hybrid}.py`, `RequirementsAnalyst.analyze_dialog` | #361 | Historical 167 pattern-focused, 115 generator/API, 646 unit, 764 full/3 skipped; [TASK005][wave5]. Verified merged; no reimplementation. | Complete |
@@ -133,7 +130,7 @@ Dated receipts are preserved without relabeling tested commits as merge commits.
 Use [dhar174 Project #3](https://github.com/users/dhar174/projects/3)'s existing
 Status, Priority and Notes fields. No new field taxonomy, dates, epics or projects.
 Previously accepted closed implementation (#379/#381/#382) remains Done; #334
-is Ready/next; #383 is Backlog/deferred/non-blocking; #335 Backlog/later;
+remains open for the quality study and later criteria; #383 is Backlog/deferred/non-blocking; #335 Backlog/later;
 #380 In progress/qualification pending. #386-#391 remain In progress with their
 criterion-level validation residuals;
 this reconciliation closes none of them.
@@ -178,6 +175,7 @@ proposed docs, obtain read-only closure/capability review and stop before merge.
 [i382]: https://github.com/dhar174/langgraph_system_generator/issues/382
 [i383]: https://github.com/dhar174/langgraph_system_generator/issues/383
 [i334]: https://github.com/dhar174/langgraph_system_generator/issues/334
+[semantic-study]: ../docs/semantic-review-quality.md
 [i129]: https://github.com/dhar174/langgraph_system_generator/issues/129
 [i335]: https://github.com/dhar174/langgraph_system_generator/issues/335
 [i386]: https://github.com/dhar174/langgraph_system_generator/issues/386

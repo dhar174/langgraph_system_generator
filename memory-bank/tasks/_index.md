@@ -2,8 +2,9 @@
 
 ## Next / Pending
 
-- #334: one opt-in advisory Requirements/Domain Fidelity Reviewer, then controlled
-  comparisons under #129; retain later blocking/repair acceptance criteria.
+- #334-A advisory reviewer delivered in #401. #334-B prepares the
+  [semantic quality study](../../docs/semantic-review-quality.md).
+  Later blocking and repair criteria remain open.
 - #380: real-cloud qualification and owner acceptance remain open.
 - #383: deferred, open and non-blocking; #335: later.
 - Use the [current v1.1 acceptance matrix](../../plans/current-plan.md).
