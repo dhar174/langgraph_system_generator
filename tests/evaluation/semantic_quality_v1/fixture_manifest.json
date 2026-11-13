@@ -1,9 +1,9 @@
 {
-  "annotations_sha256": "874327f1d1a154ea2bb16dd82f59aff973ee35182c0abd25c0d46b9e635729f6",
+  "annotations_sha256": "c24c72ac0ed2b9d058cbaa7239e98cc0f17879a572892b3689bd5a5bacd6c2f5",
   "dataset_id": "semantic_quality_v1",
   "dataset_sha256": "f461006e14af06a0a91fa17aa621932750fb3ae98ba4439a7c05fcd89899412d",
   "fixture_recipe": "tests/evaluation/semantic_quality_v1/build_fixtures.py",
-  "fixture_recipe_sha256": "8ceb3977f2f45236d826b3725a1588d2be765c27cf2352cd09193c1653a68a13",
+  "fixture_recipe_sha256": "acd7ac16bc61659364f55e1b28a3e1d635d01d3312890e4ba3bbf02ce397ee0a",
   "generation": {
     "ambient_credentials": "removed; dotenv disabled; synthetic unsent preflight sentinel only",
     "generation_model_dependencies": "deterministic fake constructors at established ChatOpenAI seams",
@@ -31,7 +31,7 @@
     "src/langgraph_system_generator/qa/specialist_review.py": "bcc96f1ccafbc85dd6a92a7526b8a7aba919229df797d78a4c320b2dfd80b869",
     "src/langgraph_system_generator/qa/validators.py": "6be43e67cb22964ebb5ba754aad9a122965ab8629a42c6beaa3619d5d83a71b9"
   },
-  "labels_sha256": "5b6066a81d4c8bfa9c2be744fffe81665d4b8cc0b5aea31ccc7f0ecead9c00b1",
+  "labels_sha256": "26e06ee9a1a5e8ec994b03b06c922c3518ba0b54d92fcd639c6660c5630323b8",
   "limitations": [
     "Fake generation dependencies establish fixture provenance and static contract evidence only.",
     "No notebook cell was executed while building the dataset.",

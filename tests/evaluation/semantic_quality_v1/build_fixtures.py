@@ -514,6 +514,63 @@ PAIR_LABELS: dict[str, dict[str, Any]] = {
     },
 }
 
+INDEPENDENT_BASELINE_NOTES: dict[str, list[dict[str, Any]]] = {
+    "c-2m7v": [
+        {
+            "rule_id": "domain_architecture_alignment",
+            "disposition": "confirmed_nonblocking_baseline_concern",
+            "rationale": (
+                "The graph-code comment mentions Command routes, but the graph "
+                "implements conditional edges only."
+            ),
+            "source_locations": [
+                {
+                    "source_family": "cell",
+                    "source_id": "cell:18",
+                    "location_hint": "candidate/cells/18",
+                }
+            ],
+        },
+        {
+            "rule_id": "tool_reachability",
+            "disposition": "outside_target_scope",
+            "rationale": (
+                "The static warning reports a calculator passed to an unregistered "
+                "ToolNode; the request does not require calculator behavior."
+            ),
+            "source_locations": [
+                {
+                    "source_family": "cell",
+                    "source_id": "cell:11",
+                    "location_hint": "candidate/cells/11",
+                },
+                {
+                    "source_family": "cell",
+                    "source_id": "cell:12",
+                    "location_hint": "candidate/cells/12",
+                },
+            ],
+        },
+    ],
+    "c-7b9k": [
+        {
+            "rule_id": "domain_architecture_alignment",
+            "disposition": "confirmed_nonblocking_baseline_concern",
+            "rationale": (
+                "The graph-code comment mentions Command routes, but the graph "
+                "implements conditional edges only."
+            ),
+            "source_locations": [
+                {
+                    "source_family": "cell",
+                    "source_id": "cell:15",
+                    "location_hint": "candidate/cells/15",
+                }
+            ],
+        },
+    ],
+}
+
 
 def isolate_process_environment() -> None:
     """Prevent ambient credentials and dotenv values from entering generation."""
@@ -1228,8 +1285,11 @@ def _case_and_label(
             or {
                 "kind": "clean" if clean else "defect",
                 "expected_findings": (
-                    "no_supported_concern" if clean else "one_to_one_defect_match"
+                    "no_supported_concern_for_target_requirement"
+                    if clean
+                    else "one_to_one_defect_match"
                 ),
+                "scope": "paired_target_requirement" if clean else "targeted_defect",
             }
         ),
         "defects": [],
@@ -1255,18 +1315,23 @@ def _case_and_label(
             else str(state.get("user_prompt", ""))
         )
         label["clean_reference"] = {
+            "scope": "paired_target_requirement_only",
             "requirement": clean_requirement,
             "source_locations": source_locations,
             "expected_categories": [],
             "rationale": (
-                "The paired clean candidate retains the stated behavior in its "
-                "current notebook state and executable path."
+                "This reference is limited to the paired target requirement. "
+                "Nonblocking deterministic QA warnings remain recorded separately "
+                "and are not erased by this clean label."
             ),
             "ambiguity_policy": (
-                "Record a concern only when the candidate contradicts or omits a "
-                "stated requirement; do not add outside expectations."
+                "Count only concerns that contradict or omit this paired "
+                "requirement. Preserve unrelated static warnings separately; do "
+                "not add outside expectations."
             ),
         }
+        if case_id in INDEPENDENT_BASELINE_NOTES:
+            label["baseline_notes"] = copy.deepcopy(INDEPENDENT_BASELINE_NOTES[case_id])
     return case, label
 
 
@@ -1876,7 +1941,10 @@ def build(output_dir: Path | None = None) -> dict[str, str]:
         "schema_version": 1,
         "dataset_id": DATASET_ID,
         "label_version": "1.0.0-provisional",
-        "label_origin": "AI-generated provisional labels; pending independent AI review and owner adjudication.",
+        "label_origin": (
+            "AI-generated and independently AI-reviewed by an AI agent; "
+            "owner/human adjudication remains pending."
+        ),
         "annotation_schema_version": 1,
         "cases": labels,
     }

@@ -17,12 +17,44 @@
         "runtime_execution": "not_run",
         "validator": "NotebookValidator.validate_notebook"
       },
+      "baseline_notes": [
+        {
+          "disposition": "confirmed_nonblocking_baseline_concern",
+          "rationale": "The graph-code comment mentions Command routes, but the graph implements conditional edges only.",
+          "rule_id": "domain_architecture_alignment",
+          "source_locations": [
+            {
+              "location_hint": "candidate/cells/18",
+              "source_family": "cell",
+              "source_id": "cell:18"
+            }
+          ]
+        },
+        {
+          "disposition": "outside_target_scope",
+          "rationale": "The static warning reports a calculator passed to an unregistered ToolNode; the request does not require calculator behavior.",
+          "rule_id": "tool_reachability",
+          "source_locations": [
+            {
+              "location_hint": "candidate/cells/11",
+              "source_family": "cell",
+              "source_id": "cell:11"
+            },
+            {
+              "location_hint": "candidate/cells/12",
+              "source_family": "cell",
+              "source_id": "cell:12"
+            }
+          ]
+        }
+      ],
       "case_id": "c-2m7v",
       "clean_reference": {
-        "ambiguity_policy": "Record a concern only when the candidate contradicts or omits a stated requirement; do not add outside expectations.",
+        "ambiguity_policy": "Count only concerns that contradict or omit this paired requirement. Preserve unrelated static warnings separately; do not add outside expectations.",
         "expected_categories": [],
-        "rationale": "The paired clean candidate retains the stated behavior in its current notebook state and executable path.",
+        "rationale": "This reference is limited to the paired target requirement. Nonblocking deterministic QA warnings remain recorded separately and are not erased by this clean label.",
         "requirement": "Annual membership-charge questions must route to billing; account-access questions must route to technical help.",
+        "scope": "paired_target_requirement_only",
         "source_locations": [
           {
             "location_hint": "user_prompt",
@@ -40,8 +72,9 @@
       "docs_available": false,
       "eligibility": "eligible",
       "expectation": {
-        "expected_findings": "no_supported_concern",
-        "kind": "clean"
+        "expected_findings": "no_supported_concern_for_target_requirement",
+        "kind": "clean",
+        "scope": "paired_target_requirement"
       },
       "missing_docs_expectation": "docs_alignment_not_assessed",
       "pair_id": "p-3k8m",
@@ -111,10 +144,11 @@
       },
       "case_id": "c-5w2j",
       "clean_reference": {
-        "ambiguity_policy": "Record a concern only when the candidate contradicts or omits a stated requirement; do not add outside expectations.",
+        "ambiguity_policy": "Count only concerns that contradict or omit this paired requirement. Preserve unrelated static warnings separately; do not add outside expectations.",
         "expected_categories": [],
-        "rationale": "The paired clean candidate retains the stated behavior in its current notebook state and executable path.",
+        "rationale": "This reference is limited to the paired target requirement. Nonblocking deterministic QA warnings remain recorded separately and are not erased by this clean label.",
         "requirement": "A temperature-sensitive parcel without a scan for six hours must open a manual trace before dispatch and flag the handoff for human review.",
+        "scope": "paired_target_requirement_only",
         "source_locations": [
           {
             "location_hint": "user_prompt",
@@ -132,8 +166,9 @@
       "docs_available": false,
       "eligibility": "eligible",
       "expectation": {
-        "expected_findings": "no_supported_concern",
-        "kind": "clean"
+        "expected_findings": "no_supported_concern_for_target_requirement",
+        "kind": "clean",
+        "scope": "paired_target_requirement"
       },
       "missing_docs_expectation": "docs_alignment_not_assessed",
       "pair_id": "p-6f2b",
@@ -200,12 +235,27 @@
         "runtime_execution": "not_run",
         "validator": "NotebookValidator.validate_notebook"
       },
+      "baseline_notes": [
+        {
+          "disposition": "confirmed_nonblocking_baseline_concern",
+          "rationale": "The graph-code comment mentions Command routes, but the graph implements conditional edges only.",
+          "rule_id": "domain_architecture_alignment",
+          "source_locations": [
+            {
+              "location_hint": "candidate/cells/15",
+              "source_family": "cell",
+              "source_id": "cell:15"
+            }
+          ]
+        }
+      ],
       "case_id": "c-7b9k",
       "clean_reference": {
-        "ambiguity_policy": "Record a concern only when the candidate contradicts or omits a stated requirement; do not add outside expectations.",
+        "ambiguity_policy": "Count only concerns that contradict or omit this paired requirement. Preserve unrelated static warnings separately; do not add outside expectations.",
         "expected_categories": [],
-        "rationale": "The paired clean candidate retains the stated behavior in its current notebook state and executable path.",
+        "rationale": "This reference is limited to the paired target requirement. Nonblocking deterministic QA warnings remain recorded separately and are not erased by this clean label.",
         "requirement": "Credit is awarded only when every required rubric criterion is present; otherwise missing criteria must be returned for instructor review.",
+        "scope": "paired_target_requirement_only",
         "source_locations": [
           {
             "location_hint": "user_prompt",
@@ -223,8 +273,9 @@
       "docs_available": false,
       "eligibility": "eligible",
       "expectation": {
-        "expected_findings": "no_supported_concern",
-        "kind": "clean"
+        "expected_findings": "no_supported_concern_for_target_requirement",
+        "kind": "clean",
+        "scope": "paired_target_requirement"
       },
       "missing_docs_expectation": "docs_alignment_not_assessed",
       "pair_id": "p-4t2n",
@@ -293,10 +344,11 @@
       },
       "case_id": "c-1h5x",
       "clean_reference": {
-        "ambiguity_policy": "Record a concern only when the candidate contradicts or omits a stated requirement; do not add outside expectations.",
+        "ambiguity_policy": "Count only concerns that contradict or omit this paired requirement. Preserve unrelated static warnings separately; do not add outside expectations.",
         "expected_categories": [],
-        "rationale": "The paired clean candidate retains the stated behavior in its current notebook state and executable path.",
+        "rationale": "This reference is limited to the paired target requirement. Nonblocking deterministic QA warnings remain recorded separately and are not erased by this clean label.",
         "requirement": "The final brief must include the field-note specialist's contribution as well as the archive-review specialist's contribution.",
+        "scope": "paired_target_requirement_only",
         "source_locations": [
           {
             "location_hint": "user_prompt",
@@ -314,8 +366,9 @@
       "docs_available": false,
       "eligibility": "eligible",
       "expectation": {
-        "expected_findings": "no_supported_concern",
-        "kind": "clean"
+        "expected_findings": "no_supported_concern_for_target_requirement",
+        "kind": "clean",
+        "scope": "paired_target_requirement"
       },
       "missing_docs_expectation": "docs_alignment_not_assessed",
       "pair_id": "p-9m5d",
@@ -380,10 +433,11 @@
       },
       "case_id": "c-9p3l",
       "clean_reference": {
-        "ambiguity_policy": "Record a concern only when the candidate contradicts or omits a stated requirement; do not add outside expectations.",
+        "ambiguity_policy": "Count only concerns that contradict or omit this paired requirement. Preserve unrelated static warnings separately; do not add outside expectations.",
         "expected_categories": [],
-        "rationale": "The paired clean candidate retains the stated behavior in its current notebook state and executable path.",
+        "rationale": "This reference is limited to the paired target requirement. Nonblocking deterministic QA warnings remain recorded separately and are not erased by this clean label.",
         "requirement": "The notebook may draft a reminder but must not claim it sends a notification or contacts a coordinator.",
+        "scope": "paired_target_requirement_only",
         "source_locations": [
           {
             "location_hint": "user_prompt",
@@ -401,8 +455,9 @@
       "docs_available": false,
       "eligibility": "eligible",
       "expectation": {
-        "expected_findings": "no_supported_concern",
-        "kind": "clean"
+        "expected_findings": "no_supported_concern_for_target_requirement",
+        "kind": "clean",
+        "scope": "paired_target_requirement"
       },
       "missing_docs_expectation": "docs_alignment_not_assessed",
       "pair_id": "p-8c1v",
@@ -467,10 +522,11 @@
       },
       "case_id": "c-4m8s",
       "clean_reference": {
-        "ambiguity_policy": "Record a concern only when the candidate contradicts or omits a stated requirement; do not add outside expectations.",
+        "ambiguity_policy": "Count only concerns that contradict or omit this paired requirement. Preserve unrelated static warnings separately; do not add outside expectations.",
         "expected_categories": [],
-        "rationale": "The paired clean candidate retains the stated behavior in its current notebook state and executable path.",
+        "rationale": "This reference is limited to the paired target requirement. Nonblocking deterministic QA warnings remain recorded separately and are not erased by this clean label.",
         "requirement": "The supplied DeliveryWindow v1 documentation says local_window is already local wall-clock time and must not receive a second offset conversion.",
+        "scope": "paired_target_requirement_only",
         "source_locations": [
           {
             "location_hint": "user_prompt",
@@ -493,8 +549,9 @@
       "docs_available": true,
       "eligibility": "eligible",
       "expectation": {
-        "expected_findings": "no_supported_concern",
-        "kind": "clean"
+        "expected_findings": "no_supported_concern_for_target_requirement",
+        "kind": "clean",
+        "scope": "paired_target_requirement"
       },
       "missing_docs_expectation": null,
       "pair_id": "p-0f6q",
@@ -564,10 +621,11 @@
       },
       "case_id": "c-8t6j",
       "clean_reference": {
-        "ambiguity_policy": "Record a concern only when the candidate contradicts or omits a stated requirement; do not add outside expectations.",
+        "ambiguity_policy": "Count only concerns that contradict or omit this paired requirement. Preserve unrelated static warnings separately; do not add outside expectations.",
         "expected_categories": [],
-        "rationale": "The paired clean candidate retains the stated behavior in its current notebook state and executable path.",
+        "rationale": "This reference is limited to the paired target requirement. Nonblocking deterministic QA warnings remain recorded separately and are not erased by this clean label.",
         "requirement": "Every feedback note and the previous revision summary must remain in session history for the following turn.",
+        "scope": "paired_target_requirement_only",
         "source_locations": [
           {
             "location_hint": "user_prompt",
@@ -585,8 +643,9 @@
       "docs_available": false,
       "eligibility": "eligible",
       "expectation": {
-        "expected_findings": "no_supported_concern",
-        "kind": "clean"
+        "expected_findings": "no_supported_concern_for_target_requirement",
+        "kind": "clean",
+        "scope": "paired_target_requirement"
       },
       "missing_docs_expectation": "docs_alignment_not_assessed",
       "pair_id": "p-5v0h",
@@ -651,10 +710,11 @@
       },
       "case_id": "c-6g2r",
       "clean_reference": {
-        "ambiguity_policy": "Record a concern only when the candidate contradicts or omits a stated requirement; do not add outside expectations.",
+        "ambiguity_policy": "Count only concerns that contradict or omit this paired requirement. Preserve unrelated static warnings separately; do not add outside expectations.",
         "expected_categories": [],
-        "rationale": "The paired clean candidate retains the stated behavior in its current notebook state and executable path.",
+        "rationale": "This reference is limited to the paired target requirement. Nonblocking deterministic QA warnings remain recorded separately and are not erased by this clean label.",
         "requirement": "Direct field observations must be primary evidence; secondary summaries are follow-up leads only.",
+        "scope": "paired_target_requirement_only",
         "source_locations": [
           {
             "location_hint": "user_prompt",
@@ -672,8 +732,9 @@
       "docs_available": false,
       "eligibility": "eligible",
       "expectation": {
-        "expected_findings": "no_supported_concern",
-        "kind": "clean"
+        "expected_findings": "no_supported_concern_for_target_requirement",
+        "kind": "clean",
+        "scope": "paired_target_requirement"
       },
       "missing_docs_expectation": "docs_alignment_not_assessed",
       "pair_id": "p-1y7a",
@@ -854,7 +915,7 @@
     }
   ],
   "dataset_id": "semantic_quality_v1",
-  "label_origin": "AI-generated provisional labels; pending independent AI review and owner adjudication.",
+  "label_origin": "AI-generated and independently AI-reviewed by an AI agent; owner/human adjudication remains pending.",
   "label_version": "1.0.0-provisional",
   "schema_version": 1
 }
