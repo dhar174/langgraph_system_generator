@@ -2,15 +2,19 @@
 
 ## Next / Pending
 
-- #334-A advisory reviewer delivered in #401. #334-B prepares the
-  [semantic quality study](../../docs/semantic-review-quality.md).
-  Later blocking and repair criteria remain open.
+- #334 remains open for later blocking, repair, and docs-alignment criteria.
+  Any new live measurement requires a separately approved plan.
 - #380: real-cloud qualification and owner acceptance remain open.
 - #383: deferred, open and non-blocking; #335: later.
 - Use the [current v1.1 acceptance matrix](../../plans/current-plan.md).
 
 ## Completed
 
+- #334-A advisory reviewer delivered in #401. #334-B delivered the
+  [semantic quality study](../../docs/semantic-review-quality.md) in #402,
+  completed the owner-adjudicated corpus `1.0.0` pilot, and shipped the
+  [diagnostics and corpus `1.0.1` follow-up](../../docs/verification/334-b-follow-up.md)
+  in #403 (merged `6027db8`).
 - [TASK009 - Execution outcome integration (#381-B)](TASK009-execution-outcome-integration.md) — PR #399 merged `4f17c2d`.
 - [TASK008 - Truthful generation outcomes (#382)](TASK008-truthful-generation-outcomes.md) — PR #397 merged `9cb1aad`.
 - [TASK005 - Pattern/intake modernization wave](TASK005-pattern-intake-modernization-wave.md) — PR #361 merged `5c239e5`.

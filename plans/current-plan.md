@@ -8,6 +8,7 @@
 Reconcile v1.1 tracking against fetched `origin/main`
 `4f17c2d06c9156674da394eae7715b656723400a` and merged implementation.
 This is the current status matrix; Memory Bank and feature guides link here.
+The #334-B row was refreshed on 2026-11-13 against main `6027db8`.
 Charles deferred #383: it remains **open, later, and not a v1.1 release blocker**.
 Its original usage/price/budget ambitions remain future scope, not delivered work.
 No usage collector, pricing engine, per-generation monetary budget or general
@@ -20,9 +21,11 @@ token ledger is implemented by this documentation assignment.
    execution or semantic verification is absent.
 2. **#334-A delivered in PR #401.** The opt-in Requirements/Domain Fidelity
    Reviewer issues advisory findings after final candidate selection. #334-B
-   prepares the [reference-labelled quality study][semantic-study]. Live
-   reviewer quality has yet to be measured. The umbrella still tracks later
-   blocking, repair, and docs-alignment acceptance criteria.
+   delivered the [reference-labelled quality study][semantic-study] in #402,
+   completed an owner-adjudicated pilot on corpus `1.0.0`, and delivered rejection
+   diagnostics and corpus `1.0.1` corrections in #403. The [pilot evidence][semantic-followup]
+   is descriptive. A new live run on `1.0.1` requires its own approved plan.
+   The umbrella still tracks later blocking, repair, and docs-alignment criteria.
 3. Keep #129 open for controlled critique/revise versus judge quality comparisons:
    fixed tasks, prompts, rubric, model/version/date, latency and limitations.
    Existing structural examples are not empirical quality results. Provider-reported
@@ -86,7 +89,7 @@ All dispositions refer to merged source, not this unmerged documentation branch.
 | [#382][i382]: independent outcomes, final-candidate QA, diagnostic exports and surface parity | `generator/{outcome_models,graph,nodes}.py`, `qa/outcomes.py`; `tests/unit/test_generation_outcomes.py` | #397 | PR receipt: final full 1,472 passed/8 skipped; SDK 241/241; all-five-architecture stub exports; current candidate and final-repair tests. | Already closed; v1 delivered |
 | [#381][i381]: generated behavior, cases, scope, offline controls, coherence | `qa/execution_{evaluation,probe,qualification}.py`, `qa/evaluated_bundle.py` | #398-#399 | [Receipt][execution]: `11ef72a` 102 focused, 3 cases/110 assertions, 4 controls. Full 1,558/7 skips is `185b073`; final hosted checks are separate. | Already closed; controlled-fixture scope |
 | [#383][i383]: usage/price/budget infrastructure | Only reserved `utils/config.py::Settings.default_budget_tokens`; no aggregate enforcement | None | Source search finds declaration only; no collector/pricing/ledger or per-generation cap delivered. | Open, deferred, non-blocking |
-| [#334][i334]: first semantic reviewer, later panel and repair routing | Default-off advisory review after final candidate selection | [#401](https://github.com/dhar174/langgraph_system_generator/pull/401) | #334-B prepares the local study. Live quality awaits a separately approved pilot. Later blocking, repair, and docs-alignment criteria remain. | Open |
+| [#334][i334]: first semantic reviewer, later panel and repair routing | Default-off advisory review after final candidate selection | #401, #402, #403 | [Adjudicated corpus `1.0.0` pilot and offline `1.0.1` follow-up][semantic-followup]. Later blocking, repair, and docs-alignment criteria remain. | Open |
 | [#129][i129]: repeatable empirical quality/usage comparison | Existing benchmark examples are structural only | None for complete comparison | Preserve rubric, repeatability, quality, latency and usage provenance; provider usage may supplement later. | Open; no #383 prerequisite |
 | [#335][i335]: multi-tier outer-agent memory | Existing RAG/contributor memory does not meet issue | None | Design/backend/retrieval/retention/privacy and runtime integration remain future work. | Open, later |
 | Wave 5 #60/#63/#64/#202 | `patterns/{router,critique_loops,subagents,hybrid}.py`, `RequirementsAnalyst.analyze_dialog` | #361 | Historical 167 pattern-focused, 115 generator/API, 646 unit, 764 full/3 skipped; [TASK005][wave5]. Verified merged; no reimplementation. | Complete |
@@ -130,7 +133,7 @@ Dated receipts are preserved without relabeling tested commits as merge commits.
 Use [dhar174 Project #3](https://github.com/users/dhar174/projects/3)'s existing
 Status, Priority and Notes fields. No new field taxonomy, dates, epics or projects.
 Previously accepted closed implementation (#379/#381/#382) remains Done; #334
-remains open for the quality study and later criteria; #383 is Backlog/deferred/non-blocking; #335 Backlog/later;
+remains open for later criteria; #383 is Backlog/deferred/non-blocking; #335 Backlog/later;
 #380 In progress/qualification pending. #386-#391 remain In progress with their
 criterion-level validation residuals;
 this reconciliation closes none of them.
@@ -176,6 +179,7 @@ proposed docs, obtain read-only closure/capability review and stop before merge.
 [i383]: https://github.com/dhar174/langgraph_system_generator/issues/383
 [i334]: https://github.com/dhar174/langgraph_system_generator/issues/334
 [semantic-study]: ../docs/semantic-review-quality.md
+[semantic-followup]: ../docs/verification/334-b-follow-up.md
 [i129]: https://github.com/dhar174/langgraph_system_generator/issues/129
 [i335]: https://github.com/dhar174/langgraph_system_generator/issues/335
 [i386]: https://github.com/dhar174/langgraph_system_generator/issues/386
