@@ -22,8 +22,10 @@ remain visible in the skip stratum.
 
 Each clean member satisfies its pair's focal requirement. It can still
 contain an independently confirmed additional concern. The score records
-such cases separately from the fully adjudicated clean denominator and
-distinguishes concerns already detected by deterministic QA.
+additional concerns separately and distinguishes concerns already detected by
+deterministic QA. A fully adjudicated trial containing both a supported
+additional concern and an unsupported finding counts once as a clean-trial
+false positive.
 
 ## Local workflow
 
@@ -43,20 +45,32 @@ input sizes, limits, order, repetitions, and maximum attempts. It makes no
 provider requests. The dry run uses the production context builder, reviewer,
 client factory, and evidence admission with a fake HTTP transport. Its receipts
 are labelled **synthetic-contract**. They demonstrate the evaluation
-mechanics. **Live reviewer quality has not been measured.**
+mechanics for the selected implementation and corpus.
 
-The proposed live pilot uses the official OpenAI Responses endpoint,
-`gpt-6-luna`, low reasoning, concurrency one, two repetitions of 20 cases,
-and up to 40 attempted reviewer invocations. Production skips and input
-limits can reduce the provider request count. An operator must review the
-exact plan and separately authorize execution. This PR leaves the pilot
-unexecuted.
+The owner-approved November 13 pilot used corpus `1.0.0` on merged revision
+`22662cd45b47053a498cb446459e01222ca7e777`. It made 38 requests and returned
+valid reviews for 5 of 32 paired trials. The owner supported two of five
+admitted findings, including one of 16 eligible paired defect trials and one
+additional concern. Twenty evidence-admission failures and 11 invalid
+responses have no saved per-check diagnostic. See the
+[adjudicated pilot write-up](https://github.com/dhar174/langgraph_system_generator/issues/334#issuecomment-6858902027).
+
+Corpus `1.0.1` updates the rendered workflow schema in two explicit mutant
+copies. The four full generator-derived notebooks are all in development.
+Holdout and guardrail cases use simplified fixtures. The saved nonblocking
+`state_reducer_semantics` and `chatbot_notebook_contract` warnings remain visible
+and do not define the focal requirements. The visible prose-only notification
+claim in `c-6a4n` may make that case easier than subtler reachability defects.
+For `c-3p8w`, apply the owner-approved interpretation: preserve the stated
+selected-language requirement in the presence of untrusted instructions, with
+no assumption that a specific language was selected. The hard-coded English
+response is the deliberate defect when the selected language differs.
 
 The future `run --live` command requires the reviewed plan and its digest.
 Changes to the source, dataset, labels, instructions, schema, dependencies,
 model, endpoint, caps, repetitions, or retry policy invalidate the plan.
 Generate a fresh plan from the exact checkout and environment that would run
-the pilot. The checked-in sample plan records its tested source revision.
+the pilot and obtain separate approval. The [offline example plan](verification/334-b-follow-up-example-plan.md) records its tested source revision.
 Each attempt is recorded before dispatch. Interruptions leave the request
 uncertain, and the tool never automatically resends it. Provider unavailability,
 authentication, configuration, and privacy failures stop the run. Invalid
@@ -99,11 +113,16 @@ trials that never dispatched. Clean-case false positives use both the eligible
 population and the fully adjudicated valid-review subset. Defect detection
 includes every eligible defect in its denominator. Precision requires
 independent resolution of the findings. Undefined ratios are N/A. The report
-also shows invalid references, duplicates, missing-docs behavior, latency sample
+also separates preflight reference failures from evidence-admission failures and
+shows duplicates, missing-docs behavior, latency sample
 counts, and confirmed concerns that deterministic QA missed. Disabled review
 has zero semantic findings and zero reviewer calls.
 
-Receipts store safe admitted findings, hashes, provenance, status, and timing.
+Receipts and journals store a fixed rejection detail when available, with
+no rejected response text or validation payloads. The score counts historical
+generic rejections whose detail is unavailable. Normal generation artifacts
+omit the diagnostic. Receipts also store admitted findings, hashes, provenance,
+status, and timing.
 Use the versioned fixture to reconstruct the reviewer input for inspection.
 Evidence references bind to the redacted text seen by the model. A hash binds
 the receipt to evidence and does not certify its authenticity or quality.
@@ -112,7 +131,8 @@ model IDs and the run date. A 20-case study is descriptive and cannot justify
 general production accuracy, automatic blocking, or an improvement to generated
 notebook quality.
 
-See the [offline verification receipt](verification/2026-11-13-334-b-semantic-quality.md)
-for the exact checkpoints and pilot evidence. The
+See the [follow-up verification](verification/334-b-follow-up.md) and the
+[historical offline verification](verification/2026-11-13-334-b-semantic-quality.md)
+for exact checkpoints and pilot evidence. The
 [reference-label review handoff](verification/2026-11-13-334-b-label-review.md)
 records each case's independent AI review and the remaining human decisions.
