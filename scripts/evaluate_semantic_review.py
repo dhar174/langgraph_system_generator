@@ -582,7 +582,7 @@ def _config_payload(config: GenerationConfig) -> dict[str, Any]:
     binding = _endpoint_binding(config)
     effective_cap = min(config.max_tokens or MAX_OUTPUT_TOKENS, MAX_OUTPUT_TOKENS)
     model = config.model or settings.default_model
-    compatibility = chat_openai_compatibility_kwargs(model, api_base=config.api_base)
+    compatibility = chat_openai_compatibility_kwargs(model, api_base=binding.base_url)
     is_responses_profile = bool(compatibility.get("use_responses_api"))
     return {
         "model": model,

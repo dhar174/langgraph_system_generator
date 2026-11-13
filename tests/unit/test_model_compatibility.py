@@ -32,6 +32,18 @@ def test_luna_uses_responses_api_only_on_official_endpoint():
         )
         == expected
     )
+    assert (
+        chat_openai_compatibility_kwargs(
+            LUNA_MODEL, api_base="https://API.OPENAI.COM:443/v1/"
+        )
+        == expected
+    )
+    assert (
+        chat_openai_compatibility_kwargs(
+            LUNA_MODEL, api_base="https://api.openai.com:444/v1/"
+        )
+        == {}
+    )
     assert chat_openai_compatibility_kwargs("gpt-5-mini") == {}
     assert (
         chat_openai_compatibility_kwargs(

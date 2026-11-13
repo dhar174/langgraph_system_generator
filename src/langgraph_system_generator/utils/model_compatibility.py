@@ -18,9 +18,20 @@ def chat_openai_compatibility_kwargs(
     sampling parameters such as temperature. Custom API bases retain their
     existing OpenAI-compatible Chat Completions behavior.
     """
-    official_api_bases = {None, "", OPENAI_BASE_URL, OPENAI_BASE_URL + "/"}
-    if model != LUNA_MODEL or api_base not in official_api_bases:
+    if model != LUNA_MODEL:
         return {}
+    if api_base and api_base != OPENAI_BASE_URL:
+        # The endpoint module imports config, which uses this module's defaults.
+        from langgraph_system_generator.utils.error_handling import GenerationError
+        from langgraph_system_generator.utils.llm_endpoint_security import (
+            canonical_endpoint,
+        )
+
+        try:
+            if canonical_endpoint(api_base, hosted=False) != OPENAI_BASE_URL:
+                return {}
+        except GenerationError:
+            return {}
     return {
         "use_responses_api": True,
         "reasoning": {"effort": "low"},

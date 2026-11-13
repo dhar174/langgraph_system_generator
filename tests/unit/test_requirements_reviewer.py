@@ -159,6 +159,21 @@ async def test_luna_rejects_invalid_tool_calls(monkeypatch):
     assert invoke.await_count == 1
 
 
+async def test_luna_on_canonicalized_endpoint_requires_completed_status(monkeypatch):
+    message = AIMessage(content='{"assessment":"complete","findings":[]}')
+    calls, invoke = install_fake(monkeypatch, message=message)
+    config = ModelConfig(model=DEFAULT_MODEL, api_base="https://API.OPENAI.COM:443/v1/")
+
+    result = await agent.RequirementsDomainReviewer(config).review(context())
+
+    assert (result.status, result.reason_code) == (
+        "invalid_response",
+        "invalid_response",
+    )
+    assert invoke.await_count == 1
+    assert calls[0]["use_responses_api"] is True
+
+
 @pytest.mark.parametrize(
     "error,reason",
     [
@@ -380,7 +395,8 @@ async def test_actual_sdk_http_request_count_and_native_schema(
         assert result.status == ("reviewed" if code == 200 else "unavailable")
 
 
-async def test_luna_uses_responses_wire_shape_and_redacts_input(monkeypatch):
+@pytest.mark.parametrize("api_base", [None, "https://API.OPENAI.COM:443/v1/"])
+async def test_luna_uses_responses_wire_shape_and_redacts_input(monkeypatch, api_base):
     monkeypatch.setenv("OPENAI_API_KEY", "synthetic-test-key")
     monkeypatch.setenv("LANGSMITH_API_KEY", "synthetic-tracing-key")
     requests = []
@@ -462,7 +478,7 @@ async def test_luna_uses_responses_wire_shape_and_redacts_input(monkeypatch):
         ),
     )
     result = await agent.RequirementsDomainReviewer(
-        ModelConfig(model=DEFAULT_MODEL, max_tokens=91)
+        ModelConfig(model=DEFAULT_MODEL, max_tokens=91, api_base=api_base)
     ).review(request_context)
 
     assert result.status == "reviewed" and result.model_invocations == 1

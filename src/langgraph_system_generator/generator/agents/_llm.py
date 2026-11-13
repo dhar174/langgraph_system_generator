@@ -142,7 +142,7 @@ def build_chat_llm(
         "timeout": DEFAULT_TIMEOUT,
     }
     compatibility_kwargs = chat_openai_compatibility_kwargs(
-        config.model, api_base=config.api_base
+        config.model, api_base=binding.base_url
     )
     if compatibility_kwargs:
         llm_kwargs.update(compatibility_kwargs)

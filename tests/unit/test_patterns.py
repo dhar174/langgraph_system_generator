@@ -8,6 +8,7 @@ from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
+from langchain_core.messages import AIMessage
 
 from langgraph_system_generator.patterns import (
     AutoAgentPattern,
@@ -179,9 +180,40 @@ class TestSubagentsPattern:
         assert "def researcher_node(state: WorkflowState)" in code
         assert "Research and gather information" in code
         assert "ChatOpenAI" in code
-        assert '"researcher": getattr(response, "content", str(response))' in code
+        assert '"researcher": response.text' in code
         assert '"task_result_versions": {"researcher": current_version}' in code
         assert "current_version = max(" in code
+
+    @pytest.mark.parametrize(
+        "generate_worker",
+        [
+            SubagentsPattern.generate_subagent_code,
+            HybridPattern.generate_worker_code,
+            AutoAgentPattern.generate_worker_code,
+        ],
+    )
+    def test_worker_preserves_only_response_text(self, monkeypatch, generate_worker):
+        response = AIMessage(
+            content=[
+                {"type": "reasoning", "summary": [{"text": "Reasoning metadata"}]},
+                {"type": "text", "text": "Specialist answer"},
+                {"type": "text", "text": " with details."},
+            ]
+        )
+        llm = MagicMock()
+        llm.invoke.return_value = response
+        monkeypatch.setattr("langchain_openai.ChatOpenAI", lambda **kwargs: llm)
+        namespace = {}
+        # Run repository-generated code against the fake model.
+        exec(SubagentsPattern.generate_state_code(), namespace)  # noqa: S102
+        worker_code = generate_worker("researcher", "Research specialist")
+        exec(worker_code, namespace)  # noqa: S102
+
+        update = namespace["researcher_node"]({})
+
+        assert update["task_results"] == {
+            "researcher": "Specialist answer with details."
+        }
 
     def test_generate_subagent_code_with_tools(self):
         """Test subagent node generation with tool binding."""
@@ -369,8 +401,12 @@ class TestSubagentsPattern:
     ):
         """Verify that unchanged older results are summarized once and reused via fingerprint."""
         mock_llm_instance = MagicMock()
-        mock_response = MagicMock()
-        mock_response.content = "Concise summary of older specialist results"
+        mock_response = AIMessage(
+            content=[
+                {"type": "reasoning", "summary": [{"text": "Reasoning metadata"}]},
+                {"type": "text", "text": "Concise summary of older specialist results"},
+            ]
+        )
         mock_llm_instance.invoke.return_value = mock_response
         MockChatOpenAI = MagicMock(return_value=mock_llm_instance)
         monkeypatch.setattr("langchain_openai.ChatOpenAI", MockChatOpenAI)
@@ -458,9 +494,7 @@ class TestSubagentsPattern:
         def fake_invoke(messages):
             prompt_str = " ".join(str(m.content) for m in messages)
             invoked_prompts.append(prompt_str)
-            mock_resp = MagicMock()
-            mock_resp.content = "Summary of older specialists"
-            return mock_resp
+            return AIMessage(content="Summary of older specialists")
 
         mock_llm_instance = MagicMock()
         mock_llm_instance.invoke.side_effect = fake_invoke
@@ -534,9 +568,7 @@ class TestSubagentsPattern:
 
         def capture_invoke(messages):
             prompts.append(messages[-1].content)
-            response = MagicMock()
-            response.content = "Bounded summary"
-            return response
+            return AIMessage(content="Bounded summary")
 
         mock_llm.invoke.side_effect = capture_invoke
         monkeypatch.setattr(
@@ -571,9 +603,9 @@ class TestSubagentsPattern:
         def capture_invoke(messages):
             prompt_content = messages[-1].content
             invoked_prompts.append(prompt_content)
-            mock_resp = MagicMock()
-            mock_resp.content = f"Summary chunk representing: {prompt_content[:60]}"
-            return mock_resp
+            return AIMessage(
+                content=f"Summary chunk representing: {prompt_content[:60]}"
+            )
 
         mock_llm = MagicMock()
         mock_llm.invoke.side_effect = capture_invoke
@@ -671,9 +703,7 @@ class TestSubagentsPattern:
                 body = "Summary preserving UNIQUE_TAIL_SPECIALIST_MARKER_XYZ: " + ("x" * 2900)
             else:
                 body = "Summary of intermediate chunk: " + ("y" * 2920)
-            mock_resp = MagicMock()
-            mock_resp.content = body
-            return mock_resp
+            return AIMessage(content=body)
 
         mock_llm = MagicMock()
         mock_llm.invoke.side_effect = capture_invoke

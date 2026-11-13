@@ -182,7 +182,7 @@ def _summarize_chunk(text_to_summarize: str) -> str:
                 HumanMessage(content=f"Older agent results:\\n{{text_to_summarize}}"),
             ]
         )
-        return _truncate_result(str(getattr(response, "content", response)).strip(), MAX_TOTAL_RESULT_CHARS)
+        return _truncate_result(response.text.strip(), MAX_TOTAL_RESULT_CHARS)
     except Exception:
         return _truncate_result(text_to_summarize, MAX_TOTAL_RESULT_CHARS // 2)
 
@@ -579,7 +579,7 @@ Role:
     )
 
     return {{
-        "task_results": {{"{agent_name}": getattr(response, "content", str(response))}},
+        "task_results": {{"{agent_name}": response.text}},
         "task_result_versions": {{"{agent_name}": current_version}},
         "messages": [
             AIMessage(content=f"{agent_name} completed the assigned task.")

@@ -217,7 +217,7 @@ def test_plan_preflight_is_network_free_with_ambient_credentials(monkeypatch, tm
         lambda *_args: {"eligible": False, "ineligibility_reasons": ["test_fixture"]},
     )
 
-    config = _config(max_tokens=8000)
+    config = _config(max_tokens=8000, api_base="https://API.OPENAI.COM:443/v1/")
     plan = runner._plan_body(
         dataset_path=dataset_path,
         labels_path=labels_path,
@@ -227,6 +227,7 @@ def test_plan_preflight_is_network_free_with_ambient_credentials(monkeypatch, tm
     serialized = json.dumps(plan)
 
     assert plan["effective_config"]["model"] == "gpt-6-luna"
+    assert plan["effective_config"]["response_api"] == "responses"
     assert plan["effective_config"]["temperature"] is None
     assert plan["effective_config"]["reasoning_profile"] == {"effort": "low"}
     assert plan["effective_config"]["effective_output_cap"] == 2048
