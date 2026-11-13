@@ -113,4 +113,6 @@ general production accuracy, automatic blocking, or an improvement to generated
 notebook quality.
 
 See the [offline verification receipt](verification/2026-11-13-334-b-semantic-quality.md)
-for the exact checkpoints and pilot evidence.
+for the exact checkpoints and pilot evidence. The
+[reference-label review handoff](verification/2026-11-13-334-b-label-review.md)
+records each case's independent AI review and the remaining human decisions.
