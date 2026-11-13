@@ -260,6 +260,8 @@ def _fixtures(evidence_kind: str = "synthetic-contract"):
     }
     for record in receipt["records"]:
         record["evidence_kind"] = evidence_kind
+        if evidence_kind == "live" and record["reported_model"] is not None:
+            record["reported_model"] = "configured-provider-model"
         record["provenance"] = {"candidate_origin": "repository-fixture"}
         record["context_chars"] = 512
         record["docs_available"] = False
@@ -468,13 +470,16 @@ def test_human_adjudication_can_resolve_preserved_conflicting_votes():
     assert report["finding_precision"]["value"] == pytest.approx(2 / 3)
 
 
-def test_additional_concern_ids_can_be_adjudicated_without_changing_reference_recall():
+@pytest.mark.parametrize("case_id, index", [("defect-a", 2), ("clean-a", 0)])
+def test_additional_concern_ids_can_be_adjudicated_without_changing_reference_recall(
+    case_id, index
+):
     dataset, labels, receipt, annotations = _fixtures()
     _bind_hashes(dataset, labels, receipt, annotations)
     extra_id = "additional:extra-opaque-1"
     annotations["additional_concerns"] = [
         {
-            "case_id": "defect-a",
+            "case_id": case_id,
             "defect_id": extra_id,
             "requirement": "Preserve the separate hand-off notification.",
             "source_locations": [{"source_family": "cell", "source_id": "cell:2"}],
@@ -484,7 +489,7 @@ def test_additional_concern_ids_can_be_adjudicated_without_changing_reference_re
             "baseline_detected": False,
         }
     ]
-    receipt["records"][2]["safe_findings"].append(
+    receipt["records"][index]["safe_findings"].append(
         {
             "finding_id": "finding-additional-1",
             "category": "unsupported_capability_claim",
@@ -495,14 +500,14 @@ def test_additional_concern_ids_can_be_adjudicated_without_changing_reference_re
     annotations["annotations"].append(
         {
             "annotation_id": "ann-additional-1",
-            "case_id": "defect-a",
+            "case_id": case_id,
             "repetition": 1,
             "finding_id": "finding-additional-1",
             "matched_defect_id": extra_id,
             "verdict": "supported",
             "rationale": "This is a separate independently confirmed concern.",
             "reviewer_identity": "reviewer-1",
-            "reviewer_type": "independent_human",
+            "reviewer_type": "human_maintainer",
             "annotation_version": "adjudication-v1",
         }
     )
@@ -513,7 +518,11 @@ def test_additional_concern_ids_can_be_adjudicated_without_changing_reference_re
     assert report["defect_detection_recall"]["eligible_defect_trial_denominator"] == 2
     assert report["additional_confirmed_concerns_beyond_deterministic_baseline"][
         "additional_concern_ids"
-    ] == [{"case_id": "defect-a", "defect_id": extra_id}]
+    ] == [{"case_id": case_id, "defect_id": extra_id}]
+    if case_id == "clean-a":
+        clean = report["clean_case_false_positive_rate"]
+        assert clean["value"] == 0.5
+        assert clean["excluded_clean_trials_with_confirmed_concerns"] == 0
     assert "This message is retained" not in report_text
     assert "separate independently confirmed concern" not in report_text
     assert "rationale" not in report_text
@@ -652,8 +661,8 @@ def test_score_files_checks_exact_frozen_inputs_and_optional_plan(tmp_path: Path
     receipt["attempts_reserved"] = 4
     for record in receipt["records"]:
         if record["case_id"] == "guard-a":
-            record["case_status"] = "input_limit"
-            record["reason_code"] = "input_limit"
+            record["case_status"] = "invalid_reference"
+            record["reason_code"] = "invalid_reference"
             record["model_invocations"] = 0
             record["attempt_reserved"] = False
             record["http_request_count"] = 0
@@ -717,8 +726,8 @@ def test_score_files_checks_exact_frozen_inputs_and_optional_plan(tmp_path: Path
                 "baseline": record["baseline"],
                 "provenance": record["provenance"],
                 "eligible": eligible,
-                "preflight_status": None if eligible else "input_limit",
-                "preflight_reason_code": None if eligible else "input_limit",
+                "preflight_status": None if eligible else "invalid_reference",
+                "preflight_reason_code": None if eligible else "invalid_reference",
             }
         )
     receipt["plan_sha256"] = sha256_json(plan)
@@ -745,6 +754,8 @@ def test_score_files_checks_exact_frozen_inputs_and_optional_plan(tmp_path: Path
         plan_path=plan_path,
     )
 
+    assert report["evidence_admission"]["preflight_invalid_reference_trials"] == 2
+    assert report["evidence_admission"]["invalid_reference_trials"] == 0
     assert output_path.exists()
     markdown_path = output_path.with_suffix(".md")
     assert markdown_path.exists()
@@ -763,3 +774,67 @@ def test_score_files_checks_exact_frozen_inputs_and_optional_plan(tmp_path: Path
     plan_path.write_text(json.dumps(changed_plan, sort_keys=True), encoding="utf-8")
     with pytest.raises(ScoringError, match="plan hash"):
         score_files(receipt_path, dataset_path, labels_path, plan_path=plan_path)
+
+    bad_slot = next(item for item in plan["selected_cases"] if not item["eligible"])
+    bad_slot["preflight_status"] = "input_limit"
+    plan.pop("plan_sha256")
+    receipt["plan_sha256"] = plan["plan_sha256"] = sha256_json(plan)
+    plan_path.write_text(json.dumps(plan, sort_keys=True), encoding="utf-8")
+    receipt_path.write_text(json.dumps(receipt, sort_keys=True), encoding="utf-8")
+    with pytest.raises(ScoringError, match="differs from the approved slot"):
+        score_files(receipt_path, dataset_path, labels_path, plan_path=plan_path)
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("http_request_count", 1),
+        ("attempt_reserved", True),
+        ("provider_dispatch_uncertain", True),
+    ],
+)
+def test_preflight_reference_rejects_dispatch_evidence(field, value):
+    dataset, labels, receipt, _ = _fixtures()
+    _bind_hashes(dataset, labels, receipt)
+    record = receipt["records"][4]
+    assert record["model_invocations"] == 0
+    record.update(case_status="invalid_reference", reason_code="invalid_reference")
+    record[field] = value
+    with pytest.raises(ScoringError, match="inconsistent dispatch metadata"):
+        score_receipt(receipt, dataset, labels)
+
+
+def test_live_receipt_rejects_reserved_synthetic_model_id():
+    dataset, labels, receipt, _ = _fixtures(evidence_kind="live")
+    _bind_hashes(dataset, labels, receipt)
+    receipt["records"][0]["reported_model"] = "semantic-review-synthetic-contract"
+    with pytest.raises(ScoringError, match="synthetic model ID"):
+        score_receipt(receipt, dataset, labels)
+
+
+def test_ai_tagged_human_role_remains_pending():
+    dataset, labels, receipt, annotations = _fixtures()
+    _bind_hashes(dataset, labels, receipt, annotations)
+    for row in annotations["annotations"]:
+        row["reviewer_type"] = "human_AI_maintainer"
+    report = score_receipt(receipt, dataset, labels, annotations)
+    assert report["finding_precision"]["value"] is None
+
+
+def test_score_keeps_only_fixed_rejection_diagnostic():
+    dataset, labels, receipt, _ = _fixtures()
+    _bind_hashes(dataset, labels, receipt)
+    row = next(
+        row for row in receipt["records"] if row["case_status"] == "invalid_response"
+    )
+    row.update(
+        reason_code="invalid_response",
+        rejection_detail="invalid_local_schema",
+        rejected_payload={"quote": "REJECTED_RESPONSE_CANARY"},
+    )
+    report = score_receipt(receipt, dataset, labels)
+    assert report["rejection_detail_counts"] == {"invalid_local_schema": 1}
+    assert "REJECTED_RESPONSE_CANARY" not in json.dumps(report)
+    row["rejection_detail"] = "REJECTED_RESPONSE_CANARY"
+    with pytest.raises(ScoringError, match="^Invalid rejection detail$"):
+        score_receipt(receipt, dataset, labels)

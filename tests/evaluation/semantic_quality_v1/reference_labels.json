@@ -916,6 +916,6 @@
   ],
   "dataset_id": "semantic_quality_v1",
   "label_origin": "AI-generated and independently AI-reviewed by an AI agent; owner/human adjudication remains pending.",
-  "label_version": "1.0.0-provisional",
+  "label_version": "1.0.1-provisional",
   "schema_version": 1
 }

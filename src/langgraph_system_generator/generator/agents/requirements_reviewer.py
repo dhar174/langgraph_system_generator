@@ -193,7 +193,7 @@ class RequirementsDomainReviewer:
             errors = exc.errors(
                 include_url=False, include_context=False, include_input=False
             )
-            detail = (
+            detail: RejectionDetail = (
                 "invalid_json"
                 if errors[0]["type"] == "json_invalid"
                 else "invalid_local_schema"

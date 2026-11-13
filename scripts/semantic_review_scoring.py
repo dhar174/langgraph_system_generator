@@ -10,6 +10,7 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+import re
 import statistics
 from collections import Counter, defaultdict
 from collections.abc import Mapping, Sequence
@@ -21,6 +22,7 @@ from langgraph_system_generator.qa.specialist_models import RejectionDetail
 SCORE_SCHEMA_VERSION = "semantic-review-score-v1"
 RECEIPT_SCHEMA_VERSION = "semantic-review-receipt-v1"
 EVIDENCE_KINDS = {"synthetic-contract", "live"}
+SYNTHETIC_MODEL_ID = "semantic-review-synthetic-contract"
 CASE_STATUSES = (
     "reviewed",
     "skipped",
@@ -292,8 +294,8 @@ def _annotation_rows(annotations: Mapping[str, Any] | None) -> list[dict[str, An
 
 
 def _human_annotation(annotation: Mapping[str, Any]) -> bool:
-    kind = str(annotation.get("reviewer_type", "")).strip().lower()
-    return "human" in kind and "ai" not in kind
+    tokens = re.findall(r"[a-z0-9]+", str(annotation.get("reviewer_type", "")).lower())
+    return "human" in tokens and "ai" not in tokens
 
 
 def _resolve_annotations(
@@ -722,9 +724,26 @@ def score_receipt(
             raise ScoringError(
                 "A reviewed receipt record must show one reviewer invocation"
             )
-        if status == "invalid_reference" and invocation_count != 1:
+        if (
+            evidence_kind == "live"
+            and source_record.get("reported_model") == SYNTHETIC_MODEL_ID
+        ):
+            raise ScoringError("Live receipt contains a synthetic model ID")
+        preflight_reference = status == "invalid_reference" and invocation_count == 0
+        if preflight_reference and (
+            (source_record.get("reason_code") or source_record.get("reason"))
+            != "invalid_reference"
+            or http_request_count != 0
+            or attempt_reserved
+            or dispatch_uncertain
+            or detail not in (None, "preflight_invalid_reference")
+        ):
             raise ScoringError(
-                "Evidence-admission failures require one reviewer invocation"
+                "Preflight reference failure has inconsistent dispatch metadata"
+            )
+        if detail == "preflight_invalid_reference" and not preflight_reference:
+            raise ScoringError(
+                "Preflight reference detail requires a preflight rejection"
             )
         if http_request_count > 1:
             raise ScoringError("A trial cannot dispatch more than one HTTP request")
@@ -966,11 +985,14 @@ def score_receipt(
                 and str(row.get("matched_defect_id", "")).startswith("additional:")
                 for row in row_annotations
             )
-            if supported_additional:
+            unsupported = any(
+                row["verdict"] == "unsupported" for row in row_annotations
+            )
+            if supported_additional and not unsupported:
                 clean_trials_with_confirmed_concerns += 1
             else:
                 resolved_clean_trials += 1
-                if any(row["verdict"] == "unsupported" for row in row_annotations):
+                if unsupported:
                     false_positive_trials += 1
         else:
             unresolved_clean_trials += 1
@@ -1195,6 +1217,7 @@ def score_receipt(
                 ),
                 "case_status": record["case_status"],
                 "reason_code": record.get("reason_code") or record.get("reason"),
+                "rejection_detail": record.get("rejection_detail"),
                 "model_invocations": record["model_invocations"],
                 "candidate_sha256": record.get("candidate_sha256"),
                 "context_sha256": record.get("context_sha256"),
@@ -1353,6 +1376,11 @@ def score_receipt(
         },
         "evidence_admission": {
             "invalid_reference_trials": admission_failures,
+            "preflight_invalid_reference_trials": sum(
+                record["case_status"] == "invalid_reference"
+                and record["model_invocations"] == 0
+                for record in records
+            ),
             "invoked_trial_denominator": len(admitted_calls),
             "failure_rate": _ratio(admission_failures, len(admitted_calls)),
             "dispatch_uncertain_trials": uncertain_invocations,
@@ -1572,6 +1600,8 @@ def _markdown_report(report: Mapping[str, Any]) -> str:
             f"| {detail} | {count} |"
             for detail, count in report["rejection_detail_counts"].items()
         ),
+        "",
+        f"Preflight reference failures: {evidence['preflight_invalid_reference_trials']}",
         "",
         "## Semantic metrics",
         "",
@@ -1851,6 +1881,18 @@ def _verify_plan_binding(plan: Mapping[str, Any], receipt: Mapping[str, Any]) ->
         ):
             raise ScoringError(
                 "Approved candidate eligibility conflicts with its deterministic baseline"
+            )
+        if (
+            _record_status(record) == "invalid_reference"
+            and record.get("model_invocations") == 0
+            and (
+                slot["eligible"]
+                or slot.get("preflight_status") != "invalid_reference"
+                or slot.get("preflight_reason_code") != "invalid_reference"
+            )
+        ):
+            raise ScoringError(
+                "Preflight reference failure differs from the approved slot"
             )
         if not slot["eligible"] and (
             record.get("attempt_reserved") is not False
