@@ -497,3 +497,117 @@ def test_live_run_requires_confirmation_before_claim_or_output(monkeypatch, tmp_
             confirm_plan="wrong-digest",
         )
     assert not output.exists()
+
+
+@pytest.mark.parametrize(
+    "detail",
+    [
+        "unexpected_tool_calls",
+        "missing_responses_status",
+        "unexpected_responses_status",
+        "invalid_json",
+        "invalid_local_schema",
+        "incomplete_host_assessment",
+        "unknown_source_id",
+        "reference_out_of_range",
+        "quote_mismatch",
+        "missing_requirement_evidence",
+        "excess_family_references",
+        "missing_documentation_evidence",
+        "missing_cell_evidence",
+        "empty_sanitized_text",
+        "preflight_invalid_reference",
+    ],
+)
+async def test_rejection_detail_through_runner(detail, monkeypatch, tmp_path):
+    from copy import deepcopy
+
+    from langgraph_system_generator.generator.agents.requirements_reviewer import (
+        RequirementsDomainReviewer,
+    )
+
+    case = _case()
+    preflight = detail == "preflight_invalid_reference"
+    if preflight:
+        case["candidate"]["provenance"]["context_digest"] = "0" * 64
+    plan, planned, config = _fake_plan(case)
+    sent = []
+    canary = "REJECTED_RESPONSE_CANARY"
+
+    if detail == "incomplete_host_assessment":
+        review = RequirementsDomainReviewer.review
+
+        async def without_assessment(self, context):
+            result = await review(self, context)
+            return result.model_copy(update={"response": None})
+
+        monkeypatch.setattr(RequirementsDomainReviewer, "review", without_assessment)
+
+    def respond(request):
+        sent.append(request)
+        payload = runner._synthetic_http_response(request).json()
+        block = payload["output"][0]["content"][0]
+        content = json.loads(block["text"])
+        finding = deepcopy(content["findings"][0])
+        requirement, cell = finding["references"]
+        finding["message"] = canary
+
+        if detail == "unexpected_tool_calls":
+            payload["output"].append(
+                {
+                    "type": "function_call",
+                    "id": "fc_1",
+                    "call_id": "call_1",
+                    "name": "unexpected",
+                    "arguments": "{}",
+                    "status": "completed",
+                }
+            )
+        elif detail == "missing_responses_status":
+            payload.pop("status")
+        elif detail == "unexpected_responses_status":
+            payload["status"] = "in_progress"
+        elif detail == "invalid_local_schema":
+            finding["message"] = canary * 25
+        elif detail == "unknown_source_id":
+            cell["source_id"] = "cell:999"
+        elif detail == "reference_out_of_range":
+            cell["end"] = 1000
+        elif detail == "quote_mismatch":
+            cell["quote"] = canary
+        elif detail == "missing_requirement_evidence":
+            finding["references"] = [cell]
+        elif detail == "excess_family_references":
+            finding["references"] = [requirement, requirement, requirement, cell]
+        elif detail == "missing_documentation_evidence":
+            finding["category"] = "provided_docs_conflict"
+        elif detail == "missing_cell_evidence":
+            finding["references"] = [requirement]
+        elif detail == "empty_sanitized_text":
+            finding["message"] = " "
+        content["findings"].append(finding)
+        block["text"] = canary if detail == "invalid_json" else json.dumps(content)
+        return httpx.Response(200, json=payload)
+
+    receipt_path = tmp_path / "synthetic.json"
+    receipt = await runner._execute_trials(
+        plan=plan,
+        planned_cases=planned,
+        config=config,
+        receipt_path=receipt_path,
+        evidence_kind="synthetic-contract",
+        cases_by_id={case["case_id"]: case},
+        synthetic_response=respond,
+    )
+    (row,) = receipt["records"]
+    assert row["rejection_detail"] == detail
+    count = 0 if preflight else 1
+    assert len(sent) == row["model_invocations"] == row["http_request_count"] == count
+    assert receipt["attempts_reserved"] == count
+    assert not row["safe_findings"]
+    journal = (tmp_path / "synthetic.json.journal.jsonl").read_text(encoding="utf-8")
+    assert json.loads(journal.splitlines()[-1])["rejection_detail"] == detail
+    for artifact in (json.dumps(receipt), journal):
+        assert canary not in artifact
+        assert '"quote"' not in artifact
+        assert "validation error" not in artifact.lower()

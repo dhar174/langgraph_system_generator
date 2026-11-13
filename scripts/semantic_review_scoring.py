@@ -14,7 +14,9 @@ import statistics
 from collections import Counter, defaultdict
 from collections.abc import Mapping, Sequence
 from pathlib import Path
-from typing import Any
+from typing import Any, get_args
+
+from langgraph_system_generator.qa.specialist_models import RejectionDetail
 
 SCORE_SCHEMA_VERSION = "semantic-review-score-v1"
 RECEIPT_SCHEMA_VERSION = "semantic-review-receipt-v1"
@@ -704,6 +706,13 @@ def score_receipt(
         http_request_count = source_record.get("http_request_count", 0)
         if type(http_request_count) is not int or not 0 <= http_request_count <= 1:
             raise ScoringError("Each trial must report zero or one HTTP dispatch")
+        detail = source_record.get("rejection_detail")
+        if detail is not None and (
+            detail not in get_args(RejectionDetail)
+            or (source_record.get("reason_code") or source_record.get("reason"))
+            not in {"invalid_response", "invalid_reference"}
+        ):
+            raise ScoringError("Invalid rejection detail")
         safe_findings = _safe_findings(source_record)
         if status != "reviewed" and safe_findings:
             raise ScoringError(
@@ -1253,6 +1262,16 @@ def score_receipt(
             status: status_counts.get(status, 0) for status in CASE_STATUSES
         },
         "reason_counts": dict(sorted(reason_counts.items())),
+        "rejection_detail_counts": dict(
+            sorted(
+                Counter(
+                    record.get("rejection_detail") or "unavailable"
+                    for record in records
+                    if (record.get("reason_code") or record.get("reason"))
+                    in {"invalid_response", "invalid_reference"}
+                ).items()
+            )
+        ),
         "review_outcomes": {
             "reviewed_no_findings": reviewed_no_findings,
             "reviewed_with_findings": reviewed_with_findings,
@@ -1544,6 +1563,15 @@ def _markdown_report(report: Mapping[str, Any]) -> str:
         "| Reason | Trials |",
         "| --- | ---: |",
         *reason_lines,
+        "",
+        "### Rejection details",
+        "",
+        "| Detail | Trials |",
+        "| --- | ---: |",
+        *(
+            f"| {detail} | {count} |"
+            for detail, count in report["rejection_detail_counts"].items()
+        ),
         "",
         "## Semantic metrics",
         "",

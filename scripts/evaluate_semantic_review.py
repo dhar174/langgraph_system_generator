@@ -1198,6 +1198,7 @@ def _record_base(
         "evidence_kind": evidence_kind,
         "case_status": "skipped",
         "reason_code": "not_attempted",
+        "rejection_detail": None,
         "attempt_reserved": False,
         "provider_dispatch_uncertain": False,
         "model_invocations": 0,
@@ -1242,6 +1243,7 @@ def _feedback_record(
         {
             "case_status": status,
             "reason_code": reason,
+            "rejection_detail": feedback.rejection_detail,
             "attempt_reserved": attempted,
             "model_invocations": feedback.model_invocations if feedback else 0,
             "http_request_count": http_request_count,
@@ -1398,6 +1400,8 @@ async def _execute_trials(
                             "reason_code": planned["preflight_reason_code"],
                         }
                     )
+                    if record["case_status"] == "invalid_reference":
+                        record["rejection_detail"] = "preflight_invalid_reference"
                     records.append(record)
                     journal.append({"event": "final", **record})
                     continue

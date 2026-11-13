@@ -23,6 +23,7 @@ from langgraph_system_generator.qa.specialist_models import (
     MAX_RESPONSE_CHARS,
     REVIEW_TIMEOUT_SECONDS,
     ModelReviewResponse,
+    RejectionDetail,
     ReviewReason,
     ReviewStatus,
     SemanticReviewContext,
@@ -85,10 +86,13 @@ class RequirementsDomainReviewer:
             status: ReviewStatus,
             reason: ReviewReason,
             response: ModelReviewResponse | None = None,
+            *,
+            detail: RejectionDetail | None = None,
         ) -> SemanticReviewResult:
             return SemanticReviewResult(
                 status=status,
                 reason_code=reason,
+                rejection_detail=detail,
                 candidate_id=context.candidate_id,
                 context_digest=context.context_digest,
                 model_invocations=calls,
@@ -141,7 +145,9 @@ class RequirementsDomainReviewer:
         if raw.additional_kwargs.get("refusal") or refusal_block:
             return result("invalid_response", "refused")
         if raw.tool_calls or raw.invalid_tool_calls:
-            return result("invalid_response", "invalid_response")
+            return result(
+                "invalid_response", "invalid_response", detail="unexpected_tool_calls"
+            )
         metadata = raw.response_metadata
         expects_responses = bool(
             chat_openai_compatibility_kwargs(
@@ -164,10 +170,18 @@ class RequirementsDomainReviewer:
         status = metadata.get("status")
         if status == "failed":
             return result("unavailable", "provider_unavailable")
-        if status not in (None, "completed") or (
-            expects_responses and status != "completed"
-        ):
-            return result("invalid_response", "invalid_response")
+        if status is None and expects_responses:
+            return result(
+                "invalid_response",
+                "invalid_response",
+                detail="missing_responses_status",
+            )
+        if status not in (None, "completed"):
+            return result(
+                "invalid_response",
+                "invalid_response",
+                detail="unexpected_responses_status",
+            )
         text = get_message_text(raw)
         if not text.strip():
             return result("invalid_response", "empty_response")
@@ -175,8 +189,20 @@ class RequirementsDomainReviewer:
             return result("incomplete", "output_limit")
         try:
             response = ModelReviewResponse.model_validate_json(text)
-        except (ValidationError, ValueError):
-            return result("invalid_response", "invalid_response")
+        except ValidationError as exc:
+            errors = exc.errors(
+                include_url=False, include_context=False, include_input=False
+            )
+            detail = (
+                "invalid_json"
+                if errors[0]["type"] == "json_invalid"
+                else "invalid_local_schema"
+            )
+            return result("invalid_response", "invalid_response", detail=detail)
+        except ValueError:
+            return result(
+                "invalid_response", "invalid_response", detail="invalid_local_schema"
+            )
         if response.assessment == "insufficient_context":
             return result("incomplete", "insufficient_context")
         return result("reviewed", "complete", response)
