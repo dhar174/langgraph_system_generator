@@ -164,7 +164,9 @@ class RequirementsDomainReviewer:
         status = metadata.get("status")
         if status == "failed":
             return result("unavailable", "provider_unavailable")
-        if status not in (None, "completed") or (expects_responses and status != "completed"):
+        if status not in (None, "completed") or (
+            expects_responses and status != "completed"
+        ):
             return result("invalid_response", "invalid_response")
         text = get_message_text(raw)
         if not text.strip():

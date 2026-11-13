@@ -338,7 +338,9 @@ class RequirementsAnalyst:
         clarification_questions: List[str] = []
 
         try:
-            constraints_data = extract_json_from_llm_response(get_message_text(response))
+            constraints_data = extract_json_from_llm_response(
+                get_message_text(response)
+            )
             clarification_questions = self._extract_clarification_questions(
                 constraints_data
             )
@@ -398,7 +400,9 @@ class RequirementsAnalyst:
         clarification_questions: List[str] = []
 
         try:
-            constraints_data = extract_json_from_llm_response(get_message_text(response))
+            constraints_data = extract_json_from_llm_response(
+                get_message_text(response)
+            )
             clarification_questions = self._extract_clarification_questions(
                 constraints_data
             )

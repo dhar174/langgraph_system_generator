@@ -97,11 +97,7 @@ class WorkflowState(TypedDict, total=False):
             use_notebook_helper=use_notebook_helper,
         )
         summary_model = config.summary_model or (
-            (
-                DEFAULT_MODEL
-                if config.model == DEFAULT_MODEL
-                else "gpt-4o-mini"
-            )
+            (DEFAULT_MODEL if config.model == DEFAULT_MODEL else "gpt-4o-mini")
             if config.api_base is None
             else config.model
         )

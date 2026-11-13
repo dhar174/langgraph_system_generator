@@ -39,9 +39,7 @@ def build_llm_init(
         return f"make_llm({', '.join(params)})"
 
     params = [f"model={model!r}"]
-    compatibility_kwargs = chat_openai_compatibility_kwargs(
-        model, api_base=api_base
-    )
+    compatibility_kwargs = chat_openai_compatibility_kwargs(model, api_base=api_base)
     if compatibility_kwargs:
         params.extend(
             f"{name}={value!r}" for name, value in compatibility_kwargs.items()

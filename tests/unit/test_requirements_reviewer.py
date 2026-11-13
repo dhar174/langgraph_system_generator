@@ -116,12 +116,16 @@ async def test_one_call_copied_output_cap_and_zero_retries(monkeypatch, cap, exp
         ),
         (response_message(content="x" * 16385), "incomplete", "output_limit"),
         (
-            response_message(content="{}", response_metadata={"finish_reason": "length"}),
+            response_message(
+                content="{}", response_metadata={"finish_reason": "length"}
+            ),
             "incomplete",
             "output_limit",
         ),
         (
-            response_message(content='{"assessment":"insufficient_context","findings":[]}'),
+            response_message(
+                content='{"assessment":"insufficient_context","findings":[]}'
+            ),
             "incomplete",
             "insufficient_context",
         ),
@@ -455,7 +459,7 @@ async def test_luna_uses_responses_wire_shape_and_redacts_input(monkeypatch):
             "Proxy-Authorization: Basic dXNlcjpwYXNz\n"
             "Weather assistant. Keep the legitimate trailing requirement: "
             "preserve sunrise forecasts."
-        )
+        ),
     )
     result = await agent.RequirementsDomainReviewer(
         ModelConfig(model=DEFAULT_MODEL, max_tokens=91)
