@@ -42,7 +42,7 @@ version 1. Excerpt metadata counts toward the existing 48,000-character
 limit and can change which cases fit. The runner measures the full version 2
 request and records any input-limit result before dispatch. The offline 1.0.1
 check produced 40 trial rows and 36 mock requests. Both repetitions of the
-old near-limit case now exceed the cap (54,867 characters, up from 47,500),
+old near-limit case now exceed the cap (54,983 characters, up from 47,500),
 as do both repetitions of the original oversized case. All paired cases
 remained eligible.
 

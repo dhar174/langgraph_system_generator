@@ -45,6 +45,7 @@ RejectionDetail = Literal[
     "invalid_local_schema",
     "incomplete_host_assessment",
     "unknown_excerpt_id",
+    "duplicate_excerpt_id",
     # Historical receipts still use the version 1 diagnostic codes.
     "unknown_source_id",
     "reference_out_of_range",

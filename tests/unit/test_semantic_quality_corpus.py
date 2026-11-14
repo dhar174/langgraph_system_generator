@@ -92,6 +92,8 @@ def test_quality_corpus_preserves_pair_and_context_integrity():
             assert defect["defect_id"] not in context.request_json
             assert defect["rationale"] not in context.request_json
         if case["pair_id"]:
+            assert len(context.request_json) <= MAX_INPUT_CHARS
+            assert preflight["eligible"]
             pairs[case["pair_id"]].append((case, context))
         else:
             context_sizes.append(provenance["context_chars"])

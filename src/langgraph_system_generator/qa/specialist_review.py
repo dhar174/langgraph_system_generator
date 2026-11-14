@@ -69,6 +69,8 @@ def _source_excerpts(source: ReviewSource) -> Iterator[ReviewExcerpt]:
             newline = source.text.rfind("\n", start + MAX_EXCERPT_CHARS // 2, end)
             if newline >= 0:
                 end = newline + 1
+            elif source.text[end - 1 : end + 1] == "\r\n":
+                end -= 1
         identity = canonical_json([source.source_id, source.fingerprint, start, end])
         yield ReviewExcerpt(
             excerpt_id=_hash("review-excerpt-v2\0" + identity)[:20],
@@ -208,8 +210,8 @@ def build_review_context(
     ]
     candidate = notebook_candidate_id(notebook)
     attempt = int(state.get("repair_attempts", 0))
-    excerpts = []
-    wire_sources = []
+    excerpts: list[ReviewExcerpt] = []
+    wire_sources: list[dict[str, Any]] = []
     for source in sources:
         source_excerpts = tuple(_source_excerpts(source))
         excerpts.extend(source_excerpts)
@@ -268,10 +270,14 @@ def admit_findings(
     for finding in response.findings:
         refs = []
         families: Counter[str] = Counter()
+        seen_excerpt_ids: set[str] = set()
         for ref in finding.references:
             excerpt = excerpts.get(ref.excerpt_id)
             if excerpt is None:
                 raise EvidenceAdmissionError("unknown_excerpt_id")
+            if ref.excerpt_id in seen_excerpt_ids:
+                raise EvidenceAdmissionError("duplicate_excerpt_id")
+            seen_excerpt_ids.add(ref.excerpt_id)
             source = sources[excerpt.source_id]
             if not (
                 0 <= excerpt.start < excerpt.end <= len(source.text)

@@ -145,6 +145,17 @@ def test_excerpt_catalog_is_lossless_bounded_and_stable():
     assert "excerpts" not in ctx.model_dump()
 
 
+def test_excerpt_boundary_keeps_crlf_together():
+    value = state()
+    value["user_prompt"] = "x" * (MAX_EXCERPT_CHARS - 1) + "\r\nNext line"
+    ctx = context(value)
+    source = next(s for s in ctx.sources if s.source_id == "request:prompt")
+    refs = [e for e in ctx.excerpts if e.source_id == source.source_id]
+    assert len(refs) == 2
+    assert refs[0].end == refs[1].start == MAX_EXCERPT_CHARS - 1
+    assert source.text[refs[1].start : refs[1].end] == "\r\nNext line"
+
+
 def test_rejects_unknown_and_stale_excerpt_ids():
     ctx = context()
     data = response(ctx).model_dump(mode="json")
