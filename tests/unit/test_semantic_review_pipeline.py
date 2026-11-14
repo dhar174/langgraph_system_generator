@@ -63,14 +63,10 @@ def install_reviewer(monkeypatch, *, finding=True, mutate=None, unavailable=Fals
             refs = []
             for family in ("requirement", "cell"):
                 source = next(s for s in context.sources if s.family == family)
-                refs.append(
-                    {
-                        "source_id": source.source_id,
-                        "start": 0,
-                        "end": min(6, len(source.text)),
-                        "quote": source.text[:6],
-                    }
+                excerpt = next(
+                    e for e in context.excerpts if e.source_id == source.source_id
                 )
+                refs.append({"excerpt_id": excerpt.excerpt_id})
             response = ModelReviewResponse.model_validate_json(
                 json.dumps(
                     {

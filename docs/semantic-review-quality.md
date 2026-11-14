@@ -27,6 +27,36 @@ deterministic QA. A fully adjudicated trial containing both a supported
 additional concern and an unsupported finding counts once as a clean-trial
 false positive.
 
+## Excerpt citation protocol
+
+Reviewer version 2 presents each redacted source as ordered excerpts of at
+most 160 characters. It sends each source's text once. The model cites only
+excerpt IDs. The host resolves each ID to the source fingerprint and exact
+offsets, then applies the existing requirement, cell, documentation, and
+reference-count checks. Unknown IDs reject the entire response. Saved evidence
+locations keep their existing format. The reviewer remains off by default.
+
+Use the frozen 1.0.1 corpus with version 2 only for offline transport and
+admission checks. The historical manifest and calibration remain bound to
+version 1. Excerpt metadata counts toward the existing 48,000-character
+limit and can change which cases fit. The runner measures the full version 2
+request and records any input-limit result before dispatch. The offline 1.0.1
+check produced 40 trial rows and 36 mock requests. Both repetitions of the
+old near-limit case now exceed the cap (54,867 characters, up from 47,500),
+as do both repetitions of the original oversized case. All paired cases
+remained eligible.
+
+For the next live comparison, freeze fresh synthetic clean/defect pairs that
+were unused during development and separate guardrails for the input limit,
+redaction, and insufficient context. Review the labels before seeing any
+outputs. Compare both reviewer versions on the same frozen candidates using
+their respective pinned runners and identical provider settings. Measure
+review coverage, evidence rejection reasons, confirmed holdout recall,
+clean-case false positives, and any change in input eligibility. Keep per-arm
+results and report differences in eligibility explicitly. Submit the exact
+source, corpus, label, prompt, and schema hashes, cases, endpoint, data scope,
+and combined call ceiling for separate approval before a provider request.
+
 ## Local workflow
 
 Use the script from the repository root in an environment with the project

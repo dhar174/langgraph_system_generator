@@ -48,9 +48,10 @@ Return only the requested JSON schema. assessment is complete or insufficient_co
 At most eight findings; message <=400 characters; at most two suggestions <=240
 characters each; at most six references, <=2 from each family. Each finding MUST cite
 a requirement (including request:prompt for requirements missed by intake) and a
-candidate cell. Docs-conflict findings MUST additionally cite a supplied docs ID.
-Use exact case-sensitive source_id and zero-based [start,end) character offsets
-into the supplied REDACTED text. quote must equal the range, <=160 characters.
+candidate cell. Docs-conflict findings MUST additionally cite supplied docs.
+Read each source's excerpts in order as one complete redacted text. Each excerpt
+is [id, text]. For each reference return only excerpt_id, copied exactly from
+the relevant excerpt. Choose excerpts that support the finding directly.
 Never invent IDs, URLs, versions, citations, severity, repairability or verification.
 Do not quote source text in messages/suggestions. Explain your concern briefly.
 Missing behavior can cite the relevant candidate entry/execution cell as inspection

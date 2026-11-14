@@ -508,9 +508,7 @@ def test_live_run_requires_confirmation_before_claim_or_output(monkeypatch, tmp_
         "invalid_json",
         "invalid_local_schema",
         "incomplete_host_assessment",
-        "unknown_source_id",
-        "reference_out_of_range",
-        "quote_mismatch",
+        "unknown_excerpt_id",
         "missing_requirement_evidence",
         "excess_family_references",
         "missing_documentation_evidence",
@@ -569,12 +567,8 @@ async def test_rejection_detail_through_runner(detail, monkeypatch, tmp_path):
             payload["status"] = "in_progress"
         elif detail == "invalid_local_schema":
             finding["message"] = canary * 25
-        elif detail == "unknown_source_id":
-            cell["source_id"] = "cell:999"
-        elif detail == "reference_out_of_range":
-            cell["end"] = 1000
-        elif detail == "quote_mismatch":
-            cell["quote"] = canary
+        elif detail == "unknown_excerpt_id":
+            cell["excerpt_id"] = "0" * 20
         elif detail == "missing_requirement_evidence":
             finding["references"] = [cell]
         elif detail == "excess_family_references":

@@ -86,6 +86,9 @@ DEFAULT_LABELS = (
     REPO_ROOT / "tests/evaluation/semantic_quality_v1/reference_labels.json"
 )
 DATASET_SCHEMA_VERSION = 1
+ARCHIVED_V1_DATASET_SHA256 = (
+    "b850e5baa6be2a681bf2daa9d99befc5618db347767f62b0a1042ba13250a893"
+)
 PLAN_SCHEMA_VERSION = 1
 RECEIPT_SCHEMA_VERSION = "semantic-review-receipt-v1"
 MAX_CASES = 20
@@ -285,7 +288,9 @@ def _safe_provenance(value: Any) -> dict[str, Any]:
     return safe
 
 
-def _verify_provenance_context(provenance: Any, context: Any) -> None:
+def _verify_provenance_context(
+    provenance: Any, context: Any, *, archived_v1: bool = False
+) -> None:
     """Reject declared candidate/context digests that disagree with production."""
     if not isinstance(provenance, Mapping):
         return
@@ -296,6 +301,9 @@ def _verify_provenance_context(provenance: Any, context: Any) -> None:
         "docs_available": context.docs_available,
     }
     for key, actual in expected.items():
+        # The byte-pinned archive stores request hashes from reviewer v1.
+        if archived_v1 and key in {"context_digest", "context_chars"}:
+            continue
         if key in provenance:
             declared = provenance[key]
             if type(declared) is not type(actual) or declared != actual:
@@ -357,6 +365,8 @@ def _live_pilot_eligibility(
     dataset_path: Path, labels_path: Path, case_count: int, repetitions: int
 ) -> dict[str, Any]:
     reasons: list[str] = []
+    if _sha256_bytes(dataset_path.read_bytes()) == ARCHIVED_V1_DATASET_SHA256:
+        reasons.append("archived_reviewer_v1_corpus_is_offline_only")
     if dataset_path.resolve() != DEFAULT_DATASET.resolve():
         reasons.append("dataset_is_not_versioned_quality_v1")
     if labels_path.resolve() != DEFAULT_LABELS.resolve():
@@ -638,7 +648,7 @@ def _new_generation_config(
 
 
 def _case_preflight(
-    case: Mapping[str, Any], config: GenerationConfig
+    case: Mapping[str, Any], config: GenerationConfig, *, archived_v1: bool = False
 ) -> dict[str, Any]:
     """Build exact production context without constructing a model client."""
     raw_candidate = case.get("candidate")
@@ -649,7 +659,9 @@ def _case_preflight(
         _registration, instructions = _registered_reviewer(config)
         state = build_typed_state(candidate["model_state"], config)
         context = build_review_context(state, instructions=instructions)
-        _verify_provenance_context(candidate.get("provenance"), context)
+        _verify_provenance_context(
+            candidate.get("provenance"), context, archived_v1=archived_v1
+        )
         skipped = skipped_review_feedback(state)
     except Exception:  # noqa: BLE001 - fixture and context errors may include prompts
         return {
@@ -718,8 +730,9 @@ def _plan_body(
     dataset_id, cases = _load_cases(dataset_raw, dataset_path=dataset_path)
     if not _safe_repo_path(dataset_path) or not _safe_repo_path(labels_path):
         raise EvaluationError("Evaluation inputs must be repository-controlled.")
+    archived_v1 = _sha256_bytes(dataset_raw) == ARCHIVED_V1_DATASET_SHA256
     preflight = [
-        _case_preflight(case, config)
+        _case_preflight(case, config, archived_v1=archived_v1)
         for case in sorted(cases, key=lambda x: x["case_id"])
     ]
     source_manifest = _source_manifest()
@@ -847,8 +860,9 @@ def validate_plan(
         raise EvaluationError(
             "Effective model or endpoint policy changed after planning."
         )
+    archived_v1 = _sha256_bytes(dataset_raw) == ARCHIVED_V1_DATASET_SHA256
     expected_cases = [
-        _case_preflight(case, config)
+        _case_preflight(case, config, archived_v1=archived_v1)
         for case in sorted(cases, key=lambda x: x["case_id"])
     ]
     if expected_cases != plan["selected_cases"]:
@@ -1069,7 +1083,8 @@ def _synthetic_review_content(request: httpx.Request) -> str:
         if (
             prompt_source
             and not structured_requirements
-            and len(str(prompt_source.get("text", "")).split()) <= 12
+            and len("".join(text for _, text in prompt_source["excerpts"]).split())
+            <= 12
         ):
             # Exercise the production abstention path from visible context shape
             # alone; no dataset identity or evaluator label is consulted.
@@ -1079,7 +1094,7 @@ def _synthetic_review_content(request: httpx.Request) -> str:
             (
                 source
                 for source in sources
-                if source.get("family") == "requirement" and source.get("text")
+                if source.get("family") == "requirement" and source.get("excerpts")
             ),
             None,
         )
@@ -1087,22 +1102,15 @@ def _synthetic_review_content(request: httpx.Request) -> str:
             (
                 source
                 for source in sources
-                if source.get("family") == "cell" and source.get("text")
+                if source.get("family") == "cell" and source.get("excerpts")
             ),
             None,
         )
         if requirement and candidate:
-            refs = []
-            for source in (requirement, candidate):
-                quote = source["text"][: min(80, len(source["text"]))]
-                refs.append(
-                    {
-                        "source_id": source["source_id"],
-                        "start": 0,
-                        "end": len(quote),
-                        "quote": quote,
-                    }
-                )
+            refs = [
+                {"excerpt_id": source["excerpts"][0][0]}
+                for source in (requirement, candidate)
+            ]
             output["findings"] = [
                 {
                     "category": "requirements_gap",

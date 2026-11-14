@@ -4,10 +4,11 @@ from __future__ import annotations
 
 from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field
 
 REVIEWER_ID = "requirements_domain_fidelity"
-REVIEWER_VERSION = "1"
+REVIEWER_VERSION = "2"
+MAX_EXCERPT_CHARS = 160
 MAX_INPUT_CHARS = 48_000
 MAX_RESPONSE_CHARS = 16_384
 MAX_OUTPUT_TOKENS = 2048
@@ -43,6 +44,8 @@ RejectionDetail = Literal[
     "invalid_json",
     "invalid_local_schema",
     "incomplete_host_assessment",
+    "unknown_excerpt_id",
+    # Historical receipts still use the version 1 diagnostic codes.
     "unknown_source_id",
     "reference_out_of_range",
     "quote_mismatch",
@@ -83,6 +86,13 @@ class ReviewSource(ReviewRecord):
     cell_type: Literal["code", "markdown", "raw"] | None = None
 
 
+class ReviewExcerpt(ReviewRecord):
+    excerpt_id: str
+    source_id: str
+    start: int
+    end: int
+
+
 class SemanticReviewContext(ReviewRecord):
     candidate_id: str = Field(pattern=r"^[a-f0-9]{64}$")
     context_digest: str = Field(pattern=r"^[a-f0-9]{64}$")
@@ -91,19 +101,11 @@ class SemanticReviewContext(ReviewRecord):
     # Transient only: never returned in graph state, artifacts, logs or feedback.
     request_json: str = Field(exclude=True, repr=False)
     sources: tuple[ReviewSource, ...] = Field(exclude=True, repr=False)
+    excerpts: tuple[ReviewExcerpt, ...] = Field(exclude=True, repr=False)
 
 
 class ModelReference(ReviewRecord):
-    source_id: str = Field(min_length=1, max_length=100)
-    start: int = Field(ge=0, strict=True)
-    end: int = Field(gt=0, strict=True)
-    quote: str = Field(min_length=1, max_length=160)
-
-    @model_validator(mode="after")
-    def valid_range(self) -> ModelReference:
-        if not 0 < self.end - self.start <= 2000:
-            raise ValueError("Invalid evidence range")
-        return self
+    excerpt_id: str = Field(min_length=1, max_length=20)
 
 
 class ModelFinding(ReviewRecord):

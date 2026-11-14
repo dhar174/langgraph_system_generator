@@ -385,7 +385,7 @@ async def test_actual_sdk_http_request_count_and_native_schema(
             "sources"
         ]
         requirements = [
-            json.loads(s["text"])
+            json.loads("".join(text for _, text in s["excerpts"]))
             for s in sources
             if s["source_id"].startswith("requirement:")
         ]

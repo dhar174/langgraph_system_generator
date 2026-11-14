@@ -36,14 +36,10 @@ def test_labelled_contract_cases(case):
         for family in ("requirement", "cell", "docs"):
             source = next((s for s in context.sources if s.family == family), None)
             if source is not None:
-                references.append(
-                    {
-                        "source_id": source.source_id,
-                        "start": 0,
-                        "end": min(10, len(source.text)),
-                        "quote": source.text[:10],
-                    }
+                excerpt = next(
+                    e for e in context.excerpts if e.source_id == source.source_id
                 )
+                references.append({"excerpt_id": excerpt.excerpt_id})
         findings = [
             {
                 "category": case["expected_category"],
