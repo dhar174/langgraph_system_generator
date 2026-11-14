@@ -24,17 +24,21 @@ Input: <=48,000 serialized Unicode characters including instructions and respons
 schema. All candidate cells must fit; oversized input yields incomplete review.
 Output: <=2048 tokens or a stricter request cap; raw response <=16,384 characters,
 at most eight findings. Messages <=400 chars, at most two <=240-char suggestions,
-at most six references (two per family), quotes <=160, ranges <=2000 characters.
+at most six distinct references (two per family). Reviewer v2 cites excerpt IDs
+for host-owned ranges of up to 160 characters. Version 1 used model-supplied
+quotes and offsets.
 Persisted source locations are <=512 characters and supplied versions <=128;
 unrepresentable reference metadata invalidates admission rather than being clipped.
 
 The original request remains fidelity authority. The host owns notebook-cells-v1
 candidate identity, complete redacted envelope digest, attempt, reviewer version
 and source IDs/fingerprints of the exact redacted source view. The existing
-candidate algorithm separately binds the original candidate. Requirements, canonical candidate-cell indices and
-supplied docs references are validated before findings are admitted. Quotes and
-raw review payloads remain transient; only bounded sanitized summaries and
-IDs/ranges/fingerprints persist. A matching quote proves provenance, not judgment.
+candidate algorithm separately binds the original candidate. The host resolves
+each excerpt ID and checks requirements, canonical candidate-cell indices and
+supplied docs before admitting findings. Unknown and repeated IDs invalidate the
+response. Source excerpts and raw review payloads remain transient. Persist only
+bounded sanitized summaries and source IDs, ranges and fingerprints. Evidence
+resolution establishes provenance. The reviewer still supplies the judgment.
 Missing docs mean docs alignment not assessed. Untrusted input delimiters and
 rubric instructions reduce exposure, not universal prompt-injection resistance.
 

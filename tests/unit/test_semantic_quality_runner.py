@@ -508,9 +508,8 @@ def test_live_run_requires_confirmation_before_claim_or_output(monkeypatch, tmp_
         "invalid_json",
         "invalid_local_schema",
         "incomplete_host_assessment",
-        "unknown_source_id",
-        "reference_out_of_range",
-        "quote_mismatch",
+        "unknown_excerpt_id",
+        "duplicate_excerpt_id",
         "missing_requirement_evidence",
         "excess_family_references",
         "missing_documentation_evidence",
@@ -526,7 +525,10 @@ async def test_rejection_detail_through_runner(detail, monkeypatch, tmp_path):
         RequirementsDomainReviewer,
     )
 
-    case = _case()
+    model_state = _model_state()
+    if detail == "excess_family_references":
+        model_state["user_prompt"] += " Follow the weather requirement." * 20
+    case = _case(model_state=model_state)
     preflight = detail == "preflight_invalid_reference"
     if preflight:
         case["candidate"]["provenance"]["context_digest"] = "0" * 64
@@ -569,16 +571,34 @@ async def test_rejection_detail_through_runner(detail, monkeypatch, tmp_path):
             payload["status"] = "in_progress"
         elif detail == "invalid_local_schema":
             finding["message"] = canary * 25
-        elif detail == "unknown_source_id":
-            cell["source_id"] = "cell:999"
-        elif detail == "reference_out_of_range":
-            cell["end"] = 1000
-        elif detail == "quote_mismatch":
-            cell["quote"] = canary
+        elif detail == "unknown_excerpt_id":
+            cell["excerpt_id"] = "0" * 20
+        elif detail == "duplicate_excerpt_id":
+            finding["references"] = [requirement, cell, cell]
         elif detail == "missing_requirement_evidence":
             finding["references"] = [cell]
         elif detail == "excess_family_references":
-            finding["references"] = [requirement, requirement, requirement, cell]
+            wire = json.loads(request.content)
+            review_data = next(
+                json.loads(text.split("\n", 1)[1])
+                for message in wire["input"]
+                for text in (
+                    [message["content"]]
+                    if isinstance(message["content"], str)
+                    else [item.get("text", "") for item in message["content"]]
+                )
+                if text.startswith("UNTRUSTED_REVIEW_DATA_JSON\n")
+            )
+            prompt = next(
+                s for s in review_data["sources"] if s["source_id"] == "request:prompt"
+            )
+            finding["references"] = [
+                *(
+                    {"excerpt_id": excerpt_id}
+                    for excerpt_id, _ in prompt["excerpts"][:3]
+                ),
+                cell,
+            ]
         elif detail == "missing_documentation_evidence":
             finding["category"] = "provided_docs_conflict"
         elif detail == "missing_cell_evidence":

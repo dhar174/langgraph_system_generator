@@ -6,14 +6,16 @@ import hashlib
 import json
 import re
 from collections import Counter
-from collections.abc import Mapping
+from collections.abc import Iterator, Mapping
 from typing import TYPE_CHECKING, Any, Literal
 
 from langgraph_system_generator.qa.specialist_models import (
+    MAX_EXCERPT_CHARS,
     REVIEWER_ID,
     EvidenceLocation,
     ModelReviewResponse,
     RejectionDetail,
+    ReviewExcerpt,
     ReviewReason,
     ReviewSource,
     SemanticFinding,
@@ -56,6 +58,27 @@ def _payload(value: Any) -> Any:
 
 def _hash(value: str) -> str:
     return hashlib.sha256(value.encode("utf-8")).hexdigest()
+
+
+def _source_excerpts(source: ReviewSource) -> Iterator[ReviewExcerpt]:
+    """Cover the redacted source in order, preferring nearby line boundaries."""
+    start = 0
+    while start < len(source.text):
+        end = min(start + MAX_EXCERPT_CHARS, len(source.text))
+        if end < len(source.text):
+            newline = source.text.rfind("\n", start + MAX_EXCERPT_CHARS // 2, end)
+            if newline >= 0:
+                end = newline + 1
+            elif source.text[end - 1 : end + 1] == "\r\n":
+                end -= 1
+        identity = canonical_json([source.source_id, source.fingerprint, start, end])
+        yield ReviewExcerpt(
+            excerpt_id=_hash("review-excerpt-v2\0" + identity)[:20],
+            source_id=source.source_id,
+            start=start,
+            end=end,
+        )
+        start = end
 
 
 def build_review_context(
@@ -187,10 +210,26 @@ def build_review_context(
     ]
     candidate = notebook_candidate_id(notebook)
     attempt = int(state.get("repair_attempts", 0))
+    excerpts: list[ReviewExcerpt] = []
+    wire_sources: list[dict[str, Any]] = []
+    for source in sources:
+        source_excerpts = tuple(_source_excerpts(source))
+        excerpts.extend(source_excerpts)
+        wire_sources.append(
+            {
+                **source.model_dump(exclude={"text"}),
+                "excerpts": [
+                    [ref.excerpt_id, source.text[ref.start : ref.end]]
+                    for ref in source_excerpts
+                ],
+            }
+        )
+    if len({ref.excerpt_id for ref in excerpts}) != len(excerpts):
+        raise ValueError("Duplicate review excerpt ID")
     data = {
         "candidate_id": candidate,
         "attempt": attempt,
-        "sources": [s.model_dump() for s in sources],
+        "sources": wire_sources,
         "facts": sanitize_generation_payload(facts),
     }
     envelope = {
@@ -208,9 +247,10 @@ def build_review_context(
         candidate_id=candidate,
         attempt=attempt,
         sources=tuple(sources),
+        excerpts=tuple(excerpts),
         docs_available=any(s.family == "docs" for s in sources),
         request_json=serialized,
-        context_digest=_hash("semantic-review-context-v1\0" + serialized),
+        context_digest=_hash("semantic-review-context-v2\0" + serialized),
     )
 
 
@@ -225,27 +265,33 @@ def admit_findings(
 ) -> tuple[SemanticFinding, ...]:
     """Reject the entire response on invented evidence; persist no quotes."""
     sources = {source.source_id: source for source in context.sources}
+    excerpts = {excerpt.excerpt_id: excerpt for excerpt in context.excerpts}
     findings = []
     for finding in response.findings:
         refs = []
         families: Counter[str] = Counter()
+        seen_excerpt_ids: set[str] = set()
         for ref in finding.references:
-            source = sources.get(ref.source_id)
-            if source is None:
-                raise EvidenceAdmissionError("unknown_source_id")
-            if ref.end > len(source.text):
+            excerpt = excerpts.get(ref.excerpt_id)
+            if excerpt is None:
+                raise EvidenceAdmissionError("unknown_excerpt_id")
+            if ref.excerpt_id in seen_excerpt_ids:
+                raise EvidenceAdmissionError("duplicate_excerpt_id")
+            seen_excerpt_ids.add(ref.excerpt_id)
+            source = sources[excerpt.source_id]
+            if not (
+                0 <= excerpt.start < excerpt.end <= len(source.text)
+                and excerpt.end - excerpt.start <= MAX_EXCERPT_CHARS
+            ):
                 raise EvidenceAdmissionError("reference_out_of_range")
-            fragment = source.text[ref.start : ref.end]
-            if ref.quote != fragment:
-                raise EvidenceAdmissionError("quote_mismatch")
             families[source.family] += 1
             refs.append(
                 EvidenceLocation(
                     source_id=source.source_id,
                     family=source.family,
                     fingerprint=source.fingerprint,
-                    start=ref.start,
-                    end=ref.end,
+                    start=excerpt.start,
+                    end=excerpt.end,
                     cell_index=source.cell_index,
                     version=source.version,
                     location=source.location,

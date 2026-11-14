@@ -309,7 +309,9 @@ One direct model invocation uses the authorized request provider/model, a copied
 deadline subordinate to enclosing cancellation/deadlines. Complete serialized
 messages/schema must fit 48,000 characters; no executable-cell trimming. Raw
 response <=16,384 characters; <=8 findings; messages <=400 chars; <=2 suggestions
-of <=240 chars; <=6 refs (<=2 per family), quotes <=160, ranges <=2000 chars.
+of <=240 chars. Reviewer v2 accepts <=6 distinct excerpt IDs (<=2 per family).
+The host resolves each ID to an exact range of up to 160 characters in the
+redacted source. Unknown or repeated IDs invalidate the response.
 Persisted provenance locations are <=512 chars and versions <=128; oversized
 reference metadata invalidates admission rather than being clipped.
 Oversize/truncated or insufficient review is incomplete, never a fake pass.
@@ -329,7 +331,7 @@ replacement. No semantic edge enters repair, and no executable cell or plan is
 modified. Summaries use existing derived Markdown with escaped model text; browser
 text is inert. Metadata is finalized before immutable export/publication.
 
-The prompt, raw response and evidence quotes are transient. Persist only sanitized
+The prompt, raw response and source excerpts are transient. Persist only sanitized
 bounded summaries and IDs/ranges/fingerprints. No tools, external docs retrieval,
 secret access, code execution or model repairs are available. Delimited untrusted
 data reduces exposure without proving universal prompt-injection resistance.

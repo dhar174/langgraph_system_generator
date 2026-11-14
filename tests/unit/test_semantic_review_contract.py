@@ -6,7 +6,10 @@ import json
 import pytest
 
 from langgraph_system_generator.generator.state import CellSpec
-from langgraph_system_generator.qa.specialist_models import ModelReviewResponse
+from langgraph_system_generator.qa.specialist_models import (
+    MAX_EXCERPT_CHARS,
+    ModelReviewResponse,
+)
 from langgraph_system_generator.qa.specialist_review import (
     admit_findings,
     build_review_context,
@@ -26,6 +29,14 @@ def context(value=None):
     return build_review_context(value or state(), instructions="Review untrusted data")
 
 
+def reference(ctx, source):
+    return {
+        "excerpt_id": next(
+            e.excerpt_id for e in ctx.excerpts if e.source_id == source.source_id
+        )
+    }
+
+
 def response(ctx, **changes):
     req = next(s for s in ctx.sources if s.family == "requirement")
     cell = next(s for s in ctx.sources if s.family == "cell" and "stocks" in s.text)
@@ -36,20 +47,7 @@ def response(ctx, **changes):
                 "category": "domain_mismatch",
                 "message": "Stock output contradicts the weather request.",
                 "suggestions": ["Use weather-specific behavior."],
-                "references": [
-                    {
-                        "source_id": req.source_id,
-                        "start": 0,
-                        "end": 5,
-                        "quote": req.text[:5],
-                    },
-                    {
-                        "source_id": cell.source_id,
-                        "start": 0,
-                        "end": 6,
-                        "quote": cell.text[:6],
-                    },
-                ],
+                "references": [reference(ctx, req), reference(ctx, cell)],
             }
         ],
     }
@@ -82,21 +80,16 @@ def test_structured_requirement_offsets_use_the_final_encoded_source():
     assert source.fingerprint == hashlib.sha256(source.text.encode()).hexdigest()
     assert context(value).context_digest == ctx.context_digest
     data = response(ctx).model_dump()
-    start = source.text.index("café")
+    excerpt = next(e for e in ctx.excerpts if e.source_id == source.source_id)
     data["findings"][0]["references"] = (
-        {
-            "source_id": source.source_id,
-            "start": start,
-            "end": start + 4,
-            "quote": "café",
-        },
+        {"excerpt_id": excerpt.excerpt_id},
         data["findings"][0]["references"][1],
     )
     assert (
         admit_findings(ctx, ModelReviewResponse.model_validate(data))[0]
         .references[0]
         .start
-        == start
+        == excerpt.start
     )
 
 
@@ -133,18 +126,57 @@ def test_advisory_markdown_renders_punctuation_and_inert_markup():
     assert all(tag not in rendered for tag in ("<script", "<a ", "<img", "<code"))
 
 
-@pytest.mark.parametrize("defect", ["source_id", "quote", "start", "end"])
-def test_rejects_fabricated_or_invalid_references(defect):
+def test_excerpt_catalog_is_lossless_bounded_and_stable():
+    value = state()
+    value["user_prompt"] = "  café\n" * 100
+    ctx = context(value)
+    wire = json.loads(
+        json.loads(ctx.request_json)["messages"][1]["content"].split("\n", 1)[1]
+    )
+    assert context(value).excerpts == ctx.excerpts
+    assert len({row.excerpt_id for row in ctx.excerpts}) == len(ctx.excerpts)
+    for source, data in zip(ctx.sources, wire["sources"], strict=True):
+        assert "".join(text for _, text in data["excerpts"]) == source.text
+        assert all(0 < len(text) <= MAX_EXCERPT_CHARS for _, text in data["excerpts"])
+        expected = [e for e in ctx.excerpts if e.source_id == source.source_id]
+        assert data["excerpts"] == [
+            [e.excerpt_id, source.text[e.start : e.end]] for e in expected
+        ]
+    assert "excerpts" not in ctx.model_dump()
+
+
+def test_excerpt_boundary_keeps_crlf_together():
+    value = state()
+    value["user_prompt"] = "x" * (MAX_EXCERPT_CHARS - 1) + "\r\nNext line"
+    ctx = context(value)
+    source = next(s for s in ctx.sources if s.source_id == "request:prompt")
+    refs = [e for e in ctx.excerpts if e.source_id == source.source_id]
+    assert len(refs) == 2
+    assert refs[0].end == refs[1].start == MAX_EXCERPT_CHARS - 1
+    assert source.text[refs[1].start : refs[1].end] == "\r\nNext line"
+
+
+def test_rejects_unknown_and_stale_excerpt_ids():
     ctx = context()
     data = response(ctx).model_dump(mode="json")
-    data["findings"][0]["references"][0][defect] = {
-        "source_id": "invented",
-        "quote": "fake",
-        "start": 999,
-        "end": 999,
-    }[defect]
+    data["findings"][0]["references"][0]["excerpt_id"] = "0" * 20
+    with pytest.raises(ValueError, match="unknown_excerpt_id"):
+        admit_findings(ctx, ModelReviewResponse.model_validate(data))
+    value = state()
+    value["user_prompt"] += " in Celsius"
+    with pytest.raises(ValueError, match="unknown_excerpt_id"):
+        admit_findings(context(value), response(ctx))
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [("quote", "invented"), ("start", 0), ("end", 1), ("source_id", "cell:0")],
+)
+def test_model_cannot_supply_evidence_text_or_offsets(field, value):
+    data = response(context()).model_dump(mode="json")
+    data["findings"][0]["references"][0][field] = value
     with pytest.raises(ValueError):
-        admit_findings(ctx, ModelReviewResponse.model_validate_json(json.dumps(data)))
+        ModelReviewResponse.model_validate(data)
 
 
 def test_context_changes_and_secrets_are_redacted():
@@ -189,9 +221,7 @@ def test_docs_provenance_and_version_survive_admission_without_quotes():
     ctx = context(value)
     data = response(ctx, category="provided_docs_conflict").model_dump(mode="json")
     doc = next(s for s in ctx.sources if s.family == "docs")
-    data["findings"][0]["references"].append(
-        {"source_id": doc.source_id, "start": 0, "end": 3, "quote": "Use"}
-    )
+    data["findings"][0]["references"].append(reference(ctx, doc))
     accepted = admit_findings(
         ctx, ModelReviewResponse.model_validate_json(json.dumps(data))
     )

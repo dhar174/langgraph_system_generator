@@ -17,6 +17,7 @@ from langgraph_system_generator.qa.registry import (
 )
 from langgraph_system_generator.qa.specialist_models import (
     REVIEWER_ID,
+    REVIEWER_VERSION,
     ModelReviewResponse,
 )
 from langgraph_system_generator.qa.specialist_review import (
@@ -45,15 +46,15 @@ def test_registry_clone_order_replacement_empty_and_existing_plugins(monkeypatch
     clone = value.clone()
     clone.register_specialist_reviewer(
         SpecialistReviewerRegistration(
-            REVIEWER_ID, "2", ("generated_cells",), lambda config: None
+            REVIEWER_ID, "plugin-version", ("generated_cells",), lambda config: None
         )
     )
     assert (
         clone.registered_specialist_reviewer_ids()
         == value.registered_specialist_reviewer_ids()
     )
-    assert value.specialist_reviewer(REVIEWER_ID).version == "1"
-    assert clone.specialist_reviewer(REVIEWER_ID).version == "2"
+    assert value.specialist_reviewer(REVIEWER_ID).version == REVIEWER_VERSION
+    assert clone.specialist_reviewer(REVIEWER_ID).version == "plugin-version"
     clone.disable_specialist_reviewer("fake_second")
     assert "fake_second" in value.registered_specialist_reviewer_ids()
     assert (
@@ -93,7 +94,8 @@ async def test_policy_is_host_owned_snapshot_and_feedback_is_once(monkeypatch):
 
 
 @pytest.mark.parametrize(
-    "change", ["findings", "references", "suggestions", "message", "quote", "severity"]
+    "change",
+    ["findings", "references", "suggestions", "message", "excerpt_id", "severity"],
 )
 def test_model_field_bounds_and_no_severity_authority(change):
     ctx = context()
@@ -105,8 +107,8 @@ def test_model_field_bounds_and_no_severity_authority(change):
         finding["references"] *= 4
     elif change == "suggestions":
         finding["suggestions"] *= 3
-    elif change == "quote":
-        finding["references"][0]["quote"] = "x" * 161
+    elif change == "excerpt_id":
+        finding["references"][0]["excerpt_id"] = "x" * 21
     elif change == "severity":
         finding["severity"] = "error"
     else:
