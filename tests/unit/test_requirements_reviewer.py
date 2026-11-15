@@ -3,6 +3,7 @@
 import asyncio
 import json
 import logging
+from pathlib import Path
 from unittest.mock import AsyncMock
 
 import httpx
@@ -49,6 +50,62 @@ def install_fake(monkeypatch, message=None, error=None):
 
     monkeypatch.setattr(agent, "ChatOpenAI", Fake)
     return calls, invoke
+
+
+_RUBRIC_REGRESSIONS = json.loads(
+    (
+        Path(__file__).parents[1] / "evaluation/semantic_rubric_regressions.json"
+    ).read_text(encoding="utf-8")
+)
+
+
+@pytest.mark.parametrize(
+    "trial",
+    _RUBRIC_REGRESSIONS["trials"],
+    ids=lambda trial: f"owner-{trial['finding_number']}",
+)
+async def test_adjudicated_rubric_development_case_request(monkeypatch, trial):
+    """Exercise the request and no-finding contract with a canned response."""
+    fixture = _RUBRIC_REGRESSIONS["cases"][trial["case_id"]]
+    state = {
+        "user_prompt": fixture["user_prompt"],
+        "generated_cells": [
+            CellSpec.model_validate(cell) for cell in fixture["generated_cells"]
+        ],
+    }
+    reviewer = agent.RequirementsDomainReviewer(ModelConfig(model=DEFAULT_MODEL))
+    ctx = build_review_context(state, instructions=reviewer.instructions)
+    _, invoke = install_fake(monkeypatch)
+    result = await reviewer.review(ctx)
+    assert (result.status, result.reason_code) == ("reviewed", "complete")
+    assert result.response is not None
+    assert len(result.response.findings) == trial["expected_finding_count"]
+    assert result.model_invocations == invoke.await_count == 1
+
+    messages = invoke.call_args.args[0]
+    instructions = " ".join(messages[0]["content"].split())
+    guidance = {
+        "code_trace": "mentally trace a concrete input",
+        "unstated_format": "unstated output format",
+        "caller_supplied_data": "data the caller has yet to supply",
+        "ambiguous_deliverable": "ambiguous deliverable",
+    }
+    assert guidance[trial["failure_mode"]] in instructions
+    wire = messages[1]["content"]
+    assert trial["case_id"] not in wire
+    assert trial["witness"] not in wire
+    request = json.loads(wire.split("\n", 1)[1])
+    sources = {
+        source["source_id"]: "".join(text for _, text in source["excerpts"])
+        for source in request["sources"]
+    }
+    assert sources["request:prompt"] == fixture["user_prompt"]
+    original_node = next(
+        cell["content"]
+        for cell in fixture["generated_cells"]
+        if cell["section"] == "nodes"
+    )
+    assert original_node in sources.values()
 
 
 @pytest.mark.parametrize("cap,expected", [(None, 2048), (80, 80), (5000, 2048)])

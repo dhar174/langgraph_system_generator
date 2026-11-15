@@ -7,7 +7,7 @@ from typing import Annotated, Any, Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 REVIEWER_ID = "requirements_domain_fidelity"
-REVIEWER_VERSION = "2"
+REVIEWER_VERSION = "2.1"
 MAX_EXCERPT_CHARS = 160
 MAX_INPUT_CHARS = 48_000
 MAX_RESPONSE_CHARS = 16_384

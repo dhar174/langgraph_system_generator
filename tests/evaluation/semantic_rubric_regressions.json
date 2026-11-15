@@ -1,0 +1,285 @@
+{
+  "cases": {
+    "h-b52": {
+      "generated_cells": [
+        {
+          "cell_type": "markdown",
+          "content": "# Workflow\n\nWhen two catalog records have the same accession ID, keep the first record. Return one record per ID.",
+          "metadata": {},
+          "section": "intro"
+        },
+        {
+          "cell_type": "code",
+          "content": "from typing import Any, TypedDict\n\nfrom langgraph.graph import END, START, StateGraph",
+          "metadata": {},
+          "section": "setup"
+        },
+        {
+          "cell_type": "code",
+          "content": "CONFIG = {\"configurable\": {\"thread_id\": \"fixture-session\"}, \"recursion_limit\": 10}",
+          "metadata": {},
+          "section": "config"
+        },
+        {
+          "cell_type": "code",
+          "content": "class WorkflowState(TypedDict, total=False):\n    request: dict[str, Any]\n    result: Any",
+          "metadata": {},
+          "section": "state"
+        },
+        {
+          "cell_type": "code",
+          "content": "def deduplicate_catalog(records: list[dict]):\n    return list({r[\"accession_id\"]: r for r in reversed(records)}.values())\n\ndef perform_request(state: WorkflowState) -> WorkflowState:\n    return {\"result\": deduplicate_catalog(**state[\"request\"])}",
+          "metadata": {},
+          "section": "nodes"
+        },
+        {
+          "cell_type": "code",
+          "content": "builder = StateGraph(WorkflowState)\nbuilder.add_node(\"perform_request\", perform_request)\nbuilder.add_edge(START, \"perform_request\")\nbuilder.add_edge(\"perform_request\", END)\ngraph = builder.compile()",
+          "metadata": {},
+          "section": "graph"
+        },
+        {
+          "cell_type": "code",
+          "content": "def run_workflow(request: dict[str, Any]) -> Any:\n    result = graph.invoke({\"request\": request}, config=CONFIG)\n    return result[\"result\"]",
+          "metadata": {},
+          "section": "execution"
+        },
+        {
+          "cell_type": "markdown",
+          "content": "The workflow returns the result from the requested operation.",
+          "metadata": {},
+          "section": "export"
+        },
+        {
+          "cell_type": "markdown",
+          "content": "Supply the operation's named arguments in the request dictionary.",
+          "metadata": {},
+          "section": "troubleshooting"
+        }
+      ],
+      "user_prompt": "When two catalog records have the same accession ID, keep the first record. Return one record per ID."
+    },
+    "h-g16": {
+      "generated_cells": [
+        {
+          "cell_type": "markdown",
+          "content": "# Workflow\n\nExport interview titles in the caller's order and preserve punctuation. Include the associated catalog IDs in a separate field.",
+          "metadata": {},
+          "section": "intro"
+        },
+        {
+          "cell_type": "code",
+          "content": "from typing import Any, TypedDict\n\nfrom langgraph.graph import END, START, StateGraph",
+          "metadata": {},
+          "section": "setup"
+        },
+        {
+          "cell_type": "code",
+          "content": "CONFIG = {\"configurable\": {\"thread_id\": \"fixture-session\"}, \"recursion_limit\": 10}",
+          "metadata": {},
+          "section": "config"
+        },
+        {
+          "cell_type": "code",
+          "content": "class WorkflowState(TypedDict, total=False):\n    request: dict[str, Any]\n    result: Any",
+          "metadata": {},
+          "section": "state"
+        },
+        {
+          "cell_type": "code",
+          "content": "def export_titles(items: list[dict]):\n    return {\"titles\": [x[\"title\"] for x in items], \"catalog_ids\": [x[\"id\"] for x in items]}\n\ndef perform_request(state: WorkflowState) -> WorkflowState:\n    return {\"result\": export_titles(**state[\"request\"])}",
+          "metadata": {},
+          "section": "nodes"
+        },
+        {
+          "cell_type": "code",
+          "content": "builder = StateGraph(WorkflowState)\nbuilder.add_node(\"perform_request\", perform_request)\nbuilder.add_edge(START, \"perform_request\")\nbuilder.add_edge(\"perform_request\", END)\ngraph = builder.compile()",
+          "metadata": {},
+          "section": "graph"
+        },
+        {
+          "cell_type": "code",
+          "content": "def run_workflow(request: dict[str, Any]) -> Any:\n    result = graph.invoke({\"request\": request}, config=CONFIG)\n    return result[\"result\"]",
+          "metadata": {},
+          "section": "execution"
+        },
+        {
+          "cell_type": "markdown",
+          "content": "The workflow returns the result from the requested operation.",
+          "metadata": {},
+          "section": "export"
+        },
+        {
+          "cell_type": "markdown",
+          "content": "Supply the operation's named arguments in the request dictionary.",
+          "metadata": {},
+          "section": "troubleshooting"
+        }
+      ],
+      "user_prompt": "Export interview titles in the caller's order and preserve punctuation. Include the associated catalog IDs in a separate field."
+    },
+    "h-n68": {
+      "generated_cells": [
+        {
+          "cell_type": "markdown",
+          "content": "# Workflow\n\nIssue a reopening checklist only when both the surface inspection and marker inspection passed. Otherwise list the missing inspections.",
+          "metadata": {},
+          "section": "intro"
+        },
+        {
+          "cell_type": "code",
+          "content": "from typing import Any, TypedDict\n\nfrom langgraph.graph import END, START, StateGraph",
+          "metadata": {},
+          "section": "setup"
+        },
+        {
+          "cell_type": "code",
+          "content": "CONFIG = {\"configurable\": {\"thread_id\": \"fixture-session\"}, \"recursion_limit\": 10}",
+          "metadata": {},
+          "section": "config"
+        },
+        {
+          "cell_type": "code",
+          "content": "class WorkflowState(TypedDict, total=False):\n    request: dict[str, Any]\n    result: Any",
+          "metadata": {},
+          "section": "state"
+        },
+        {
+          "cell_type": "code",
+          "content": "def reopening_checklist(surface: bool, markers: bool):\n    if surface and markers:\n        return {\"status\": \"ready\", \"missing\": []}\n    return {\"status\": \"blocked\", \"missing\": [name for name, ok in ((\"surface\", surface), (\"markers\", markers)) if not ok]}\n\ndef perform_request(state: WorkflowState) -> WorkflowState:\n    return {\"result\": reopening_checklist(**state[\"request\"])}",
+          "metadata": {},
+          "section": "nodes"
+        },
+        {
+          "cell_type": "code",
+          "content": "builder = StateGraph(WorkflowState)\nbuilder.add_node(\"perform_request\", perform_request)\nbuilder.add_edge(START, \"perform_request\")\nbuilder.add_edge(\"perform_request\", END)\ngraph = builder.compile()",
+          "metadata": {},
+          "section": "graph"
+        },
+        {
+          "cell_type": "code",
+          "content": "def run_workflow(request: dict[str, Any]) -> Any:\n    result = graph.invoke({\"request\": request}, config=CONFIG)\n    return result[\"result\"]",
+          "metadata": {},
+          "section": "execution"
+        },
+        {
+          "cell_type": "markdown",
+          "content": "The workflow returns the result from the requested operation.",
+          "metadata": {},
+          "section": "export"
+        },
+        {
+          "cell_type": "markdown",
+          "content": "Supply the operation's named arguments in the request dictionary.",
+          "metadata": {},
+          "section": "troubleshooting"
+        }
+      ],
+      "user_prompt": "Issue a reopening checklist only when both the surface inspection and marker inspection passed. Otherwise list the missing inspections."
+    },
+    "h-s42": {
+      "generated_cells": [
+        {
+          "cell_type": "markdown",
+          "content": "# Workflow\n\nProduce a checklist grouped by act. Always include a safety_check field for each listed prop, even if no safety check is required.",
+          "metadata": {},
+          "section": "intro"
+        },
+        {
+          "cell_type": "code",
+          "content": "from typing import Any, TypedDict\n\nfrom langgraph.graph import END, START, StateGraph",
+          "metadata": {},
+          "section": "setup"
+        },
+        {
+          "cell_type": "code",
+          "content": "CONFIG = {\"configurable\": {\"thread_id\": \"fixture-session\"}, \"recursion_limit\": 10}",
+          "metadata": {},
+          "section": "config"
+        },
+        {
+          "cell_type": "code",
+          "content": "class WorkflowState(TypedDict, total=False):\n    request: dict[str, Any]\n    result: Any",
+          "metadata": {},
+          "section": "state"
+        },
+        {
+          "cell_type": "code",
+          "content": "def prop_checklist(props: list[dict]):\n    result = {}\n    for p in props:\n        result.setdefault(p[\"act\"], []).append({\"prop\": p[\"name\"], \"safety_check\": p.get(\"safety_check\", \"\")})\n    return result\n\ndef perform_request(state: WorkflowState) -> WorkflowState:\n    return {\"result\": prop_checklist(**state[\"request\"])}",
+          "metadata": {},
+          "section": "nodes"
+        },
+        {
+          "cell_type": "code",
+          "content": "builder = StateGraph(WorkflowState)\nbuilder.add_node(\"perform_request\", perform_request)\nbuilder.add_edge(START, \"perform_request\")\nbuilder.add_edge(\"perform_request\", END)\ngraph = builder.compile()",
+          "metadata": {},
+          "section": "graph"
+        },
+        {
+          "cell_type": "code",
+          "content": "def run_workflow(request: dict[str, Any]) -> Any:\n    result = graph.invoke({\"request\": request}, config=CONFIG)\n    return result[\"result\"]",
+          "metadata": {},
+          "section": "execution"
+        },
+        {
+          "cell_type": "markdown",
+          "content": "The workflow returns the result from the requested operation.",
+          "metadata": {},
+          "section": "export"
+        },
+        {
+          "cell_type": "markdown",
+          "content": "Supply the operation's named arguments in the request dictionary.",
+          "metadata": {},
+          "section": "troubleshooting"
+        }
+      ],
+      "user_prompt": "Produce a checklist grouped by act. Always include a safety_check field for each listed prop, even if no safety check is required."
+    }
+  },
+  "owner_annotations_sha256": "105e26c3182d9401c05ef14e19d83efb1b51e258b0f7f366751bc3db28d2f30f",
+  "purpose": "Development regression cases from the owner-adjudicated v2 holdout. Never use as fresh holdout cases.",
+  "source_dataset_sha256": "ddcc64e3e4b2043dcf2ef4a61dca41f6ddd9689ba7c6045fdf7861d8d8766b40",
+  "trials": [
+    {
+      "case_id": "h-b52",
+      "expected_finding_count": 0,
+      "failure_mode": "code_trace",
+      "finding_number": 6,
+      "repetition": 2,
+      "witness": "Two records with the same ID are visited in reverse. The first original record is assigned last and retained."
+    },
+    {
+      "case_id": "h-g16",
+      "expected_finding_count": 0,
+      "failure_mode": "unstated_format",
+      "finding_number": 11,
+      "repetition": 2,
+      "witness": "Two input interviews produce two titles and two IDs in corresponding positions. The request asks for a separate ID field."
+    },
+    {
+      "case_id": "h-n68",
+      "expected_finding_count": 0,
+      "failure_mode": "ambiguous_deliverable",
+      "finding_number": 16,
+      "repetition": 1,
+      "witness": "Two passed inspections yield ready and an empty missing list. The fixture does not require a separate checklist payload."
+    },
+    {
+      "case_id": "h-n68",
+      "expected_finding_count": 0,
+      "failure_mode": "ambiguous_deliverable",
+      "finding_number": 17,
+      "repetition": 2,
+      "witness": "Two passed inspections yield ready and an empty missing list. The fixture does not require a separate checklist payload."
+    },
+    {
+      "case_id": "h-s42",
+      "expected_finding_count": 0,
+      "failure_mode": "caller_supplied_data",
+      "finding_number": 20,
+      "repetition": 1,
+      "witness": "A supplied prop produces an entry under its act with a safety_check field. The fixture does not require prepopulated output."
+    }
+  ]
+}

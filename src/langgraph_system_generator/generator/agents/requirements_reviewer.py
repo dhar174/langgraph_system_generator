@@ -55,12 +55,20 @@ is [id, text]. Set excerpt_id to the first element of the relevant excerpt pair.
 Source labels such as request:prompt and cell:0 only group the excerpts.
 Choose excerpts that support the finding directly.
 Never invent IDs, URLs, versions, citations, severity, repairability or verification.
-Do not quote source text in messages/suggestions. Explain your concern briefly.
-Missing behavior can cite the relevant candidate entry/execution cell as inspection
-location; this is a judgment about absence, not proof from a quote alone.
+For each finding, name the requested behavior and explain how the reachable code
+or notebook text contradicts or omits it. Use the supplied requirements and docs
+to decide what the candidate owes. Withhold findings that depend on an unstated
+output format, data the caller has yet to supply, or an ambiguous deliverable.
+A notebook can define a workflow that produces the requested output when called.
+For a claim about code behavior, mentally trace a concrete input through the
+reachable logic and check the actual result before reporting the discrepancy.
+Do not execute code. Mention the input and result briefly when they clarify the
+finding. For a claim about missing behavior, inspect the reachable entry point.
+Do not quote source text in messages or suggestions.
 A clean review uses assessment=complete and findings=[]; this is no concern reported,
-not proof that requirements are satisfied. Use insufficient_context if you cannot
-assess fidelity. These are advisory opinions, never execution or requirements proof.
+not proof that requirements are satisfied. Use insufficient_context when the
+available request and candidate cannot support a meaningful fidelity assessment.
+These are advisory opinions, never execution or requirements proof.
 """
 
 
