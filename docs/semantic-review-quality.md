@@ -57,6 +57,17 @@ results and report differences in eligibility explicitly. Submit the exact
 source, corpus, label, prompt, and schema hashes, cases, endpoint, data scope,
 and combined call ceiling for separate approval before a provider request.
 
+### Rubric revision
+
+Reviewer v2.1 asks the reviewer to explain how reachable behavior fails a
+stated requirement and to check a concrete input for code-behavior claims.
+It withholds findings that depend on an unstated format, unavailable caller
+inputs, or an ambiguous deliverable. The five adjudicated false-positive
+trials are retained as development regression cases. The credential-free
+tests exercise the revised request with deterministic responses. The
+[proposed fresh holdout](verification/334-e-rubric-holdout-plan.md) measures
+whether the rubric improves live accuracy.
+
 ## Local workflow
 
 Use the script from the repository root in an environment with the project
