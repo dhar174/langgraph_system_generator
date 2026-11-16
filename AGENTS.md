@@ -460,9 +460,7 @@ Use that instruction file as the repository-local guide for:
 
 ### Preferred docs and MCP lookup workflow
 
-For LangChain-, LangGraph-, and LangSmith-specific questions, start with the
-built-in LangChain docs MCP entry point:
-`docs-langchain-search_docs_by_lang_chain`.
+Prefer the connected official LangChain documentation tool when it is actually advertised and usable. Otherwise use current primary documentation or an available version-aware documentation connector. Do not invent tool availability or install an integration as a side effect of documentation lookup.
 
 Use that MCP-backed docs search when you need:
 
@@ -474,13 +472,13 @@ Use that MCP-backed docs search when you need:
 
 Usage pattern:
 
-1. Query `docs-langchain-search_docs_by_lang_chain` first for LangChain,
+1. Follow the availability-aware documentation policy above for LangChain,
    LangGraph, or LangSmith topics.
 2. Apply `.github/instructions/langchain-python.instructions.md` for repository
    coding conventions and implementation expectations.
-3. Use Context7 or web search only when the question is outside the LangChain
-   ecosystem or needs package/version research not covered by the LangChain docs
-   corpus.
+3. Use current primary documentation or an available version-aware documentation
+   connector when the official connected tool is unavailable or its corpus does
+   not cover the question.
 
 For general MCP background and editor setup guidance, see:
 
