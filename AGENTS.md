@@ -460,7 +460,7 @@ Use that instruction file as the repository-local guide for:
 
 ### Preferred docs and MCP lookup workflow
 
-Prefer the connected official LangChain documentation tool when it is actually advertised and usable. Otherwise use current primary documentation or an available version-aware documentation connector. Do not invent tool availability or install an integration as a side effect of documentation lookup.
+Prefer the connected official LangChain documentation tool (for example, `docs-langchain-search_docs_by_lang_chain`) when it is actually advertised and usable. Otherwise use current primary documentation or an available version-aware documentation connector. Do not invent tool availability or install an integration as a side effect of documentation lookup.
 
 Use that MCP-backed docs search when you need:
 
