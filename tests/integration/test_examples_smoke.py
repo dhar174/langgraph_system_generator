@@ -73,12 +73,36 @@ def test_example_notebooks_execute_in_stub_mode(notebook_name: str):
         exec(compile(cell.source, str(notebook_path), "exec"), namespace, namespace)
 
     if notebook_name == "benchmark_critique_vs_judge.ipynb":
-        assert "rows" in namespace
-        assert namespace["rows"]
-        assert "MARKDOWN_TABLE" in namespace
-        assert namespace["MARKDOWN_TABLE"]
-        assert "summary" in namespace
-        assert namespace["summary"]
+        rows = namespace["rows"]
+        summary = namespace["summary"]
+        assert summary["mode"] == "stub"
+        assert summary["fixture_version"] == "1.0.0"
+        assert summary["fixture_sha256"] == "802542a2164d794453a052f0f81785c72c0dc4109202039b24b1edaf9e05e269"
+        assert summary["task_count"] == len(rows) == 3
+        assert summary["starting_draft_points"] == 5
+        assert summary["possible_points"] == 8
+        assert summary["judge_flagged_tasks"] == 2
+        assert all(row["llm_judge"]["artifact"] == row["starting_draft"] for row in rows)
+        assert rows[0]["starting_draft"]["route"] == "specialist"
+        assert rows[0]["critique_revise"]["artifact"]["route"] == "clarify"
+        assert rows[1]["critique_revise"]["checks"] == {"steps": 1, "owner": 1, "status": 0}
+        assert namespace["score_artifact"]({"count": True}, {"count": 1, "missing": 0}) == {
+            "count": 0,
+            "missing": 0,
+        }
+        for arm, points in (("critique_revise", 7), ("llm_judge", 5)):
+            assert summary["arms"][arm] == {
+                "points": points,
+                "latency_seconds": None,
+                "input_tokens": None,
+                "output_tokens": None,
+                "cost_usd": None,
+            }
+        table = namespace["MARKDOWN_TABLE"]
+        assert "| handoff-order | 1/3 | 2/3 | 1/3 | flag |" in table
+        assert "| Critique-Revise | 7/8 | Unknown | Unknown | Unknown | Unknown |" in table
+        assert "| LLM-as-a-Judge | 5/8 | Unknown | Unknown | Unknown | Unknown |" in table
+        assert "Live performance is unmeasured." in table
     else:
         assert "RESULT" in namespace
         assert namespace["RESULT"]

@@ -1,73 +1,89 @@
 {
-  "generated_at": "2026-03-16",
-  "mode": "stub-fixture",
-  "model": "gpt-4.1-mini",
-  "pricing_usd_per_1k_tokens": {
-    "input": 0.0004,
-    "output": 0.0016
-  },
-  "rubric": {
-    "factuality": 5,
-    "usefulness": 5,
-    "specificity": 5
-  },
+  "fixture_version": "1.0.0",
+  "mode": "stub",
   "tasks": [
     {
-      "task": "Explain when to use a router pattern in LangGraph.",
+      "id": "router-fallback",
+      "prompt": "A router receives the topic 'unknown'. Return route as 'clarify' for unknown topics and 'specialist' otherwise. In the same response return retry_limit as the integer 1.",
+      "starting_draft": {
+        "route": "specialist",
+        "retry_limit": 1
+      },
       "critique_revise": {
-        "quality_score": 0.9,
-        "latency_seconds": 1.4,
-        "prompt_tokens": 760,
-        "completion_tokens": 340,
-        "total_tokens": 1100,
-        "estimated_cost_usd": 0.000848
+        "feedback": "The unknown topic should enter the clarification route.",
+        "revision": {
+          "route": "clarify"
+        }
       },
       "llm_judge": {
-        "quality_score": 0.86,
-        "latency_seconds": 1.0,
-        "prompt_tokens": 590,
-        "completion_tokens": 240,
-        "total_tokens": 830,
-        "estimated_cost_usd": 0.00062
+        "decision": "flag",
+        "feedback": "The draft sends an unknown topic straight to the specialist."
       }
     },
     {
-      "task": "Explain when to use a supervisor/subagents pattern in LangGraph.",
+      "id": "handoff-order",
+      "prompt": "Build a handoff record. Put 'review' before 'publish' in the steps list. Set owner to 'editor' and status to 'pending'.",
+      "starting_draft": {
+        "steps": [
+          "publish",
+          "review"
+        ],
+        "owner": "editor",
+        "status": "approved"
+      },
       "critique_revise": {
-        "quality_score": 0.92,
-        "latency_seconds": 1.6,
-        "prompt_tokens": 810,
-        "completion_tokens": 390,
-        "total_tokens": 1200,
-        "estimated_cost_usd": 0.000948
+        "feedback": "Review must precede publish. The draft also marks the work approved too early.",
+        "revision": {
+          "steps": [
+            "review",
+            "publish"
+          ]
+        }
       },
       "llm_judge": {
-        "quality_score": 0.88,
-        "latency_seconds": 1.1,
-        "prompt_tokens": 610,
-        "completion_tokens": 260,
-        "total_tokens": 870,
-        "estimated_cost_usd": 0.00066
+        "decision": "flag",
+        "feedback": "The steps are reversed and the status is already approved."
       }
     },
     {
-      "task": "Explain when to use rubric-based judging rather than another critique loop.",
+      "id": "review-summary",
+      "prompt": "Summarize a review with two accepted items and one deferred item. Return accepted and deferred as integer counts, and status as 'partial' when any item is deferred.",
+      "starting_draft": {
+        "accepted": 2,
+        "deferred": 1,
+        "status": "partial"
+      },
       "critique_revise": {
-        "quality_score": 0.89,
-        "latency_seconds": 1.5,
-        "prompt_tokens": 790,
-        "completion_tokens": 360,
-        "total_tokens": 1150,
-        "estimated_cost_usd": 0.000892
+        "feedback": "The counts and partial status match the input.",
+        "revision": {}
       },
       "llm_judge": {
-        "quality_score": 0.91,
-        "latency_seconds": 1.2,
-        "prompt_tokens": 630,
-        "completion_tokens": 280,
-        "total_tokens": 910,
-        "estimated_cost_usd": 0.0007
+        "decision": "approve",
+        "feedback": "The counts and status satisfy the request."
       }
     }
-  ]
+  ],
+  "rubric": {
+    "kind": "exact_field_match",
+    "description": "Award one point per named field with the exact value and JSON type. Missing or incorrect fields score zero. Ignore extra fields. Apply the same checks to drafts and delivered artifacts without using arm feedback or decisions.",
+    "expected_by_task": {
+      "router-fallback": {
+        "route": "clarify",
+        "retry_limit": 1
+      },
+      "handoff-order": {
+        "steps": [
+          "review",
+          "publish"
+        ],
+        "owner": "editor",
+        "status": "pending"
+      },
+      "review-summary": {
+        "accepted": 2,
+        "deferred": 1,
+        "status": "partial"
+      }
+    }
+  }
 }

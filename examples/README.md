@@ -79,10 +79,19 @@ These links point to current official JavaScript docs or closest first-party pri
 
 ## Benchmark
 
-Use [benchmark_critique_vs_judge.ipynb](./benchmark_critique_vs_judge.ipynb) with the checked-in fixture [benchmark_critique_vs_judge_fixture.json](./benchmark_critique_vs_judge_fixture.json) to compare token cost, latency, and rubric quality for Critique-Revise vs LLM-as-a-Judge.
+Run [benchmark_critique_vs_judge.ipynb](./benchmark_critique_vs_judge.ipynb)
+from the checkout or the examples directory. The
+[versioned synthetic fixture](./benchmark_critique_vs_judge_fixture.json)
+contains three tasks, one shared starting draft per task, scripted arm behavior,
+and field-level reference answers. The notebook reports the fixture version and
+canonical JSON SHA-256. Version changes to the task set and rubric together.
 
-- Stub mode loads the checked-in fixture and renders the comparison offline.
-- Live runs should record the model name, date, prompt/completion token counts, latency, and pricing assumptions used for any refreshed results.
+- Critique-Revise applies one scripted revision. LLM-as-a-Judge returns the
+  original draft with an approve or flag decision for human review.
+- The same field rubric scores both returned artifacts, including flagged
+  drafts. Judge decisions and feedback are reported separately from quality.
+- Stub scores describe the scripted artifacts. Model latency, token usage, and
+  cost are unknown. The notebook runs offline without credentials.
 
 ## Cross-Cutting Workflows
 
