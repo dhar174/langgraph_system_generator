@@ -1,15 +1,15 @@
 # Semantic reviewer quality study
 
-The #334-B study measures how well the advisory Requirements/Domain Fidelity
-Reviewer identifies issues in a fixed set of notebook candidates. The reviewer
+These studies measure how well the advisory Requirements/Domain Fidelity
+Reviewer identifies issues in fixed sets of notebook candidates. The reviewer
 runs after final candidate selection. It produces advice and leaves the
 candidate unchanged. The study reports detection value alongside deterministic
 QA. Generated notebook execution and outcome qualification use the separate
 [#381 evaluator](generated-notebook-evaluation.md).
 
-The corpus contains eight clean and defective pairs in four domains, plus four
-cases for insufficient requirements, oversized input, adversarial instructions,
-and realistic context near the input limit. Each pair belongs entirely to
+The original #334-B corpus contains eight clean/defect pairs in four domains
+and four guardrails covering insufficient requirements, oversized input,
+adversarial instructions, and context near the input limit. Each pair belongs entirely to
 development or holdout. Report guardrail cases separately and freeze the
 reference labels, reviewer instructions, and response schema before a pilot.
 Use a new holdout for any later study that tunes on these results.
@@ -46,9 +46,9 @@ old near-limit case now exceed the cap (54,983 characters, up from 47,500),
 as do both repetitions of the original oversized case. All paired cases
 remained eligible.
 
-For the next live comparison, freeze fresh synthetic clean/defect pairs that
-were unused during development and separate guardrails for the input limit,
-redaction, and insufficient context. Review the labels before seeing any
+For any new live comparison, freeze synthetic clean/defect pairs unused during
+development and separate guardrails for the input limit, redaction, and
+insufficient context. Review the labels before seeing any
 outputs. Compare both reviewer versions on the same frozen candidates using
 their respective pinned runners and identical provider settings. Measure
 review coverage, evidence rejection reasons, confirmed holdout recall,
@@ -64,9 +64,52 @@ stated requirement and to check a concrete input for code-behavior claims.
 It withholds findings that depend on an unstated format, unavailable caller
 inputs, or an ambiguous deliverable. The five adjudicated false-positive
 trials are retained as development regression cases. The credential-free
-tests exercise the revised request with deterministic responses. The
-[proposed fresh holdout](verification/334-e-rubric-holdout-plan.md) measures
-whether the rubric improves live accuracy.
+tests exercise the revised request with deterministic responses.
+
+## Final v2.1 holdout results
+
+The #334-E holdout compared v2 at merge commit
+`da63e61b925389877b29c3986e61451c589e6c62` with the v2.1 revision
+`527ef719d6dc5ceb791c942bfee43ce1fe6778de`, merged in PR #406 as
+`5f271ec7842ba3f45c6cac088bbe674a02c82ad8`. See the
+[holdout design and thresholds](verification/334-e-rubric-holdout-plan.md).
+
+Each arm scheduled two trials for each of the same eight frozen clean/defect
+pairs and four guardrails. v2 ran first. The approved run recorded 80 slots
+and 76 provider requests, with zero retries. The four oversized guardrail
+slots stayed local. The owner adjudicated all 49 admitted findings with arm
+identity withheld (36 supported, 13 unsupported, zero pending).
+
+| Human-adjudicated metric | v2 | v2.1 |
+| --- | ---: | ---: |
+| Valid paired reviews | 32/32 | 32/32 |
+| Clean trials with a false positive | 5/16 | 2/16 |
+| Defect trials detected | 16/16 | 16/16 |
+| Unique paired defects detected | 8/8 | 8/8 |
+| Supported findings, including guardrails | 18/27 | 18/22 |
+| Unsupported findings, including guardrails | 9/27 | 4/22 |
+| Guardrail status and reason matched | 6/8 | 7/8 |
+
+v2.1 met all three thresholds. Its 2/16 clean false-positive trials met the
+ceiling and improved on v2. Its 16/16 defect detections and 32/32 valid paired
+reviews matched v2 and exceeded the respective floors of 14/16 and 30/32.
+On the paired holdout, the frozen deterministic QA baseline detected 0/16
+labeled defect trials. Each reviewer arm detected all 16.
+
+The two v2.1 clean false positives came from the same station-summary fixture
+on both repetitions. The reviewer inferred that callers must be able
+to omit transcript input. The requirement specifies when the transcript
+appears in the output and leaves the input signature unspecified. A separate
+booth-label guardrail produced the other two unsupported v2.1 findings.
+
+Retain v2.1 as an operator opt-in advisory reviewer with
+`LNF_SPECIALIST_QA_MODE=off` by default. These results apply to a small,
+fixed synthetic holdout with repeated candidates and fixed arm order. The
+study measured detection under those conditions. Production accuracy,
+generated notebook execution, and repair efficacy were outside its scope.
+Holdout fixtures, labels, receipts, and verdict files are retained locally.
+Any further live measurement requires a fresh holdout plan and separate
+owner approval.
 
 ## Local workflow
 

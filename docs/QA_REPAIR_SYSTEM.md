@@ -278,9 +278,11 @@ not establish arbitrary-prompt or general requirements fidelity. See
 
 ## Optional async specialist review (#334-A)
 
-The [#334-B quality study](semantic-review-quality.md) documents the local
-reference corpus, completed owner-adjudicated pilot on corpus `1.0.0`, and
-offline verification of the diagnostics and corrected corpus `1.0.1`.
+The [semantic reviewer quality study](semantic-review-quality.md) records the
+historical corpus pilots and the
+[human-adjudicated v2.1 holdout](semantic-review-quality.md#final-v21-holdout-results).
+v2.1 met the frozen recall, coverage, and clean false-positive thresholds on
+that fixed holdout.
 
 `LNF_SPECIALIST_QA_MODE=advisory` enables one final-candidate Requirements/Domain
 Fidelity Reviewer; `off` is the default. It runs after deterministic QA/repair
@@ -309,7 +311,7 @@ One direct model invocation uses the authorized request provider/model, a copied
 deadline subordinate to enclosing cancellation/deadlines. Complete serialized
 messages/schema must fit 48,000 characters; no executable-cell trimming. Raw
 response <=16,384 characters; <=8 findings; messages <=400 chars; <=2 suggestions
-of <=240 chars. Reviewer v2 accepts <=6 distinct excerpt IDs (<=2 per family).
+of <=240 chars. Reviewer v2.1 accepts <=6 distinct excerpt IDs (<=2 per family).
 The host resolves each ID to an exact range of up to 160 characters in the
 redacted source. Unknown or repeated IDs invalidate the response.
 Persisted provenance locations are <=512 chars and versions <=128; oversized

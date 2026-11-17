@@ -1,5 +1,8 @@
 # Proposed holdout for the reviewer rubric revision
 
+The completed comparison used the pinned v2 and v2.1 revisions. See the
+[final human-adjudicated results](../semantic-review-quality.md#final-v21-holdout-results).
+
 Compare the current v2 rubric from merge commit
 `da63e61b925389877b29c3986e61451c589e6c62` with the v2.1 rubric from the
 accepted revision of this PR. Both use the same excerpt ID protocol, evidence

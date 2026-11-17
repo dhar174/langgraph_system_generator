@@ -1,17 +1,21 @@
 ## Current Work Focus
 
 The broader v1.1 reconciliation used main `4f17c2d` on 2026-10-23.
-The #334-B status below was refreshed against main `6027db8` on 2026-11-13.
+The #334 reviewer status below was refreshed against main `5f271ec` on 2026-11-15.
 The [current v1.1 plan](../plans/current-plan.md) owns the acceptance matrix.
 Charles deferred #383 (open, non-blocking); no usage ledger/pricing engine or
 per-generation spending cap is delivered. PR #401 delivered the opt-in advisory
 Requirements/Domain Fidelity Reviewer. #334-B delivered the
 [quality study](../docs/semantic-review-quality.md) in #402, completed one
 owner-adjudicated pilot on corpus `1.0.0`, and shipped rejection diagnostics and
-corpus `1.0.1` corrections in #403 (merged `6027db8`). The corrected corpus has
-offline contract evidence. #334 remains open for later acceptance criteria.
-#129 stays open for controlled comparisons without a #383 prerequisite. #335 remains later. #380 remains open for real-cloud
-staging and owner acceptance; SDK/Firestore-emulator evidence is separate.
+corpus `1.0.1` corrections in #403. PR #405 added stable excerpt IDs. PR #406
+merged the v2.1 rubric after the [owner-adjudicated holdout](../docs/semantic-review-quality.md#final-v21-holdout-results)
+met all three thresholds (2/16 clean false-positive trials vs. 5/16 for v2,
+16/16 defects detected, and 32/32 valid paired reviews). The reviewer remains
+advisory and off by default. #334 remains open for later acceptance criteria.
+#129 stays open for controlled comparisons without a #383 prerequisite.
+#335 remains later. #380 remains open for real-cloud staging and owner
+acceptance. SDK/Firestore-emulator evidence is separate.
 
 - #381-B integrates explicit trusted fixture execution into v2 outcomes in new
   local evaluated bundles. Ordinary generation retains v1/not_run; API/worker
@@ -215,9 +219,10 @@ staging and owner acceptance; SDK/Firestore-emulator evidence is separate.
 
 ## Immediate Next Steps
 
-- Use the [#334-B pilot and follow-up receipt](../docs/verification/334-b-follow-up.md)
-  to assess the advisory reviewer. Any new live measurement on corpus `1.0.1`
-  requires a fresh plan and separate owner approval.
+- Retain the default-off advisory reviewer with the limitations recorded
+  in the [v2.1 holdout results](../docs/semantic-review-quality.md#final-v21-holdout-results).
+  Preserve the holdout evidence locally. Any further live measurement requires
+  a fresh holdout plan and separate owner approval.
 - Keep #129 open for controlled comparisons and #335 as later work. #383 is
   deferred, not a prerequisite. Keep #380 real-cloud acceptance separate.
 - Keep public docs, examples, and onboarding copy aligned with the current

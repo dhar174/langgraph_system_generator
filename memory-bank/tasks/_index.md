@@ -15,6 +15,10 @@
   completed the owner-adjudicated corpus `1.0.0` pilot, and shipped the
   [diagnostics and corpus `1.0.1` follow-up](../../docs/verification/334-b-follow-up.md)
   in #403 (merged `6027db8`).
+- #334 reviewer follow-ups delivered stable excerpt IDs in #405 and the v2.1
+  rubric in #406 (merged `5f271ec`). The
+  [owner-adjudicated holdout](../../docs/semantic-review-quality.md#final-v21-holdout-results)
+  met all three thresholds. Reviewer operation remains advisory and default-off.
 - [TASK009 - Execution outcome integration (#381-B)](TASK009-execution-outcome-integration.md) — PR #399 merged `4f17c2d`.
 - [TASK008 - Truthful generation outcomes (#382)](TASK008-truthful-generation-outcomes.md) — PR #397 merged `9cb1aad`.
 - [TASK005 - Pattern/intake modernization wave](TASK005-pattern-intake-modernization-wave.md) — PR #361 merged `5c239e5`.
